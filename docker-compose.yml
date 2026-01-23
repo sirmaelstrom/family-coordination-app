@@ -50,7 +50,7 @@ services:
       - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/family-app.conf:/etc/nginx/conf.d/family-app.conf:ro
+      - ./nginx/family-app.conf:/etc/nginx/conf.d/default.conf:ro
       # SSL certs mounted in production (from production-server's existing setup)
       - ${SSL_CERT_PATH:-./nginx/certs}:/etc/nginx/certs:ro
     restart: unless-stopped
