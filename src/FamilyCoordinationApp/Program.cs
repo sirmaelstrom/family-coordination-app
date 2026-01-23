@@ -59,6 +59,7 @@ builder.Services.AddAuthorization(options =>
 });
 
 // Add services to the container.
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
@@ -93,5 +94,22 @@ app.MapRazorComponents<App>()
 
 // Health check endpoint for Docker
 app.MapGet("/health", () => Results.Ok("healthy"));
+
+// Auth endpoints (minimal API) - wiring for Login.razor form POST
+app.MapPost("/account/login-google", async (HttpContext context) =>
+{
+    var properties = new AuthenticationProperties
+    {
+        RedirectUri = "/",
+        IsPersistent = true  // Remember me
+    };
+    await context.ChallengeAsync(GoogleDefaults.AuthenticationScheme, properties);
+});
+
+app.MapGet("/account/logout", async (HttpContext context) =>
+{
+    await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    return Results.Redirect("/account/login");
+});
 
 app.Run();
