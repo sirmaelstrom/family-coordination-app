@@ -33,4 +33,7 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
+// Health check endpoint for Docker
+app.MapGet("/health", () => Results.Ok("healthy"));
+
 app.Run();
