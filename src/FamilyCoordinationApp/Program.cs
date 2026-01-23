@@ -1,8 +1,10 @@
+using FamilyCoordinationApp.Authorization;
 using FamilyCoordinationApp.Components;
 using FamilyCoordinationApp.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 
@@ -40,6 +42,20 @@ builder.Services.AddAuthentication(options =>
     options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"]
         ?? throw new InvalidOperationException("Google ClientSecret not configured");
     options.SaveTokens = false;  // Don't need refresh tokens for this app
+});
+
+// Authorization
+builder.Services.AddScoped<IAuthorizationHandler, WhitelistedEmailHandler>();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("WhitelistedOnly", policy =>
+        policy.Requirements.Add(new WhitelistedEmailRequirement()));
+
+    // Apply whitelist check to all authenticated requests
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .AddRequirements(new WhitelistedEmailRequirement())
+        .Build();
 });
 
 // Add services to the container.
