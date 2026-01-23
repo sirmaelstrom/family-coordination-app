@@ -1,0 +1,23 @@
+using Microsoft.EntityFrameworkCore;
+using FamilyCoordinationApp.Data.Entities;
+
+namespace FamilyCoordinationApp.Data;
+
+public class ApplicationDbContext : DbContext
+{
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
+
+    public DbSet<Household> Households => Set<Household>();
+    public DbSet<User> Users => Set<User>();
+    public DbSet<Recipe> Recipes => Set<Recipe>();
+    public DbSet<RecipeIngredient> RecipeIngredients => Set<RecipeIngredient>();
+    public DbSet<MealPlan> MealPlans => Set<MealPlan>();
+    public DbSet<MealPlanEntry> MealPlanEntries => Set<MealPlanEntry>();
+    public DbSet<ShoppingList> ShoppingLists => Set<ShoppingList>();
+    public DbSet<ShoppingListItem> ShoppingListItems => Set<ShoppingListItem>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+    }
+}
