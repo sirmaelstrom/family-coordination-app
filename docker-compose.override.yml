@@ -19,5 +19,5 @@ services:
     # Use self-signed certs for local HTTPS testing
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/family-app.conf:/etc/nginx/conf.d/family-app.conf:ro
+      - ./nginx/family-app.conf:/etc/nginx/conf.d/default.conf:ro
       - ./nginx/certs:/etc/nginx/certs:ro
