@@ -1,6 +1,7 @@
 using FamilyCoordinationApp.Authorization;
 using FamilyCoordinationApp.Components;
 using FamilyCoordinationApp.Data;
+using FamilyCoordinationApp.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
@@ -16,6 +17,9 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 
 builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
+
+// Services
+builder.Services.AddScoped<SetupService>();
 
 // Authentication
 builder.Services.AddAuthentication(options =>
@@ -87,6 +91,32 @@ app.UseAntiforgery();
 // Auth middleware
 app.UseAuthentication();
 app.UseAuthorization();
+
+// First-run setup redirect middleware
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path.Value?.ToLowerInvariant() ?? "";
+
+    // Skip setup check for these paths
+    if (path.StartsWith("/setup") ||
+        path.StartsWith("/account") ||
+        path.StartsWith("/_") ||
+        path.StartsWith("/health") ||
+        path.Contains("."))
+    {
+        await next();
+        return;
+    }
+
+    var setupService = context.RequestServices.GetRequiredService<SetupService>();
+    if (!await setupService.IsSetupCompleteAsync())
+    {
+        context.Response.Redirect("/setup");
+        return;
+    }
+
+    await next();
+});
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
