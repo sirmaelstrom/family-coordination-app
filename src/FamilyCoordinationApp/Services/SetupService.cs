@@ -9,9 +9,6 @@ public class SetupService
     private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
     private readonly ILogger<SetupService> _logger;
 
-    // Cache setup status (reset on household creation)
-    private bool? _isSetupComplete;
-
     public SetupService(
         IDbContextFactory<ApplicationDbContext> dbFactory,
         ILogger<SetupService> logger)
@@ -22,9 +19,6 @@ public class SetupService
 
     public async Task<bool> IsSetupCompleteAsync()
     {
-        if (_isSetupComplete.HasValue)
-            return _isSetupComplete.Value;
-
         try
         {
             using var context = _dbFactory.CreateDbContext();
@@ -33,8 +27,7 @@ public class SetupService
             await context.Database.MigrateAsync();
 
             // Setup is complete if at least one household exists
-            _isSetupComplete = await context.Households.AnyAsync();
-            return _isSetupComplete.Value;
+            return await context.Households.AnyAsync();
         }
         catch (Exception ex)
         {
@@ -49,7 +42,19 @@ public class SetupService
         string displayName,
         string googleId)
     {
+        _logger.LogInformation(
+            "Starting household creation: Name={HouseholdName}, Email={Email}, GoogleId={GoogleId}",
+            householdName, userEmail, googleId);
+
         using var context = _dbFactory.CreateDbContext();
+
+        // Check if user already exists
+        var existingUser = await context.Users.FirstOrDefaultAsync(u => u.Email == userEmail);
+        if (existingUser != null)
+        {
+            _logger.LogWarning("User {Email} already exists with ID {UserId}", userEmail, existingUser.Id);
+            throw new InvalidOperationException($"User {userEmail} already exists");
+        }
 
         var household = new Household
         {
@@ -58,6 +63,8 @@ public class SetupService
         };
         context.Households.Add(household);
         await context.SaveChangesAsync();
+
+        _logger.LogInformation("Created household ID {HouseholdId}", household.Id);
 
         var user = new User
         {
@@ -72,12 +79,9 @@ public class SetupService
         context.Users.Add(user);
         await context.SaveChangesAsync();
 
-        // Reset cache
-        _isSetupComplete = true;
-
         _logger.LogInformation(
-            "Created household '{HouseholdName}' with initial user {Email}",
-            householdName, userEmail);
+            "Created household '{HouseholdName}' (ID {HouseholdId}) with initial user {Email} (ID {UserId})",
+            householdName, household.Id, userEmail, user.Id);
 
         return (household, user);
     }

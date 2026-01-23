@@ -7,10 +7,15 @@ RUN dotnet restore FamilyCoordinationApp/FamilyCoordinationApp.csproj
 
 # Copy source and build
 COPY src/FamilyCoordinationApp/ ./FamilyCoordinationApp/
-RUN dotnet publish FamilyCoordinationApp/FamilyCoordinationApp.csproj \
+# Explicitly set working directory to project folder before publish
+WORKDIR /src/FamilyCoordinationApp
+RUN dotnet publish \
     -c Release \
-    -o /app/publish \
-    --no-restore
+    -o /app/publish
+RUN echo "=== Checking publish output ===" && \
+    ls -la /app/publish/wwwroot/ && \
+    echo "=== Checking for _framework ===" && \
+    ls -la /app/publish/wwwroot/_framework/ || echo "WARN: _framework directory not found"
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:10.0

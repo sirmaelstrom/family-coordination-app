@@ -1,10 +1,12 @@
 @page "/setup"
+@rendermode InteractiveServer
 @attribute [AllowAnonymous]
 @using System.Security.Claims
 @using FamilyCoordinationApp.Services
 @inject SetupService SetupService
 @inject NavigationManager Navigation
 @inject IHttpContextAccessor HttpContextAccessor
+@inject ILogger<FirstRunSetup> Logger
 
 <PageTitle>Welcome - Family Coordination Setup</PageTitle>
 
@@ -48,50 +50,48 @@
         else
         {
             <div class="bg-white py-8 px-6 shadow rounded-lg">
-                <form @onsubmit="HandleSetup" @onsubmit:preventDefault>
-                    <div class="space-y-6">
-                        <div>
-                            <p class="text-sm text-gray-600 mb-4">
-                                Signed in as <strong>@_userEmail</strong>
-                            </p>
-                        </div>
-
-                        <div>
-                            <label for="householdName" class="block text-sm font-medium text-gray-700">
-                                Household Name
-                            </label>
-                            <input type="text"
-                                   id="householdName"
-                                   @bind="_householdName"
-                                   placeholder="The Smith Family"
-                                   required
-                                   class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
-                            <p class="mt-1 text-sm text-gray-500">
-                                This name will appear throughout the app.
-                            </p>
-                        </div>
-
-                        @if (!string.IsNullOrEmpty(_errorMessage))
-                        {
-                            <div class="bg-red-50 border border-red-200 rounded-lg p-3">
-                                <p class="text-sm text-red-600">@_errorMessage</p>
-                            </div>
-                        }
-
-                        <button type="submit"
-                                disabled="@_isSubmitting"
-                                class="w-full py-3 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                            @if (_isSubmitting)
-                            {
-                                <span>Creating household...</span>
-                            }
-                            else
-                            {
-                                <span>Create Household</span>
-                            }
-                        </button>
+                <div class="space-y-6">
+                    <div>
+                        <p class="text-sm text-gray-600 mb-4">
+                            Signed in as <strong>@_userEmail</strong>
+                        </p>
                     </div>
-                </form>
+
+                    <div>
+                        <label for="householdName" class="block text-sm font-medium text-gray-700">
+                            Household Name
+                        </label>
+                        <input type="text"
+                               id="householdName"
+                               @bind="_householdName"
+                               placeholder="The Smith Family"
+                               class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
+                        <p class="mt-1 text-sm text-gray-500">
+                            This name will appear throughout the app.
+                        </p>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(_errorMessage))
+                    {
+                        <div class="bg-red-50 border border-red-200 rounded-lg p-3">
+                            <p class="text-sm text-red-600">@_errorMessage</p>
+                        </div>
+                    }
+
+                    <button type="button"
+                            @onclick="HandleSetup"
+                            disabled="@_isSubmitting"
+                            class="w-full py-3 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                        @if (_isSubmitting)
+                        {
+                            <span>Creating household...</span>
+                        }
+                        else
+                        {
+                            <span>Create Household</span>
+                        }
+                    </button>
+                </div>
             </div>
         }
     </div>
@@ -109,32 +109,52 @@
 
     protected override async Task OnInitializedAsync()
     {
+        Logger.LogInformation("FirstRunSetup: OnInitializedAsync started");
+
         _isAlreadySetup = await SetupService.IsSetupCompleteAsync();
 
         if (_isAlreadySetup)
+        {
+            Logger.LogInformation("FirstRunSetup: Setup already complete");
             return;
+        }
 
         var user = HttpContextAccessor.HttpContext?.User;
         _isAuthenticated = user?.Identity?.IsAuthenticated == true;
 
+        Logger.LogInformation("FirstRunSetup: IsAuthenticated={IsAuthenticated}", _isAuthenticated);
+
         if (_isAuthenticated)
         {
-            _userEmail = user!.FindFirst(ClaimTypes.Email)?.Value ?? "";
+            // Log all claims for debugging
+            var claims = string.Join(", ", user!.Claims.Select(c => $"{c.Type}={c.Value}"));
+            Logger.LogInformation("FirstRunSetup: User claims: {Claims}", claims);
+
+            _userEmail = user.FindFirst(ClaimTypes.Email)?.Value ?? "";
             _userName = user.FindFirst(ClaimTypes.Name)?.Value ?? _userEmail;
             _googleId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+
+            Logger.LogInformation("FirstRunSetup: Email={Email}, Name={Name}, GoogleId={GoogleId}",
+                _userEmail, _userName, _googleId);
         }
     }
 
     private async Task HandleSetup()
     {
+        Logger.LogInformation("FirstRunSetup: HandleSetup called with HouseholdName={HouseholdName}", _householdName);
+
         if (string.IsNullOrWhiteSpace(_householdName))
         {
             _errorMessage = "Please enter a household name.";
+            Logger.LogWarning("FirstRunSetup: Household name is empty");
             return;
         }
 
         _isSubmitting = true;
         _errorMessage = "";
+
+        Logger.LogInformation("FirstRunSetup: Creating household with Email={Email}, Name={Name}, GoogleId={GoogleId}",
+            _userEmail, _userName, _googleId);
 
         try
         {
@@ -144,12 +164,15 @@
                 _userName,
                 _googleId);
 
+            Logger.LogInformation("FirstRunSetup: Household created successfully, redirecting to home");
+
             // Redirect to home after successful setup
             Navigation.NavigateTo("/", forceLoad: true);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            _errorMessage = "Failed to create household. Please try again.";
+            Logger.LogError(ex, "FirstRunSetup: Failed to create household");
+            _errorMessage = $"Failed to create household: {ex.Message}";
             _isSubmitting = false;
         }
     }

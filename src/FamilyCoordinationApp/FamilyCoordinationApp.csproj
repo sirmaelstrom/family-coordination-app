@@ -5,6 +5,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <PublishStaticWebAssets>true</PublishStaticWebAssets>
+    <IncludeBlazorServerFiles>true</IncludeBlazorServerFiles>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using FamilyCoordinationApp.Authorization;
 using FamilyCoordinationApp.Components;
 using FamilyCoordinationApp.Data;
@@ -46,6 +47,15 @@ builder.Services.AddAuthentication(options =>
     options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"]
         ?? throw new InvalidOperationException("Google ClientSecret not configured");
     options.SaveTokens = false;  // Don't need refresh tokens for this app
+
+    // Ensure email claim is mapped
+    options.ClaimActions.MapJsonKey(ClaimTypes.Email, "email");
+    options.ClaimActions.MapJsonKey(ClaimTypes.Name, "name");
+    options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "sub");
+
+    // Request email scope
+    options.Scope.Add("email");
+    options.Scope.Add("profile");
 });
 
 // Authorization
@@ -55,8 +65,9 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("WhitelistedOnly", policy =>
         policy.Requirements.Add(new WhitelistedEmailRequirement()));
 
-    // Apply whitelist check to all authenticated requests
-    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+    // Use default policy requiring authentication + whitelist
+    // (Applied via [Authorize] on individual pages, not as FallbackPolicy to avoid blocking static assets)
+    options.DefaultPolicy = new AuthorizationPolicyBuilder()
         .RequireAuthenticatedUser()
         .AddRequirements(new WhitelistedEmailRequirement())
         .Build();
@@ -104,18 +115,28 @@ app.UseAntiforgery();
 
 // Auth middleware
 app.UseAuthentication();
-app.UseAuthorization();
 
-// First-run setup redirect middleware
+// First-run setup redirect middleware (BEFORE authorization)
 app.Use(async (context, next) =>
 {
+    // Skip if an endpoint was already selected (static assets, etc.)
+    var endpoint = context.GetEndpoint();
+    if (endpoint != null)
+    {
+        await next();
+        return;
+    }
+
     var path = context.Request.Path.Value?.ToLowerInvariant() ?? "";
 
     // Skip setup check for these paths
     if (path.StartsWith("/setup") ||
         path.StartsWith("/account") ||
+        path.StartsWith("/_framework") ||
+        path.StartsWith("/_blazor") ||
         path.StartsWith("/_") ||
         path.StartsWith("/health") ||
+        path.StartsWith("/lib") ||
         path.Contains("."))
     {
         await next();
@@ -132,6 +153,8 @@ app.Use(async (context, next) =>
     await next();
 });
 
+app.UseAuthorization();
+
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
@@ -142,9 +165,13 @@ app.MapGet("/health", () => Results.Ok("healthy"));
 // Auth endpoints (minimal API) - wiring for Login.razor form POST
 app.MapPost("/account/login-google", async (HttpContext context) =>
 {
+    // Get returnUrl from form, default to home
+    var form = await context.Request.ReadFormAsync();
+    var returnUrl = form["returnUrl"].FirstOrDefault() ?? "/";
+
     var properties = new AuthenticationProperties
     {
-        RedirectUri = "/",
+        RedirectUri = returnUrl,
         IsPersistent = true  // Remember me
     };
     await context.ChallengeAsync(GoogleDefaults.AuthenticationScheme, properties);

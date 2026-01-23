@@ -1,74 +1,68 @@
 # Family Coordination App - Status & Next Steps
 
-**Last Updated:** 2026-01-23
+**Last Updated:** 2026-01-23 (Evening Session)
 **Current Phase:** 1 of 7 (Foundation & Infrastructure)
-**Status:** ⏸️ Awaiting OAuth setup and human verification
+**Status:** ✅ Setup flow working - Ready for refinement and full verification
 
 ---
 
-## 🎯 Immediate Next Steps
+## 🎯 Evening Session Accomplishments (2026-01-23)
 
-### 1. Configure Google OAuth (15 minutes)
+### ✅ Completed
+1. **Fixed Docker Build Issue**
+   - Blazor framework files (_framework/blazor.web.js) weren't being published
+   - Root cause: Incorrect working directory in Dockerfile
+   - Solution: Set WORKDIR to project folder before publish
+   - Files now correctly generated at `/app/wwwroot/_framework/`
 
-**Go to:** https://console.cloud.google.com
+2. **Fixed Authorization During Setup**
+   - WhitelistedEmailHandler was blocking Blazor interactive mode during setup
+   - Solution: Allow authenticated users through when no households exist
+   - Authorization now properly gates access after setup complete
 
-1. **Create/Select Project:** "Family Coordination App"
-2. **Enable API:** APIs & Services → Library → Search "Google+ API" → Enable
-3. **Create Credentials:**
-   - APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID
-   - Application type: **Web application**
-   - Name: "Family App - Development"
-   - Authorized redirect URIs:
-     - `https://localhost:7777/signin-google`
-     - `https://family.heathdev.me/signin-google`
-4. **Copy credentials** → You'll get Client ID and Client Secret
+3. **Fixed OAuth Redirect Flow**
+   - OAuth was hardcoded to redirect to "/" after sign-in
+   - Solution: Read returnUrl from form, redirect back to /setup
+   - Setup flow now properly returns user to setup page after Google auth
 
-### 2. Update .env File
+4. **Verified End-to-End Setup**
+   - Successfully created household "La Familia Heath"
+   - User jmheath@gmail.com created and whitelisted
+   - Can access home page and see welcome message
 
-Edit `.env` in project root and replace:
-```bash
-GOOGLE_CLIENT_ID=YOUR_ACTUAL_CLIENT_ID.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=YOUR_ACTUAL_CLIENT_SECRET
-```
+### 📋 Remaining Work
 
-### 3. Test the Application
+#### 1. Refine Setup Flow Authorization
+**Issue:** During setup (no households exist), authenticated users can navigate to any page, not just /setup
+**Impact:** Users can see empty home page before completing setup
+**Priority:** Medium (cosmetic, doesn't break functionality)
+**Solution Ideas:**
+- Make setup redirect middleware more strict during setup
+- Or accept current behavior as "good enough"
 
-**Start the app:**
-```bash
-# Option A: Docker (full stack)
-docker-compose down -v  # Clean start
-docker-compose up --build
+#### 2. Complete Human Verification (7 Items)
 
-# Option B: Local dotnet (faster iteration)
-docker-compose up -d postgres
-cd src/FamilyCoordinationApp
-dotnet run
-```
+Test these items from `.planning/phases/01-foundation-infrastructure/01-VERIFICATION.md`:
 
-**Navigate to:** `https://localhost:7777` (dotnet) or `https://localhost` (docker)
-
-### 4. Complete Human Verification
-
-Test these 7 items (from `.planning/phases/01-foundation-infrastructure/01-VERIFICATION.md`):
-
-- [ ] **OAuth sign-in flow** - Sign in with Google, verify email shown in header
+- [x] **OAuth sign-in flow** - ✅ Works, user signed in successfully
+- [x] **First-run setup** - ✅ Household and user created
+- [x] **WebSocket/SignalR** - ✅ Blazor interactive mode working
 - [ ] **Session persistence** - Close browser, reopen, verify still signed in (30-day cookie)
 - [ ] **Access denied** - Try non-whitelisted Google account, see friendly message
-- [ ] **First-run setup** - Complete setup wizard (create household, whitelist first user)
 - [ ] **Logout flow** - Click logout, verify redirect and re-auth required
-- [ ] **Docker startup** - Verify PostgreSQL → app → nginx startup order
-- [ ] **WebSocket/SignalR** - DevTools Network tab shows 101 Switching Protocols
+- [ ] **Docker startup** - Verify PostgreSQL → app → nginx startup order (appears to work)
 
-### 5. Report Results
+#### 3. Test Whitelist Admin UI
+- Navigate to /settings/users
+- Verify can add/remove users from whitelist
+- Test that non-whitelisted users get access denied
 
-When ready to continue, run:
+#### 4. Proceed to Phase 2
+When verification complete:
 ```bash
-/gsd:execute-phase 1  # Resume the verification checkpoint
+/gsd:execute-phase 1  # Resume verification checkpoint
+# Then type "approved" to move to Phase 2
 ```
-
-Then type:
-- **"approved"** if all 7 items pass → Moves to Phase 2
-- **"issue: [description]"** if something fails → Creates gap closure plans
 
 ---
 
@@ -114,9 +108,21 @@ Then type:
 
 ## 🐛 Known Issues
 
-1. **OAuth Error (Expected):** "Access blocked" until Google Cloud Console configured with redirect URIs
-2. **Self-signed SSL Warning:** Browser will warn about certificate - this is normal for local development
-3. **EF Tools PATH:** If `dotnet ef` not found, run: `export PATH="$PATH:/home/sirm/.dotnet/tools"`
+1. **Setup Flow Navigation (Medium Priority):**
+   - During setup (no households exist), authenticated users can navigate to pages other than /setup
+   - Expected: Should redirect to /setup until household created
+   - Actual: Can access home page and other routes
+   - Impact: Cosmetic, doesn't break functionality
+   - Can be refined later
+
+2. **Self-signed SSL Warning (Expected):**
+   - Browser will warn about certificate - this is normal for local development
+   - Click "Advanced" → "Proceed to localhost" to continue
+
+3. **Development Data Protec Keys (Expected):**
+   - Warning about keys in /root/.aspnet/DataProtection-Keys not persisting
+   - Normal for containerized development environment
+   - For production, configure persistent key storage
 
 ---
 
@@ -187,6 +193,46 @@ docker-compose up
 5. ✅ `/gsd:execute-phase 1` - Executed all 4 plans
 6. ⏸️ **Human verification pending** ← YOU ARE HERE
 7. ⏭️ `/gsd:execute-phase 1` then "approved" → Proceeds to Phase 2
+
+---
+
+## 🔍 Debugging Session Notes (2026-01-23)
+
+### Key Issues Resolved
+
+**Issue #1: Blazor Framework Files Not Loading (404)**
+- **Symptom:** `GET /_framework/blazor.web.js` returned 404
+- **Root Cause:** Docker publish wasn't generating framework files - incorrect working directory
+- **Fix:** Changed Dockerfile to set `WORKDIR /src/FamilyCoordinationApp` before `dotnet publish`
+- **Lesson:** .NET publish behavior differs based on current working directory
+
+**Issue #2: Interactive Blazor Not Working**
+- **Symptom:** Button clicks didn't execute C# handlers, form did traditional POST
+- **Root Causes:**
+  1. Authorization blocking SignalR hub during setup
+  2. Setup redirect middleware catching /_framework requests
+- **Fixes:**
+  1. Modified WhitelistedEmailHandler to allow authenticated users during setup
+  2. Added endpoint matching check to skip setup redirect for static assets
+- **Lesson:** Blazor Server interactive mode requires working SignalR connection + proper authorization
+
+**Issue #3: Middleware Order Matters**
+- **Problem:** Authorization ran before setup redirect, causing access denied
+- **Fix:** Moved setup redirect middleware between `UseAuthentication()` and `UseAuthorization()`
+- **Lesson:** Middleware order: Auth → Setup Check → Authorization → Endpoints
+
+**Issue #4: Static Assets Being Redirected**
+- **Problem:** Setup redirect catching CSS/JS requests, returning HTML with wrong MIME type
+- **Fix:** Check `context.GetEndpoint()` - skip redirect if endpoint already matched
+- **Lesson:** Custom middleware should respect endpoint routing decisions
+
+### Development Environment Notes
+
+- **Docker Compose:** Full stack (PostgreSQL + app + nginx) works well
+- **Hot Reload:** Requires rebuild - `docker compose build app && docker compose up -d`
+- **Database Access:** `docker exec familyapp-postgres psql -U familyapp -d familyapp`
+- **Logs:** `docker logs familyapp-app --follow` or `--since 2m`
+- **Browser Console:** Essential for debugging Blazor interactive issues
 
 ---
 
