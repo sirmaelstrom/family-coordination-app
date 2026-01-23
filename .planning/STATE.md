@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-01-22)
 Phase: 1 of 7 (Foundation & Infrastructure)
 Plan: 2 of 4 complete
 Status: In progress
-Last activity: 2026-01-23 — Completed 01-03-PLAN.md (Docker Compose configuration)
+Last activity: 2026-01-23 — Completed 01-02-PLAN.md (Google OAuth authentication)
 
 Progress: [██░░░░░░░░] 20%
 
@@ -20,18 +20,18 @@ Progress: [██░░░░░░░░] 20%
 
 **Velocity:**
 - Total plans completed: 2
-- Average duration: 3.5 min
-- Total execution time: 0.1 hours
+- Average duration: 4.5 min
+- Total execution time: 0.2 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1 | 2 | 7min | 3.5min |
+| 1 | 2 | 9min | 4.5min |
 
 **Recent Trend:**
-- Last 5 plans: 4min, 3min
-- Trend: Consistent (3-4 min per plan)
+- Last 5 plans: 4min, 5min
+- Trend: Consistent (4-5 min per plan)
 
 *Updated after each plan completion*
 
@@ -51,6 +51,9 @@ Recent decisions affecting current work:
 - HouseholdId-first ordering in all composite keys [01-01]
 - String categories over enums for flexibility [01-01]
 - DateOnly for meal plan dates (not DateTime) [01-01]
+- 30-day cookie expiration with sliding expiration (session persistence) [01-02]
+- Forwarded headers middleware first in pipeline (nginx reverse proxy) [01-02]
+- POST endpoint for Google OAuth challenge (CSRF protection) [01-02]
 
 ### Pending Todos
 
@@ -64,10 +67,10 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-23T03:04:29Z
-Stopped at: Completed 01-03-PLAN.md (3 tasks, 12 files, 3 commits)
+Last session: 2026-01-23T03:06:08Z
+Stopped at: Completed 01-02-PLAN.md (3 tasks, 11 files, 3 commits)
 Resume file: None
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-01-23T03:04:29Z*
+*Last updated: 2026-01-23T03:06:08Z*
