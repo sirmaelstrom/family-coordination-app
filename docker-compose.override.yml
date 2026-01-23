@@ -1,0 +1,23 @@
+# Development overrides - loaded automatically with docker-compose up
+services:
+  postgres:
+    ports:
+      - "5432:5432"  # Expose for local tooling (pgAdmin, etc.)
+    volumes:
+      - postgres-data:/var/lib/postgresql/data  # Use named volume for dev
+
+  app:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+    ports:
+      - "8080:8080"  # Direct access for debugging
+    volumes:
+      - app-uploads:/app/uploads
+      - app-logs:/app/logs
+
+  nginx:
+    # Use self-signed certs for local HTTPS testing
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/family-app.conf:/etc/nginx/conf.d/family-app.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro

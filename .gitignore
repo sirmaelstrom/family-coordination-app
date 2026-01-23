@@ -1,0 +1,29 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Docker volumes
+postgres-data/
+app-uploads/
+app-logs/
+
+# SSL certs (except example)
+nginx/certs/*.pem
+nginx/certs/*.key
+!nginx/certs/.gitkeep
+
+# IDE
+.idea/
+.vs/
+*.user
+*.suo
+
+# Build artifacts
+**/bin/
+**/obj/
+**/publish/
+
+# Logs
+*.log
+logs/
