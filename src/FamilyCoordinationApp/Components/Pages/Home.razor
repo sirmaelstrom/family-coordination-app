@@ -1,0 +1,52 @@
+﻿@page "/"
+@attribute [Authorize]
+@using System.Security.Claims
+@using FamilyCoordinationApp.Services
+@inject SetupService SetupService
+@inject IHttpContextAccessor HttpContextAccessor
+
+<PageTitle>Home - Family Coordination</PageTitle>
+
+<div class="max-w-4xl mx-auto py-8 px-4">
+    <h1 class="text-3xl font-bold text-gray-900 mb-2">Welcome, @_displayName!</h1>
+    <p class="text-gray-600 mb-8">@_householdName</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Quick links - placeholders for future phases -->
+        <a href="/recipes" class="block p-6 bg-white rounded-lg shadow hover:shadow-md transition-shadow">
+            <h2 class="text-xl font-semibold text-gray-900 mb-2">Recipes</h2>
+            <p class="text-gray-600">Browse and manage your family recipes</p>
+        </a>
+
+        <a href="/meal-plan" class="block p-6 bg-white rounded-lg shadow hover:shadow-md transition-shadow">
+            <h2 class="text-xl font-semibold text-gray-900 mb-2">Meal Plan</h2>
+            <p class="text-gray-600">Plan your meals for the week</p>
+        </a>
+
+        <a href="/shopping-list" class="block p-6 bg-white rounded-lg shadow hover:shadow-md transition-shadow">
+            <h2 class="text-xl font-semibold text-gray-900 mb-2">Shopping List</h2>
+            <p class="text-gray-600">View and manage your shopping list</p>
+        </a>
+
+        <a href="/settings/users" class="block p-6 bg-white rounded-lg shadow hover:shadow-md transition-shadow">
+            <h2 class="text-xl font-semibold text-gray-900 mb-2">Family Members</h2>
+            <p class="text-gray-600">Manage who has access to this app</p>
+        </a>
+    </div>
+</div>
+
+@code {
+    private string _displayName = "";
+    private string _householdName = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = HttpContextAccessor.HttpContext?.User;
+        _displayName = user?.FindFirst(ClaimTypes.Name)?.Value
+            ?? user?.FindFirst(ClaimTypes.Email)?.Value
+            ?? "there";
+
+        var household = await SetupService.GetHouseholdAsync();
+        _householdName = household?.Name ?? "Your Household";
+    }
+}

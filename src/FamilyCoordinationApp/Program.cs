@@ -69,6 +69,19 @@ builder.Services.AddRazorComponents()
 
 var app = builder.Build();
 
+// Seed development data
+if (app.Environment.IsDevelopment())
+{
+    using var scope = app.Services.CreateScope();
+    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
+
+    // Ensure database is created/migrated
+    using var context = dbFactory.CreateDbContext();
+    await context.Database.MigrateAsync();
+
+    await SeedData.SeedDevelopmentDataAsync(dbFactory);
+}
+
 // Forwarded headers MUST come first (for nginx reverse proxy)
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {

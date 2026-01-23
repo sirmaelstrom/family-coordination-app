@@ -1,0 +1,203 @@
+@page "/settings/users"
+@attribute [Authorize]
+@using Microsoft.EntityFrameworkCore
+@using FamilyCoordinationApp.Data
+@using FamilyCoordinationApp.Data.Entities
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@implements IAsyncDisposable
+
+<PageTitle>Manage Users - Family Coordination</PageTitle>
+
+<div class="max-w-2xl mx-auto py-8 px-4">
+    <h1 class="text-2xl font-bold text-gray-900 mb-6">Manage Family Members</h1>
+
+    @if (_isLoading)
+    {
+        <p class="text-gray-600">Loading...</p>
+    }
+    else
+    {
+        <!-- Add new user form -->
+        <div class="bg-white shadow rounded-lg p-6 mb-6">
+            <h2 class="text-lg font-medium text-gray-900 mb-4">Add Family Member</h2>
+            <form @onsubmit="AddUser" @onsubmit:preventDefault class="flex gap-4">
+                <input type="email"
+                       @bind="_newEmail"
+                       placeholder="email@example.com"
+                       required
+                       class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
+                <button type="submit"
+                        disabled="@_isSubmitting"
+                        class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">
+                    Add
+                </button>
+            </form>
+            @if (!string.IsNullOrEmpty(_message))
+            {
+                <p class="mt-2 text-sm @(_isError ? "text-red-600" : "text-green-600")">@_message</p>
+            }
+        </div>
+
+        <!-- Current users list -->
+        <div class="bg-white shadow rounded-lg overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    @foreach (var user in _users)
+                    {
+                        <tr>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">@user.Email</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">@user.DisplayName</td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                @if (user.IsWhitelisted)
+                                {
+                                    <span class="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">Active</span>
+                                }
+                                else
+                                {
+                                    <span class="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">Disabled</span>
+                                }
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
+                                @if (user.IsWhitelisted && _users.Count(u => u.IsWhitelisted) > 1)
+                                {
+                                    <button @onclick="() => ToggleUser(user)"
+                                            class="text-red-600 hover:text-red-900">
+                                        Disable
+                                    </button>
+                                }
+                                else if (!user.IsWhitelisted)
+                                {
+                                    <button @onclick="() => ToggleUser(user)"
+                                            class="text-green-600 hover:text-green-900">
+                                        Enable
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="text-gray-400">Last admin</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private ApplicationDbContext _context = default!;
+    private List<User> _users = new();
+    private string _newEmail = "";
+    private string _message = "";
+    private bool _isError;
+    private bool _isLoading = true;
+    private bool _isSubmitting;
+    private int _householdId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _context = DbFactory.CreateDbContext();
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        _isLoading = true;
+        var household = await _context.Households.FirstOrDefaultAsync();
+        if (household != null)
+        {
+            _householdId = household.Id;
+            _users = await _context.Users
+                .Where(u => u.HouseholdId == _householdId)
+                .OrderBy(u => u.Email)
+                .ToListAsync();
+        }
+        _isLoading = false;
+    }
+
+    private async Task AddUser()
+    {
+        if (string.IsNullOrWhiteSpace(_newEmail))
+            return;
+
+        _isSubmitting = true;
+        _message = "";
+
+        try
+        {
+            var email = _newEmail.Trim().ToLowerInvariant();
+
+            // Check if user already exists
+            var existingUser = await _context.Users
+                .FirstOrDefaultAsync(u => u.Email == email);
+
+            if (existingUser != null)
+            {
+                if (!existingUser.IsWhitelisted)
+                {
+                    existingUser.IsWhitelisted = true;
+                    await _context.SaveChangesAsync();
+                    _message = $"Re-enabled {email}";
+                    _isError = false;
+                }
+                else
+                {
+                    _message = "User already has access.";
+                    _isError = true;
+                }
+            }
+            else
+            {
+                var newUser = new User
+                {
+                    HouseholdId = _householdId,
+                    Email = email,
+                    DisplayName = email.Split('@')[0],  // Default to email prefix
+                    GoogleId = "",  // Will be set on first login
+                    IsWhitelisted = true,
+                    CreatedAt = DateTime.UtcNow
+                };
+                _context.Users.Add(newUser);
+                await _context.SaveChangesAsync();
+                _message = $"Added {email} to whitelist";
+                _isError = false;
+            }
+
+            _newEmail = "";
+            await LoadUsers();
+        }
+        catch (Exception)
+        {
+            _message = "Failed to add user. Please try again.";
+            _isError = true;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task ToggleUser(User user)
+    {
+        user.IsWhitelisted = !user.IsWhitelisted;
+        await _context.SaveChangesAsync();
+        _message = user.IsWhitelisted
+            ? $"Enabled {user.Email}"
+            : $"Disabled {user.Email}";
+        _isError = false;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _context.DisposeAsync();
+    }
+}
