@@ -32,10 +32,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. User can log out from any page and be redirected to login
   4. Database enforces composite foreign keys preventing cross-household data access
   5. Application runs on production-server via Docker Compose accessible at family.example.com
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] (Plans defined during plan-phase)
+- [ ] 01-01-PLAN.md — Project setup with EF Core PostgreSQL and composite key schema
+- [ ] 01-02-PLAN.md — Google OAuth authentication with email whitelist authorization
+- [ ] 01-03-PLAN.md — Docker Compose configuration with nginx WebSocket support
+- [ ] 01-04-PLAN.md — First-run setup wizard, whitelist admin, and seed data
 
 ### Phase 2: Recipe Management
 **Goal**: Users can create, view, edit, and delete recipes with structured ingredients
@@ -138,7 +141,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Infrastructure | 0/? | Not started | - |
+| 1. Foundation & Infrastructure | 0/4 | Planned | - |
 | 2. Recipe Management | 0/? | Not started | - |
 | 3. Meal Planning | 0/? | Not started | - |
 | 4. Shopping List Core | 0/? | Not started | - |
