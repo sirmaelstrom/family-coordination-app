@@ -9,6 +9,7 @@ services:
   app:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
     ports:
       - "8080:8080"  # Direct access for debugging
     volumes:
