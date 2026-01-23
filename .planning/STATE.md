@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-01-22)
 ## Current Position
 
 Phase: 1 of 7 (Foundation & Infrastructure)
-Plan: Ready to plan
-Status: Ready to plan
-Last activity: 2026-01-22 — Roadmap created with 7 phases covering 34 v1 requirements
+Plan: 1 of 4 complete
+Status: In progress
+Last activity: 2026-01-23 — Completed 01-01-PLAN.md (project setup with EF Core)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 10%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0
-- Average duration: N/A
-- Total execution time: 0.0 hours
+- Total plans completed: 1
+- Average duration: 4 min
+- Total execution time: 0.1 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 1 | 1 | 4min | 4min |
 
 **Recent Trend:**
-- Last 5 plans: N/A
-- Trend: N/A (no data yet)
+- Last 5 plans: 4min
+- Trend: First plan completed (no trend data yet)
 
 *Updated after each plan completion*
 
@@ -46,6 +46,11 @@ Recent decisions affecting current work:
 - PostgreSQL over SQL Server (Linux deployment, open source, Docker-friendly)
 - Single-tenant MVP with HouseholdId for future multi-tenant expansion
 - Google OAuth only (family uses Google, no password reset complexity)
+- DbContextFactory over scoped DbContext (required for Blazor Server thread safety) [01-01]
+- Composite keys at database level (not application-only filtering) [01-01]
+- HouseholdId-first ordering in all composite keys [01-01]
+- String categories over enums for flexibility [01-01]
+- DateOnly for meal plan dates (not DateTime) [01-01]
 
 ### Pending Todos
 
@@ -59,10 +64,10 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-22
-Stopped at: Roadmap creation complete with 100% requirement coverage
+Last session: 2026-01-23T02:58:44Z
+Stopped at: Completed 01-01-PLAN.md (3 tasks, 19 files, 3 commits)
 Resume file: None
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-01-22*
+*Last updated: 2026-01-23*
