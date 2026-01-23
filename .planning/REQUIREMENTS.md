@@ -140,13 +140,50 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (Populated by roadmap creation) | | |
+| AUTH-01 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Pending |
+| AUTH-03 | Phase 1 | Pending |
+| AUTH-04 | Phase 1 | Pending |
+| DATA-01 | Phase 1 | Pending |
+| DATA-02 | Phase 1 | Pending |
+| DATA-03 | Phase 1 | Pending |
+| DATA-04 | Phase 1 | Pending |
+| RECIPE-02 | Phase 2 | Pending |
+| RECIPE-03 | Phase 2 | Pending |
+| RECIPE-04 | Phase 2 | Pending |
+| RECIPE-05 | Phase 2 | Pending |
+| RECIPE-06 | Phase 2 | Pending |
+| MEAL-01 | Phase 3 | Pending |
+| MEAL-02 | Phase 3 | Pending |
+| MEAL-03 | Phase 3 | Pending |
+| MEAL-04 | Phase 3 | Pending |
+| MEAL-05 | Phase 3 | Pending |
+| MEAL-06 | Phase 3 | Pending |
+| SHOP-01 | Phase 4 | Pending |
+| SHOP-02 | Phase 4 | Pending |
+| SHOP-03 | Phase 4 | Pending |
+| SHOP-04 | Phase 4 | Pending |
+| SHOP-05 | Phase 4 | Pending |
+| SHOP-06 | Phase 4 | Pending |
+| SHOP-07 | Phase 4 | Pending |
+| SHOP-08 | Phase 4 | Pending |
+| SHOP-09 | Phase 4 | Pending |
+| SHOP-10 | Phase 4 | Pending |
+| COLLAB-01 | Phase 5 | Pending |
+| COLLAB-02 | Phase 5 | Pending |
+| COLLAB-03 | Phase 5 | Pending |
+| COLLAB-04 | Phase 5 | Pending |
+| RECIPE-01 | Phase 6 | Pending |
+| MOBILE-01 | Phase 7 | Pending |
+| MOBILE-02 | Phase 7 | Pending |
+| MOBILE-03 | Phase 7 | Pending |
+| MOBILE-04 | Phase 7 | Pending |
 
 **Coverage:**
 - v1 requirements: 34 total
-- Mapped to phases: (pending)
-- Unmapped: (pending)
+- Mapped to phases: 34/34 (100%)
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-01-22*
-*Last updated: 2026-01-22 after initial definition*
+*Last updated: 2026-01-22 after roadmap creation*
