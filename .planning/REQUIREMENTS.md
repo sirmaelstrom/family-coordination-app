@@ -25,12 +25,12 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Meal Planning
 
-- [ ] **MEAL-01**: User can view weekly meal plan in calendar format (7-day grid)
-- [ ] **MEAL-02**: User can view weekly meal plan in list format (mobile-friendly)
-- [ ] **MEAL-03**: User can assign recipe to specific date and meal type (Breakfast/Lunch/Dinner)
-- [ ] **MEAL-04**: User can add custom meal without recipe ("Leftovers", "Eating out")
-- [ ] **MEAL-05**: User can remove meal from plan
-- [ ] **MEAL-06**: User can view recipe details from meal plan
+- [x] **MEAL-01**: User can view weekly meal plan in calendar format (7-day grid)
+- [x] **MEAL-02**: User can view weekly meal plan in list format (mobile-friendly)
+- [x] **MEAL-03**: User can assign recipe to specific date and meal type (Breakfast/Lunch/Dinner)
+- [x] **MEAL-04**: User can add custom meal without recipe ("Leftovers", "Eating out")
+- [x] **MEAL-05**: User can remove meal from plan
+- [x] **MEAL-06**: User can view recipe details from meal plan
 
 ### Shopping Lists
 
@@ -153,12 +153,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RECIPE-04 | Phase 2 | Pending |
 | RECIPE-05 | Phase 2 | Pending |
 | RECIPE-06 | Phase 2 | Pending |
-| MEAL-01 | Phase 3 | Pending |
-| MEAL-02 | Phase 3 | Pending |
-| MEAL-03 | Phase 3 | Pending |
-| MEAL-04 | Phase 3 | Pending |
-| MEAL-05 | Phase 3 | Pending |
-| MEAL-06 | Phase 3 | Pending |
+| MEAL-01 | Phase 3 | Complete |
+| MEAL-02 | Phase 3 | Complete |
+| MEAL-03 | Phase 3 | Complete |
+| MEAL-04 | Phase 3 | Complete |
+| MEAL-05 | Phase 3 | Complete |
+| MEAL-06 | Phase 3 | Complete |
 | SHOP-01 | Phase 4 | Pending |
 | SHOP-02 | Phase 4 | Pending |
 | SHOP-03 | Phase 4 | Pending |
