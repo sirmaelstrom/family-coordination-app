@@ -134,10 +134,15 @@ Plans:
   3. Import gracefully degrades to manual entry when parsing fails with clear error message
   4. Imported recipe appears in recipe list with indicator showing it was imported
   5. Import works for at least 80% of popular recipe sites (AllRecipes, Food Network, NYT Cooking)
-**Plans**: TBD
+**Plans**: 6 plans
 
 Plans:
-- [ ] (Plans defined during plan-phase)
+- [ ] 06-01-PLAN.md — Infrastructure setup: AngleSharp, Polly packages, RecipeSchema POCO, UrlValidator
+- [ ] 06-02-PLAN.md — RecipeScraperService: HTTP fetch with Polly resilience, JSON-LD extraction with AngleSharp
+- [ ] 06-03-PLAN.md — RecipeImportService: URL → Recipe entity orchestration with graceful error handling
+- [ ] 06-04-PLAN.md — ImportRecipeDialog: URL input UI with progress and error states
+- [ ] 06-05-PLAN.md — Import indicator: source icon on recipe cards, clickable source link
+- [ ] 06-06-PLAN.md — Human verification of recipe import workflow
 
 ### Phase 7: Mobile & UX Polish
 **Goal**: Application provides optimized mobile experience with PWA support
@@ -166,7 +171,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 3. Meal Planning | 4/4 | Complete | 2026-01-24 |
 | 4. Shopping List Core | 6/6 | Complete | 2026-01-24 |
 | 5. Multi-User Collaboration | 7/7 | Complete | 2026-01-24 |
-| 6. Recipe Import | 0/? | Not started | - |
+| 6. Recipe Import | 0/6 | Not started | - |
 | 7. Mobile & UX Polish | 0/? | Not started | - |
 
 ---
