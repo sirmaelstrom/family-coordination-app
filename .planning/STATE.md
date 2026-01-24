@@ -10,29 +10,29 @@ See: .planning/PROJECT.md (updated 2026-01-22)
 ## Current Position
 
 Phase: 2 of 7 (Recipe Management)
-Plan: 3 of 7 complete
+Plan: 4 of 7 complete
 Status: In progress
-Last activity: 2026-01-24 — Completed 02-03-PLAN.md (Recipe Services)
+Last activity: 2026-01-24 — Completed 02-04-PLAN.md (Ingredient Entry Components)
 
-Progress: [█████░░░░░] 50%
+Progress: [██████░░░░] 57%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
-- Average duration: 3.6 min
-- Total execution time: 0.4 hours
+- Total plans completed: 8
+- Average duration: 4.0 min
+- Total execution time: 0.5 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 4 | 16min | 4.0min |
-| 2 | 3 | 10min | 3.3min |
+| 2 | 4 | 18min | 4.5min |
 
 **Recent Trend:**
-- Last 5 plans: 4min, 3min, 4min, 3min
-- Trend: Consistent (3-4 min per plan)
+- Last 5 plans: 3min, 4min, 3min, 8min
+- Trend: Slight increase (UI components take longer than services)
 
 *Updated after each plan completion*
 
@@ -74,6 +74,10 @@ Recent decisions affecting current work:
 - Streaming file upload over memory buffering (prevents OOM on large images) [02-03]
 - Replace-all pattern for ingredient updates (simpler than change tracking) [02-03]
 - StartsWith for autocomplete queries (leverages index vs Contains) [02-03]
+- blazor-dragdrop over custom JavaScript (mature package with mobile support) [02-04]
+- Keyword-based category suggestion over ML (good enough for MVP) [02-04]
+- 5 second undo window (standard pattern, not too short or too long) [02-04]
+- Real-time bulk paste parsing (immediate feedback vs parse on import) [02-04]
 
 ### Pending Todos
 
@@ -92,11 +96,11 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-01-24T01:21:52Z
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-01-24T01:26:46Z
+Stopped at: Completed 02-04-PLAN.md
 Resume file: None
-Next command: Continue with 02-04-PLAN.md or next phase plan
+Next command: Continue with 02-05-PLAN.md or next phase plan
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-01-24T01:21:52Z*
+*Last updated: 2026-01-24T01:26:46Z*
