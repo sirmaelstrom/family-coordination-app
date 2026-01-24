@@ -1,0 +1,105 @@
+<div class="meal-plan-navigation">
+    <div class="navigation-header">
+        <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft"
+                      Color="Color.Primary"
+                      OnClick="PreviousWeek"
+                      Size="Size.Medium" />
+
+        <div class="navigation-center">
+            <MudText Typo="Typo.h5" Align="Align.Center">
+                @GetWeekRangeDisplay()
+            </MudText>
+            @if (IsCurrentWeek())
+            {
+                <div class="mt-1">
+                    <MudChip T="string" Size="Size.Small" Color="Color.Primary">This Week</MudChip>
+                </div>
+            }
+        </div>
+
+        <MudIconButton Icon="@Icons.Material.Filled.ChevronRight"
+                      Color="Color.Primary"
+                      OnClick="NextWeek"
+                      Size="Size.Medium" />
+    </div>
+
+    <div class="navigation-actions">
+        <MudButton StartIcon="@Icons.Material.Filled.Today"
+                  Variant="Variant.Text"
+                  Color="Color.Primary"
+                  OnClick="GoToToday"
+                  Disabled="@IsCurrentWeek()">
+            Jump to Today
+        </MudButton>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public DateOnly WeekStartDate { get; set; }
+
+    [Parameter]
+    public EventCallback<DateOnly> WeekStartDateChanged { get; set; }
+
+    private async Task PreviousWeek()
+    {
+        await WeekStartDateChanged.InvokeAsync(WeekStartDate.AddDays(-7));
+    }
+
+    private async Task NextWeek()
+    {
+        await WeekStartDateChanged.InvokeAsync(WeekStartDate.AddDays(7));
+    }
+
+    private async Task GoToToday()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        var weekStart = GetWeekStart(today);
+        await WeekStartDateChanged.InvokeAsync(weekStart);
+    }
+
+    private bool IsCurrentWeek()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        var currentWeekStart = GetWeekStart(today);
+        return WeekStartDate == currentWeekStart;
+    }
+
+    private DateOnly GetWeekStart(DateOnly date)
+    {
+        var diff = (7 + (date.DayOfWeek - DayOfWeek.Monday)) % 7;
+        return date.AddDays(-diff);
+    }
+
+    private string GetWeekRangeDisplay()
+    {
+        var weekEnd = WeekStartDate.AddDays(6);
+        var startStr = WeekStartDate.ToString("MMM d");
+        var endStr = weekEnd.ToString("MMM d, yyyy");
+        return $"{startStr} - {endStr}";
+    }
+}
+
+<style>
+    .meal-plan-navigation {
+        margin-bottom: 24px;
+    }
+
+    .navigation-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+    }
+
+    .navigation-center {
+        flex: 1;
+        text-align: center;
+    }
+
+    .navigation-actions {
+        display: flex;
+        justify-content: center;
+        margin-top: 12px;
+    }
+</style>
