@@ -37,6 +37,12 @@ public class RecipeConfiguration : IEntityTypeConfiguration<Recipe>
             .IsRequired()
             .HasDefaultValue(false);
 
+        // Query filter for soft delete
+        builder.HasQueryFilter(r => !r.IsDeleted);
+
+        // Indexes
+        builder.HasIndex(r => new { r.HouseholdId, r.Name });
+
         // Relationships
         builder.HasOne(r => r.Household)
             .WithMany(h => h.Recipes)
