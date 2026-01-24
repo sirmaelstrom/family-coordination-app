@@ -22,6 +22,7 @@ builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
 
 // Services
 builder.Services.AddScoped<SetupService>();
+builder.Services.AddScoped<IIngredientParser, IngredientParser>();
 
 // Authentication
 builder.Services.AddAuthentication(options =>
