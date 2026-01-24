@@ -1,0 +1,195 @@
+@using FamilyCoordinationApp.Services
+@using FamilyCoordinationApp.Data.Entities
+
+@inject IngredientParser Parser
+@inject ICategoryService CategoryService
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body1" Class="mb-3">
+            Paste multiple ingredients (one per line). Each line will be parsed into structured fields.
+        </MudText>
+
+        <MudTextField @bind-Value="_pastedText"
+                      Label="Paste ingredients here"
+                      Variant="Variant.Outlined"
+                      Lines="10"
+                      Immediate="true"
+                      FullWidth="true"
+                      Class="mb-4" />
+
+        @if (_parsedIngredients.Any())
+        {
+            <MudText Typo="Typo.subtitle2" Class="mb-2">
+                Parsed Ingredients (@_parsedIngredients.Count)
+            </MudText>
+
+            <MudPaper Elevation="0" Class="pa-3" Style="max-height: 400px; overflow-y: auto; background-color: var(--mud-palette-background-grey);">
+                @foreach (var (line, parsed, index) in _parsedIngredients.Select((x, i) => (x.Line, x.Parsed, i)))
+                {
+                    <MudPaper Class="pa-2 mb-2" Elevation="1">
+                        <MudGrid>
+                            <MudItem xs="12" Class="d-flex justify-space-between align-center">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    Original: @line
+                                </MudText>
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Size="Size.Small"
+                                               Color="Color.Error"
+                                               OnClick="() => RemoveParsedIngredient(index)" />
+                            </MudItem>
+                            <MudItem xs="3">
+                                <MudText Typo="Typo.body2">
+                                    <strong>Qty:</strong> @(parsed.Quantity?.ToString() ?? "—")
+                                </MudText>
+                            </MudItem>
+                            <MudItem xs="3">
+                                <MudText Typo="Typo.body2">
+                                    <strong>Unit:</strong> @(parsed.Unit ?? "—")
+                                </MudText>
+                            </MudItem>
+                            <MudItem xs="6">
+                                <MudText Typo="Typo.body2">
+                                    <strong>Name:</strong> @parsed.Name
+                                </MudText>
+                            </MudItem>
+                            @if (!string.IsNullOrWhiteSpace(parsed.Notes))
+                            {
+                                <MudItem xs="12">
+                                    <MudText Typo="Typo.caption">
+                                        <strong>Notes:</strong> @parsed.Notes
+                                    </MudText>
+                                </MudItem>
+                            }
+                            @if (!parsed.IsComplete)
+                            {
+                                <MudItem xs="12">
+                                    <MudAlert Severity="Severity.Warning" Dense="true">
+                                        Incomplete parse - review and edit after import
+                                    </MudAlert>
+                                </MudItem>
+                            }
+                        </MudGrid>
+                    </MudPaper>
+                }
+            </MudPaper>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   OnClick="ImportIngredients"
+                   Disabled="!_parsedIngredients.Any()">
+            Import @_parsedIngredients.Count Ingredient@(_parsedIngredients.Count != 1 ? "s" : "")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] public IDialogReference? MudDialog { get; set; }
+    [Parameter] public int HouseholdId { get; set; }
+
+    private string _pastedText = string.Empty;
+    private List<(string Line, ParsedIngredient Parsed)> _parsedIngredients = new();
+    private List<Category> _categories = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _categories = (await CategoryService.GetCategoriesAsync(HouseholdId)).ToList();
+    }
+
+    protected override void OnParametersSet()
+    {
+        // Watch for changes to pasted text
+        if (!string.IsNullOrWhiteSpace(_pastedText))
+        {
+            ParsePastedText();
+        }
+        else
+        {
+            _parsedIngredients.Clear();
+        }
+    }
+
+    private void ParsePastedText()
+    {
+        var lines = _pastedText
+            .Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.Trim())
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .ToList();
+
+        _parsedIngredients = lines
+            .Select(line => (Line: line, Parsed: Parser.ParseIngredient(line)))
+            .ToList();
+    }
+
+    private void RemoveParsedIngredient(int index)
+    {
+        if (index >= 0 && index < _parsedIngredients.Count)
+        {
+            _parsedIngredients.RemoveAt(index);
+        }
+    }
+
+    private void Cancel()
+    {
+        MudDialog?.Close();
+    }
+
+    private void ImportIngredients()
+    {
+        var ingredients = _parsedIngredients.Select((item, index) => new RecipeIngredient
+        {
+            Name = item.Parsed.Name,
+            Quantity = item.Parsed.Quantity,
+            Unit = item.Parsed.Unit,
+            Category = SuggestCategory(item.Parsed.Name),
+            Notes = item.Parsed.Notes,
+            SortOrder = index
+        }).ToList();
+
+        MudDialog?.Close(DialogResult.Ok(ingredients));
+    }
+
+    private string SuggestCategory(string ingredientName)
+    {
+        var lower = ingredientName.ToLowerInvariant();
+
+        if (lower.Contains("chicken") || lower.Contains("beef") || lower.Contains("pork") ||
+            lower.Contains("fish") || lower.Contains("salmon") || lower.Contains("shrimp") ||
+            lower.Contains("bacon") || lower.Contains("sausage") || lower.Contains("turkey"))
+            return FindCategory("Meat");
+
+        if (lower.Contains("milk") || lower.Contains("cheese") || lower.Contains("cream") ||
+            lower.Contains("butter") || lower.Contains("yogurt") || lower.Contains("egg"))
+            return FindCategory("Dairy");
+
+        if (lower.Contains("lettuce") || lower.Contains("tomato") || lower.Contains("onion") ||
+            lower.Contains("garlic") || lower.Contains("pepper") || lower.Contains("carrot") ||
+            lower.Contains("celery") || lower.Contains("potato") || lower.Contains("broccoli") ||
+            lower.Contains("spinach") || lower.Contains("cucumber") || lower.Contains("avocado"))
+            return FindCategory("Produce");
+
+        if (lower.Contains("salt") || lower.Contains("pepper") || lower.Contains("cumin") ||
+            lower.Contains("paprika") || lower.Contains("oregano") || lower.Contains("basil") ||
+            lower.Contains("thyme") || lower.Contains("rosemary") || lower.Contains("cinnamon"))
+            return FindCategory("Spices");
+
+        if (lower.Contains("bread") || lower.Contains("bun") || lower.Contains("roll") ||
+            lower.Contains("tortilla") || lower.Contains("bagel"))
+            return FindCategory("Bakery");
+
+        if (lower.Contains("frozen"))
+            return FindCategory("Frozen");
+
+        return FindCategory("Pantry");
+    }
+
+    private string FindCategory(string name)
+    {
+        var category = _categories.FirstOrDefault(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        return category?.Name ?? (_categories.Any() ? _categories.First().Name : "Pantry");
+    }
+}

@@ -6,6 +6,11 @@ public class ParsedIngredient
     public string? Unit { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// Returns true if the ingredient name is not empty. A complete parse includes at minimum a name.
+    /// </summary>
+    public bool IsComplete => !string.IsNullOrWhiteSpace(Name);
 }
 
 public interface IIngredientParser
