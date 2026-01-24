@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-01-22)
 ## Current Position
 
 Phase: 4 of 7 (Shopping List Core)
-Plan: 2 of 6 (in progress)
+Plan: 1 of 6 (complete)
 Status: In progress
-Last activity: 2026-01-24 — Completed 04-02-PLAN.md execution
+Last activity: 2026-01-24 — Completed 04-01-PLAN.md execution
 
-Progress: [█████████████░] 46% (3.33 of 7 phases)
+Progress: [█████████████░] 46% (3.17 of 7 phases)
 
 ## Performance Metrics
 
@@ -30,11 +30,11 @@ Progress: [█████████████░] 46% (3.33 of 7 phases)
 | 1 | 4 | 16min | 4.0min |
 | 2 | 7 | 32min | 4.6min |
 | 3 | 4 | 90min | 22.5min |
-| 4 | 1 | 3min | 3.0min |
+| 4 | 1 | 4min | 4.0min |
 
 **Recent Trend:**
-- Last 5 plans: 3min, 4min, 6min, 81min, 3min
-- Trend: Service-only plans remain fast (3-4min), integration with verification slower
+- Last 5 plans: 4min, 6min, 81min, 3min, 4min
+- Trend: TDD plans comparable to regular service plans (~4min average)
 
 *Updated after each plan completion*
 
@@ -109,15 +109,14 @@ Recent decisions affecting current work:
 - Context-aware HandleClick in MealSlot (empty→picker, filled→details) [03-04]
 - Edit button for changing meal assignments with hover visibility [03-04]
 - @context pattern in Dropzone to prevent ingredient duplication [03-04]
-- StartsWith + Contains fallback for autocomplete (StartsWith primary, Contains if < limit results) [04-02]
-- Autocomplete searches ALL lists including archived (full household history) [04-02]
-- Frequency-based autocomplete ordering (purchase count descending) [04-02]
-- Automatic timestamp management in toggle operations (CheckedAt set/cleared on IsChecked change) [04-02]
-- Operation feedback pattern: return affected count from bulk operations [04-02]
+- Lookup table for unit conversions over UnitsNet library (cooking has ~15 units, table is 50 lines) [04-01]
+- Decimal rounding to 10 places after conversion (avoids floating-point precision errors) [04-01]
+- Base unit conversion approach (linear scaling: N units = N table entries, not N²) [04-01]
+- Count units (piece, can, bunch) don't convert to other families (incompatible measurement types) [04-01]
 
 ### Pending Todos
 
-None - Phase 4 in progress (plan 2 of 6 complete).
+None - Phase 4 in progress (plan 1 of 6 complete).
 
 ### Blockers/Concerns
 
@@ -127,11 +126,11 @@ None - Phase 4 in progress (plan 2 of 6 complete).
 
 ## Session Continuity
 
-Last session: 2026-01-24T08:15:44Z
-Stopped at: Completed 04-02-PLAN.md execution
+Last session: 2026-01-24T08:16:24Z
+Stopped at: Completed 04-01-PLAN.md execution
 Resume file: None
-Next command: Execute 04-03-PLAN.md (ShoppingListGenerator with consolidation logic)
+Next command: Execute 04-02-PLAN.md (ShoppingListService for CRUD operations)
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-01-24T08:15:44Z*
+*Last updated: 2026-01-24T08:16:24Z*
