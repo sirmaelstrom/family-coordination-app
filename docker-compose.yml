@@ -63,5 +63,20 @@ networks:
 
 volumes:
   postgres-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/postgres
   app-uploads:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/uploads
   app-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/logs
