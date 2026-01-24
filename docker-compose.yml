@@ -33,8 +33,10 @@ services:
       Authentication__Google__ClientSecret: ${GOOGLE_CLIENT_SECRET}
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
     volumes:
+      # Data protection keys persist (prevents logout on restart)
+      - ${APP_DATAPROTECTION_PATH:-app-dataprotection}:/root/.aspnet/DataProtection-Keys
       # Uploads and logs persist to ZFS
-      - ${APP_UPLOADS_PATH:-app-uploads}:/app/uploads
+      - ${APP_UPLOADS_PATH:-app-uploads}:/app/wwwroot/uploads
       - ${APP_LOGS_PATH:-app-logs}:/app/logs
     restart: unless-stopped
     networks:
@@ -68,6 +70,12 @@ volumes:
       type: none
       o: bind
       device: ./data/postgres
+  app-dataprotection:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/dataprotection
   app-uploads:
     driver: local
     driver_opts:
