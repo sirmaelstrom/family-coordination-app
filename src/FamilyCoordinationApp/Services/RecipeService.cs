@@ -27,6 +27,7 @@ public class RecipeService(
         var query = context.Recipes
             .Where(r => r.HouseholdId == householdId)
             .Include(r => r.Ingredients.OrderBy(i => i.SortOrder))
+            .Include(r => r.CreatedBy)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(searchTerm))
@@ -100,6 +101,7 @@ public class RecipeService(
         existing.PrepTimeMinutes = recipe.PrepTimeMinutes;
         existing.CookTimeMinutes = recipe.CookTimeMinutes;
         existing.UpdatedAt = DateTime.UtcNow;
+        existing.UpdatedByUserId = recipe.UpdatedByUserId;
 
         // Replace ingredients (simpler than tracking changes)
         context.RecipeIngredients.RemoveRange(existing.Ingredients);
