@@ -72,10 +72,13 @@ Plans:
   4. User can add custom meal without recipe (e.g., "Leftovers", "Eating out")
   5. User can remove meal from plan
   6. User can click meal in plan to view full recipe details
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] (Plans defined during plan-phase)
+- [ ] 03-01-PLAN.md — MealPlanService with get-or-create and CRUD operations
+- [ ] 03-02-PLAN.md — MealSlot and MealPlanNavigation shared components
+- [ ] 03-03-PLAN.md — RecipePickerDialog and calendar/list view components
+- [ ] 03-04-PLAN.md — MealPlan page with responsive views and navigation link
 
 ### Phase 4: Shopping List Core
 **Goal**: Users can generate shopping list from meal plan with automatic ingredient consolidation
@@ -149,7 +152,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 |-------|----------------|--------|-----------|
 | 1. Foundation & Infrastructure | 4/4 | Complete | 2026-01-23 |
 | 2. Recipe Management | 7/7 | Complete | 2026-01-24 |
-| 3. Meal Planning | 0/? | Ready to plan | - |
+| 3. Meal Planning | 0/4 | Ready to execute | - |
 | 4. Shopping List Core | 0/? | Not started | - |
 | 5. Multi-User Collaboration | 0/? | Not started | - |
 | 6. Recipe Import | 0/? | Not started | - |
