@@ -29,6 +29,10 @@
                     </MudText>
                 }
             </div>
+            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                          Size="Size.Small"
+                          Class="slot-edit"
+                          OnClick="HandleEditClick" />
             <MudIconButton Icon="@Icons.Material.Filled.Close"
                           Size="Size.Small"
                           Class="slot-remove"
@@ -48,6 +52,10 @@
                     @Entry.Notes
                 </MudText>
             }
+            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                          Size="Size.Small"
+                          Class="slot-edit"
+                          OnClick="HandleEditClick" />
             <MudIconButton Icon="@Icons.Material.Filled.Close"
                           Size="Size.Small"
                           Class="slot-remove"
@@ -73,6 +81,9 @@
     public EventCallback OnRemove { get; set; }
 
     [Parameter]
+    public EventCallback OnEdit { get; set; }
+
+    [Parameter]
     public EventCallback OnViewRecipe { get; set; }
 
     private async Task HandleClick()
@@ -92,6 +103,11 @@
     private async Task HandleRemoveClick()
     {
         await OnRemove.InvokeAsync();
+    }
+
+    private async Task HandleEditClick()
+    {
+        await OnEdit.InvokeAsync();
     }
 
     private string GetSlotClass()
@@ -161,6 +177,14 @@
         font-size: 0.75rem;
     }
 
+    .slot-edit {
+        position: absolute;
+        top: 4px;
+        right: 36px;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+    }
+
     .slot-remove {
         position: absolute;
         top: 4px;
@@ -169,6 +193,7 @@
         transition: opacity 0.2s ease;
     }
 
+    .meal-slot:hover .slot-edit,
     .meal-slot:hover .slot-remove {
         opacity: 1;
     }
