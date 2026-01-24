@@ -16,7 +16,8 @@
                       Lines="10"
                       Immediate="true"
                       FullWidth="true"
-                      Class="mb-4" />
+                      Class="mb-4"
+                      @oninput="@(async () => await InvokeAsync(ParsePastedText))" />
 
         @if (_parsedIngredients.Any())
         {
@@ -97,19 +98,6 @@
     protected override async Task OnInitializedAsync()
     {
         _categories = (await CategoryService.GetCategoriesAsync(HouseholdId)).ToList();
-    }
-
-    protected override void OnParametersSet()
-    {
-        // Watch for changes to pasted text
-        if (!string.IsNullOrWhiteSpace(_pastedText))
-        {
-            ParsePastedText();
-        }
-        else
-        {
-            _parsedIngredients.Clear();
-        }
     }
 
     private void ParsePastedText()
