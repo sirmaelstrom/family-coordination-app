@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 
@@ -11,6 +12,7 @@ public interface IShoppingListService
     Task<List<ShoppingList>> GetActiveShoppingListsAsync(int householdId, CancellationToken ct = default);
     Task<ShoppingListItem> AddManualItemAsync(ShoppingListItem item, CancellationToken ct = default);
     Task UpdateItemAsync(ShoppingListItem item, CancellationToken ct = default);
+    Task<(bool Success, bool WasConflict, string? ConflictMessage)> UpdateItemWithConcurrencyAsync(ShoppingListItem item, CancellationToken ct = default);
     Task DeleteItemAsync(int householdId, int shoppingListId, int itemId, CancellationToken ct = default);
     Task<ShoppingListItem> ToggleItemCheckedAsync(int householdId, int shoppingListId, int itemId, CancellationToken ct = default);
     Task<List<string>> GetItemNameSuggestionsAsync(int householdId, string prefix, int limit = 10, CancellationToken ct = default);
@@ -123,6 +125,102 @@ public class ShoppingListService(
 
         logger.LogInformation("Updated item {ItemId} in ShoppingList {ShoppingListId} for household {HouseholdId}",
             item.ItemId, item.ShoppingListId, item.HouseholdId);
+    }
+
+    /// <summary>
+    /// Updates a shopping list item with optimistic concurrency handling.
+    /// Uses "checked wins" strategy: if either user checked the item, it stays checked.
+    /// </summary>
+    /// <returns>True if update succeeded, false if item was deleted by another user</returns>
+    public async Task<(bool Success, bool WasConflict, string? ConflictMessage)> UpdateItemWithConcurrencyAsync(ShoppingListItem item, CancellationToken ct = default)
+    {
+        const int maxRetries = 3;
+        var retries = 0;
+        var wasConflict = false;
+        string? conflictMessage = null;
+
+        while (retries < maxRetries)
+        {
+            try
+            {
+                await using var context = await dbFactory.CreateDbContextAsync(ct);
+
+                // Attach the item to this context
+                context.ShoppingListItems.Attach(item);
+                context.Entry(item).State = EntityState.Modified;
+
+                // Set tracking fields
+                item.UpdatedAt = DateTime.UtcNow;
+
+                await context.SaveChangesAsync(ct);
+
+                logger.LogInformation("Updated item {ItemId} in ShoppingList {ShoppingListId} for household {HouseholdId} (conflict: {WasConflict})",
+                    item.ItemId, item.ShoppingListId, item.HouseholdId, wasConflict);
+
+                return (true, wasConflict, conflictMessage);
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                retries++;
+                wasConflict = true;
+
+                foreach (var entry in ex.Entries)
+                {
+                    if (entry.Entity is ShoppingListItem)
+                    {
+                        var databaseValues = await entry.GetDatabaseValuesAsync(ct);
+
+                        if (databaseValues == null)
+                        {
+                            // Item was deleted by another user
+                            logger.LogWarning("Item {ItemId} was deleted by another user during update", item.ItemId);
+                            return (false, true, "This item was deleted by another family member");
+                        }
+
+                        var proposedChecked = (bool)(entry.CurrentValues[nameof(ShoppingListItem.IsChecked)] ?? false);
+                        var databaseChecked = (bool)(databaseValues[nameof(ShoppingListItem.IsChecked)] ?? false);
+
+                        // "Checked wins" - if either user checked it, keep it checked
+                        if (proposedChecked || databaseChecked)
+                        {
+                            entry.CurrentValues[nameof(ShoppingListItem.IsChecked)] = true;
+                            entry.CurrentValues[nameof(ShoppingListItem.CheckedAt)] =
+                                entry.CurrentValues[nameof(ShoppingListItem.CheckedAt)] ??
+                                databaseValues[nameof(ShoppingListItem.CheckedAt)] ??
+                                DateTime.UtcNow;
+                        }
+
+                        // For quantity/name changes, check if there's a true conflict
+                        var proposedName = (string?)entry.CurrentValues[nameof(ShoppingListItem.Name)] ?? string.Empty;
+                        var databaseName = (string?)databaseValues[nameof(ShoppingListItem.Name)] ?? string.Empty;
+                        var proposedQty = entry.CurrentValues[nameof(ShoppingListItem.Quantity)] as decimal?;
+                        var databaseQty = databaseValues[nameof(ShoppingListItem.Quantity)] as decimal?;
+
+                        if (proposedName != databaseName || proposedQty != databaseQty)
+                        {
+                            // For now, use last-write-wins for non-checkbox fields
+                            // but record that there was a conflict
+                            conflictMessage = "Another family member also edited this item";
+
+                            logger.LogInformation("Concurrent edit detected on item {ItemId}: Name({ProposedName} vs {DatabaseName}), Qty({ProposedQty} vs {DatabaseQty})",
+                                item.ItemId, proposedName, databaseName, proposedQty, databaseQty);
+                        }
+
+                        // Refresh original values to allow retry
+                        entry.OriginalValues.SetValues(databaseValues);
+                    }
+                }
+
+                if (retries >= maxRetries)
+                {
+                    logger.LogError("Failed to update item {ItemId} after {MaxRetries} retries due to concurrency conflicts",
+                        item.ItemId, maxRetries);
+                    return (false, true, "Could not save changes after multiple attempts");
+                }
+            }
+        }
+
+        return (true, wasConflict, conflictMessage);
     }
 
     public async Task DeleteItemAsync(int householdId, int shoppingListId, int itemId, CancellationToken ct = default)
