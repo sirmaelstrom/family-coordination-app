@@ -1,0 +1,147 @@
+@using FamilyCoordinationApp.Data.Entities
+@using FamilyCoordinationApp.Services
+
+@inject IShoppingListService ShoppingListService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudAutocomplete T="string"
+                         @bind-Value="_itemName"
+                         Label="Item name"
+                         SearchFunc="SearchItemHistory"
+                         DebounceInterval="300"
+                         MinCharacters="2"
+                         Variant="Variant.Outlined"
+                         FullWidth="true"
+                         AutoFocus="true"
+                         Required="true" />
+
+        <MudGrid Class="mt-2">
+            <MudItem xs="6">
+                <MudNumericField @bind-Value="_quantity"
+                                 Label="Quantity (optional)"
+                                 Variant="Variant.Outlined"
+                                 Min="0m" />
+            </MudItem>
+            <MudItem xs="6">
+                <MudAutocomplete T="string"
+                                 @bind-Value="_unit"
+                                 Label="Unit"
+                                 SearchFunc="SearchUnits"
+                                 Variant="Variant.Outlined"
+                                 CoerceText="false" />
+            </MudItem>
+        </MudGrid>
+
+        <MudSelect T="string"
+                   @bind-Value="_category"
+                   Label="Category"
+                   Variant="Variant.Outlined"
+                   Class="mt-2">
+            @foreach (var cat in Categories)
+            {
+                <MudSelectItem Value="@cat">@cat</MudSelectItem>
+            }
+        </MudSelect>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   OnClick="Submit"
+                   Disabled="@(string.IsNullOrWhiteSpace(_itemName) || _isSubmitting)">
+            @if (_isSubmitting)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+            }
+            else
+            {
+                <span>Add</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int HouseholdId { get; set; }
+    [Parameter] public int ShoppingListId { get; set; }
+
+    private string _itemName = string.Empty;
+    private decimal? _quantity;
+    private string? _unit;
+    private string _category = "Pantry";
+    private bool _isSubmitting = false;
+
+    private static readonly string[] Categories =
+        { "Meat", "Produce", "Dairy", "Pantry", "Spices", "Bakery", "Frozen" };
+
+    private static readonly string[] CommonUnits =
+        { "cup", "tbsp", "tsp", "oz", "lb", "g", "kg", "piece", "can", "bunch" };
+
+    private async Task<IEnumerable<string>> SearchItemHistory(string value, CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length < 2)
+            return Enumerable.Empty<string>();
+
+        try
+        {
+            return await ShoppingListService.GetItemNameSuggestionsAsync(HouseholdId, value, 10, token);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading suggestions: {ex.Message}", Severity.Error);
+            return Enumerable.Empty<string>();
+        }
+    }
+
+    private Task<IEnumerable<string>> SearchUnits(string value, CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return Task.FromResult(CommonUnits.AsEnumerable());
+
+        return Task.FromResult(CommonUnits.Where(u =>
+            u.StartsWith(value, StringComparison.OrdinalIgnoreCase)).AsEnumerable());
+    }
+
+    private async Task Submit()
+    {
+        if (string.IsNullOrWhiteSpace(_itemName))
+        {
+            Snackbar.Add("Item name is required", Severity.Warning);
+            return;
+        }
+
+        _isSubmitting = true;
+
+        try
+        {
+            var item = new ShoppingListItem
+            {
+                HouseholdId = HouseholdId,
+                ShoppingListId = ShoppingListId,
+                Name = _itemName.Trim(),
+                Quantity = _quantity,
+                Unit = string.IsNullOrWhiteSpace(_unit) ? null : _unit.Trim(),
+                Category = _category,
+                IsManuallyAdded = true,
+                AddedAt = DateTime.UtcNow,
+                IsChecked = false
+            };
+
+            var addedItem = await ShoppingListService.AddManualItemAsync(item);
+            MudDialog.Close(DialogResult.Ok(addedItem));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error adding item: {ex.Message}", Severity.Error);
+            _isSubmitting = false;
+        }
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+}
