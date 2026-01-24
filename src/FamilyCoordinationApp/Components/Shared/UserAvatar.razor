@@ -1,0 +1,96 @@
+@using FamilyCoordinationApp.Data.Entities
+@using FamilyCoordinationApp.Services
+
+<div class="user-avatar-container @SizeClass">
+    @if (!string.IsNullOrEmpty(PictureUrl))
+    {
+        <MudAvatar Size="@Size" Class="user-avatar-img">
+            <img src="@PictureUrl" alt="@DisplayName" referrerpolicy="no-referrer" />
+        </MudAvatar>
+    }
+    else if (!string.IsNullOrEmpty(Initials))
+    {
+        <MudAvatar Color="@AvatarColor" Size="@Size">
+            @Initials
+        </MudAvatar>
+    }
+    else
+    {
+        <MudAvatar Color="Color.Default" Size="@Size">
+            <MudIcon Icon="@Icons.Material.Filled.Person" />
+        </MudAvatar>
+    }
+
+    @if (ShowPresence)
+    {
+        <PresenceBadge Status="@PresenceStatus" />
+    }
+</div>
+
+@code {
+    /// <summary>
+    /// User to display avatar for. If provided, extracts PictureUrl, Initials, and DisplayName.
+    /// </summary>
+    [Parameter]
+    public User? User { get; set; }
+
+    /// <summary>
+    /// Direct picture URL (used if User not provided)
+    /// </summary>
+    [Parameter]
+    public string? PictureUrl { get; set; }
+
+    /// <summary>
+    /// Direct initials (used if User not provided and no PictureUrl)
+    /// </summary>
+    [Parameter]
+    public string? Initials { get; set; }
+
+    /// <summary>
+    /// Display name for alt text
+    /// </summary>
+    [Parameter]
+    public string? DisplayName { get; set; }
+
+    /// <summary>
+    /// Size of the avatar
+    /// </summary>
+    [Parameter]
+    public Size Size { get; set; } = Size.Medium;
+
+    /// <summary>
+    /// Whether to show presence indicator
+    /// </summary>
+    [Parameter]
+    public bool ShowPresence { get; set; }
+
+    /// <summary>
+    /// Presence status (only used if ShowPresence is true)
+    /// </summary>
+    [Parameter]
+    public PresenceStatus PresenceStatus { get; set; } = PresenceStatus.Offline;
+
+    /// <summary>
+    /// Color for initials avatar
+    /// </summary>
+    [Parameter]
+    public Color AvatarColor { get; set; } = Color.Primary;
+
+    private string SizeClass => Size switch
+    {
+        Size.Small => "avatar-small",
+        Size.Large => "avatar-large",
+        _ => "avatar-medium"
+    };
+
+    protected override void OnParametersSet()
+    {
+        // If User is provided, extract properties
+        if (User != null)
+        {
+            PictureUrl ??= User.PictureUrl;
+            Initials ??= User.Initials;
+            DisplayName ??= User.DisplayName;
+        }
+    }
+}
