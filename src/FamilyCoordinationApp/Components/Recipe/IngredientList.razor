@@ -1,0 +1,196 @@
+@using FamilyCoordinationApp.Data.Entities
+
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.subtitle1" Class="mb-2">
+    Ingredients (@Ingredients.Count)
+</MudText>
+
+@if (Ingredients.Count == 0)
+{
+    <MudAlert Severity="Severity.Info" Class="mb-4">
+        No ingredients yet. Use the form above to add ingredients.
+    </MudAlert>
+}
+else
+{
+    <Plk.Blazor.DragDrop.Dropzone Items="Ingredients"
+                                  InstantReplace="true"
+                                  TItem="RecipeIngredient"
+                                  Class="ingredient-dropzone">
+        @foreach (var ingredient in Ingredients)
+        {
+            <MudPaper Class="pa-3 mb-2 d-flex align-center justify-space-between ingredient-item"
+                      Elevation="1"
+                      Style="cursor: grab;">
+                <div class="d-flex align-center">
+                    <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
+                             Class="mr-2"
+                             Color="Color.Default"
+                             Size="Size.Small" />
+                    <div>
+                        <MudText Typo="Typo.body1">
+                            @FormatIngredient(ingredient)
+                        </MudText>
+                        @if (!string.IsNullOrWhiteSpace(ingredient.Notes))
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                @ingredient.Notes
+                            </MudText>
+                        }
+                    </div>
+                </div>
+                <div class="d-flex align-center">
+                    <MudChip T="string" Size="Size.Small" Color="@GetCategoryColor(ingredient.Category)">
+                        @ingredient.Category
+                    </MudChip>
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                   Size="Size.Small"
+                                   OnClick="() => EditIngredient(ingredient)"
+                                   Class="ml-2" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                   Size="Size.Small"
+                                   Color="Color.Error"
+                                   OnClick="() => DeleteIngredient(ingredient)" />
+                </div>
+            </MudPaper>
+        }
+    </Plk.Blazor.DragDrop.Dropzone>
+}
+
+<style>
+    .ingredient-dropzone {
+        min-height: 100px;
+    }
+    .ingredient-item:hover {
+        background-color: var(--mud-palette-action-default-hover);
+    }
+</style>
+
+@code {
+    [Parameter] public List<RecipeIngredient> Ingredients { get; set; } = new();
+    [Parameter] public EventCallback<List<RecipeIngredient>> IngredientsChanged { get; set; }
+    [Parameter] public EventCallback<RecipeIngredient> OnEditIngredient { get; set; }
+
+    private RecipeIngredient? _deletedIngredient;
+    private int _deletedIndex;
+
+    private string FormatIngredient(RecipeIngredient ing)
+    {
+        var parts = new List<string>();
+
+        if (ing.Quantity.HasValue)
+        {
+            // Display as fraction if applicable
+            var qty = ing.Quantity.Value;
+            parts.Add(FormatQuantity(qty));
+        }
+
+        if (!string.IsNullOrWhiteSpace(ing.Unit))
+        {
+            parts.Add(ing.Unit);
+        }
+
+        parts.Add(ing.Name);
+
+        return string.Join(" ", parts);
+    }
+
+    private static string FormatQuantity(decimal qty)
+    {
+        // Common fractions
+        if (qty == 0.25m) return "1/4";
+        if (qty == 0.5m) return "1/2";
+        if (qty == 0.75m) return "3/4";
+        if (qty == 0.33m || qty == (1m/3m)) return "1/3";
+        if (qty == 0.67m || qty == (2m/3m)) return "2/3";
+
+        // Mixed fractions
+        var whole = Math.Truncate(qty);
+        var frac = qty - whole;
+
+        if (frac == 0) return whole.ToString("0.##");
+
+        if (whole > 0)
+        {
+            if (frac == 0.25m) return $"{whole:0} 1/4";
+            if (frac == 0.5m) return $"{whole:0} 1/2";
+            if (frac == 0.75m) return $"{whole:0} 3/4";
+            if (frac == 0.33m || Math.Abs(frac - (1m/3m)) < 0.01m) return $"{whole:0} 1/3";
+            if (frac == 0.67m || Math.Abs(frac - (2m/3m)) < 0.01m) return $"{whole:0} 2/3";
+        }
+
+        // Decimal fallback
+        return qty.ToString("0.##");
+    }
+
+    private Color GetCategoryColor(string category)
+    {
+        return category switch
+        {
+            "Meat" => Color.Error,
+            "Produce" => Color.Success,
+            "Dairy" => Color.Warning,
+            "Pantry" => Color.Default,
+            "Spices" => Color.Secondary,
+            "Frozen" => Color.Info,
+            "Bakery" => Color.Tertiary,
+            "Beverages" => Color.Primary,
+            _ => Color.Default
+        };
+    }
+
+    private async Task EditIngredient(RecipeIngredient ingredient)
+    {
+        await OnEditIngredient.InvokeAsync(ingredient);
+    }
+
+    private async Task DeleteIngredient(RecipeIngredient ingredient)
+    {
+        _deletedIngredient = ingredient;
+        _deletedIndex = Ingredients.IndexOf(ingredient);
+
+        Ingredients.Remove(ingredient);
+        UpdateSortOrder();
+        await IngredientsChanged.InvokeAsync(Ingredients);
+
+        Snackbar.Add("Ingredient deleted", Severity.Normal, config =>
+        {
+            config.Action = "Undo";
+            config.ActionColor = Color.Primary;
+            config.OnClick = async _ => await UndoDelete();
+            config.VisibleStateDuration = 5000;
+        });
+    }
+
+    private async Task UndoDelete()
+    {
+        if (_deletedIngredient != null)
+        {
+            // Insert back at original position
+            if (_deletedIndex >= 0 && _deletedIndex <= Ingredients.Count)
+            {
+                Ingredients.Insert(_deletedIndex, _deletedIngredient);
+            }
+            else
+            {
+                Ingredients.Add(_deletedIngredient);
+            }
+
+            UpdateSortOrder();
+            await IngredientsChanged.InvokeAsync(Ingredients);
+
+            Snackbar.Add("Ingredient restored", Severity.Success);
+
+            _deletedIngredient = null;
+        }
+    }
+
+    private void UpdateSortOrder()
+    {
+        for (int i = 0; i < Ingredients.Count; i++)
+        {
+            Ingredients[i].SortOrder = i;
+        }
+    }
+}
