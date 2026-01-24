@@ -93,10 +93,15 @@ Plans:
   6. User can check off items while shopping and unchecked items stay at top, checked items grayed at bottom
   7. User can uncheck items if wrong item picked up
   8. User can delete items from shopping list
-**Plans**: TBD
+**Plans**: 6 plans
 
 Plans:
-- [ ] (Plans defined during plan-phase)
+- [ ] 04-01-PLAN.md — UnitConverter service (TDD) for cooking measurement conversions
+- [ ] 04-02-PLAN.md — ShoppingListService for CRUD operations
+- [ ] 04-03-PLAN.md — ShoppingListGenerator with consolidation logic
+- [ ] 04-04-PLAN.md — Shopping list UI components (item row, category section, add dialog)
+- [ ] 04-05-PLAN.md — ShoppingList page with full workflow integration
+- [ ] 04-06-PLAN.md — Human verification of shopping list workflow
 
 ### Phase 5: Multi-User Collaboration
 **Goal**: Multiple family members can access shared household data with polling-based sync
@@ -153,7 +158,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 1. Foundation & Infrastructure | 4/4 | Complete | 2026-01-23 |
 | 2. Recipe Management | 7/7 | Complete | 2026-01-24 |
 | 3. Meal Planning | 4/4 | Complete | 2026-01-24 |
-| 4. Shopping List Core | 0/? | Not started | - |
+| 4. Shopping List Core | 0/6 | Not started | - |
 | 5. Multi-User Collaboration | 0/? | Not started | - |
 | 6. Recipe Import | 0/? | Not started | - |
 | 7. Mobile & UX Polish | 0/? | Not started | - |
