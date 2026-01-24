@@ -18,7 +18,32 @@ This is caused by a glob pattern expansion bug in MSBuild when file paths exceed
 
 ## Workaround Solution
 
-Use a two-step process:
+### Automated Build Script (Recommended)
+
+Use the provided build script from the project root:
+
+```bash
+./docker-build.sh [tag]
+```
+
+Examples:
+```bash
+# Build with default 'latest' tag
+./docker-build.sh
+
+# Build with specific version tag
+./docker-build.sh v1.0.0
+```
+
+The script automatically:
+1. Cleans previous publish output
+2. Publishes the application locally
+3. Builds the Docker image using Dockerfile.runtime-only
+4. Cleans up temporary files
+
+### Manual Build Process
+
+If you prefer to run the steps manually:
 
 1. **Publish locally** (outside Docker):
    ```bash
@@ -28,6 +53,11 @@ Use a two-step process:
 2. **Build runtime-only Docker image**:
    ```bash
    docker build -f Dockerfile.runtime-only -t familyapp:latest .
+   ```
+
+3. **Clean up**:
+   ```bash
+   rm -rf ./publish-output
    ```
 
 ## Files
