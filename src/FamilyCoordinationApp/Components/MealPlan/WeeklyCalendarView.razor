@@ -25,6 +25,7 @@
                       Entry="@entry"
                       OnClick="@(() => OnSlotClick.InvokeAsync((day, mealType)))"
                       OnRemove="@(() => HandleRemove(day, mealType))"
+                      OnEdit="@(() => OnSlotClick.InvokeAsync((day, mealType)))"
                       OnViewRecipe="@(() => HandleViewRecipe(entry))" />
         }
     }
