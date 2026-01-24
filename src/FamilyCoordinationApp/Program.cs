@@ -26,6 +26,7 @@ builder.Services.AddScoped<IIngredientParser, IngredientParser>();
 builder.Services.AddScoped<IImageService, ImageService>();
 builder.Services.AddScoped<IRecipeService, RecipeService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<IDraftService, DraftService>();
 
 // Authentication
 builder.Services.AddAuthentication(options =>
