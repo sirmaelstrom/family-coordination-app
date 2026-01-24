@@ -15,20 +15,14 @@ public interface IRecipeService
     Task<List<string>> GetIngredientSuggestionsAsync(int householdId, string prefix, CancellationToken cancellationToken = default);
 }
 
-public class RecipeService : IRecipeService
+public class RecipeService(
+    IDbContextFactory<ApplicationDbContext> dbFactory,
+    ILogger<RecipeService> logger) : IRecipeService
 {
-    private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
-    private readonly ILogger<RecipeService> _logger;
-
-    public RecipeService(IDbContextFactory<ApplicationDbContext> dbFactory, ILogger<RecipeService> logger)
-    {
-        _dbFactory = dbFactory;
-        _logger = logger;
-    }
 
     public async Task<List<Recipe>> GetRecipesAsync(int householdId, string? searchTerm = null, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var query = context.Recipes
             .Where(r => r.HouseholdId == householdId)
@@ -48,7 +42,7 @@ public class RecipeService : IRecipeService
 
     public async Task<Recipe?> GetRecipeAsync(int householdId, int recipeId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await context.Recipes
             .Where(r => r.HouseholdId == householdId && r.RecipeId == recipeId)
@@ -59,7 +53,7 @@ public class RecipeService : IRecipeService
 
     public async Task<Recipe> CreateRecipeAsync(Recipe recipe, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         // Get next recipe ID for this household
         recipe.RecipeId = await GetNextRecipeIdInternalAsync(context, recipe.HouseholdId, cancellationToken);
@@ -77,14 +71,14 @@ public class RecipeService : IRecipeService
         context.Recipes.Add(recipe);
         await context.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Created recipe {RecipeId} for household {HouseholdId}", recipe.RecipeId, recipe.HouseholdId);
+        logger.LogInformation("Created recipe {RecipeId} for household {HouseholdId}", recipe.RecipeId, recipe.HouseholdId);
 
         return recipe;
     }
 
     public async Task<Recipe> UpdateRecipeAsync(Recipe recipe, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         // Load existing recipe with ingredients
         var existing = await context.Recipes
@@ -131,14 +125,14 @@ public class RecipeService : IRecipeService
 
         await context.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Updated recipe {RecipeId} for household {HouseholdId}", recipe.RecipeId, recipe.HouseholdId);
+        logger.LogInformation("Updated recipe {RecipeId} for household {HouseholdId}", recipe.RecipeId, recipe.HouseholdId);
 
         return existing;
     }
 
     public async Task DeleteRecipeAsync(int householdId, int recipeId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var recipe = await context.Recipes
             .FirstOrDefaultAsync(r => r.HouseholdId == householdId && r.RecipeId == recipeId, cancellationToken);
@@ -153,12 +147,12 @@ public class RecipeService : IRecipeService
 
         await context.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Soft deleted recipe {RecipeId} for household {HouseholdId}", recipeId, householdId);
+        logger.LogInformation("Soft deleted recipe {RecipeId} for household {HouseholdId}", recipeId, householdId);
     }
 
     public async Task<int> GetNextRecipeIdAsync(int householdId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         return await GetNextRecipeIdInternalAsync(context, householdId, cancellationToken);
     }
 
@@ -177,7 +171,7 @@ public class RecipeService : IRecipeService
         if (string.IsNullOrWhiteSpace(prefix) || prefix.Length < 2)
             return new List<string>();
 
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await context.RecipeIngredients
             .Where(i => i.HouseholdId == householdId && i.Name.StartsWith(prefix))

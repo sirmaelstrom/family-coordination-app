@@ -18,20 +18,14 @@ public interface IShoppingListService
     Task<int> ClearCheckedItemsAsync(int householdId, int shoppingListId, CancellationToken ct = default);
 }
 
-public class ShoppingListService : IShoppingListService
+public class ShoppingListService(
+    IDbContextFactory<ApplicationDbContext> dbFactory,
+    ILogger<ShoppingListService> logger) : IShoppingListService
 {
-    private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
-    private readonly ILogger<ShoppingListService> _logger;
-
-    public ShoppingListService(IDbContextFactory<ApplicationDbContext> dbFactory, ILogger<ShoppingListService> logger)
-    {
-        _dbFactory = dbFactory;
-        _logger = logger;
-    }
 
     public async Task<ShoppingList> CreateShoppingListAsync(int householdId, string name, int? mealPlanId = null, CancellationToken ct = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
 
         var maxId = await context.ShoppingLists
             .Where(sl => sl.HouseholdId == householdId)
@@ -50,7 +44,7 @@ public class ShoppingListService : IShoppingListService
         context.ShoppingLists.Add(shoppingList);
         await context.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Created ShoppingList {ShoppingListId} for household {HouseholdId}",
+        logger.LogInformation("Created ShoppingList {ShoppingListId} for household {HouseholdId}",
             shoppingList.ShoppingListId, householdId);
 
         return shoppingList;
@@ -58,7 +52,7 @@ public class ShoppingListService : IShoppingListService
 
     public async Task<ShoppingList?> GetShoppingListAsync(int householdId, int shoppingListId, CancellationToken ct = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
 
         return await context.ShoppingLists
             .Where(sl => sl.HouseholdId == householdId && sl.ShoppingListId == shoppingListId)
@@ -69,7 +63,7 @@ public class ShoppingListService : IShoppingListService
 
     public async Task<List<ShoppingList>> GetActiveShoppingListsAsync(int householdId, CancellationToken ct = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
 
         return await context.ShoppingLists
             .Where(sl => sl.HouseholdId == householdId && !sl.IsArchived)
@@ -80,7 +74,7 @@ public class ShoppingListService : IShoppingListService
 
     public async Task<ShoppingListItem> AddManualItemAsync(ShoppingListItem item, CancellationToken ct = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
 
         var maxItemId = await context.ShoppingListItems
             .Where(i => i.HouseholdId == item.HouseholdId && i.ShoppingListId == item.ShoppingListId)
@@ -93,7 +87,7 @@ public class ShoppingListService : IShoppingListService
         context.ShoppingListItems.Add(item);
         await context.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Added manual item {ItemId} to ShoppingList {ShoppingListId} for household {HouseholdId}",
+        logger.LogInformation("Added manual item {ItemId} to ShoppingList {ShoppingListId} for household {HouseholdId}",
             item.ItemId, item.ShoppingListId, item.HouseholdId);
 
         return item;
@@ -101,7 +95,7 @@ public class ShoppingListService : IShoppingListService
 
     public async Task UpdateItemAsync(ShoppingListItem item, CancellationToken ct = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
 
         var existing = await context.ShoppingListItems
             .FirstOrDefaultAsync(i =>
@@ -123,13 +117,13 @@ public class ShoppingListService : IShoppingListService
 
         await context.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Updated item {ItemId} in ShoppingList {ShoppingListId} for household {HouseholdId}",
+        logger.LogInformation("Updated item {ItemId} in ShoppingList {ShoppingListId} for household {HouseholdId}",
             item.ItemId, item.ShoppingListId, item.HouseholdId);
     }
 
     public async Task DeleteItemAsync(int householdId, int shoppingListId, int itemId, CancellationToken ct = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
 
         var item = await context.ShoppingListItems
             .FirstOrDefaultAsync(i =>
@@ -145,13 +139,13 @@ public class ShoppingListService : IShoppingListService
         context.ShoppingListItems.Remove(item);
         await context.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Deleted item {ItemId} from ShoppingList {ShoppingListId} for household {HouseholdId}",
+        logger.LogInformation("Deleted item {ItemId} from ShoppingList {ShoppingListId} for household {HouseholdId}",
             itemId, shoppingListId, householdId);
     }
 
     public async Task<ShoppingListItem> ToggleItemCheckedAsync(int householdId, int shoppingListId, int itemId, CancellationToken ct = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
 
         var item = await context.ShoppingListItems
             .FirstOrDefaultAsync(i =>
@@ -169,7 +163,7 @@ public class ShoppingListService : IShoppingListService
 
         await context.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Toggled item {ItemId} checked state to {IsChecked} in ShoppingList {ShoppingListId} for household {HouseholdId}",
+        logger.LogInformation("Toggled item {ItemId} checked state to {IsChecked} in ShoppingList {ShoppingListId} for household {HouseholdId}",
             itemId, item.IsChecked, shoppingListId, householdId);
 
         return item;
@@ -177,7 +171,7 @@ public class ShoppingListService : IShoppingListService
 
     public async Task<List<string>> GetItemNameSuggestionsAsync(int householdId, string prefix, int limit = 10, CancellationToken ct = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
 
         var lower = prefix.ToLowerInvariant();
 
@@ -214,7 +208,7 @@ public class ShoppingListService : IShoppingListService
 
     public async Task ArchiveShoppingListAsync(int householdId, int shoppingListId, CancellationToken ct = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
 
         var shoppingList = await context.ShoppingLists
             .FirstOrDefaultAsync(sl =>
@@ -229,13 +223,13 @@ public class ShoppingListService : IShoppingListService
         shoppingList.IsArchived = true;
         await context.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Archived ShoppingList {ShoppingListId} for household {HouseholdId}",
+        logger.LogInformation("Archived ShoppingList {ShoppingListId} for household {HouseholdId}",
             shoppingListId, householdId);
     }
 
     public async Task<int> ClearCheckedItemsAsync(int householdId, int shoppingListId, CancellationToken ct = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
 
         var checkedItems = await context.ShoppingListItems
             .Where(i =>
@@ -249,7 +243,7 @@ public class ShoppingListService : IShoppingListService
         context.ShoppingListItems.RemoveRange(checkedItems);
         await context.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Cleared {Count} checked items from ShoppingList {ShoppingListId} for household {HouseholdId}",
+        logger.LogInformation("Cleared {Count} checked items from ShoppingList {ShoppingListId} for household {HouseholdId}",
             count, shoppingListId, householdId);
 
         return count;

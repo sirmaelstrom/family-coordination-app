@@ -17,20 +17,14 @@ public interface ICategoryService
     Task<bool> HasIngredientsAsync(int householdId, string categoryName, CancellationToken cancellationToken = default);
 }
 
-public class CategoryService : ICategoryService
+public class CategoryService(
+    IDbContextFactory<ApplicationDbContext> dbFactory,
+    ILogger<CategoryService> logger) : ICategoryService
 {
-    private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
-    private readonly ILogger<CategoryService> _logger;
-
-    public CategoryService(IDbContextFactory<ApplicationDbContext> dbFactory, ILogger<CategoryService> logger)
-    {
-        _dbFactory = dbFactory;
-        _logger = logger;
-    }
 
     public async Task<List<Category>> GetCategoriesAsync(int householdId, bool includeDeleted = false, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var query = context.Categories
             .Where(c => c.HouseholdId == householdId);
@@ -47,7 +41,7 @@ public class CategoryService : ICategoryService
 
     public async Task<Category?> GetCategoryAsync(int householdId, int categoryId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await context.Categories
             .IgnoreQueryFilters()
@@ -56,7 +50,7 @@ public class CategoryService : ICategoryService
 
     public async Task<Category> CreateCategoryAsync(Category category, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         category.CategoryId = await GetNextCategoryIdInternalAsync(context, category.HouseholdId, cancellationToken);
 
@@ -72,14 +66,14 @@ public class CategoryService : ICategoryService
         context.Categories.Add(category);
         await context.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Created category {CategoryId} for household {HouseholdId}", category.CategoryId, category.HouseholdId);
+        logger.LogInformation("Created category {CategoryId} for household {HouseholdId}", category.CategoryId, category.HouseholdId);
 
         return category;
     }
 
     public async Task<Category> UpdateCategoryAsync(Category category, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var existing = await context.Categories
             .IgnoreQueryFilters()
@@ -97,14 +91,14 @@ public class CategoryService : ICategoryService
 
         await context.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Updated category {CategoryId} for household {HouseholdId}", category.CategoryId, category.HouseholdId);
+        logger.LogInformation("Updated category {CategoryId} for household {HouseholdId}", category.CategoryId, category.HouseholdId);
 
         return existing;
     }
 
     public async Task DeleteCategoryAsync(int householdId, int categoryId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var category = await context.Categories
             .FirstOrDefaultAsync(c => c.HouseholdId == householdId && c.CategoryId == categoryId, cancellationToken);
@@ -120,12 +114,12 @@ public class CategoryService : ICategoryService
 
         await context.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Soft deleted category {CategoryId} for household {HouseholdId}", categoryId, householdId);
+        logger.LogInformation("Soft deleted category {CategoryId} for household {HouseholdId}", categoryId, householdId);
     }
 
     public async Task RestoreCategoryAsync(int householdId, int categoryId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var category = await context.Categories
             .IgnoreQueryFilters()
@@ -141,12 +135,12 @@ public class CategoryService : ICategoryService
 
         await context.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Restored category {CategoryId} for household {HouseholdId}", categoryId, householdId);
+        logger.LogInformation("Restored category {CategoryId} for household {HouseholdId}", categoryId, householdId);
     }
 
     public async Task UpdateSortOrderAsync(int householdId, List<(int CategoryId, int SortOrder)> sortOrders, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         foreach (var (categoryId, sortOrder) in sortOrders)
         {
@@ -164,7 +158,7 @@ public class CategoryService : ICategoryService
 
     public async Task<int> GetNextCategoryIdAsync(int householdId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         return await GetNextCategoryIdInternalAsync(context, householdId, cancellationToken);
     }
 
@@ -180,7 +174,7 @@ public class CategoryService : ICategoryService
 
     public async Task<bool> HasIngredientsAsync(int householdId, string categoryName, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await context.RecipeIngredients
             .AnyAsync(i => i.HouseholdId == householdId && i.Category == categoryName, cancellationToken);

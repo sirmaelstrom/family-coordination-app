@@ -4,24 +4,16 @@ using FamilyCoordinationApp.Data.Entities;
 
 namespace FamilyCoordinationApp.Services;
 
-public class SetupService
+public class SetupService(
+    IDbContextFactory<ApplicationDbContext> dbFactory,
+    ILogger<SetupService> logger)
 {
-    private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
-    private readonly ILogger<SetupService> _logger;
-
-    public SetupService(
-        IDbContextFactory<ApplicationDbContext> dbFactory,
-        ILogger<SetupService> logger)
-    {
-        _dbFactory = dbFactory;
-        _logger = logger;
-    }
 
     public async Task<bool> IsSetupCompleteAsync()
     {
         try
         {
-            await using var context = await _dbFactory.CreateDbContextAsync();
+            await using var context = await dbFactory.CreateDbContextAsync();
 
             // Ensure database exists and is migrated
             await context.Database.MigrateAsync();
@@ -31,7 +23,7 @@ public class SetupService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error checking setup status");
+            logger.LogError(ex, "Error checking setup status");
             return false;
         }
     }
@@ -42,17 +34,17 @@ public class SetupService
         string displayName,
         string googleId)
     {
-        _logger.LogInformation(
+        logger.LogInformation(
             "Starting household creation: Name={HouseholdName}, Email={Email}, GoogleId={GoogleId}",
             householdName, userEmail, googleId);
 
-        await using var context = await _dbFactory.CreateDbContextAsync();
+        await using var context = await dbFactory.CreateDbContextAsync();
 
         // Check if user already exists
         var existingUser = await context.Users.FirstOrDefaultAsync(u => u.Email == userEmail);
         if (existingUser != null)
         {
-            _logger.LogWarning("User {Email} already exists with ID {UserId}", userEmail, existingUser.Id);
+            logger.LogWarning("User {Email} already exists with ID {UserId}", userEmail, existingUser.Id);
             throw new InvalidOperationException($"User {userEmail} already exists");
         }
 
@@ -64,7 +56,7 @@ public class SetupService
         context.Households.Add(household);
         await context.SaveChangesAsync();
 
-        _logger.LogInformation("Created household ID {HouseholdId}", household.Id);
+        logger.LogInformation("Created household ID {HouseholdId}", household.Id);
 
         var user = new User
         {
@@ -79,7 +71,7 @@ public class SetupService
         context.Users.Add(user);
         await context.SaveChangesAsync();
 
-        _logger.LogInformation(
+        logger.LogInformation(
             "Created household '{HouseholdName}' (ID {HouseholdId}) with initial user {Email} (ID {UserId})",
             householdName, household.Id, userEmail, user.Id);
 
@@ -88,13 +80,13 @@ public class SetupService
 
     public async Task<Household?> GetHouseholdAsync()
     {
-        await using var context = await _dbFactory.CreateDbContextAsync();
+        await using var context = await dbFactory.CreateDbContextAsync();
         return await context.Households.FirstOrDefaultAsync();
     }
 
     public async Task<User?> GetUserByEmailAsync(string email)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync();
+        await using var context = await dbFactory.CreateDbContextAsync();
         return await context.Users
             .Include(u => u.Household)
             .FirstOrDefaultAsync(u => u.Email == email);

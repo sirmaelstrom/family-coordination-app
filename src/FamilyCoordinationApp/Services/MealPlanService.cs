@@ -13,20 +13,14 @@ public interface IMealPlanService
     DateOnly[] GetWeekDays(DateOnly weekStart);
 }
 
-public class MealPlanService : IMealPlanService
+public class MealPlanService(
+    IDbContextFactory<ApplicationDbContext> dbFactory,
+    ILogger<MealPlanService> logger) : IMealPlanService
 {
-    private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
-    private readonly ILogger<MealPlanService> _logger;
-
-    public MealPlanService(IDbContextFactory<ApplicationDbContext> dbFactory, ILogger<MealPlanService> logger)
-    {
-        _dbFactory = dbFactory;
-        _logger = logger;
-    }
 
     public async Task<MealPlan> GetOrCreateMealPlanAsync(int householdId, DateOnly weekStart, CancellationToken ct = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
 
         var mealPlan = await context.MealPlans
             .Where(mp => mp.HouseholdId == householdId && mp.WeekStartDate == weekStart)
@@ -36,7 +30,7 @@ public class MealPlanService : IMealPlanService
 
         if (mealPlan != null)
         {
-            _logger.LogInformation("Retrieved existing meal plan {MealPlanId} for household {HouseholdId}, week {WeekStart}",
+            logger.LogInformation("Retrieved existing meal plan {MealPlanId} for household {HouseholdId}, week {WeekStart}",
                 mealPlan.MealPlanId, householdId, weekStart);
             return mealPlan;
         }
@@ -54,7 +48,7 @@ public class MealPlanService : IMealPlanService
         context.MealPlans.Add(mealPlan);
         await context.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Created new meal plan {MealPlanId} for household {HouseholdId}, week {WeekStart}",
+        logger.LogInformation("Created new meal plan {MealPlanId} for household {HouseholdId}, week {WeekStart}",
             mealPlan.MealPlanId, householdId, weekStart);
 
         return mealPlan;
@@ -72,7 +66,7 @@ public class MealPlanService : IMealPlanService
             throw new InvalidOperationException("Must specify either RecipeId or CustomMealName");
         }
 
-        await using var context = await _dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
 
         var weekStart = GetWeekStartDate(date);
         var mealPlan = await GetOrCreateMealPlanAsync(householdId, weekStart, ct);
@@ -93,7 +87,7 @@ public class MealPlanService : IMealPlanService
 
             await context.SaveChangesAsync(ct);
 
-            _logger.LogInformation("Updated meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
+            logger.LogInformation("Updated meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
                 existingEntry.EntryId, mealPlan.MealPlanId, householdId);
 
             return existingEntry;
@@ -115,7 +109,7 @@ public class MealPlanService : IMealPlanService
         context.MealPlanEntries.Add(entry);
         await context.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Created meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
+        logger.LogInformation("Created meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
             entry.EntryId, mealPlan.MealPlanId, householdId);
 
         return entry;
@@ -123,7 +117,7 @@ public class MealPlanService : IMealPlanService
 
     public async Task RemoveMealAsync(int householdId, int mealPlanId, int entryId, CancellationToken ct = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
 
         var entry = await context.MealPlanEntries
             .FirstOrDefaultAsync(e =>
@@ -140,7 +134,7 @@ public class MealPlanService : IMealPlanService
         context.MealPlanEntries.Remove(entry);
         await context.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Removed meal entry {EntryId} from plan {MealPlanId} for household {HouseholdId}",
+        logger.LogInformation("Removed meal entry {EntryId} from plan {MealPlanId} for household {HouseholdId}",
             entryId, mealPlanId, householdId);
     }
 
