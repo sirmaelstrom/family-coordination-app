@@ -47,8 +47,9 @@
     </DialogContent>
 
     <DialogActions>
-        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton OnClick="Cancel" Variant="Variant.Text">Cancel</MudButton>
         <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
                    OnClick="Submit"
                    Disabled="@(string.IsNullOrWhiteSpace(_itemName) || _isSubmitting)">
             @if (_isSubmitting)
@@ -114,6 +115,7 @@
         }
 
         _isSubmitting = true;
+        StateHasChanged();
 
         try
         {
@@ -137,6 +139,7 @@
         {
             Snackbar.Add($"Error adding item: {ex.Message}", Severity.Error);
             _isSubmitting = false;
+            StateHasChanged();
         }
     }
 
