@@ -14,6 +14,14 @@ public class ShoppingListItem
     public DateTime AddedAt { get; set; }
     public DateTime? CheckedAt { get; set; }
 
+    // Consolidation tracking
+    public string? SourceRecipes { get; set; }  // Comma-separated recipe names, e.g., "Pancakes, Mac & Cheese"
+    public string? OriginalUnits { get; set; }  // If units were converted, e.g., "1 cup + 8 fl oz"
+    public bool IsManuallyAdded { get; set; }  // True if user added, false if from meal plan
+    public decimal? QuantityDelta { get; set; }  // User adjustment for preserving during regeneration (+1, -0.5, etc.)
+    public string? RecipeIngredientIds { get; set; }  // Comma-separated IDs (format: "1:2:3,1:2:5" for HouseholdId:RecipeId:IngredientId)
+    public int SortOrder { get; set; }  // For custom ordering within category
+
     // Navigation
     public ShoppingList ShoppingList { get; set; } = default!;
     public User? AddedBy { get; set; }

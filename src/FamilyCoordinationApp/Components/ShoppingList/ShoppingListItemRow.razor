@@ -1,0 +1,157 @@
+@using FamilyCoordinationApp.Data.Entities
+@using Fractions
+
+<div class="shopping-list-item @GetItemClass()" @onclick="HandleClick">
+    <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
+             Class="drag-handle"
+             Size="Size.Small" />
+
+    <MudCheckbox Checked="@Item.IsChecked"
+                 CheckedChanged="HandleCheckChanged"
+                 Class="item-checkbox"
+                 @onclick:stopPropagation="true"
+                 Color="Color.Primary" />
+
+    <div class="item-content">
+        <MudText Typo="Typo.body1" Class="@GetTextClass()">
+            @if (Item.Quantity.HasValue)
+            {
+                <span class="quantity">@FormatQuantity(Item.Quantity.Value)</span>
+                @if (!string.IsNullOrEmpty(Item.Unit))
+                {
+                    <span class="unit">@Item.Unit</span>
+                }
+            }
+            <span class="name">@Item.Name</span>
+        </MudText>
+
+        @if (!string.IsNullOrEmpty(GetSourceRecipes()))
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="source-recipes">
+                From: @GetSourceRecipes()
+            </MudText>
+        }
+    </div>
+
+    <div class="item-actions" @onclick:stopPropagation="true">
+        <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                       Size="Size.Small"
+                       OnClick="HandleEdit"
+                       aria-label="Edit item" />
+        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                       Size="Size.Small"
+                       Color="Color.Error"
+                       OnClick="HandleDelete"
+                       aria-label="Delete item" />
+    </div>
+</div>
+
+@code {
+    [Parameter] public ShoppingListItem Item { get; set; } = default!;
+    [Parameter] public EventCallback OnChecked { get; set; }
+    [Parameter] public EventCallback OnEdit { get; set; }
+    [Parameter] public EventCallback OnDelete { get; set; }
+
+    private string GetItemClass()
+    {
+        return Item.IsChecked ? "item-checked" : "item-unchecked";
+    }
+
+    private string GetTextClass()
+    {
+        return Item.IsChecked ? "text-decoration-line-through" : "";
+    }
+
+    private async Task HandleClick()
+    {
+        // Tap anywhere on row to check/uncheck
+        await HandleCheckChanged(!Item.IsChecked);
+    }
+
+    private async Task HandleCheckChanged(bool isChecked)
+    {
+        // Update the item state (parent handles persistence)
+        await OnChecked.InvokeAsync();
+    }
+
+    private async Task HandleEdit()
+    {
+        await OnEdit.InvokeAsync();
+    }
+
+    private async Task HandleDelete()
+    {
+        await OnDelete.InvokeAsync();
+    }
+
+    private string FormatQuantity(decimal quantity)
+    {
+        // Use Fractions library to display "1/2" instead of "0.5"
+        var fraction = (Fraction)quantity;
+        return fraction.ToString();
+    }
+
+    private string GetSourceRecipes()
+    {
+        return Item.SourceRecipes ?? string.Empty;
+    }
+}
+
+<style>
+    .shopping-list-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        min-height: 48px;
+        border-bottom: 1px solid var(--mud-palette-lines-default);
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+
+    .shopping-list-item:hover {
+        background-color: var(--mud-palette-action-default-hover);
+    }
+
+    .drag-handle {
+        cursor: grab;
+        color: var(--mud-palette-text-secondary);
+    }
+
+    .item-checkbox {
+        flex-shrink: 0;
+    }
+
+    .item-content {
+        flex: 1;
+        min-width: 0; /* Allow text truncation */
+    }
+
+    .item-actions {
+        display: flex;
+        gap: 4px;
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+
+    .shopping-list-item:hover .item-actions {
+        opacity: 1;
+    }
+
+    .item-checked {
+        opacity: 0.6;
+    }
+
+    .quantity {
+        font-weight: 600;
+        margin-right: 4px;
+    }
+
+    .unit {
+        margin-right: 8px;
+    }
+
+    .source-recipes {
+        margin-top: 2px;
+    }
+</style>
