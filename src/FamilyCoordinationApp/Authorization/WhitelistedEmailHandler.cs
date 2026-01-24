@@ -62,8 +62,14 @@ public class WhitelistedEmailHandler : AuthorizationHandler<WhitelistedEmailRequ
 
             if (user is not null)
             {
-                // Update last login timestamp
+                // Extract profile data from claims
+                var pictureClaim = context.User.FindFirst("urn:google:picture")?.Value;
+                var displayName = context.User.FindFirst(ClaimTypes.Name)?.Value ?? user.DisplayName;
+
+                // Update user profile on every login (Google profile may have changed)
                 user.LastLoginAt = DateTime.UtcNow;
+                user.PictureUrl = pictureClaim;
+                user.Initials = ComputeInitials(displayName);
                 await dbContext.SaveChangesAsync();
 
                 context.Succeed(requirement);
@@ -79,5 +85,20 @@ public class WhitelistedEmailHandler : AuthorizationHandler<WhitelistedEmailRequ
             _logger.LogError(ex, "Error checking whitelist for {Email}", email);
             // Fail authorization on error (safe default)
         }
+    }
+
+    private static string ComputeInitials(string displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+            return "?";
+
+        var parts = displayName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+            return "?";
+        if (parts.Length == 1)
+            return parts[0][0].ToString().ToUpperInvariant();
+
+        // First and last name initials
+        return $"{parts[0][0]}{parts[^1][0]}".ToUpperInvariant();
     }
 }
