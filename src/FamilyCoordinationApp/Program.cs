@@ -64,6 +64,9 @@ builder.Services.AddAuthentication(options =>
     options.ClaimActions.MapJsonKey(ClaimTypes.Name, "name");
     options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "sub");
 
+    // Map picture claim for avatar display
+    options.ClaimActions.MapJsonKey("urn:google:picture", "picture", "url");
+
     // Request email scope
     options.Scope.Add("email");
     options.Scope.Add("profile");
