@@ -33,6 +33,11 @@ builder.Services.AddScoped<IShoppingListService, ShoppingListService>();
 builder.Services.AddScoped<UnitConverter>();
 builder.Services.AddScoped<IShoppingListGenerator, ShoppingListGenerator>();
 
+// Collaboration services - singleton for cross-component communication
+builder.Services.AddSingleton<DataNotifier>();
+builder.Services.AddSingleton<PresenceService>();
+builder.Services.AddHostedService<PollingService>();
+
 // Authentication
 builder.Services.AddAuthentication(options =>
 {
