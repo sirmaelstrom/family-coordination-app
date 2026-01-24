@@ -1,0 +1,512 @@
+@page "/recipes/new"
+@page "/recipes/edit/{RecipeId:int}"
+@attribute [Authorize]
+
+@using FamilyCoordinationApp.Data
+@using FamilyCoordinationApp.Data.Entities
+@using FamilyCoordinationApp.Services
+@using FamilyCoordinationApp.Components.Recipe
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+
+@implements IDisposable
+
+@inject IRecipeService RecipeService
+@inject IImageService ImageService
+@inject IDraftService DraftService
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>@(IsEdit ? "Edit Recipe" : "New Recipe") - Family Coordination</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-4 mb-8">
+    <div class="d-flex justify-space-between align-center mb-4">
+        <MudText Typo="Typo.h4">@(IsEdit ? "Edit Recipe" : "New Recipe")</MudText>
+        @if (IsEdit)
+        {
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Error"
+                       StartIcon="@Icons.Material.Filled.Delete"
+                       OnClick="DeleteRecipe">
+                Delete
+            </MudButton>
+        }
+    </div>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" />
+    }
+    else
+    {
+        <EditForm EditContext="_editContext" OnValidSubmit="SaveRecipe">
+            <DataAnnotationsValidator />
+            <NavigationLock ConfirmExternalNavigation="_hasUnsavedChanges" />
+
+            <MudPaper Class="pa-4 mb-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-3">Basic Info</MudText>
+
+                <MudTextField @bind-Value="_recipe.Name"
+                              Label="Recipe Name"
+                              Required="true"
+                              Variant="Variant.Outlined"
+                              @oninput="ScheduleAutoSave"
+                              Class="mb-3" />
+
+                <MudTextField @bind-Value="_recipe.Description"
+                              Label="Description"
+                              Lines="2"
+                              Variant="Variant.Outlined"
+                              @oninput="ScheduleAutoSave"
+                              Class="mb-3"
+                              HelperText="Brief introduction to the recipe" />
+
+                <MudGrid>
+                    <MudItem xs="12" sm="4">
+                        <MudNumericField @bind-Value="_recipe.PrepTimeMinutes"
+                                         Label="Prep Time (min)"
+                                         Variant="Variant.Outlined"
+                                         Min="0"
+                                         @oninput="ScheduleAutoSave" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudNumericField @bind-Value="_recipe.CookTimeMinutes"
+                                         Label="Cook Time (min)"
+                                         Variant="Variant.Outlined"
+                                         Min="0"
+                                         @oninput="ScheduleAutoSave" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudNumericField @bind-Value="_recipe.Servings"
+                                         Label="Servings"
+                                         Variant="Variant.Outlined"
+                                         Min="1"
+                                         @oninput="ScheduleAutoSave" />
+                    </MudItem>
+                </MudGrid>
+
+                <MudTextField @bind-Value="_recipe.SourceUrl"
+                              Label="Source URL (optional)"
+                              Variant="Variant.Outlined"
+                              @oninput="ScheduleAutoSave"
+                              Class="mt-3"
+                              HelperText="Link to original recipe" />
+            </MudPaper>
+
+            <MudPaper Class="pa-4 mb-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-3">Image</MudText>
+
+                @if (!string.IsNullOrWhiteSpace(_recipe.ImagePath))
+                {
+                    <div class="mb-3" style="position: relative; display: inline-block;">
+                        <MudImage Src="@_recipe.ImagePath"
+                                  Alt="Recipe image"
+                                  ObjectFit="ObjectFit.Cover"
+                                  Width="300"
+                                  Height="200"
+                                  Elevation="2"
+                                  Class="rounded" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                       Color="Color.Error"
+                                       Size="Size.Small"
+                                       OnClick="RemoveImage"
+                                       Style="position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.5);" />
+                    </div>
+                }
+
+                <MudFileUpload T="IBrowserFile"
+                               FilesChanged="UploadImage"
+                               Accept="image/*"
+                               MaximumFileCount="1">
+                    <ActivatorContent>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.CloudUpload">
+                            @(string.IsNullOrWhiteSpace(_recipe.ImagePath) ? "Upload Image" : "Change Image")
+                        </MudButton>
+                    </ActivatorContent>
+                </MudFileUpload>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                    Max 10 MB. Supported: JPG, PNG, GIF, WebP
+                </MudText>
+            </MudPaper>
+
+            <MudPaper Class="pa-4 mb-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-3">Ingredients</MudText>
+
+                <IngredientEntry HouseholdId="_householdId"
+                                 OnIngredientAdded="AddIngredient"
+                                 OnBulkIngredientsAdded="AddBulkIngredients" />
+
+                <IngredientList @bind-Ingredients="_ingredients"
+                                OnEditIngredient="EditIngredient" />
+            </MudPaper>
+
+            <MudPaper Class="pa-4 mb-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-3">Instructions</MudText>
+
+                <MudTextField @bind-Value="_recipe.Instructions"
+                              Label="Instructions"
+                              Lines="10"
+                              Variant="Variant.Outlined"
+                              @oninput="ScheduleAutoSave"
+                              HelperText="Supports Markdown formatting" />
+            </MudPaper>
+
+            <div class="d-flex justify-space-between align-center">
+                <div>
+                    @if (_autoSaveStatus == AutoSaveStatus.Saving)
+                    {
+                        <div class="d-flex align-center">
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Saving draft...</MudText>
+                        </div>
+                    }
+                    else if (_autoSaveStatus == AutoSaveStatus.Saved)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Success">
+                            <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Class="mr-1" />
+                            Draft saved
+                        </MudText>
+                    }
+                </div>
+
+                <div>
+                    <MudButton Variant="Variant.Text"
+                               Color="Color.Default"
+                               OnClick="Cancel"
+                               Class="mr-2">
+                        Cancel
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               ButtonType="ButtonType.Submit"
+                               Disabled="_saving">
+                        @if (_saving)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        }
+                        @(IsEdit ? "Save Changes" : "Create Recipe")
+                    </MudButton>
+                </div>
+            </div>
+        </EditForm>
+    }
+</MudContainer>
+
+@code {
+    [Parameter] public int? RecipeId { get; set; }
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private bool IsEdit => RecipeId.HasValue;
+
+    private Recipe _recipe = new();
+    private List<RecipeIngredient> _ingredients = new();
+    private EditContext _editContext = default!;
+
+    private bool _loading = true;
+    private bool _saving = false;
+    private bool _hasUnsavedChanges = false;
+
+    private int _householdId;
+    private int _userId;
+
+    private System.Threading.Timer? _autoSaveTimer;
+    private const int AutoSaveDelayMs = 2000;
+
+    private enum AutoSaveStatus { None, Saving, Saved }
+    private AutoSaveStatus _autoSaveStatus = AutoSaveStatus.None;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUserContext();
+        await LoadRecipeOrDraft();
+
+        _editContext = new EditContext(_recipe);
+        _editContext.OnFieldChanged += OnFieldChanged;
+
+        _loading = false;
+    }
+
+    private async Task LoadUserContext()
+    {
+        if (AuthState == null) return;
+
+        var authState = await AuthState;
+        var email = authState.User.FindFirstValue(ClaimTypes.Email);
+
+        if (string.IsNullOrEmpty(email)) return;
+
+        await using var context = await DbFactory.CreateDbContextAsync();
+        var user = await context.Users
+            .FirstOrDefaultAsync(u => u.Email == email);
+
+        if (user != null)
+        {
+            _householdId = user.HouseholdId;
+            _userId = user.Id;
+        }
+    }
+
+    private async Task LoadRecipeOrDraft()
+    {
+        // Check for existing draft first
+        var draft = await DraftService.GetDraftAsync(_householdId, _userId, RecipeId);
+
+        if (draft != null)
+        {
+            // Restore from draft
+            _recipe = new Recipe
+            {
+                HouseholdId = _householdId,
+                RecipeId = RecipeId ?? 0,
+                Name = draft.Name,
+                Description = draft.Description,
+                Instructions = draft.Instructions,
+                ImagePath = draft.ImagePath,
+                SourceUrl = draft.SourceUrl,
+                Servings = draft.Servings,
+                PrepTimeMinutes = draft.PrepTimeMinutes,
+                CookTimeMinutes = draft.CookTimeMinutes,
+                CreatedByUserId = _userId
+            };
+
+            _ingredients = draft.Ingredients.Select(i => new RecipeIngredient
+            {
+                Name = i.Name,
+                Quantity = i.Quantity,
+                Unit = i.Unit,
+                Category = i.Category,
+                Notes = i.Notes,
+                GroupName = i.GroupName,
+                SortOrder = i.SortOrder
+            }).ToList();
+
+            Snackbar.Add("Restored from draft", Severity.Info);
+            return;
+        }
+
+        if (IsEdit)
+        {
+            // Load existing recipe
+            var recipe = await RecipeService.GetRecipeAsync(_householdId, RecipeId!.Value);
+            if (recipe == null)
+            {
+                Snackbar.Add("Recipe not found", Severity.Error);
+                Navigation.NavigateTo("/recipes");
+                return;
+            }
+
+            _recipe = recipe;
+            _ingredients = recipe.Ingredients.ToList();
+        }
+        else
+        {
+            // New recipe
+            _recipe = new Recipe
+            {
+                HouseholdId = _householdId,
+                CreatedByUserId = _userId,
+                Servings = 4 // Default
+            };
+            _ingredients = new();
+        }
+    }
+
+    private void OnFieldChanged(object? sender, FieldChangedEventArgs e)
+    {
+        _hasUnsavedChanges = true;
+        _autoSaveStatus = AutoSaveStatus.None;
+    }
+
+    private void ScheduleAutoSave()
+    {
+        _hasUnsavedChanges = true;
+        _autoSaveTimer?.Dispose();
+        _autoSaveTimer = new System.Threading.Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                _autoSaveStatus = AutoSaveStatus.Saving;
+                StateHasChanged();
+
+                try
+                {
+                    var draftData = CreateDraftData();
+                    await DraftService.SaveDraftAsync(_householdId, _userId, RecipeId, draftData);
+
+                    _autoSaveStatus = AutoSaveStatus.Saved;
+                    StateHasChanged();
+
+                    // Clear "Saved" status after a few seconds
+                    await Task.Delay(3000);
+                    if (_autoSaveStatus == AutoSaveStatus.Saved)
+                    {
+                        _autoSaveStatus = AutoSaveStatus.None;
+                        StateHasChanged();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Snackbar.Add($"Failed to save draft: {ex.Message}", Severity.Warning);
+                    _autoSaveStatus = AutoSaveStatus.None;
+                    StateHasChanged();
+                }
+            });
+        }, null, AutoSaveDelayMs, Timeout.Infinite);
+    }
+
+    private RecipeDraftData CreateDraftData()
+    {
+        return new RecipeDraftData(
+            _recipe.Name,
+            _recipe.Description,
+            _recipe.Instructions,
+            _recipe.ImagePath,
+            _recipe.SourceUrl,
+            _recipe.Servings,
+            _recipe.PrepTimeMinutes,
+            _recipe.CookTimeMinutes,
+            _ingredients.Select(i => new IngredientDraftData(
+                i.Name,
+                i.Quantity,
+                i.Unit,
+                i.Category,
+                i.Notes,
+                i.GroupName,
+                i.SortOrder
+            )).ToList()
+        );
+    }
+
+    private void AddIngredient(RecipeIngredient ingredient)
+    {
+        ingredient.SortOrder = _ingredients.Count;
+        _ingredients.Add(ingredient);
+        ScheduleAutoSave();
+    }
+
+    private void AddBulkIngredients(List<RecipeIngredient> ingredients)
+    {
+        foreach (var ingredient in ingredients)
+        {
+            ingredient.SortOrder = _ingredients.Count;
+            _ingredients.Add(ingredient);
+        }
+        ScheduleAutoSave();
+    }
+
+    private void EditIngredient(RecipeIngredient ingredient)
+    {
+        // For now, remove and let user re-add with changes
+        // TODO: Implement inline editing in future
+        _ingredients.Remove(ingredient);
+        Snackbar.Add("Re-add ingredient with changes", Severity.Info);
+    }
+
+    private async Task UploadImage(IBrowserFile file)
+    {
+        try
+        {
+            var path = await ImageService.SaveImageAsync(file, _householdId);
+            _recipe.ImagePath = path;
+            ScheduleAutoSave();
+            Snackbar.Add("Image uploaded", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to upload image: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void RemoveImage()
+    {
+        // Note: Don't delete the file yet - it might be the original recipe's image
+        _recipe.ImagePath = null;
+        ScheduleAutoSave();
+    }
+
+    private async Task SaveRecipe()
+    {
+        if (string.IsNullOrWhiteSpace(_recipe.Name))
+        {
+            Snackbar.Add("Recipe name is required", Severity.Warning);
+            return;
+        }
+
+        _saving = true;
+        StateHasChanged();
+
+        try
+        {
+            // Update ingredients on recipe
+            _recipe.Ingredients = _ingredients;
+
+            if (IsEdit)
+            {
+                await RecipeService.UpdateRecipeAsync(_recipe);
+                Snackbar.Add("Recipe updated", Severity.Success);
+            }
+            else
+            {
+                await RecipeService.CreateRecipeAsync(_recipe);
+                Snackbar.Add("Recipe created", Severity.Success);
+            }
+
+            // Delete draft after successful save
+            await DraftService.DeleteDraftAsync(_householdId, _userId, RecipeId);
+
+            _hasUnsavedChanges = false;
+            Navigation.NavigateTo("/recipes");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save recipe: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteRecipe()
+    {
+        var result = await DialogService.ShowMessageBox(
+            "Delete Recipe",
+            $"Are you sure you want to delete \"{_recipe.Name}\"? This action cannot be undone.",
+            yesText: "Delete",
+            cancelText: "Cancel");
+
+        if (result == true)
+        {
+            try
+            {
+                await RecipeService.DeleteRecipeAsync(_householdId, _recipe.RecipeId);
+                await DraftService.DeleteDraftAsync(_householdId, _userId, RecipeId);
+                _hasUnsavedChanges = false;
+                Snackbar.Add("Recipe deleted", Severity.Success);
+                Navigation.NavigateTo("/recipes");
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Failed to delete recipe: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/recipes");
+    }
+
+    public void Dispose()
+    {
+        _autoSaveTimer?.Dispose();
+        if (_editContext != null)
+        {
+            _editContext.OnFieldChanged -= OnFieldChanged;
+        }
+    }
+}
