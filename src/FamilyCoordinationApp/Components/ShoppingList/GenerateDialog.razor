@@ -1,0 +1,96 @@
+@using FamilyCoordinationApp.Services
+
+@inject IMealPlanService MealPlanService
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body1" Class="mb-4">
+            Select the date range for meals to include in your shopping list.
+        </MudText>
+
+        <MudDateRangePicker Label="Date Range"
+                            @bind-DateRange="_dateRange"
+                            Variant="Variant.Outlined"
+                            PickerVariant="PickerVariant.Dialog"
+                            AutoClose="true"
+                            Editable="true">
+        </MudDateRangePicker>
+
+        <MudText Typo="Typo.caption" Class="mt-2" Color="Color.Secondary">
+            @GetDateRangeDescription()
+        </MudText>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   OnClick="Submit"
+                   StartIcon="@Icons.Material.Filled.AutoAwesome"
+                   Disabled="@(_dateRange == null || _dateRange.Start == null || _dateRange.End == null)">
+            Generate
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private DateRange? _dateRange;
+
+    protected override void OnInitialized()
+    {
+        // Default: today through end of week (Sunday)
+        var today = DateTime.Today;
+        var endOfWeek = today;
+
+        // Find next Sunday (or today if it's Sunday)
+        while (endOfWeek.DayOfWeek != DayOfWeek.Sunday)
+        {
+            endOfWeek = endOfWeek.AddDays(1);
+        }
+
+        _dateRange = new DateRange(today, endOfWeek);
+    }
+
+    private string GetDateRangeDescription()
+    {
+        if (_dateRange?.Start == null || _dateRange?.End == null)
+        {
+            return "Select a date range";
+        }
+
+        var start = _dateRange.Start.Value;
+        var end = _dateRange.End.Value;
+        var days = (end - start).Days + 1;
+
+        if (days == 1)
+        {
+            return $"Shopping for 1 day ({start:MMM d})";
+        }
+
+        return $"Shopping for {days} days ({start:MMM d} - {end:MMM d})";
+    }
+
+    private void Submit()
+    {
+        if (_dateRange?.Start == null || _dateRange?.End == null)
+        {
+            return;
+        }
+
+        var result = new DateRangeSelection(
+            DateOnly.FromDateTime(_dateRange.Start.Value),
+            DateOnly.FromDateTime(_dateRange.End.Value)
+        );
+
+        MudDialog.Close(DialogResult.Ok(result));
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+    public record DateRangeSelection(DateOnly StartDate, DateOnly EndDate);
+}

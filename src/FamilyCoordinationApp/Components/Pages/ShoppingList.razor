@@ -153,6 +153,22 @@
 
     private async Task GenerateFromMealPlan()
     {
+        // Show date range selection dialog
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<GenerateDialog>("Generate Shopping List", options);
+        var result = await dialog.Result;
+
+        if (result == null || result.Canceled || result.Data is not GenerateDialog.DateRangeSelection selection)
+        {
+            return;
+        }
+
         _isGenerating = true;
         StateHasChanged();
 
@@ -163,12 +179,14 @@
             var weekStart = MealPlanService.GetWeekStartDate(today);
             var mealPlan = await MealPlanService.GetOrCreateMealPlanAsync(_householdId, weekStart);
 
-            // Generate shopping list from meal plan
+            // Generate shopping list from meal plan with date range filter
             var listName = $"Shopping List {DateTime.Now:MMM d}";
             var newList = await ShoppingListGenerator.GenerateFromMealPlanAsync(
                 _householdId,
                 mealPlan.MealPlanId,
-                listName);
+                listName,
+                selection.StartDate,
+                selection.EndDate);
 
             Snackbar.Add($"Generated shopping list with {newList.Items.Count} items", Severity.Success);
 

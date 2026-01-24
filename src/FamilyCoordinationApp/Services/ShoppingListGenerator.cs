@@ -17,7 +17,7 @@ public record ConsolidationResult
 
 public interface IShoppingListGenerator
 {
-    Task<ShoppingList> GenerateFromMealPlanAsync(int householdId, int mealPlanId, string listName, CancellationToken ct = default);
+    Task<ShoppingList> GenerateFromMealPlanAsync(int householdId, int mealPlanId, string listName, DateOnly? startDate = null, DateOnly? endDate = null, CancellationToken ct = default);
     Task<ShoppingList> RegenerateShoppingListAsync(int householdId, int shoppingListId, CancellationToken ct = default);
     Task<List<ConsolidationResult>> ConsolidateIngredientsAsync(List<RecipeIngredient> ingredients, bool autoConsolidate = true);
 }
@@ -45,6 +45,8 @@ public class ShoppingListGenerator : IShoppingListGenerator
         int householdId,
         int mealPlanId,
         string listName,
+        DateOnly? startDate = null,
+        DateOnly? endDate = null,
         CancellationToken ct = default)
     {
         await using var context = await _dbFactory.CreateDbContextAsync(ct);
@@ -62,8 +64,19 @@ public class ShoppingListGenerator : IShoppingListGenerator
             throw new InvalidOperationException($"MealPlan {mealPlanId} not found for household {householdId}");
         }
 
-        // Collect all RecipeIngredients from entries (skip entries with CustomMealName only)
-        var allIngredients = mealPlan.Entries
+        // Filter entries by date range if provided
+        var entries = mealPlan.Entries.AsEnumerable();
+        if (startDate.HasValue)
+        {
+            entries = entries.Where(e => e.Date >= startDate.Value);
+        }
+        if (endDate.HasValue)
+        {
+            entries = entries.Where(e => e.Date <= endDate.Value);
+        }
+
+        // Collect all RecipeIngredients from filtered entries (skip entries with CustomMealName only)
+        var allIngredients = entries
             .Where(e => e.Recipe != null)
             .SelectMany(e => e.Recipe!.Ingredients)
             .ToList();
