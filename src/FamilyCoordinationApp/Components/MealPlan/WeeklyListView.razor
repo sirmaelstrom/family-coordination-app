@@ -1,0 +1,106 @@
+@using FamilyCoordinationApp.Data.Entities
+
+<MudExpansionPanels MultiExpansion="true">
+    @foreach (var day in WeekDays)
+    {
+        var isToday = day == DateOnly.FromDateTime(DateTime.Today);
+        <MudExpansionPanel InitiallyExpanded="@isToday"
+                          Class="@(isToday ? "today-panel" : "")">
+            <TitleContent>
+                <div class="d-flex justify-space-between align-center w-100">
+                    <div>
+                        <MudText Typo="Typo.subtitle1">@day.DayOfWeek</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@day.ToString("MMM d")</MudText>
+                    </div>
+                    @if (isToday)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary">Today</MudChip>
+                    }
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        @GetDayMealCount(day) meals
+                    </MudText>
+                </div>
+            </TitleContent>
+            <ChildContent>
+                @foreach (var mealType in new[] { MealType.Breakfast, MealType.Lunch, MealType.Dinner })
+                {
+                    <div class="d-flex align-center gap-2 py-2">
+                        <MudText Typo="Typo.body2" Class="meal-type-label" Style="width: 80px;">
+                            @mealType
+                        </MudText>
+                        <div class="flex-grow-1">
+                            @{
+                                var entry = GetEntry(day, mealType);
+                            }
+                            <MealSlot Date="@day"
+                                      MealType="@mealType"
+                                      Entry="@entry"
+                                      OnClick="@(() => OnSlotClick.InvokeAsync((day, mealType)))"
+                                      OnRemove="@(() => HandleRemove(day, mealType))"
+                                      OnViewRecipe="@(() => HandleViewRecipe(entry))" />
+                        </div>
+                    </div>
+                }
+            </ChildContent>
+        </MudExpansionPanel>
+    }
+</MudExpansionPanels>
+
+@code {
+    [Parameter]
+    public DateOnly WeekStartDate { get; set; }
+
+    [Parameter]
+    public List<MealPlanEntry> Entries { get; set; } = new();
+
+    [Parameter]
+    public EventCallback<(DateOnly Date, MealType MealType)> OnSlotClick { get; set; }
+
+    [Parameter]
+    public EventCallback<MealPlanEntry> OnRemoveEntry { get; set; }
+
+    [Parameter]
+    public EventCallback<Recipe> OnViewRecipe { get; set; }
+
+    private DateOnly[] WeekDays => Enumerable.Range(0, 7)
+        .Select(i => WeekStartDate.AddDays(i))
+        .ToArray();
+
+    private MealPlanEntry? GetEntry(DateOnly date, MealType mealType)
+    {
+        return Entries?.FirstOrDefault(e => e.Date == date && e.MealType == mealType);
+    }
+
+    private int GetDayMealCount(DateOnly day)
+    {
+        return Entries?.Count(e => e.Date == day) ?? 0;
+    }
+
+    private async Task HandleRemove(DateOnly date, MealType mealType)
+    {
+        var entry = GetEntry(date, mealType);
+        if (entry != null)
+        {
+            await OnRemoveEntry.InvokeAsync(entry);
+        }
+    }
+
+    private async Task HandleViewRecipe(MealPlanEntry? entry)
+    {
+        if (entry?.Recipe != null)
+        {
+            await OnViewRecipe.InvokeAsync(entry.Recipe);
+        }
+    }
+}
+
+<style>
+    .today-panel {
+        border-left: 3px solid var(--mud-palette-primary);
+    }
+
+    .meal-type-label {
+        font-weight: 500;
+        color: var(--mud-palette-text-secondary);
+    }
+</style>
