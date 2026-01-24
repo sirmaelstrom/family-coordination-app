@@ -22,6 +22,9 @@ public static class SeedData
         if (user == null)
             return;
 
+        // Seed default categories
+        await SeedDefaultCategoriesAsync(dbFactory, household.Id);
+
         // Real recipe names for realistic data
         var recipeNames = new[]
         {
@@ -83,6 +86,34 @@ public static class SeedData
             context.Recipes.Add(recipe);
         }
 
+        await context.SaveChangesAsync();
+    }
+
+    public static async Task SeedDefaultCategoriesAsync(IDbContextFactory<ApplicationDbContext> dbFactory, int householdId)
+    {
+        await using var context = dbFactory.CreateDbContext();
+
+        // Check if categories already exist for this household
+        var existingCount = await context.Categories
+            .IgnoreQueryFilters()  // Include soft-deleted
+            .CountAsync(c => c.HouseholdId == householdId);
+
+        if (existingCount > 0) return;
+
+        var defaultCategories = new[]
+        {
+            new Category { HouseholdId = householdId, CategoryId = 1, Name = "Meat", IconEmoji = "meat_on_bone", Color = "#b71c1c", SortOrder = 1, IsDefault = true },
+            new Category { HouseholdId = householdId, CategoryId = 2, Name = "Produce", IconEmoji = "leafy_green", Color = "#2e7d32", SortOrder = 2, IsDefault = true },
+            new Category { HouseholdId = householdId, CategoryId = 3, Name = "Dairy", IconEmoji = "cheese_wedge", Color = "#ffc107", SortOrder = 3, IsDefault = true },
+            new Category { HouseholdId = householdId, CategoryId = 4, Name = "Pantry", IconEmoji = "canned_food", Color = "#795548", SortOrder = 4, IsDefault = true },
+            new Category { HouseholdId = householdId, CategoryId = 5, Name = "Spices", IconEmoji = "hot_pepper", Color = "#ff5722", SortOrder = 5, IsDefault = true },
+            new Category { HouseholdId = householdId, CategoryId = 6, Name = "Frozen", IconEmoji = "snowflake", Color = "#03a9f4", SortOrder = 6, IsDefault = true },
+            new Category { HouseholdId = householdId, CategoryId = 7, Name = "Bakery", IconEmoji = "bread", Color = "#8d6e63", SortOrder = 7, IsDefault = true },
+            new Category { HouseholdId = householdId, CategoryId = 8, Name = "Beverages", IconEmoji = "cup_with_straw", Color = "#9c27b0", SortOrder = 8, IsDefault = true },
+            new Category { HouseholdId = householdId, CategoryId = 9, Name = "Other", IconEmoji = "package", Color = "#607d8b", SortOrder = 9, IsDefault = true }
+        };
+
+        context.Categories.AddRange(defaultCategories);
         await context.SaveChangesAsync();
     }
 }
