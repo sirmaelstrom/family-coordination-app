@@ -1,0 +1,105 @@
+@using FamilyCoordinationApp.Data.Entities
+
+<div class="meal-plan-grid">
+    <!-- Header row: day names + dates -->
+    <div class="grid-corner"></div>
+    @foreach (var day in WeekDays)
+    {
+        <div class="day-header @(day == DateOnly.FromDateTime(DateTime.Today) ? "today" : "")">
+            <MudText Typo="Typo.subtitle2">@day.DayOfWeek.ToString().Substring(0, 3)</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">@day.ToString("MMM d")</MudText>
+        </div>
+    }
+
+    <!-- Meal rows: Breakfast, Lunch, Dinner -->
+    @foreach (var mealType in new[] { MealType.Breakfast, MealType.Lunch, MealType.Dinner })
+    {
+        <div class="meal-label">
+            <MudText Typo="Typo.caption">@mealType</MudText>
+        </div>
+        @foreach (var day in WeekDays)
+        {
+            var entry = GetEntry(day, mealType);
+            <MealSlot Date="@day"
+                      MealType="@mealType"
+                      Entry="@entry"
+                      OnClick="@(() => OnSlotClick.InvokeAsync((day, mealType)))"
+                      OnRemove="@(() => HandleRemove(day, mealType))"
+                      OnViewRecipe="@(() => HandleViewRecipe(entry))" />
+        }
+    }
+</div>
+
+@code {
+    [Parameter]
+    public DateOnly WeekStartDate { get; set; }
+
+    [Parameter]
+    public List<MealPlanEntry> Entries { get; set; } = new();
+
+    [Parameter]
+    public EventCallback<(DateOnly Date, MealType MealType)> OnSlotClick { get; set; }
+
+    [Parameter]
+    public EventCallback<MealPlanEntry> OnRemoveEntry { get; set; }
+
+    [Parameter]
+    public EventCallback<Recipe> OnViewRecipe { get; set; }
+
+    private DateOnly[] WeekDays => Enumerable.Range(0, 7)
+        .Select(i => WeekStartDate.AddDays(i))
+        .ToArray();
+
+    private MealPlanEntry? GetEntry(DateOnly date, MealType mealType)
+    {
+        return Entries?.FirstOrDefault(e => e.Date == date && e.MealType == mealType);
+    }
+
+    private async Task HandleRemove(DateOnly date, MealType mealType)
+    {
+        var entry = GetEntry(date, mealType);
+        if (entry != null)
+        {
+            await OnRemoveEntry.InvokeAsync(entry);
+        }
+    }
+
+    private async Task HandleViewRecipe(MealPlanEntry entry)
+    {
+        if (entry?.Recipe != null)
+        {
+            await OnViewRecipe.InvokeAsync(entry.Recipe);
+        }
+    }
+}
+
+<style>
+    .meal-plan-grid {
+        display: grid;
+        grid-template-columns: 60px repeat(7, 1fr);
+        gap: 4px;
+    }
+
+    .grid-corner {
+        /* Empty top-left corner */
+    }
+
+    .day-header {
+        text-align: center;
+        padding: 8px 4px;
+    }
+
+    .day-header.today {
+        background-color: var(--mud-palette-primary);
+        border-radius: 4px;
+    }
+
+    .meal-label {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        writing-mode: vertical-rl;
+        text-orientation: mixed;
+        transform: rotate(180deg);
+    }
+</style>
