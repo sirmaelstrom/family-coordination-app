@@ -4,10 +4,7 @@
     @foreach (var day in WeekDays)
     {
         var isToday = day == DateOnly.FromDateTime(DateTime.Today);
-        var dayKey = day.ToString("yyyy-MM-dd");
-        <MudExpansionPanel IsExpanded="@IsPanelExpanded(dayKey)"
-                          IsExpandedChanged="@(expanded => SetPanelExpanded(dayKey, expanded))"
-                          Class="@(isToday ? "today-panel" : "")">
+        <MudExpansionPanel Class="@(isToday ? "today-panel" : "")">
             <TitleContent>
                 <div class="d-flex justify-space-between align-center w-100">
                     <div>
@@ -64,33 +61,9 @@
     [Parameter]
     public EventCallback<Recipe> OnViewRecipe { get; set; }
 
-    private Dictionary<string, bool> _expandedPanels = new();
-
     private DateOnly[] WeekDays => Enumerable.Range(0, 7)
         .Select(i => WeekStartDate.AddDays(i))
         .ToArray();
-
-    protected override void OnParametersSet()
-    {
-        // Initialize expansion state for today on first load
-        var today = DateOnly.FromDateTime(DateTime.Today);
-        var todayKey = today.ToString("yyyy-MM-dd");
-
-        if (!_expandedPanels.ContainsKey(todayKey))
-        {
-            _expandedPanels[todayKey] = true;
-        }
-    }
-
-    private bool IsPanelExpanded(string dayKey)
-    {
-        return _expandedPanels.TryGetValue(dayKey, out var expanded) && expanded;
-    }
-
-    private void SetPanelExpanded(string dayKey, bool expanded)
-    {
-        _expandedPanels[dayKey] = expanded;
-    }
 
     private MealPlanEntry? GetEntry(DateOnly date, MealType mealType)
     {
