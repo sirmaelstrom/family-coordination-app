@@ -3,19 +3,25 @@
 
 <PageTitle>Access Denied - Family Coordination</PageTitle>
 
-<div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
-    <div class="max-w-md w-full text-center space-y-6">
-        <div class="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-            <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-            </svg>
-        </div>
-        <h1 class="text-2xl font-bold text-gray-900">Access Denied</h1>
-        <p class="text-gray-600">
-            This app is for family members only. If you should have access, please contact the family administrator to add your email to the whitelist.
-        </p>
-        <a href="/account/logout" class="inline-block px-6 py-3 bg-gray-600 text-white rounded-md hover:bg-gray-700">
+<MudContainer MaxWidth="MaxWidth.Small" Class="d-flex align-center justify-center" Style="min-height: 100vh;">
+    <MudPaper Elevation="4" Class="pa-8 text-center" Style="width: 100%; max-width: 400px;">
+        <MudIcon Icon="@Icons.Material.Filled.Block"
+                 Size="Size.Large"
+                 Color="Color.Error"
+                 Style="font-size: 4rem;" />
+
+        <MudText Typo="Typo.h5" Class="mt-4 mb-2">Access Denied</MudText>
+
+        <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-6">
+            This app is for family members only. If you should have access,
+            please contact the family administrator to add your email to the whitelist.
+        </MudText>
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Default"
+                   FullWidth="true"
+                   Href="/account/logout">
             Sign out and try another account
-        </a>
-    </div>
-</div>
+        </MudButton>
+    </MudPaper>
+</MudContainer>

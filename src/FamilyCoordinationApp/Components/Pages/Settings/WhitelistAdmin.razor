@@ -4,101 +4,105 @@
 @using FamilyCoordinationApp.Data
 @using FamilyCoordinationApp.Data.Entities
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject ISnackbar Snackbar
 @implements IAsyncDisposable
 
 <PageTitle>Manage Users - Family Coordination</PageTitle>
 
-<div class="max-w-2xl mx-auto py-8 px-4">
-    <h1 class="text-2xl font-bold text-gray-900 mb-6">Manage Family Members</h1>
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-4">
+    <MudText Typo="Typo.h4" Class="mb-4">Manage Family Members</MudText>
 
     @if (_isLoading)
     {
-        <p class="text-gray-600">Loading...</p>
+        <MudProgressLinear Indeterminate="true" />
     }
     else
     {
-        <!-- Add new user form -->
-        <div class="bg-white shadow rounded-lg p-6 mb-6">
-            <h2 class="text-lg font-medium text-gray-900 mb-4">Add Family Member</h2>
-            <form @onsubmit="AddUser" @onsubmit:preventDefault class="flex gap-4">
-                <input type="email"
-                       @bind="_newEmail"
-                       placeholder="email@example.com"
-                       required
-                       class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
-                <button type="submit"
-                        disabled="@_isSubmitting"
-                        class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">
-                    Add
-                </button>
-            </form>
-            @if (!string.IsNullOrEmpty(_message))
-            {
-                <p class="mt-2 text-sm @(_isError ? "text-red-600" : "text-green-600")">@_message</p>
-            }
-        </div>
+        <MudPaper Class="pa-4 mb-4" Elevation="1">
+            <MudText Typo="Typo.h6" Class="mb-3">Add Family Member</MudText>
 
-        <!-- Current users list -->
-        <div class="bg-white shadow rounded-lg overflow-hidden">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    @foreach (var user in _users)
-                    {
-                        <tr>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">@user.Email</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">@user.DisplayName</td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                @if (user.IsWhitelisted)
-                                {
-                                    <span class="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">Active</span>
-                                }
-                                else
-                                {
-                                    <span class="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">Disabled</span>
-                                }
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
-                                @if (user.IsWhitelisted && _users.Count(u => u.IsWhitelisted) > 1)
-                                {
-                                    <button @onclick="() => ToggleUser(user)"
-                                            class="text-red-600 hover:text-red-900">
-                                        Disable
-                                    </button>
-                                }
-                                else if (!user.IsWhitelisted)
-                                {
-                                    <button @onclick="() => ToggleUser(user)"
-                                            class="text-green-600 hover:text-green-900">
-                                        Enable
-                                    </button>
-                                }
-                                else
-                                {
-                                    <span class="text-gray-400">Last admin</span>
-                                }
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
+            <MudGrid>
+                <MudItem xs="12" sm="9">
+                    <MudTextField @bind-Value="_newEmail"
+                                  Label="Email Address"
+                                  Placeholder="email@example.com"
+                                  Variant="Variant.Outlined"
+                                  InputType="InputType.Email" />
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Disabled="_isSubmitting"
+                               FullWidth="true"
+                               Style="height: 56px;"
+                               OnClick="AddUser">
+                        @if (_isSubmitting)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        }
+                        Add
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudText Typo="Typo.h6" Class="mb-3">Current Members</MudText>
+
+            <MudTable Items="_users" Hover="true" Breakpoint="Breakpoint.Sm">
+                <HeaderContent>
+                    <MudTh>Email</MudTh>
+                    <MudTh>Name</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh Style="text-align: right;">Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Email">@context.Email</MudTd>
+                    <MudTd DataLabel="Name">@context.DisplayName</MudTd>
+                    <MudTd DataLabel="Status">
+                        @if (context.IsWhitelisted)
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small">Active</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Color="Color.Default" Size="Size.Small">Disabled</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Actions" Style="text-align: right;">
+                        @if (context.IsWhitelisted && _users.Count(u => u.IsWhitelisted) > 1)
+                        {
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Error"
+                                       Size="Size.Small"
+                                       OnClick="() => ToggleUser(context)">
+                                Disable
+                            </MudButton>
+                        }
+                        else if (!context.IsWhitelisted)
+                        {
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Success"
+                                       Size="Size.Small"
+                                       OnClick="() => ToggleUser(context)">
+                                Enable
+                            </MudButton>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Last admin</MudText>
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
     }
-</div>
+</MudContainer>
 
 @code {
     private ApplicationDbContext _context = default!;
     private List<User> _users = new();
     private string _newEmail = "";
-    private string _message = "";
-    private bool _isError;
     private bool _isLoading = true;
     private bool _isSubmitting;
     private int _householdId;
@@ -130,13 +134,11 @@
             return;
 
         _isSubmitting = true;
-        _message = "";
 
         try
         {
             var email = _newEmail.Trim().ToLowerInvariant();
 
-            // Check if user already exists
             var existingUser = await _context.Users
                 .FirstOrDefaultAsync(u => u.Email == email);
 
@@ -146,13 +148,11 @@
                 {
                     existingUser.IsWhitelisted = true;
                     await _context.SaveChangesAsync();
-                    _message = $"Re-enabled {email}";
-                    _isError = false;
+                    Snackbar.Add($"Re-enabled {email}", Severity.Success);
                 }
                 else
                 {
-                    _message = "User already has access.";
-                    _isError = true;
+                    Snackbar.Add("User already has access", Severity.Warning);
                 }
             }
             else
@@ -161,24 +161,22 @@
                 {
                     HouseholdId = _householdId,
                     Email = email,
-                    DisplayName = email.Split('@')[0],  // Default to email prefix
-                    GoogleId = "",  // Will be set on first login
+                    DisplayName = email.Split('@')[0],
+                    GoogleId = null,  // Set when user first logs in with Google
                     IsWhitelisted = true,
                     CreatedAt = DateTime.UtcNow
                 };
                 _context.Users.Add(newUser);
                 await _context.SaveChangesAsync();
-                _message = $"Added {email} to whitelist";
-                _isError = false;
+                Snackbar.Add($"Added {email} to whitelist", Severity.Success);
             }
 
             _newEmail = "";
             await LoadUsers();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            _message = "Failed to add user. Please try again.";
-            _isError = true;
+            Snackbar.Add($"Failed to add user: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -190,10 +188,11 @@
     {
         user.IsWhitelisted = !user.IsWhitelisted;
         await _context.SaveChangesAsync();
-        _message = user.IsWhitelisted
+
+        var message = user.IsWhitelisted
             ? $"Enabled {user.Email}"
             : $"Disabled {user.Email}";
-        _isError = false;
+        Snackbar.Add(message, Severity.Success);
     }
 
     public async ValueTask DisposeAsync()
