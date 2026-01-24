@@ -1,0 +1,80 @@
+@using FamilyCoordinationApp.Services
+@implements IDisposable
+
+@inject DataNotifier Notifier
+
+<MudTooltip Text="@StatusText" Placement="Placement.Bottom">
+    <div class="sync-status @StatusClass">
+        @if (_isSyncing)
+        {
+            <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Primary" Style="width: 16px; height: 16px;" />
+        }
+        else
+        {
+            <MudIcon Icon="@StatusIcon" Size="Size.Small" Color="@StatusColor" />
+        }
+    </div>
+</MudTooltip>
+
+@code {
+    private bool _isSyncing;
+    private DateTime _lastSync = DateTime.UtcNow;
+    private bool _hasError;
+
+    private string StatusText => _hasError
+        ? "Sync error - will retry"
+        : _isSyncing
+            ? "Syncing..."
+            : $"Synced {GetTimeSinceLastSync()}";
+
+    private string StatusClass => _hasError ? "sync-error" : "sync-ok";
+
+    private string StatusIcon => _hasError
+        ? Icons.Material.Filled.CloudOff
+        : Icons.Material.Filled.CloudDone;
+
+    private Color StatusColor => _hasError ? Color.Error : Color.Success;
+
+    protected override void OnInitialized()
+    {
+        Notifier.OnShoppingListChanged += OnDataSynced;
+        Notifier.OnRecipesChanged += OnDataSynced;
+        Notifier.OnMealPlanChanged += OnDataSynced;
+    }
+
+    private void OnDataSynced()
+    {
+        InvokeAsync(() =>
+        {
+            _lastSync = DateTime.UtcNow;
+            _isSyncing = false;
+            _hasError = false;
+            StateHasChanged();
+        });
+    }
+
+    private string GetTimeSinceLastSync()
+    {
+        var elapsed = DateTime.UtcNow - _lastSync;
+        return elapsed.TotalSeconds < 10 ? "just now"
+            : elapsed.TotalMinutes < 1 ? $"{(int)elapsed.TotalSeconds}s ago"
+            : elapsed.TotalMinutes < 60 ? $"{(int)elapsed.TotalMinutes}m ago"
+            : "a while ago";
+    }
+
+    public void Dispose()
+    {
+        Notifier.OnShoppingListChanged -= OnDataSynced;
+        Notifier.OnRecipesChanged -= OnDataSynced;
+        Notifier.OnMealPlanChanged -= OnDataSynced;
+    }
+}
+
+<style>
+    .sync-status {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 4px;
+    }
+</style>
