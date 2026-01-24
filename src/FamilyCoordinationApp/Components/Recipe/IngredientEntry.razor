@@ -1,0 +1,271 @@
+@using FamilyCoordinationApp.Services
+@using FamilyCoordinationApp.Data.Entities
+
+@inject IngredientParser Parser
+@inject IRecipeService RecipeService
+@inject ICategoryService CategoryService
+@inject IDialogService DialogService
+
+<MudPaper Class="pa-4 mb-4" Elevation="1">
+    <div class="d-flex justify-space-between align-center mb-3">
+        <MudText Typo="Typo.subtitle1">Add Ingredients</MudText>
+        <MudButton Variant="Variant.Text"
+                   Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.ContentPaste"
+                   OnClick="OpenBulkPaste">
+            Bulk Paste
+        </MudButton>
+    </div>
+
+    <MudGrid>
+        <MudItem xs="12">
+            <MudTextField @bind-Value="_rawInput"
+                          Label="Add ingredient (e.g., '2 cups flour' or '1/2 lb chicken, boneless')"
+                          Variant="Variant.Outlined"
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@Icons.Material.Filled.Add"
+                          OnAdornmentClick="AddIngredient"
+                          OnKeyDown="HandleKeyDown"
+                          FullWidth="true" />
+        </MudItem>
+
+        @if (_showParsed && _parsed != null)
+        {
+            <MudItem xs="12" sm="2">
+                <MudTextField @bind-Value="_quantity"
+                              Label="Quantity"
+                              Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" sm="2">
+                <MudAutocomplete T="string"
+                                 @bind-Value="_unit"
+                                 Label="Unit"
+                                 SearchFunc="SearchUnits"
+                                 Variant="Variant.Outlined"
+                                 CoerceText="false"
+                                 ResetValueOnEmptyText="true" />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudAutocomplete T="string"
+                                 @bind-Value="_name"
+                                 Label="Ingredient"
+                                 SearchFunc="SearchIngredients"
+                                 Variant="Variant.Outlined"
+                                 DebounceInterval="300"
+                                 MinCharacters="2"
+                                 CoerceText="false" />
+            </MudItem>
+            <MudItem xs="12" sm="2">
+                <MudSelect T="string" @bind-Value="_category" Label="Category" Variant="Variant.Outlined">
+                    @foreach (var cat in _categories)
+                    {
+                        <MudSelectItem Value="@cat.Name">@cat.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="2">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           OnClick="AddIngredient"
+                           FullWidth="true"
+                           Style="height: 56px;">
+                    Add
+                </MudButton>
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_notes"
+                              Label="Notes (optional)"
+                              Variant="Variant.Outlined"
+                              FullWidth="true" />
+            </MudItem>
+        }
+    </MudGrid>
+</MudPaper>
+
+@code {
+    [Parameter] public int HouseholdId { get; set; }
+    [Parameter] public EventCallback<RecipeIngredient> OnIngredientAdded { get; set; }
+    [Parameter] public EventCallback<List<RecipeIngredient>> OnBulkIngredientsAdded { get; set; }
+
+    private string _rawInput = string.Empty;
+    private bool _showParsed = false;
+    private ParsedIngredient? _parsed;
+
+    private string _quantity = string.Empty;
+    private string _unit = string.Empty;
+    private string _name = string.Empty;
+    private string _category = "Pantry";
+    private string _notes = string.Empty;
+
+    private List<Category> _categories = new();
+
+    private static readonly string[] Units =
+    {
+        "cup", "cups", "tbsp", "tsp", "oz", "lb", "lbs", "g", "kg", "ml", "l",
+        "clove", "cloves", "can", "cans", "bunch", "slice", "slices", "piece", "pieces"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCategories();
+    }
+
+    private async Task LoadCategories()
+    {
+        _categories = (await CategoryService.GetCategoriesAsync(HouseholdId)).ToList();
+        if (_categories.Any())
+        {
+            _category = _categories.First().Name;
+        }
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            if (_showParsed)
+            {
+                _ = AddIngredient();
+            }
+            else if (!string.IsNullOrWhiteSpace(_rawInput))
+            {
+                ParseInput();
+            }
+        }
+        else if (e.Key == "Tab" && !_showParsed && !string.IsNullOrWhiteSpace(_rawInput))
+        {
+            ParseInput();
+        }
+    }
+
+    private void ParseInput()
+    {
+        if (string.IsNullOrWhiteSpace(_rawInput))
+            return;
+
+        _parsed = Parser.ParseIngredient(_rawInput);
+        _showParsed = true;
+
+        // Populate fields from parsed result
+        _quantity = _parsed.Quantity?.ToString() ?? string.Empty;
+        _unit = _parsed.Unit ?? string.Empty;
+        _name = _parsed.Name;
+        _notes = _parsed.Notes ?? string.Empty;
+
+        // Auto-suggest category based on ingredient name
+        _category = SuggestCategory(_name);
+    }
+
+    private async Task AddIngredient()
+    {
+        if (!_showParsed)
+        {
+            ParseInput();
+            if (!_showParsed) return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_name))
+            return;
+
+        decimal? quantity = null;
+        if (!string.IsNullOrWhiteSpace(_quantity) && decimal.TryParse(_quantity, out var q))
+        {
+            quantity = q;
+        }
+
+        var ingredient = new RecipeIngredient
+        {
+            Name = _name.Trim(),
+            Quantity = quantity,
+            Unit = string.IsNullOrWhiteSpace(_unit) ? null : _unit.Trim(),
+            Category = _category,
+            Notes = string.IsNullOrWhiteSpace(_notes) ? null : _notes.Trim()
+        };
+
+        await OnIngredientAdded.InvokeAsync(ingredient);
+
+        // Reset form
+        _rawInput = string.Empty;
+        _showParsed = false;
+        _parsed = null;
+        _quantity = string.Empty;
+        _unit = string.Empty;
+        _name = string.Empty;
+        _category = _categories.Any() ? _categories.First().Name : "Pantry";
+        _notes = string.Empty;
+    }
+
+    private async Task OpenBulkPaste()
+    {
+        var parameters = new DialogParameters
+        {
+            { nameof(BulkPasteDialog.HouseholdId), HouseholdId }
+        };
+
+        var dialog = await DialogService.ShowAsync<BulkPasteDialog>("Bulk Paste Ingredients", parameters);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled && result.Data is List<RecipeIngredient> ingredients)
+        {
+            await OnBulkIngredientsAdded.InvokeAsync(ingredients);
+        }
+    }
+
+    private Task<IEnumerable<string>> SearchUnits(string value, CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return Task.FromResult(Units.AsEnumerable());
+
+        return Task.FromResult(Units.Where(u =>
+            u.StartsWith(value, StringComparison.OrdinalIgnoreCase)).AsEnumerable());
+    }
+
+    private async Task<IEnumerable<string>> SearchIngredients(string value, CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length < 2)
+            return Enumerable.Empty<string>();
+
+        return await RecipeService.GetIngredientSuggestionsAsync(HouseholdId, value, token);
+    }
+
+    private string SuggestCategory(string ingredientName)
+    {
+        var lower = ingredientName.ToLowerInvariant();
+
+        // Simple heuristics - can be expanded
+        if (lower.Contains("chicken") || lower.Contains("beef") || lower.Contains("pork") ||
+            lower.Contains("fish") || lower.Contains("salmon") || lower.Contains("shrimp") ||
+            lower.Contains("bacon") || lower.Contains("sausage") || lower.Contains("turkey"))
+            return FindCategory("Meat");
+
+        if (lower.Contains("milk") || lower.Contains("cheese") || lower.Contains("cream") ||
+            lower.Contains("butter") || lower.Contains("yogurt") || lower.Contains("egg"))
+            return FindCategory("Dairy");
+
+        if (lower.Contains("lettuce") || lower.Contains("tomato") || lower.Contains("onion") ||
+            lower.Contains("garlic") || lower.Contains("pepper") || lower.Contains("carrot") ||
+            lower.Contains("celery") || lower.Contains("potato") || lower.Contains("broccoli") ||
+            lower.Contains("spinach") || lower.Contains("cucumber") || lower.Contains("avocado"))
+            return FindCategory("Produce");
+
+        if (lower.Contains("salt") || lower.Contains("pepper") || lower.Contains("cumin") ||
+            lower.Contains("paprika") || lower.Contains("oregano") || lower.Contains("basil") ||
+            lower.Contains("thyme") || lower.Contains("rosemary") || lower.Contains("cinnamon"))
+            return FindCategory("Spices");
+
+        if (lower.Contains("bread") || lower.Contains("bun") || lower.Contains("roll") ||
+            lower.Contains("tortilla") || lower.Contains("bagel"))
+            return FindCategory("Bakery");
+
+        if (lower.Contains("frozen"))
+            return FindCategory("Frozen");
+
+        return FindCategory("Pantry");
+    }
+
+    private string FindCategory(string name)
+    {
+        var category = _categories.FirstOrDefault(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        return category?.Name ?? (_categories.Any() ? _categories.First().Name : "Pantry");
+    }
+}
