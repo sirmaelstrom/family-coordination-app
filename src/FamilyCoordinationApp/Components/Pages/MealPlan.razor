@@ -1,0 +1,166 @@
+@page "/meal-plan"
+@using FamilyCoordinationApp.Data
+@using FamilyCoordinationApp.Data.Entities
+@using FamilyCoordinationApp.Services
+@using FamilyCoordinationApp.Components.MealPlan
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@attribute [Authorize]
+
+@inject IMealPlanService MealPlanService
+@inject IDialogService DialogService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<PageTitle>Meal Plan - Family Coordination</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    <MudText Typo="Typo.h4" Class="mb-4">Meal Plan</MudText>
+
+    <!-- IMPORTANT: Use explicit event handler, NOT @bind-WeekStartDate -->
+    <!-- @bind uses WeekStartDateChanged internally but doesn't trigger our reload logic -->
+    <MealPlanNavigation WeekStartDate="@_weekStartDate"
+                        WeekStartDateChanged="@HandleWeekChanged" />
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else
+    {
+        <!-- Desktop: Calendar Grid (md and up) -->
+        <MudHidden Breakpoint="Breakpoint.SmAndDown">
+            <WeeklyCalendarView WeekStartDate="@_weekStartDate"
+                                Entries="@_entries"
+                                OnSlotClick="HandleSlotClick"
+                                OnRemoveEntry="HandleRemoveEntry"
+                                OnViewRecipe="HandleViewRecipe" />
+        </MudHidden>
+
+        <!-- Mobile: List View (sm and down) -->
+        <MudHidden Breakpoint="Breakpoint.MdAndUp">
+            <WeeklyListView WeekStartDate="@_weekStartDate"
+                            Entries="@_entries"
+                            OnSlotClick="HandleSlotClick"
+                            OnRemoveEntry="HandleRemoveEntry"
+                            OnViewRecipe="HandleViewRecipe" />
+        </MudHidden>
+    }
+</MudContainer>
+
+@code {
+    private DateOnly _weekStartDate;
+    private List<MealPlanEntry> _entries = new();
+    private bool _loading = true;
+    private int _householdId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get current week's Monday
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        _weekStartDate = MealPlanService.GetWeekStartDate(today);
+
+        // Get household ID from current user
+        _householdId = await GetHouseholdIdAsync();
+
+        await LoadMealPlanAsync();
+    }
+
+    private async Task<int> GetHouseholdIdAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var email = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+
+        await using var context = await DbFactory.CreateDbContextAsync();
+        var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
+        return user?.HouseholdId ?? 1;
+    }
+
+    private async Task LoadMealPlanAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            var mealPlan = await MealPlanService.GetOrCreateMealPlanAsync(_householdId, _weekStartDate);
+            _entries = mealPlan.Entries.ToList();
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    // CRITICAL: This handler updates the week AND reloads data
+    // Called explicitly via WeekStartDateChanged="@HandleWeekChanged"
+    private async Task HandleWeekChanged(DateOnly newWeekStart)
+    {
+        _weekStartDate = newWeekStart;
+        await LoadMealPlanAsync();
+    }
+
+    private async Task HandleSlotClick((DateOnly Date, MealType MealType) slot)
+    {
+        var parameters = new DialogParameters<RecipePickerDialog>
+        {
+            { x => x.HouseholdId, _householdId }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            BackdropClick = false,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<RecipePickerDialog>("Select Meal", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled && result.Data is RecipePickerDialog.MealSelection selection)
+        {
+            await MealPlanService.AddMealAsync(
+                _householdId,
+                slot.Date,
+                slot.MealType,
+                selection.RecipeId,
+                selection.CustomMealName);
+
+            await LoadMealPlanAsync();
+        }
+    }
+
+    private async Task HandleRemoveEntry(MealPlanEntry entry)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Remove Meal",
+            $"Remove this meal from {entry.Date:MMM d}?",
+            yesText: "Remove",
+            cancelText: "Cancel");
+
+        if (confirmed == true)
+        {
+            await MealPlanService.RemoveMealAsync(_householdId, entry.MealPlanId, entry.EntryId);
+            await LoadMealPlanAsync();
+        }
+    }
+
+    private async Task HandleViewRecipe(Recipe recipe)
+    {
+        var parameters = new DialogParameters<RecipeDetailDialog>
+        {
+            { x => x.Recipe, recipe }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Medium,
+            FullWidth = true
+        };
+
+        await DialogService.ShowAsync<RecipeDetailDialog>(recipe.Name, parameters, options);
+    }
+}
