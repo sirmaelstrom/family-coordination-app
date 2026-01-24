@@ -119,7 +119,7 @@
         var dialog = await DialogService.ShowAsync<RecipePickerDialog>("Select Meal", parameters, options);
         var result = await dialog.Result;
 
-        if (!result.Canceled && result.Data is RecipePickerDialog.MealSelection selection)
+        if (result != null && !result.Canceled && result.Data is RecipePickerDialog.MealSelection selection)
         {
             await MealPlanService.AddMealAsync(
                 _householdId,
