@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-01-22)
 ## Current Position
 
 Phase: 5 of 7 (Multi-User Collaboration)
-Plan: 3 of 7 (complete)
+Plan: 5 of 7 (complete)
 Status: In progress
-Last activity: 2026-01-24 — Completed 05-03-PLAN.md
+Last activity: 2026-01-24 — Completed 05-05-PLAN.md
 
-Progress: [████████████████░] 61% (4.43 of 7 phases)
+Progress: [████████████████░] 63% (4.71 of 7 phases)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 24
-- Average duration: 7.8 min
-- Total execution time: 3.1 hours
+- Total plans completed: 25
+- Average duration: 7.6 min
+- Total execution time: 3.2 hours
 
 **By Phase:**
 
@@ -31,11 +31,11 @@ Progress: [████████████████░] 61% (4.43 of 7 p
 | 2 | 7 | 32min | 4.6min |
 | 3 | 4 | 90min | 22.5min |
 | 4 | 6 | 34min | 5.7min |
-| 5 | 3 | 7min | 2.3min |
+| 5 | 4 | 9min | 2.3min |
 
 **Recent Trend:**
-- Last 5 plans: 4min, 3min (04-06 verification), 2.7min (05-01), 2min (05-02), 2min (05-03)
-- Trend: Phase 5 Wave 2 maintains efficiency with background services implementation
+- Last 5 plans: 3min (04-06 verification), 2.7min (05-01), 2min (05-02), 2min (05-03), 2min (05-05)
+- Trend: Phase 5 Wave 3 continues high efficiency with UI integration
 
 *Updated after each plan completion*
 
@@ -137,10 +137,14 @@ Recent decisions affecting current work:
 - 5-second polling interval (balances responsiveness with database load for family app) [05-03]
 - Singleton DataNotifier and PresenceService (cross-user state sharing in Blazor Server) [05-03]
 - ConcurrentDictionary for presence storage (thread-safe for multi-user updates) [05-03]
+- 30-second heartbeat interval (balances presence accuracy with minimal overhead) [05-05]
+- Send heartbeat on navigation (captures current page context immediately) [05-05]
+- Exclude current user from OnlineUsers display (shows "who else is here") [05-05]
+- 3-avatar limit with overflow count (prevents header crowding) [05-05]
 
 ### Pending Todos
 
-- Phase 5: Plans 05-04 through 05-07 pending
+- Phase 5: Plans 05-04, 05-06, 05-07 pending (05-04 running in parallel)
 
 ### Blockers/Concerns
 
@@ -152,11 +156,11 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-01-24T19:28:34Z
-Stopped at: Completed 05-03-PLAN.md (Background Infrastructure)
+Last session: 2026-01-24T19:34:11Z
+Stopped at: Completed 05-05-PLAN.md (Collaboration UI)
 Resume file: None
 Next command: Execute next plan in Phase 5
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-01-24T19:28:34Z*
+*Last updated: 2026-01-24T19:34:11Z*
