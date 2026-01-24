@@ -8,7 +8,9 @@ public class RecipeIngredient
     public string Name { get; set; } = string.Empty;
     public decimal? Quantity { get; set; }
     public string? Unit { get; set; }
-    public string Category { get; set; } = "Pantry"; // Meat, Produce, Dairy, Pantry, Spices
+    public string Category { get; set; } = "Pantry"; // References Category.Name
+    public string? Notes { get; set; }
+    public string? GroupName { get; set; }  // For ingredient sections like "For the sauce"
     public int SortOrder { get; set; }
 
     // Navigation
