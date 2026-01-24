@@ -1,5 +1,4 @@
 @using FamilyCoordinationApp.Data.Entities
-@using Fractions
 
 <div class="shopping-list-item @GetItemClass()" @onclick="HandleClick">
     <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
@@ -86,39 +85,16 @@
 
     private string FormatQuantity(decimal quantity)
     {
-        // For small quantities, show as fraction; for larger, show as decimal
-        if (quantity < 10)
+        // Simple approach: show whole numbers without decimals, decimals with up to 2 places
+        if (quantity == Math.Floor(quantity))
         {
-            // Use Fractions library for nice display
-            var fraction = (Fraction)quantity;
-
-            // If it's a whole number, just show the number
-            if (fraction.Denominator == 1)
-            {
-                return fraction.Numerator.ToString();
-            }
-
-            // Convert to mixed number for better readability (e.g., "1 1/2" instead of "3/2")
-            var whole = fraction.Numerator / fraction.Denominator;
-            var remainder = fraction.Numerator % fraction.Denominator;
-
-            if (whole > 0 && remainder > 0)
-            {
-                return $"{whole} {remainder}/{fraction.Denominator}";
-            }
-            else if (remainder > 0)
-            {
-                return $"{remainder}/{fraction.Denominator}";
-            }
-            else
-            {
-                return whole.ToString();
-            }
+            // Whole number
+            return quantity.ToString("0");
         }
         else
         {
-            // For larger quantities, decimals are more readable
-            return quantity % 1 == 0 ? quantity.ToString("F0") : quantity.ToString("F1");
+            // Decimal - show up to 2 decimal places, trimming trailing zeros
+            return quantity.ToString("0.##");
         }
     }
 

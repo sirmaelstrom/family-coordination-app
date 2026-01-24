@@ -7,18 +7,13 @@
 
 <MudDialog>
     <DialogContent>
-        <MudAutocomplete T="string"
-                         @bind-Value="_itemName"
-                         Label="Item name"
-                         SearchFunc="SearchItemHistory"
-                         DebounceInterval="300"
-                         MinCharacters="2"
-                         Variant="Variant.Outlined"
-                         FullWidth="true"
-                         AutoFocus="true"
-                         Required="true"
-                         CoerceText="true"
-                         CoerceValue="true" />
+        <MudTextField @bind-Value="_itemName"
+                      Label="Item name"
+                      Variant="Variant.Outlined"
+                      FullWidth="true"
+                      AutoFocus="true"
+                      Required="true"
+                      Immediate="true" />
 
         <MudGrid Class="mt-2">
             <MudItem xs="6">
