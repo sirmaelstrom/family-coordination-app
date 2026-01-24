@@ -19,11 +19,9 @@
                 <img src="@Entry.Recipe.ImagePath" alt="@Entry.Recipe.Name" class="slot-recipe-image" />
             }
             <div class="slot-recipe-details">
-                <div @onclick="HandleViewRecipeClick">
-                    <MudText Typo="Typo.body2" Class="slot-recipe-name" @onclick:stopPropagation="true">
-                        @Entry.Recipe.Name
-                    </MudText>
-                </div>
+                <MudText Typo="Typo.body2" Class="slot-recipe-name">
+                    @Entry.Recipe.Name
+                </MudText>
                 @if (!string.IsNullOrWhiteSpace(Entry.Notes))
                 {
                     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="slot-notes">
@@ -94,11 +92,6 @@
     private async Task HandleRemoveClick()
     {
         await OnRemove.InvokeAsync();
-    }
-
-    private async Task HandleViewRecipeClick(MouseEventArgs e)
-    {
-        await OnViewRecipe.InvokeAsync();
     }
 
     private string GetSlotClass()
