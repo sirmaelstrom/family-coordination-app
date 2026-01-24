@@ -57,6 +57,7 @@ public class ShoppingListService(
         return await context.ShoppingLists
             .Where(sl => sl.HouseholdId == householdId && sl.ShoppingListId == shoppingListId)
             .Include(sl => sl.Items)
+                .ThenInclude(i => i.AddedBy)
             .Include(sl => sl.MealPlan)
             .FirstOrDefaultAsync(ct);
     }
@@ -69,6 +70,7 @@ public class ShoppingListService(
             .Where(sl => sl.HouseholdId == householdId && !sl.IsArchived)
             .OrderByDescending(sl => sl.CreatedAt)
             .Include(sl => sl.Items)
+                .ThenInclude(i => i.AddedBy)
             .ToListAsync(ct);
     }
 
@@ -114,6 +116,8 @@ public class ShoppingListService(
         existing.Category = item.Category;
         existing.IsChecked = item.IsChecked;
         existing.CheckedAt = item.CheckedAt;
+        existing.UpdatedByUserId = item.UpdatedByUserId;
+        existing.UpdatedAt = DateTime.UtcNow;
 
         await context.SaveChangesAsync(ct);
 
