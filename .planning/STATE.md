@@ -10,29 +10,29 @@ See: .planning/PROJECT.md (updated 2026-01-22)
 ## Current Position
 
 Phase: 2 of 7 (Recipe Management)
-Plan: 1 of 7 complete
+Plan: 2 of 7 complete
 Status: In progress
-Last activity: 2026-01-23 — Completed 02-01-PLAN.md (MudBlazor UI & Category entity)
+Last activity: 2026-01-24 — Completed 02-02-PLAN.md (Ingredient Parser Service)
 
-Progress: [█████░░░░░] 45%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
-- Average duration: 3.8 min
-- Total execution time: 0.3 hours
+- Total plans completed: 6
+- Average duration: 3.7 min
+- Total execution time: 0.4 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 4 | 16min | 4.0min |
-| 2 | 1 | 3min | 3.0min |
+| 2 | 2 | 7min | 3.5min |
 
 **Recent Trend:**
-- Last 5 plans: 5min, 3min, 4min, 3min
-- Trend: Consistent (3-5 min per plan)
+- Last 5 plans: 3min, 4min, 3min, 4min
+- Trend: Consistent (3-4 min per plan)
 
 *Updated after each plan completion*
 
@@ -67,6 +67,10 @@ Recent decisions affecting current work:
 - 9 default ingredient categories (Meat, Produce, Dairy, etc.) [02-01]
 - String-based category references in RecipeIngredient [02-01]
 - Soft delete pattern on Category entity with global query filter [02-01]
+- Unicode fraction normalization over complex parsing [02-02]
+- Tokenization-based parser over regex-only approach [02-02]
+- Scoped service lifetime for IngredientParser [02-02]
+- HashSet for unit lookup over switch statements [02-02]
 
 ### Pending Todos
 
@@ -85,11 +89,11 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-01-23T19:15:01Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-01-24T01:15:42Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None
-Next command: Continue with 02-02-PLAN.md or next phase plan
+Next command: Continue with 02-03-PLAN.md or next phase plan
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-01-23T19:15:01Z*
+*Last updated: 2026-01-24T01:15:42Z*
