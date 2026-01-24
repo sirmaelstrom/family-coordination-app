@@ -1,0 +1,134 @@
+@using FamilyCoordinationApp.Data.Entities
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_name"
+                      Label="Item name"
+                      Variant="Variant.Outlined"
+                      FullWidth="true"
+                      AutoFocus="true"
+                      Required="true" />
+
+        <MudGrid Class="mt-2">
+            <MudItem xs="6">
+                <MudNumericField @bind-Value="_quantity"
+                                 Label="Quantity (optional)"
+                                 Variant="Variant.Outlined"
+                                 Min="0m" />
+            </MudItem>
+            <MudItem xs="6">
+                <MudAutocomplete T="string"
+                                 @bind-Value="_unit"
+                                 Label="Unit"
+                                 SearchFunc="SearchUnits"
+                                 Variant="Variant.Outlined"
+                                 CoerceText="false" />
+            </MudItem>
+        </MudGrid>
+
+        <MudSelect T="string"
+                   @bind-Value="_category"
+                   Label="Category"
+                   Variant="Variant.Outlined"
+                   Class="mt-2">
+            @foreach (var cat in Categories)
+            {
+                <MudSelectItem Value="@cat">@cat</MudSelectItem>
+            }
+        </MudSelect>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   OnClick="Submit"
+                   Disabled="@(string.IsNullOrWhiteSpace(_name) || _isSubmitting)">
+            @if (_isSubmitting)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+            }
+            else
+            {
+                <span>Save</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public ShoppingListItem Item { get; set; } = default!;
+
+    private string _name = string.Empty;
+    private decimal? _quantity;
+    private string? _unit;
+    private string _category = "Pantry";
+    private bool _isSubmitting = false;
+
+    private static readonly string[] Categories =
+        { "Meat", "Produce", "Dairy", "Pantry", "Spices", "Bakery", "Frozen" };
+
+    private static readonly string[] CommonUnits =
+        { "cup", "tbsp", "tsp", "oz", "lb", "g", "kg", "piece", "can", "bunch" };
+
+    protected override void OnInitialized()
+    {
+        // Initialize from existing item
+        _name = Item.Name;
+        _quantity = Item.Quantity;
+        _unit = Item.Unit;
+        _category = Item.Category;
+    }
+
+    private Task<IEnumerable<string>> SearchUnits(string value, CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return Task.FromResult(CommonUnits.AsEnumerable());
+
+        return Task.FromResult(CommonUnits.Where(u =>
+            u.StartsWith(value, StringComparison.OrdinalIgnoreCase)).AsEnumerable());
+    }
+
+    private void Submit()
+    {
+        if (string.IsNullOrWhiteSpace(_name))
+            return;
+
+        _isSubmitting = true;
+
+        // Create updated item, preserving all IDs and metadata from original
+        var updatedItem = new ShoppingListItem
+        {
+            HouseholdId = Item.HouseholdId,
+            ShoppingListId = Item.ShoppingListId,
+            ItemId = Item.ItemId,
+            Name = _name.Trim(),
+            Quantity = _quantity,
+            Unit = string.IsNullOrWhiteSpace(_unit) ? null : _unit.Trim(),
+            Category = _category,
+            IsChecked = Item.IsChecked,
+            CheckedAt = Item.CheckedAt,
+            AddedByUserId = Item.AddedByUserId,
+            AddedAt = Item.AddedAt,
+            SourceRecipes = Item.SourceRecipes,
+            OriginalUnits = Item.OriginalUnits,
+            IsManuallyAdded = Item.IsManuallyAdded,
+            RecipeIngredientIds = Item.RecipeIngredientIds,
+            SortOrder = Item.SortOrder,
+            QuantityDelta = Item.QuantityDelta
+        };
+
+        // Calculate quantity delta if quantity changed
+        if (_quantity.HasValue && Item.Quantity.HasValue && _quantity.Value != Item.Quantity.Value)
+        {
+            updatedItem.QuantityDelta = _quantity.Value - Item.Quantity.Value;
+        }
+
+        MudDialog.Close(DialogResult.Ok(updatedItem));
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+}
