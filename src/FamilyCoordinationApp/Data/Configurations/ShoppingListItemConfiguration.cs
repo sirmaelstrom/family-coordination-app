@@ -68,5 +68,15 @@ public class ShoppingListItemConfiguration : IEntityTypeConfiguration<ShoppingLi
             .HasForeignKey(sli => sli.AddedByUserId)
             .OnDelete(DeleteBehavior.SetNull)
             .IsRequired(false);
+
+        builder.HasOne(sli => sli.UpdatedBy)
+            .WithMany()
+            .HasForeignKey(sli => sli.UpdatedByUserId)
+            .OnDelete(DeleteBehavior.SetNull)
+            .IsRequired(false);
+
+        // Configure xmin concurrency token
+        builder.Property(sli => sli.Version)
+            .IsRowVersion();
     }
 }

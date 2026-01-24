@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace FamilyCoordinationApp.Data.Entities;
 
 public class ShoppingListItem
@@ -22,7 +24,16 @@ public class ShoppingListItem
     public string? RecipeIngredientIds { get; set; }  // Comma-separated IDs (format: "1:2:3,1:2:5" for HouseholdId:RecipeId:IngredientId)
     public int SortOrder { get; set; }  // For custom ordering within category
 
+    // Change tracking fields
+    public DateTime? UpdatedAt { get; set; }
+    public int? UpdatedByUserId { get; set; }
+
+    // Concurrency token (maps to PostgreSQL xmin)
+    [Timestamp]
+    public uint Version { get; set; }
+
     // Navigation
     public ShoppingList ShoppingList { get; set; } = default!;
     public User? AddedBy { get; set; }
+    public User? UpdatedBy { get; set; }
 }

@@ -39,5 +39,16 @@ public class MealPlanEntryConfiguration : IEntityTypeConfiguration<MealPlanEntry
             .HasForeignKey(e => new { e.HouseholdId, e.RecipeId })
             .OnDelete(DeleteBehavior.SetNull)
             .IsRequired(false);
+
+        // Optional FK to User (simple, nullable)
+        builder.HasOne(e => e.UpdatedBy)
+            .WithMany()
+            .HasForeignKey(e => e.UpdatedByUserId)
+            .OnDelete(DeleteBehavior.SetNull)
+            .IsRequired(false);
+
+        // Configure xmin concurrency token
+        builder.Property(e => e.Version)
+            .IsRowVersion();
     }
 }

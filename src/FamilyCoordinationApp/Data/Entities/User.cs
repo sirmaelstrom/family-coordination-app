@@ -11,6 +11,10 @@ public class User
     public DateTime CreatedAt { get; set; }
     public DateTime? LastLoginAt { get; set; }
 
+    // Profile fields for avatar display
+    public string? PictureUrl { get; set; }
+    public string Initials { get; set; } = string.Empty;
+
     // Navigation
     public Household Household { get; set; } = default!;
 }

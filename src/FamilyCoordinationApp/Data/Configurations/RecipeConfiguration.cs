@@ -53,5 +53,14 @@ public class RecipeConfiguration : IEntityTypeConfiguration<Recipe>
             .WithMany()
             .HasForeignKey(r => r.CreatedByUserId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(r => r.UpdatedBy)
+            .WithMany()
+            .HasForeignKey(r => r.UpdatedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        // Configure xmin concurrency token
+        builder.Property(r => r.Version)
+            .IsRowVersion();
     }
 }
