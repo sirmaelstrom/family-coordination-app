@@ -146,6 +146,7 @@ public class RecipeService(
 
         // Soft delete
         recipe.IsDeleted = true;
+        recipe.UpdatedAt = DateTime.UtcNow;
 
         await context.SaveChangesAsync(cancellationToken);
 
