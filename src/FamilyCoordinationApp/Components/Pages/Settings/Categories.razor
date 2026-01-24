@@ -68,33 +68,30 @@
                       InstantReplace="true"
                       TItem="Category"
                       OnItemDrop="OnCategoryReordered">
-                @foreach (var category in _categories)
-                {
-                    <MudPaper Class="pa-3 mb-2 d-flex align-center justify-space-between"
-                              Elevation="1"
-                              Style="cursor: grab;">
-                        <div class="d-flex align-center">
-                            <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
-                                     Class="mr-2"
-                                     Size="Size.Small" />
-                            <div style="width: 24px; height: 24px; border-radius: 4px; background-color: @category.Color; margin-right: 12px;"></div>
-                            <MudText>@category.Name</MudText>
-                            @if (category.IsDefault)
-                            {
-                                <MudChip T="string" Size="Size.Small" Color="Color.Info" Class="ml-2">Default</MudChip>
-                            }
-                        </div>
-                        <div>
-                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                                           Size="Size.Small"
-                                           OnClick="() => EditCategory(category)" />
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                           Size="Size.Small"
-                                           Color="Color.Error"
-                                           OnClick="() => DeleteCategory(category)" />
-                        </div>
-                    </MudPaper>
-                }
+                <MudPaper Class="pa-3 mb-2 d-flex align-center justify-space-between"
+                          Elevation="1"
+                          Style="cursor: grab;">
+                    <div class="d-flex align-center">
+                        <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
+                                 Class="mr-2"
+                                 Size="Size.Small" />
+                        <div style="width: 24px; height: 24px; border-radius: 4px; background-color: @context.Color; margin-right: 12px;"></div>
+                        <MudText>@context.Name</MudText>
+                        @if (context.IsDefault)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info" Class="ml-2">Default</MudChip>
+                        }
+                    </div>
+                    <div>
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                       Size="Size.Small"
+                                       OnClick="() => EditCategory(context)" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                       Size="Size.Small"
+                                       Color="Color.Error"
+                                       OnClick="() => DeleteCategory(context)" />
+                    </div>
+                </MudPaper>
             </Dropzone>
         </MudPaper>
 

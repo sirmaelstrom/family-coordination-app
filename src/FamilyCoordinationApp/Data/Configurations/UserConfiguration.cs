@@ -22,16 +22,16 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .HasMaxLength(200);
 
         builder.Property(u => u.GoogleId)
-            .IsRequired()
             .HasMaxLength(200);
 
         // Unique index on email
         builder.HasIndex(u => u.Email)
             .IsUnique();
 
-        // Unique index on GoogleId
+        // Unique index on GoogleId (only when not null - allows multiple pending users)
         builder.HasIndex(u => u.GoogleId)
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("\"GoogleId\" IS NOT NULL");
 
         // Relationship to Household
         builder.HasOne(u => u.Household)
