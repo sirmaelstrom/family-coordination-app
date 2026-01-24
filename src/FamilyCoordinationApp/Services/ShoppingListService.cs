@@ -86,6 +86,7 @@ public class ShoppingListService(
 
         item.ItemId = maxItemId + 1;
         item.AddedAt = DateTime.UtcNow;
+        item.UpdatedAt = DateTime.UtcNow;
         item.IsChecked = false;
 
         context.ShoppingListItems.Add(item);
@@ -145,12 +146,28 @@ public class ShoppingListService(
             {
                 await using var context = await dbFactory.CreateDbContextAsync(ct);
 
-                // Attach the item to this context
-                context.ShoppingListItems.Attach(item);
-                context.Entry(item).State = EntityState.Modified;
+                // Fetch fresh entity from this context to avoid disposed context error
+                var existing = await context.ShoppingListItems
+                    .FirstOrDefaultAsync(i =>
+                        i.HouseholdId == item.HouseholdId &&
+                        i.ShoppingListId == item.ShoppingListId &&
+                        i.ItemId == item.ItemId, ct);
 
-                // Set tracking fields
-                item.UpdatedAt = DateTime.UtcNow;
+                if (existing == null)
+                {
+                    logger.LogWarning("Item {ItemId} not found during update", item.ItemId);
+                    return (false, false, "Item not found");
+                }
+
+                // Apply changes from the passed-in item
+                existing.IsChecked = item.IsChecked;
+                existing.CheckedAt = item.CheckedAt;
+                existing.Name = item.Name;
+                existing.Quantity = item.Quantity;
+                existing.Unit = item.Unit;
+                existing.Category = item.Category;
+                existing.UpdatedByUserId = item.UpdatedByUserId;
+                existing.UpdatedAt = DateTime.UtcNow;
 
                 await context.SaveChangesAsync(ct);
 
@@ -262,6 +279,7 @@ public class ShoppingListService(
 
         item.IsChecked = !item.IsChecked;
         item.CheckedAt = item.IsChecked ? DateTime.UtcNow : null;
+        item.UpdatedAt = DateTime.UtcNow;
 
         await context.SaveChangesAsync(ct);
 
