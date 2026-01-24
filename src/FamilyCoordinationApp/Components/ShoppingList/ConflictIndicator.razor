@@ -1,0 +1,14 @@
+<MudTooltip Text="@Message" Placement="Placement.Top">
+    <MudChip T="string"
+             Size="Size.Small"
+             Color="Color.Warning"
+             Variant="Variant.Text"
+             Icon="@Icons.Material.Filled.Warning">
+        Synced
+    </MudChip>
+</MudTooltip>
+
+@code {
+    [Parameter]
+    public string Message { get; set; } = "This item was modified by another family member";
+}
