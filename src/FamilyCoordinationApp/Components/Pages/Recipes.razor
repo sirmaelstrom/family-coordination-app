@@ -1,0 +1,248 @@
+@page "/recipes"
+@attribute [Authorize]
+@using System.Security.Claims
+@using FamilyCoordinationApp.Data.Entities
+@using FamilyCoordinationApp.Services
+@using FamilyCoordinationApp.Components.Recipe
+@inject IRecipeService RecipeService
+@inject IHttpContextAccessor HttpContextAccessor
+@inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
+
+<PageTitle>Recipes - Family Coordination</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    <div class="d-flex justify-space-between align-center mb-4">
+        <MudText Typo="Typo.h3">Recipes</MudText>
+        <MudButton StartIcon="@Icons.Material.Filled.Add"
+                   Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   OnClick="HandleAddRecipe">
+            Add Recipe
+        </MudButton>
+    </div>
+
+    <MudTextField @bind-Value="_searchTerm"
+                  Label="Search recipes"
+                  Variant="Variant.Outlined"
+                  Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Filled.Search"
+                  DebounceInterval="300"
+                  OnDebounceIntervalElapsed="LoadRecipes"
+                  Class="mb-4" />
+
+    @if (_loading)
+    {
+        <!-- Loading skeleton -->
+        <MudGrid>
+            @for (int i = 0; i < 6; i++)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard>
+                        <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="200px" />
+                        <MudCardContent>
+                            <MudSkeleton SkeletonType="SkeletonType.Text" />
+                            <MudSkeleton SkeletonType="SkeletonType.Text" />
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+    else if (!_recipes.Any())
+    {
+        <!-- Empty state -->
+        <div class="d-flex flex-column align-center justify-center" style="min-height: 400px;">
+            <MudIcon Icon="@Icons.Material.Filled.MenuBook"
+                     Size="Size.Large"
+                     Color="Color.Secondary"
+                     Style="font-size: 6rem; margin-bottom: 1rem;" />
+            <MudText Typo="Typo.h5" Class="mb-2">No recipes yet</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+                @if (string.IsNullOrWhiteSpace(_searchTerm))
+                {
+                    <text>Start building your family recipe collection</text>
+                }
+                else
+                {
+                    <text>No recipes found matching "@_searchTerm"</text>
+                }
+            </MudText>
+            @if (string.IsNullOrWhiteSpace(_searchTerm))
+            {
+                <MudButton StartIcon="@Icons.Material.Filled.Add"
+                           Color="Color.Primary"
+                           Variant="Variant.Filled"
+                           Size="Size.Large"
+                           OnClick="HandleAddRecipe">
+                    Add Your First Recipe
+                </MudButton>
+            }
+            else
+            {
+                <MudButton StartIcon="@Icons.Material.Filled.Clear"
+                           Color="Color.Primary"
+                           Variant="Variant.Text"
+                           OnClick="ClearSearch">
+                    Clear Search
+                </MudButton>
+            }
+        </div>
+    }
+    else
+    {
+        <!-- Recipe grid -->
+        <MudGrid>
+            @foreach (var recipe in _recipes)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <RecipeCard Recipe="recipe"
+                                IsExpanded="@(_expandedRecipeId == recipe.RecipeId)"
+                                IsExpandedChanged="@(EventCallback.Factory.Create<bool>(this, (expanded) => HandleCardExpanded(recipe.RecipeId, expanded)))"
+                                OnEdit="@(EventCallback.Factory.Create(this, () => HandleEdit(recipe)))"
+                                OnDelete="@(EventCallback.Factory.Create(this, () => HandleDeleteConfirm(recipe)))"
+                                OnAddToMealPlan="@(EventCallback.Factory.Create(this, () => HandleAddToMealPlan(recipe)))" />
+                </MudItem>
+            }
+        </MudGrid>
+    }
+</MudContainer>
+
+<!-- Delete confirmation dialog -->
+<MudDialog @bind-Visible="_showDeleteDialog" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Delete Recipe</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText>
+            Are you sure you want to delete "<strong>@_recipeToDelete?.Name</strong>"?
+            This action cannot be undone.
+        </MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CancelDelete" Color="Color.Default">Cancel</MudButton>
+        <MudButton OnClick="ConfirmDelete" Color="Color.Error" Variant="Variant.Filled">Delete</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<Recipe> _recipes = new();
+    private bool _loading = true;
+    private string _searchTerm = string.Empty;
+    private int? _expandedRecipeId;
+    private int _householdId;
+
+    private bool _showDeleteDialog;
+    private Recipe? _recipeToDelete;
+
+    private DialogOptions _dialogOptions = new()
+    {
+        CloseOnEscapeKey = true,
+        MaxWidth = MaxWidth.Small
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get household ID from claims
+        var user = HttpContextAccessor.HttpContext?.User;
+        var householdIdClaim = user?.FindFirst("HouseholdId")?.Value;
+
+        if (int.TryParse(householdIdClaim, out var householdId))
+        {
+            _householdId = householdId;
+            await LoadRecipes();
+        }
+        else
+        {
+            Snackbar.Add("Unable to load household information", Severity.Error);
+            _loading = false;
+        }
+    }
+
+    private async Task LoadRecipes()
+    {
+        try
+        {
+            _loading = true;
+            _recipes = await RecipeService.GetRecipesAsync(_householdId, _searchTerm);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading recipes: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void HandleCardExpanded(int recipeId, bool expanded)
+    {
+        _expandedRecipeId = expanded ? recipeId : null;
+    }
+
+    private void HandleAddRecipe()
+    {
+        // TODO: Navigate to add recipe page (Phase 2, Plan 6)
+        Snackbar.Add("Add recipe page coming soon", Severity.Info);
+    }
+
+    private void HandleEdit(Recipe recipe)
+    {
+        // TODO: Navigate to edit recipe page (Phase 2, Plan 6)
+        Snackbar.Add($"Edit recipe '{recipe.Name}' - coming soon", Severity.Info);
+    }
+
+    private void HandleDeleteConfirm(Recipe recipe)
+    {
+        _recipeToDelete = recipe;
+        _showDeleteDialog = true;
+    }
+
+    private void CancelDelete()
+    {
+        _showDeleteDialog = false;
+        _recipeToDelete = null;
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (_recipeToDelete == null) return;
+
+        try
+        {
+            await RecipeService.DeleteRecipeAsync(_householdId, _recipeToDelete.RecipeId);
+            Snackbar.Add($"Recipe '{_recipeToDelete.Name}' deleted", Severity.Success);
+
+            // Collapse if this was the expanded recipe
+            if (_expandedRecipeId == _recipeToDelete.RecipeId)
+            {
+                _expandedRecipeId = null;
+            }
+
+            // Reload recipes
+            await LoadRecipes();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error deleting recipe: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _showDeleteDialog = false;
+            _recipeToDelete = null;
+        }
+    }
+
+    private void HandleAddToMealPlan(Recipe recipe)
+    {
+        // TODO: Navigate to meal plan with this recipe (Phase 3)
+        Snackbar.Add($"Add '{recipe.Name}' to meal plan - coming soon", Severity.Info);
+    }
+
+    private async Task ClearSearch()
+    {
+        _searchTerm = string.Empty;
+        await LoadRecipes();
+    }
+}
