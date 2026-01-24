@@ -19,7 +19,7 @@
                 <img src="@Entry.Recipe.ImagePath" alt="@Entry.Recipe.Name" class="slot-recipe-image" />
             }
             <div class="slot-recipe-details">
-                <MudText Typo="Typo.body2" Class="slot-recipe-name" @onclick="HandleViewRecipeClick">
+                <MudText Typo="Typo.body2" Class="slot-recipe-name" @onclick="HandleViewRecipeClick" @onclick:stopPropagation="true">
                     @Entry.Recipe.Name
                 </MudText>
                 @if (!string.IsNullOrWhiteSpace(Entry.Notes))
