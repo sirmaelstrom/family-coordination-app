@@ -35,6 +35,27 @@ public class ShoppingListItemConfiguration : IEntityTypeConfiguration<ShoppingLi
         builder.Property(sli => sli.AddedAt)
             .IsRequired();
 
+        // Consolidation tracking fields
+        builder.Property(sli => sli.SourceRecipes)
+            .HasMaxLength(500);
+
+        builder.Property(sli => sli.OriginalUnits)
+            .HasMaxLength(200);
+
+        builder.Property(sli => sli.IsManuallyAdded)
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        builder.Property(sli => sli.QuantityDelta)
+            .HasPrecision(10, 2);
+
+        builder.Property(sli => sli.RecipeIngredientIds)
+            .HasMaxLength(500);
+
+        builder.Property(sli => sli.SortOrder)
+            .IsRequired()
+            .HasDefaultValue(0);
+
         // FK to ShoppingList (composite)
         builder.HasOne(sli => sli.ShoppingList)
             .WithMany(sl => sl.Items)
