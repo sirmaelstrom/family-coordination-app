@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace FamilyCoordinationApp.Data.Entities;
 
 public enum MealType { Breakfast, Lunch, Dinner, Snack }
@@ -13,7 +15,16 @@ public class MealPlanEntry
     public string? CustomMealName { get; set; }  // "Leftovers", "Eating out"
     public string? Notes { get; set; }
 
+    // Change tracking fields
+    public DateTime? UpdatedAt { get; set; }
+    public int? UpdatedByUserId { get; set; }
+
+    // Concurrency token (maps to PostgreSQL xmin)
+    [Timestamp]
+    public uint Version { get; set; }
+
     // Navigation
     public MealPlan MealPlan { get; set; } = default!;
     public Recipe? Recipe { get; set; }
+    public User? UpdatedBy { get; set; }
 }

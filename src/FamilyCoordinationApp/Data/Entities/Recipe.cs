@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace FamilyCoordinationApp.Data.Entities;
 
 public class Recipe
@@ -15,10 +17,16 @@ public class Recipe
     public int CreatedByUserId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+    public int? UpdatedByUserId { get; set; }
     public bool IsDeleted { get; set; }
+
+    // Concurrency token (maps to PostgreSQL xmin)
+    [Timestamp]
+    public uint Version { get; set; }
 
     // Navigation
     public Household Household { get; set; } = default!;
     public User CreatedBy { get; set; } = default!;
+    public User? UpdatedBy { get; set; }
     public ICollection<RecipeIngredient> Ingredients { get; set; } = new List<RecipeIngredient>();
 }
