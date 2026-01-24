@@ -221,7 +221,25 @@
             item.IsChecked = !item.IsChecked;
             item.CheckedAt = item.IsChecked ? DateTime.UtcNow : null;
 
-            await ShoppingListService.UpdateItemAsync(item);
+            var (success, wasConflict, conflictMessage) = await ShoppingListService.UpdateItemWithConcurrencyAsync(item);
+
+            if (!success)
+            {
+                // Item was deleted or couldn't be updated
+                Snackbar.Add(conflictMessage ?? "Could not update item", Severity.Warning);
+                await LoadShoppingListsAsync();
+                return;
+            }
+
+            if (wasConflict && conflictMessage != null)
+            {
+                // Show subtle indication that there was a conflict
+                Snackbar.Add(conflictMessage, Severity.Info, config =>
+                {
+                    config.VisibleStateDuration = 3000;
+                });
+            }
+
             StateHasChanged();
 
             // Show undo snackbar when checking item
@@ -236,7 +254,7 @@
                         // Uncheck the item
                         itemToToggle.IsChecked = false;
                         itemToToggle.CheckedAt = null;
-                        await ShoppingListService.UpdateItemAsync(itemToToggle);
+                        await ShoppingListService.UpdateItemWithConcurrencyAsync(itemToToggle);
                         StateHasChanged();
                         Snackbar.Add($"Unchecked {itemToToggle.Name}", Severity.Info);
                     };
@@ -272,7 +290,23 @@
         {
             try
             {
-                await ShoppingListService.UpdateItemAsync(updatedItem);
+                var (success, wasConflict, conflictMessage) = await ShoppingListService.UpdateItemWithConcurrencyAsync(updatedItem);
+
+                if (!success)
+                {
+                    Snackbar.Add(conflictMessage ?? "Could not update item", Severity.Warning);
+                    await LoadShoppingListsAsync();
+                    return;
+                }
+
+                if (wasConflict && conflictMessage != null)
+                {
+                    Snackbar.Add(conflictMessage, Severity.Info, config =>
+                    {
+                        config.VisibleStateDuration = 3000;
+                    });
+                }
+
                 await LoadShoppingListsAsync(); // Reload to get updated item
                 Snackbar.Add("Item updated", Severity.Success);
             }
