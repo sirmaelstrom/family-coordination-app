@@ -16,6 +16,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<ShoppingList> ShoppingLists => Set<ShoppingList>();
     public DbSet<ShoppingListItem> ShoppingListItems => Set<ShoppingListItem>();
     public DbSet<Category> Categories => Set<Category>();
+    public DbSet<RecipeDraft> RecipeDrafts => Set<RecipeDraft>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
