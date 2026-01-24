@@ -21,7 +21,7 @@ public class SetupService
     {
         try
         {
-            using var context = _dbFactory.CreateDbContext();
+            await using var context = await _dbFactory.CreateDbContextAsync();
 
             // Ensure database exists and is migrated
             await context.Database.MigrateAsync();
@@ -46,7 +46,7 @@ public class SetupService
             "Starting household creation: Name={HouseholdName}, Email={Email}, GoogleId={GoogleId}",
             householdName, userEmail, googleId);
 
-        using var context = _dbFactory.CreateDbContext();
+        await using var context = await _dbFactory.CreateDbContextAsync();
 
         // Check if user already exists
         var existingUser = await context.Users.FirstOrDefaultAsync(u => u.Email == userEmail);
@@ -88,13 +88,13 @@ public class SetupService
 
     public async Task<Household?> GetHouseholdAsync()
     {
-        using var context = _dbFactory.CreateDbContext();
+        await using var context = await _dbFactory.CreateDbContextAsync();
         return await context.Households.FirstOrDefaultAsync();
     }
 
     public async Task<User?> GetUserByEmailAsync(string email)
     {
-        using var context = _dbFactory.CreateDbContext();
+        await using var context = await _dbFactory.CreateDbContextAsync();
         return await context.Users
             .Include(u => u.Household)
             .FirstOrDefaultAsync(u => u.Email == email);

@@ -7,6 +7,9 @@
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
     <PublishStaticWebAssets>true</PublishStaticWebAssets>
     <IncludeBlazorServerFiles>true</IncludeBlazorServerFiles>
+    <!-- Suppress false positive Razor analyzer warning for MudCheckbox -->
+    <!-- See: https://github.com/dotnet/razor/issues/... (known analyzer bug) -->
+    <NoWarn>$(NoWarn);RZ10012</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
