@@ -30,6 +30,8 @@ builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IDraftService, DraftService>();
 builder.Services.AddScoped<IMealPlanService, MealPlanService>();
 builder.Services.AddScoped<IShoppingListService, ShoppingListService>();
+builder.Services.AddScoped<UnitConverter>();
+builder.Services.AddScoped<IShoppingListGenerator, ShoppingListGenerator>();
 
 // Authentication
 builder.Services.AddAuthentication(options =>
