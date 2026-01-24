@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Recipe Management** - Complete recipe CRUD with manual entry
 - [x] **Phase 3: Meal Planning** - Weekly calendar with recipe assignment
 - [x] **Phase 4: Shopping List Core** - Auto-generation with smart consolidation
-- [ ] **Phase 5: Multi-User Collaboration** - Household sharing with polling-based sync
+- [x] **Phase 5: Multi-User Collaboration** - Household sharing with polling-based sync
 - [ ] **Phase 6: Recipe Import** - URL scraping with automatic parsing
 - [ ] **Phase 7: Mobile & UX Polish** - PWA support and touch optimization
 
@@ -116,13 +116,13 @@ Plans:
 **Plans**: 7 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — Schema updates: concurrency tokens, user profile fields, change tracking
-- [ ] 05-02-PLAN.md — Google OAuth picture claim mapping and initials computation
-- [ ] 05-03-PLAN.md — DataNotifier, PresenceService, and PollingService infrastructure
-- [ ] 05-04-PLAN.md — UserAvatar and PresenceBadge components
-- [ ] 05-05-PLAN.md — MainLayout presence/sync indicators and heartbeat integration
-- [ ] 05-06-PLAN.md — Attribution display on recipes and shopping list with auto-refresh
-- [ ] 05-07-PLAN.md — Optimistic concurrency with "checked wins" and human verification
+- [x] 05-01-PLAN.md — Schema updates: concurrency tokens, user profile fields, change tracking
+- [x] 05-02-PLAN.md — Google OAuth picture claim mapping and initials computation
+- [x] 05-03-PLAN.md — DataNotifier, PresenceService, and PollingService infrastructure
+- [x] 05-04-PLAN.md — UserAvatar and PresenceBadge components
+- [x] 05-05-PLAN.md — MainLayout presence/sync indicators and heartbeat integration
+- [x] 05-06-PLAN.md — Attribution display on recipes and shopping list with auto-refresh
+- [x] 05-07-PLAN.md — Optimistic concurrency with "checked wins" and human verification
 
 ### Phase 6: Recipe Import
 **Goal**: Users can import recipes from URLs with automatic parsing
@@ -165,7 +165,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 2. Recipe Management | 7/7 | Complete | 2026-01-24 |
 | 3. Meal Planning | 4/4 | Complete | 2026-01-24 |
 | 4. Shopping List Core | 6/6 | Complete | 2026-01-24 |
-| 5. Multi-User Collaboration | 0/7 | Not started | - |
+| 5. Multi-User Collaboration | 7/7 | Complete | 2026-01-24 |
 | 6. Recipe Import | 0/? | Not started | - |
 | 7. Mobile & UX Polish | 0/? | Not started | - |
 
