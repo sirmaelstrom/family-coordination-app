@@ -1,0 +1,92 @@
+@using FamilyCoordinationApp.Data.Entities
+@using FamilyCoordinationApp.Services
+@inject IRecipeService RecipeService
+
+<MudDialog>
+    <DialogContent>
+        <MudTabs>
+            <MudTabPanel Text="Pick Recipe">
+                <MudAutocomplete T="Recipe"
+                                 Label="Search recipes"
+                                 @bind-Value="_selectedRecipe"
+                                 SearchFunc="SearchRecipes"
+                                 ToStringFunc="@(r => r?.Name ?? "")"
+                                 DebounceInterval="300"
+                                 MinCharacters="0"
+                                 Clearable="true"
+                                 Variant="Variant.Outlined"
+                                 Class="mt-3">
+                    <ItemTemplate Context="recipe">
+                        <div class="d-flex align-center gap-2">
+                            @if (!string.IsNullOrWhiteSpace(recipe.ImagePath))
+                            {
+                                <img src="@recipe.ImagePath" alt="@recipe.Name" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" />
+                            }
+                            else
+                            {
+                                <div style="width: 40px; height: 40px; background-color: var(--mud-palette-grey-light); border-radius: 4px; display: flex; align-items: center; justify-content: center;">
+                                    <MudIcon Icon="@Icons.Material.Filled.Restaurant" Size="Size.Small" Color="Color.Secondary" />
+                                </div>
+                            }
+                            <MudText>@recipe.Name</MudText>
+                        </div>
+                    </ItemTemplate>
+                </MudAutocomplete>
+            </MudTabPanel>
+            <MudTabPanel Text="Custom Meal">
+                <MudTextField @bind-Value="_customMealName"
+                              Label="Custom meal name"
+                              Placeholder="e.g., Leftovers, Eating out, Takeout"
+                              Variant="Variant.Outlined"
+                              Immediate="true"
+                              Class="mt-3" />
+            </MudTabPanel>
+        </MudTabs>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit" Disabled="@(!CanSubmit)">Add</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter]
+    public int HouseholdId { get; set; }
+
+    private Recipe? _selectedRecipe;
+    private string? _customMealName;
+
+    private bool CanSubmit => _selectedRecipe != null || !string.IsNullOrWhiteSpace(_customMealName);
+
+    private async Task<IEnumerable<Recipe>> SearchRecipes(string value, CancellationToken token)
+    {
+        var recipes = await RecipeService.GetRecipesAsync(HouseholdId, value, token);
+        return recipes;
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+    private void Submit()
+    {
+        // Ensure exactly one of RecipeId or CustomMealName is set
+        var result = new MealSelection
+        {
+            RecipeId = _selectedRecipe?.RecipeId,
+            CustomMealName = _selectedRecipe == null ? _customMealName?.Trim() : null
+        };
+        MudDialog.Close(DialogResult.Ok(result));
+    }
+
+    // Nested public class for dialog result - accessible as RecipePickerDialog.MealSelection
+    public class MealSelection
+    {
+        public int? RecipeId { get; set; }
+        public string? CustomMealName { get; set; }
+    }
+}
