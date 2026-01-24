@@ -12,8 +12,8 @@ This roadmap delivers the integrated meal planning workflow: recipes → meal pl
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation & Infrastructure** - Database schema, authentication, and data access patterns
-- [ ] **Phase 2: Recipe Management** - Complete recipe CRUD with manual entry
+- [x] **Phase 1: Foundation & Infrastructure** - Database schema, authentication, and data access patterns
+- [x] **Phase 2: Recipe Management** - Complete recipe CRUD with manual entry
 - [ ] **Phase 3: Meal Planning** - Weekly calendar with recipe assignment
 - [ ] **Phase 4: Shopping List Core** - Auto-generation with smart consolidation
 - [ ] **Phase 5: Multi-User Collaboration** - Household sharing with polling-based sync
@@ -35,10 +35,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 4 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Project setup with EF Core PostgreSQL and composite key schema
-- [ ] 01-02-PLAN.md — Google OAuth authentication with email whitelist authorization
-- [ ] 01-03-PLAN.md — Docker Compose configuration with nginx WebSocket support
-- [ ] 01-04-PLAN.md — First-run setup wizard, whitelist admin, and seed data
+- [x] 01-01-PLAN.md — Project setup with EF Core PostgreSQL and composite key schema
+- [x] 01-02-PLAN.md — Google OAuth authentication with email whitelist authorization
+- [x] 01-03-PLAN.md — Docker Compose configuration with nginx WebSocket support
+- [x] 01-04-PLAN.md — First-run setup wizard, whitelist admin, and seed data
 
 ### Phase 2: Recipe Management
 **Goal**: Users can create, view, edit, and delete recipes with structured ingredients
@@ -53,13 +53,13 @@ Plans:
 **Plans**: 7 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — MudBlazor setup, Category entity, SignalR file upload config
-- [ ] 02-02-PLAN.md — Ingredient parser (TDD) for natural language parsing
-- [ ] 02-03-PLAN.md — ImageService and RecipeService for backend CRUD
-- [ ] 02-04-PLAN.md — Ingredient entry component with parsing and drag-drop
-- [ ] 02-05-PLAN.md — Recipe list page with card grid and search
-- [ ] 02-06-PLAN.md — Recipe create/edit form with auto-save drafts
-- [ ] 02-07-PLAN.md — Category management settings and human verification
+- [x] 02-01-PLAN.md — MudBlazor setup, Category entity, SignalR file upload config
+- [x] 02-02-PLAN.md — Ingredient parser (TDD) for natural language parsing
+- [x] 02-03-PLAN.md — ImageService and RecipeService for backend CRUD
+- [x] 02-04-PLAN.md — Ingredient entry component with parsing and drag-drop
+- [x] 02-05-PLAN.md — Recipe list page with card grid and search
+- [x] 02-06-PLAN.md — Recipe create/edit form with auto-save drafts
+- [x] 02-07-PLAN.md — Category management settings and human verification
 
 ### Phase 3: Meal Planning
 **Goal**: Users can assign recipes to weekly meal plan in calendar and list views
@@ -147,9 +147,9 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Infrastructure | 4/4 | Awaiting verification | - |
-| 2. Recipe Management | 0/7 | Planned | - |
-| 3. Meal Planning | 0/? | Not started | - |
+| 1. Foundation & Infrastructure | 4/4 | Complete | 2026-01-23 |
+| 2. Recipe Management | 7/7 | Complete | 2026-01-24 |
+| 3. Meal Planning | 0/? | Ready to plan | - |
 | 4. Shopping List Core | 0/? | Not started | - |
 | 5. Multi-User Collaboration | 0/? | Not started | - |
 | 6. Recipe Import | 0/? | Not started | - |
@@ -157,4 +157,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-01-23*
+*Last updated: 2026-01-24*
