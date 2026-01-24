@@ -132,17 +132,9 @@ app.UseAuthentication();
 // First-run setup redirect middleware (BEFORE authorization)
 app.Use(async (context, next) =>
 {
-    // Skip if an endpoint was already selected (static assets, etc.)
-    var endpoint = context.GetEndpoint();
-    if (endpoint != null)
-    {
-        await next();
-        return;
-    }
-
     var path = context.Request.Path.Value?.ToLowerInvariant() ?? "";
 
-    // Skip setup check for these paths
+    // Skip setup check for these paths (static assets, framework, auth)
     if (path.StartsWith("/setup") ||
         path.StartsWith("/account") ||
         path.StartsWith("/_framework") ||
@@ -150,7 +142,16 @@ app.Use(async (context, next) =>
         path.StartsWith("/_") ||
         path.StartsWith("/health") ||
         path.StartsWith("/lib") ||
-        path.Contains("."))
+        path.StartsWith("/css") ||
+        path.StartsWith("/js") ||
+        path.StartsWith("/images") ||
+        path.EndsWith(".js") ||
+        path.EndsWith(".css") ||
+        path.EndsWith(".ico") ||
+        path.EndsWith(".png") ||
+        path.EndsWith(".svg") ||
+        path.EndsWith(".woff") ||
+        path.EndsWith(".woff2"))
     {
         await next();
         return;
