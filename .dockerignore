@@ -11,3 +11,4 @@
 !.env.example
 **/node_modules
 **/.idea
+**/publish-output
