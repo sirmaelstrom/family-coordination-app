@@ -1,0 +1,22 @@
+.user-avatar-container {
+    position: relative;
+    display: inline-block;
+}
+
+/* Size variations for presence badge positioning */
+.avatar-small ::deep .presence-badge {
+    width: 8px;
+    height: 8px;
+    border-width: 1px;
+}
+
+.avatar-large ::deep .presence-badge {
+    width: 14px;
+    height: 14px;
+    border-width: 2px;
+}
+
+/* Ensure Google profile images load with no-referrer policy */
+.user-avatar-container ::deep img {
+    /* CSS cannot set referrerpolicy, handled in HTML */
+}
