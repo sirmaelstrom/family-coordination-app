@@ -1,0 +1,104 @@
+@using FamilyCoordinationApp.Data.Entities
+@using Markdig
+@using MudBlazor
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@Recipe.Name</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrWhiteSpace(Recipe.ImagePath))
+        {
+            <MudImage Src="@Recipe.ImagePath"
+                      Alt="@Recipe.Name"
+                      ObjectFit="ObjectFit.Cover"
+                      Height="200"
+                      Class="rounded mb-3"
+                      Style="width: 100%;" />
+        }
+
+        @if (Recipe.PrepTimeMinutes.HasValue || Recipe.CookTimeMinutes.HasValue || Recipe.Servings.HasValue)
+        {
+            <div class="d-flex gap-2 flex-wrap mb-3">
+                @if (Recipe.PrepTimeMinutes.HasValue)
+                {
+                    <MudChip T="string" Icon="@Icons.Material.Filled.Schedule" Size="Size.Small">
+                        Prep: @Recipe.PrepTimeMinutes min
+                    </MudChip>
+                }
+                @if (Recipe.CookTimeMinutes.HasValue)
+                {
+                    <MudChip T="string" Icon="@Icons.Material.Filled.Whatshot" Size="Size.Small">
+                        Cook: @Recipe.CookTimeMinutes min
+                    </MudChip>
+                }
+                @if (Recipe.Servings.HasValue)
+                {
+                    <MudChip T="string" Icon="@Icons.Material.Filled.Restaurant" Size="Size.Small">
+                        Servings: @Recipe.Servings
+                    </MudChip>
+                }
+            </div>
+        }
+
+        @if (Recipe.Ingredients.Any())
+        {
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Ingredients</MudText>
+            <MudList T="string" Dense="true" Class="mb-3">
+                @foreach (var ingredient in Recipe.Ingredients.OrderBy(i => i.SortOrder))
+                {
+                    <MudListItem T="string" Icon="@Icons.Material.Filled.Circle" IconSize="Size.Small">
+                        @FormatIngredient(ingredient)
+                    </MudListItem>
+                }
+            </MudList>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(Recipe.Instructions))
+        {
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Instructions</MudText>
+            <div class="recipe-instructions">
+                @((MarkupString)Markdown.ToHtml(Recipe.Instructions))
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public Recipe Recipe { get; set; } = default!;
+
+    private void Close() => MudDialog.Close();
+
+    private string FormatIngredient(RecipeIngredient ingredient)
+    {
+        var parts = new List<string>();
+        if (ingredient.Quantity.HasValue)
+            parts.Add(ingredient.Quantity.Value.ToString("0.##"));
+        if (!string.IsNullOrWhiteSpace(ingredient.Unit))
+            parts.Add(ingredient.Unit);
+        parts.Add(ingredient.Name);
+        if (!string.IsNullOrWhiteSpace(ingredient.Notes))
+            parts.Add($"({ingredient.Notes})");
+        return string.Join(" ", parts);
+    }
+}
+
+<style>
+    .recipe-instructions {
+        line-height: 1.6;
+    }
+
+    .recipe-instructions ol,
+    .recipe-instructions ul {
+        margin-left: 1.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .recipe-instructions li {
+        margin-bottom: 0.5rem;
+    }
+</style>
