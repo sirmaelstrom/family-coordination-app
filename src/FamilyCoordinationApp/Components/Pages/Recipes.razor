@@ -1,11 +1,13 @@
 @page "/recipes"
 @attribute [Authorize]
 @using System.Security.Claims
+@using FamilyCoordinationApp.Data
 @using FamilyCoordinationApp.Data.Entities
 @using FamilyCoordinationApp.Services
 @using FamilyCoordinationApp.Components.Recipe
+@using Microsoft.EntityFrameworkCore
 @inject IRecipeService RecipeService
-@inject IHttpContextAccessor HttpContextAccessor
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject ISnackbar Snackbar
 @inject NavigationManager NavigationManager
 
@@ -126,6 +128,8 @@
 </MudDialog>
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
     private List<Recipe> _recipes = new();
     private bool _loading = true;
     private string _searchTerm = string.Empty;
@@ -143,19 +147,34 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Get household ID from claims
-        var user = HttpContextAccessor.HttpContext?.User;
-        var householdIdClaim = user?.FindFirst("HouseholdId")?.Value;
-
-        if (int.TryParse(householdIdClaim, out var householdId))
+        await LoadUserContext();
+        if (_householdId > 0)
         {
-            _householdId = householdId;
             await LoadRecipes();
         }
         else
         {
             Snackbar.Add("Unable to load household information", Severity.Error);
             _loading = false;
+        }
+    }
+
+    private async Task LoadUserContext()
+    {
+        if (AuthState == null) return;
+
+        var authState = await AuthState;
+        var email = authState.User.FindFirstValue(ClaimTypes.Email);
+
+        if (string.IsNullOrEmpty(email)) return;
+
+        await using var context = await DbFactory.CreateDbContextAsync();
+        var user = await context.Users
+            .FirstOrDefaultAsync(u => u.Email == email);
+
+        if (user != null)
+        {
+            _householdId = user.HouseholdId;
         }
     }
 
@@ -183,14 +202,12 @@
 
     private void HandleAddRecipe()
     {
-        // TODO: Navigate to add recipe page (Phase 2, Plan 6)
-        Snackbar.Add("Add recipe page coming soon", Severity.Info);
+        NavigationManager.NavigateTo("/recipes/new");
     }
 
     private void HandleEdit(Recipe recipe)
     {
-        // TODO: Navigate to edit recipe page (Phase 2, Plan 6)
-        Snackbar.Add($"Edit recipe '{recipe.Name}' - coming soon", Severity.Info);
+        NavigationManager.NavigateTo($"/recipes/edit/{recipe.RecipeId}");
     }
 
     private void HandleDeleteConfirm(Recipe recipe)

@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
+using Plk.Blazor.DragDrop;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -83,6 +84,7 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddMudServices();
+builder.Services.AddBlazorDragDrop();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddHubOptions(options =>
