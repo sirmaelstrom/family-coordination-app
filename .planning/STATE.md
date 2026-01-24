@@ -5,22 +5,22 @@
 See: .planning/PROJECT.md (updated 2026-01-22)
 
 **Core value:** The integrated workflow - recipes → meal plan → shopping list. Automated aggregation and real-time collaboration reduce mental load from scattered information and last-minute decisions.
-**Current focus:** Phase 4 - Shopping List Core
+**Current focus:** Phase 5 - Multi-User Collaboration
 
 ## Current Position
 
 Phase: 5 of 7 (Multi-User Collaboration)
-Plan: 2 of 7 (executing)
+Plan: 1 of 7 (complete)
 Status: In progress
-Last activity: 2026-01-24 — Completed 05-02-PLAN.md
+Last activity: 2026-01-24 — Completed 05-01-PLAN.md
 
-Progress: [████████████████] 64% (4.3 of 7 phases)
+Progress: [████████████████░] 61% (4.14 of 7 phases)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 23
-- Average duration: 8.0 min
+- Total plans completed: 22
+- Average duration: 8.6 min
 - Total execution time: 3.1 hours
 
 **By Phase:**
@@ -31,11 +31,11 @@ Progress: [████████████████] 64% (4.3 of 7 phase
 | 2 | 7 | 32min | 4.6min |
 | 3 | 4 | 90min | 22.5min |
 | 4 | 6 | 34min | 5.7min |
-| 5 | 2 | 2min | 1.0min |
+| 5 | 1 | 2.7min | 2.7min |
 
 **Recent Trend:**
-- Last 5 plans: 11min, 4min, 3min (04-06 verification), 1min (05-01), 1min (05-02)
-- Trend: Phase 5 starting efficiently with schema/config tasks (1min average)
+- Last 5 plans: 11min, 4min, 3min (04-06 verification), 2.7min (05-01)
+- Trend: Phase 5 started efficiently with schema migration task
 
 *Updated after each plan completion*
 
@@ -129,13 +129,14 @@ Recent decisions affecting current work:
 - Default date range today through end of week (Sunday) for shopping list generation [04-06]
 - Data protection keys in /root/.aspnet/DataProtection-Keys with volume mount (prevents logout on restart) [04-06]
 - Image uploads path /app/wwwroot/uploads (matches published app structure) [04-06]
-- Update picture URL and initials on every login (ensures Google profile changes reflected) [05-02]
-- Compute initials from first and last name characters (standard convention for avatars) [05-02]
+- PostgreSQL xmin system column for concurrency detection (native support, automatic maintenance) [05-01]
+- Store user profile picture URL not binary data (Google OAuth provides URL, no storage overhead) [05-01]
+- Store computed Initials field not computed column (application logic, more flexible) [05-01]
+- Nullable UpdatedByUserId with SetNull cascade (preserves history if user deleted) [05-01]
 
 ### Pending Todos
 
-- Phase 5: Continue plan 05-03 (Avatar component)
-- Phase 5: Plans 05-04 through 05-07 pending
+- Phase 5: Plans 05-02 through 05-07 pending
 
 ### Blockers/Concerns
 
@@ -147,11 +148,11 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-01-24T19:21:37Z
-Stopped at: Completed 05-02-PLAN.md (OAuth profile picture and initials)
+Last session: 2026-01-24T19:23:01Z
+Stopped at: Completed 05-01-PLAN.md (Multi-User Schema Foundations)
 Resume file: None
-Next command: Execute 05-03-PLAN.md (Avatar component)
+Next command: Execute next plan in Phase 5
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-01-24T19:21:37Z*
+*Last updated: 2026-01-24T19:23:01Z*
