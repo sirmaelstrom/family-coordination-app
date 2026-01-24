@@ -140,7 +140,8 @@
                                  OnIngredientAdded="AddIngredient"
                                  OnBulkIngredientsAdded="AddBulkIngredients" />
 
-                <IngredientList @bind-Ingredients="_ingredients"
+                <IngredientList Ingredients="_ingredients"
+                                IngredientsChanged="OnIngredientsChanged"
                                 OnEditIngredient="EditIngredient" />
             </MudPaper>
 
@@ -379,6 +380,12 @@
                 i.SortOrder
             )).ToList()
         );
+    }
+
+    private void OnIngredientsChanged(List<RecipeIngredient> ingredients)
+    {
+        _ingredients = ingredients;
+        ScheduleAutoSave();
     }
 
     private void AddIngredient(RecipeIngredient ingredient)
