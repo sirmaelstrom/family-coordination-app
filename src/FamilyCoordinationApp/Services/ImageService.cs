@@ -9,10 +9,10 @@ public interface IImageService
     string GetImageUrl(string? imagePath);
 }
 
-public class ImageService : IImageService
+public class ImageService(
+    IWebHostEnvironment environment,
+    ILogger<ImageService> logger) : IImageService
 {
-    private readonly IWebHostEnvironment _environment;
-    private readonly ILogger<ImageService> _logger;
     private const long MaxFileSize = 10 * 1024 * 1024; // 10 MB
 
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -24,12 +24,6 @@ public class ImageService : IImageService
     {
         "image/jpeg", "image/png", "image/gif", "image/webp"
     };
-
-    public ImageService(IWebHostEnvironment environment, ILogger<ImageService> logger)
-    {
-        _environment = environment;
-        _logger = logger;
-    }
 
     public async Task<string> SaveImageAsync(IBrowserFile file, int householdId, CancellationToken cancellationToken = default)
     {
@@ -52,7 +46,7 @@ public class ImageService : IImageService
 
         // Generate unique filename
         var trustedFileName = $"{Guid.NewGuid()}{extension}";
-        var uploadsPath = Path.Combine(_environment.WebRootPath, "uploads", householdId.ToString());
+        var uploadsPath = Path.Combine(environment.WebRootPath, "uploads", householdId.ToString());
 
         // Ensure directory exists
         Directory.CreateDirectory(uploadsPath);
@@ -66,14 +60,14 @@ public class ImageService : IImageService
             await using var fs = new FileStream(filePath, FileMode.Create);
             await stream.CopyToAsync(fs, cancellationToken);
 
-            _logger.LogInformation("Saved image {FileName} for household {HouseholdId}", trustedFileName, householdId);
+            logger.LogInformation("Saved image {FileName} for household {HouseholdId}", trustedFileName, householdId);
 
             // Return relative URL path
             return $"/uploads/{householdId}/{trustedFileName}";
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to save image for household {HouseholdId}", householdId);
+            logger.LogError(ex, "Failed to save image for household {HouseholdId}", householdId);
 
             // Clean up partial file if it exists
             if (File.Exists(filePath))
@@ -93,18 +87,18 @@ public class ImageService : IImageService
         // Convert URL path to filesystem path
         // imagePath format: /uploads/{householdId}/{filename}
         var relativePath = imagePath.TrimStart('/');
-        var fullPath = Path.Combine(_environment.WebRootPath, relativePath);
+        var fullPath = Path.Combine(environment.WebRootPath, relativePath);
 
         if (File.Exists(fullPath))
         {
             try
             {
                 File.Delete(fullPath);
-                _logger.LogInformation("Deleted image at {Path}", imagePath);
+                logger.LogInformation("Deleted image at {Path}", imagePath);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to delete image at {Path}", imagePath);
+                logger.LogWarning(ex, "Failed to delete image at {Path}", imagePath);
                 // Don't throw - image deletion is not critical
             }
         }

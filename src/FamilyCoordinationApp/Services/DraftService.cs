@@ -34,25 +34,18 @@ public interface IDraftService
     Task DeleteDraftAsync(int householdId, int userId, int? recipeId, CancellationToken cancellationToken = default);
 }
 
-public class DraftService : IDraftService
+public class DraftService(
+    IDbContextFactory<ApplicationDbContext> dbFactory,
+    ILogger<DraftService> logger) : IDraftService
 {
-    private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
-    private readonly ILogger<DraftService> _logger;
-
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    public DraftService(IDbContextFactory<ApplicationDbContext> dbFactory, ILogger<DraftService> logger)
-    {
-        _dbFactory = dbFactory;
-        _logger = logger;
-    }
-
     public async Task SaveDraftAsync(int householdId, int userId, int? recipeId, RecipeDraftData draft, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var existing = await context.RecipeDrafts
             .FirstOrDefaultAsync(d =>
@@ -81,12 +74,12 @@ public class DraftService : IDraftService
         }
 
         await context.SaveChangesAsync(cancellationToken);
-        _logger.LogDebug("Saved draft for recipe {RecipeId} by user {UserId}", recipeId, userId);
+        logger.LogDebug("Saved draft for recipe {RecipeId} by user {UserId}", recipeId, userId);
     }
 
     public async Task<RecipeDraftData?> GetDraftAsync(int householdId, int userId, int? recipeId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var draft = await context.RecipeDrafts
             .FirstOrDefaultAsync(d =>
@@ -104,14 +97,14 @@ public class DraftService : IDraftService
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "Failed to deserialize draft for recipe {RecipeId}", recipeId);
+            logger.LogWarning(ex, "Failed to deserialize draft for recipe {RecipeId}", recipeId);
             return null;
         }
     }
 
     public async Task DeleteDraftAsync(int householdId, int userId, int? recipeId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var draft = await context.RecipeDrafts
             .FirstOrDefaultAsync(d =>
@@ -124,7 +117,7 @@ public class DraftService : IDraftService
         {
             context.RecipeDrafts.Remove(draft);
             await context.SaveChangesAsync(cancellationToken);
-            _logger.LogDebug("Deleted draft for recipe {RecipeId} by user {UserId}", recipeId, userId);
+            logger.LogDebug("Deleted draft for recipe {RecipeId} by user {UserId}", recipeId, userId);
         }
     }
 }
