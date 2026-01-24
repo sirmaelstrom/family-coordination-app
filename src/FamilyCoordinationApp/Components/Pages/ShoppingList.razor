@@ -7,6 +7,7 @@
 @using MudBlazor
 @attribute [Authorize]
 @implements IAsyncDisposable
+@implements IDisposable
 
 @inject IShoppingListService ShoppingListService
 @inject IShoppingListGenerator ShoppingListGenerator
@@ -15,6 +16,7 @@
 @inject IDialogService DialogService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject DataNotifier Notifier
 
 <PageTitle>Shopping List - Family Coordination</PageTitle>
 
@@ -118,6 +120,8 @@
 
     protected override async Task OnInitializedAsync()
     {
+        Notifier.OnShoppingListChanged += OnDataChanged;
+
         _householdId = await GetHouseholdIdAsync();
         await LoadShoppingListsAsync();
     }
@@ -387,9 +391,23 @@
         StateHasChanged();
     }
 
+    private void OnDataChanged()
+    {
+        InvokeAsync(async () =>
+        {
+            await LoadShoppingListsAsync();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        Notifier.OnShoppingListChanged -= OnDataChanged;
+    }
+
     public async ValueTask DisposeAsync()
     {
-        // No DbContext held, nothing to dispose
+        Dispose();
         await Task.CompletedTask;
     }
 }
