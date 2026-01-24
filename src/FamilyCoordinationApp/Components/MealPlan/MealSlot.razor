@@ -19,9 +19,11 @@
                 <img src="@Entry.Recipe.ImagePath" alt="@Entry.Recipe.Name" class="slot-recipe-image" />
             }
             <div class="slot-recipe-details">
-                <MudText Typo="Typo.body2" Class="slot-recipe-name" @onclick="HandleViewRecipeClick" @onclick:stopPropagation="true">
-                    @Entry.Recipe.Name
-                </MudText>
+                <div @onclick="HandleViewRecipeClick">
+                    <MudText Typo="Typo.body2" Class="slot-recipe-name" @onclick:stopPropagation="true">
+                        @Entry.Recipe.Name
+                    </MudText>
+                </div>
                 @if (!string.IsNullOrWhiteSpace(Entry.Notes))
                 {
                     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="slot-notes">
