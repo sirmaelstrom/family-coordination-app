@@ -1,4 +1,14 @@
+@using FamilyCoordinationApp.Services
+@using FamilyCoordinationApp.Components.Shared
+@using FamilyCoordinationApp.Data
+@using Microsoft.EntityFrameworkCore
 @inherits LayoutComponentBase
+@implements IDisposable
+
+@inject PresenceService PresenceService
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 
 <MudThemeProvider @bind-IsDarkMode="@_isDarkMode" Theme="@_theme" />
 <MudPopoverProvider />
@@ -15,6 +25,8 @@
             <AuthorizeView>
                 <Authorized>
                     <div class="d-flex align-center gap-4">
+                        <OnlineUsers CurrentUserId="@_currentUserId" />
+                        <SyncStatus />
                         <MudText Typo="Typo.body2" Color="Color.Secondary">@context.User.Identity?.Name</MudText>
                         <MudLink Href="/account/logout" Typo="Typo.body2">Sign out</MudLink>
                     </div>
@@ -35,6 +47,11 @@
 </div>
 
 @code {
+    private int _currentUserId;
+    private string? _currentUserPicture;
+    private string _currentUserInitials = string.Empty;
+    private string _currentUserName = string.Empty;
+    private System.Timers.Timer? _heartbeatTimer;
     private bool _isDarkMode = true;
 
     private MudTheme _theme = new()
@@ -66,4 +83,65 @@
             Error = "#f44336"
         }
     };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCurrentUser();
+        StartHeartbeat();
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    private async Task LoadCurrentUser()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var email = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+
+        if (email != null)
+        {
+            await using var context = await DbFactory.CreateDbContextAsync();
+            var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
+            if (user != null)
+            {
+                _currentUserId = user.Id;
+                _currentUserPicture = user.PictureUrl;
+                _currentUserInitials = user.Initials;
+                _currentUserName = user.DisplayName;
+                SendHeartbeat();
+            }
+        }
+    }
+
+    private void StartHeartbeat()
+    {
+        // Send heartbeat every 30 seconds
+        _heartbeatTimer = new System.Timers.Timer(30000);
+        _heartbeatTimer.Elapsed += (_, _) => SendHeartbeat();
+        _heartbeatTimer.AutoReset = true;
+        _heartbeatTimer.Start();
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        SendHeartbeat();
+    }
+
+    private void SendHeartbeat()
+    {
+        if (_currentUserId > 0)
+        {
+            var currentPage = new Uri(NavigationManager.Uri).AbsolutePath;
+            PresenceService.Heartbeat(_currentUserId, _currentUserName, _currentUserPicture, _currentUserInitials, currentPage);
+        }
+    }
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= OnLocationChanged;
+        _heartbeatTimer?.Stop();
+        _heartbeatTimer?.Dispose();
+        if (_currentUserId > 0)
+        {
+            PresenceService.UserDisconnected(_currentUserId);
+        }
+    }
 }

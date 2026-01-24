@@ -1,0 +1,98 @@
+@using FamilyCoordinationApp.Services
+@using FamilyCoordinationApp.Components.Shared
+@implements IDisposable
+
+@inject PresenceService PresenceService
+
+@if (_onlineUsers.Any())
+{
+    <div class="online-users d-flex align-center gap-1">
+        <MudTooltip Text="@GetTooltipText()" Placement="Placement.Bottom">
+            <div class="d-flex">
+                @foreach (var user in _onlineUsers.Take(3))
+                {
+                    <div class="online-user-avatar" style="margin-left: -8px;">
+                        <UserAvatar PictureUrl="@user.PictureUrl"
+                                    Initials="@user.Initials"
+                                    DisplayName="@user.DisplayName"
+                                    Size="Size.Small"
+                                    ShowPresence="true"
+                                    PresenceStatus="@user.Status" />
+                    </div>
+                }
+                @if (_onlineUsers.Count > 3)
+                {
+                    <MudAvatar Size="Size.Small" Color="Color.Secondary" Style="margin-left: -8px;">
+                        +@(_onlineUsers.Count - 3)
+                    </MudAvatar>
+                }
+            </div>
+        </MudTooltip>
+    </div>
+}
+
+@code {
+    /// <summary>
+    /// Current user ID to exclude from display
+    /// </summary>
+    [Parameter]
+    public int CurrentUserId { get; set; }
+
+    private List<UserPresence> _onlineUsers = new();
+
+    protected override void OnInitialized()
+    {
+        PresenceService.OnPresenceChanged += OnPresenceChanged;
+        LoadOnlineUsers();
+    }
+
+    private void OnPresenceChanged()
+    {
+        InvokeAsync(() =>
+        {
+            LoadOnlineUsers();
+            StateHasChanged();
+        });
+    }
+
+    private void LoadOnlineUsers()
+    {
+        _onlineUsers = PresenceService.GetAllActiveUsers()
+            .Where(u => u.UserId != CurrentUserId)
+            .OrderByDescending(u => u.Status == PresenceStatus.Online)
+            .ThenBy(u => u.DisplayName)
+            .ToList();
+    }
+
+    private string GetTooltipText()
+    {
+        if (!_onlineUsers.Any())
+            return "No other family members online";
+
+        var online = _onlineUsers.Where(u => u.Status == PresenceStatus.Online).Select(u => u.DisplayName);
+        var away = _onlineUsers.Where(u => u.Status == PresenceStatus.Away).Select(u => u.DisplayName);
+
+        var parts = new List<string>();
+        if (online.Any())
+            parts.Add($"Online: {string.Join(", ", online)}");
+        if (away.Any())
+            parts.Add($"Away: {string.Join(", ", away)}");
+
+        return string.Join("\n", parts);
+    }
+
+    public void Dispose()
+    {
+        PresenceService.OnPresenceChanged -= OnPresenceChanged;
+    }
+}
+
+<style>
+    .online-users {
+        padding: 4px 8px;
+    }
+
+    .online-user-avatar:first-child {
+        margin-left: 0 !important;
+    }
+</style>
