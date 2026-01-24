@@ -1,0 +1,383 @@
+@page "/shopping-list"
+@using FamilyCoordinationApp.Data
+@using FamilyCoordinationApp.Data.Entities
+@using FamilyCoordinationApp.Services
+@using FamilyCoordinationApp.Components.ShoppingList
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@attribute [Authorize]
+@implements IAsyncDisposable
+
+@inject IShoppingListService ShoppingListService
+@inject IShoppingListGenerator ShoppingListGenerator
+@inject IMealPlanService MealPlanService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<PageTitle>Shopping List - Family Coordination</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="py-4">
+    <div class="d-flex justify-space-between align-center mb-4">
+        <MudText Typo="Typo.h4">Shopping List</MudText>
+
+        <div class="d-flex gap-2 align-center">
+            @if (_activeLists.Count > 1)
+            {
+                <MudSelect T="Data.Entities.ShoppingList"
+                           Value="@_currentList"
+                           ValueChanged="@HandleListChanged"
+                           Label="List"
+                           Variant="Variant.Outlined"
+                           Margin="Margin.Dense"
+                           Dense="true"
+                           Class="list-selector">
+                    @foreach (var list in _activeLists)
+                    {
+                        <MudSelectItem Value="@list">@list.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+
+            <MudMenu Icon="@Icons.Material.Filled.MoreVert" AriaLabel="Shopping list menu">
+                <MudMenuItem OnClick="GenerateFromMealPlan"
+                             Icon="@Icons.Material.Filled.AutoAwesome"
+                             Disabled="@_isGenerating">
+                    @if (_isGenerating)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    }
+                    Generate from Meal Plan
+                </MudMenuItem>
+                <MudMenuItem OnClick="ClearCheckedItems"
+                             Icon="@Icons.Material.Filled.CleaningServices"
+                             Disabled="@(_currentList == null || !_currentList.Items.Any(i => i.IsChecked))">
+                    Clear Checked Items
+                </MudMenuItem>
+                <MudMenuItem OnClick="ArchiveList"
+                             Icon="@Icons.Material.Filled.Archive"
+                             Disabled="@(_currentList == null)">
+                    Archive List
+                </MudMenuItem>
+            </MudMenu>
+        </div>
+    </div>
+
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else if (_currentList == null)
+    {
+        <MudAlert Severity="Severity.Info" Class="my-4">
+            <div class="d-flex flex-column gap-2">
+                <MudText>No active shopping list found.</MudText>
+                <MudButton OnClick="GenerateFromMealPlan"
+                           Color="Color.Primary"
+                           Variant="Variant.Filled"
+                           StartIcon="@Icons.Material.Filled.AutoAwesome"
+                           Disabled="@_isGenerating">
+                    @if (_isGenerating)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>Generating...</span>
+                    }
+                    else
+                    {
+                        <span>Generate from Meal Plan</span>
+                    }
+                </MudButton>
+            </div>
+        </MudAlert>
+    }
+    else
+    {
+        <ShoppingListView Items="@_currentList.Items.ToList()"
+                          OnItemChecked="@HandleItemChecked"
+                          OnItemEdit="@HandleItemEdit"
+                          OnItemDelete="@HandleItemDelete" />
+    }
+
+    @if (_currentList != null)
+    {
+        <MudFab Color="Color.Primary"
+                StartIcon="@Icons.Material.Filled.Add"
+                OnClick="HandleAddItem"
+                Style="position: fixed; bottom: 24px; right: 24px;"
+                aria-label="Add item" />
+    }
+</MudContainer>
+
+@code {
+    private int _householdId;
+    private Data.Entities.ShoppingList? _currentList;
+    private List<Data.Entities.ShoppingList> _activeLists = new();
+    private bool _isLoading = true;
+    private bool _isGenerating = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _householdId = await GetHouseholdIdAsync();
+        await LoadShoppingListsAsync();
+    }
+
+    private async Task<int> GetHouseholdIdAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var email = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+
+        await using var context = await DbFactory.CreateDbContextAsync();
+        var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
+        return user?.HouseholdId ?? 1;
+    }
+
+    private async Task LoadShoppingListsAsync()
+    {
+        _isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            _activeLists = await ShoppingListService.GetActiveShoppingListsAsync(_householdId);
+
+            // Select most recent list if any exist
+            _currentList = _activeLists.OrderByDescending(l => l.CreatedAt).FirstOrDefault();
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GenerateFromMealPlan()
+    {
+        _isGenerating = true;
+        StateHasChanged();
+
+        try
+        {
+            // Get current week's meal plan
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            var weekStart = MealPlanService.GetWeekStartDate(today);
+            var mealPlan = await MealPlanService.GetOrCreateMealPlanAsync(_householdId, weekStart);
+
+            // Generate shopping list from meal plan
+            var listName = $"Shopping List {DateTime.Now:MMM d}";
+            var newList = await ShoppingListGenerator.GenerateFromMealPlanAsync(
+                _householdId,
+                mealPlan.MealPlanId,
+                listName);
+
+            Snackbar.Add($"Generated shopping list with {newList.Items.Count} items", Severity.Success);
+
+            // Reload lists
+            await LoadShoppingListsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error generating shopping list: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isGenerating = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleItemChecked(ShoppingListItem item)
+    {
+        if (_currentList == null) return;
+
+        try
+        {
+            // Capture item in local variable for closure (avoid shared field pitfall)
+            var itemToToggle = item;
+
+            // Toggle checked state
+            item.IsChecked = !item.IsChecked;
+            item.CheckedAt = item.IsChecked ? DateTime.UtcNow : null;
+
+            await ShoppingListService.UpdateItemAsync(item);
+            StateHasChanged();
+
+            // Show undo snackbar when checking item
+            if (item.IsChecked)
+            {
+                Snackbar.Add($"Checked {item.Name}", Severity.Success, config =>
+                {
+                    config.Action = "UNDO";
+                    config.VisibleStateDuration = 4000;
+                    config.OnClick = async (snackbar) =>
+                    {
+                        // Uncheck the item
+                        itemToToggle.IsChecked = false;
+                        itemToToggle.CheckedAt = null;
+                        await ShoppingListService.UpdateItemAsync(itemToToggle);
+                        StateHasChanged();
+                        Snackbar.Add($"Unchecked {itemToToggle.Name}", Severity.Info);
+                    };
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error updating item: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task HandleItemEdit(ShoppingListItem item)
+    {
+        if (_currentList == null) return;
+
+        var parameters = new DialogParameters<EditItemDialog>
+        {
+            { x => x.Item, item }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<EditItemDialog>("Edit Item", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled && result.Data is ShoppingListItem updatedItem)
+        {
+            try
+            {
+                await ShoppingListService.UpdateItemAsync(updatedItem);
+                await LoadShoppingListsAsync(); // Reload to get updated item
+                Snackbar.Add("Item updated", Severity.Success);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error updating item: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task HandleItemDelete(ShoppingListItem item)
+    {
+        if (_currentList == null) return;
+
+        var confirmed = await DialogService.ShowMessageBox(
+            "Delete Item",
+            $"Delete {item.Name} from shopping list?",
+            yesText: "Delete",
+            cancelText: "Cancel");
+
+        if (confirmed == true)
+        {
+            try
+            {
+                await ShoppingListService.DeleteItemAsync(_householdId, item.ShoppingListId, item.ItemId);
+                await LoadShoppingListsAsync();
+                Snackbar.Add("Item deleted", Severity.Success);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error deleting item: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task HandleAddItem()
+    {
+        if (_currentList == null) return;
+
+        var parameters = new DialogParameters<AddItemDialog>
+        {
+            { x => x.HouseholdId, _householdId },
+            { x => x.ShoppingListId, _currentList.ShoppingListId }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<AddItemDialog>("Add Item", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled)
+        {
+            await LoadShoppingListsAsync();
+            Snackbar.Add("Item added", Severity.Success);
+        }
+    }
+
+    private async Task ClearCheckedItems()
+    {
+        if (_currentList == null) return;
+
+        var confirmed = await DialogService.ShowMessageBox(
+            "Clear Checked Items",
+            "Remove all checked items from this shopping list?",
+            yesText: "Clear",
+            cancelText: "Cancel");
+
+        if (confirmed == true)
+        {
+            try
+            {
+                var count = await ShoppingListService.ClearCheckedItemsAsync(_householdId, _currentList.ShoppingListId);
+                await LoadShoppingListsAsync();
+                Snackbar.Add($"Cleared {count} checked items", Severity.Success);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error clearing items: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task ArchiveList()
+    {
+        if (_currentList == null) return;
+
+        var confirmed = await DialogService.ShowMessageBox(
+            "Archive List",
+            $"Archive {_currentList.Name}?",
+            yesText: "Archive",
+            cancelText: "Cancel");
+
+        if (confirmed == true)
+        {
+            try
+            {
+                await ShoppingListService.ArchiveShoppingListAsync(_householdId, _currentList.ShoppingListId);
+                await LoadShoppingListsAsync();
+                Snackbar.Add("List archived", Severity.Success);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error archiving list: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task HandleListChanged(Data.Entities.ShoppingList selectedList)
+    {
+        _currentList = selectedList;
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // No DbContext held, nothing to dispose
+        await Task.CompletedTask;
+    }
+}
+
+<style>
+    .list-selector {
+        min-width: 200px;
+    }
+</style>
