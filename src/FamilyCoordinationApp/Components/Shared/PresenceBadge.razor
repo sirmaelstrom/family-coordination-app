@@ -1,0 +1,39 @@
+@using FamilyCoordinationApp.Services
+
+<div class="presence-badge @GetStatusClass()"></div>
+
+@code {
+    [Parameter]
+    public PresenceStatus Status { get; set; } = PresenceStatus.Offline;
+
+    private string GetStatusClass() => Status switch
+    {
+        PresenceStatus.Online => "presence-online",
+        PresenceStatus.Away => "presence-away",
+        _ => "presence-offline"
+    };
+}
+
+<style>
+    .presence-badge {
+        width: 12px;
+        height: 12px;
+        border: 2px solid var(--mud-palette-surface);
+        border-radius: 50%;
+        position: absolute;
+        bottom: 0;
+        right: 0;
+    }
+
+    .presence-online {
+        background-color: #4caf50;
+    }
+
+    .presence-away {
+        background-color: #ff9800;
+    }
+
+    .presence-offline {
+        background-color: #9e9e9e;
+    }
+</style>
