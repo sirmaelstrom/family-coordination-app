@@ -1,0 +1,277 @@
+@page "/settings/categories"
+@attribute [Authorize]
+
+@using FamilyCoordinationApp.Data
+@using FamilyCoordinationApp.Data.Entities
+@using FamilyCoordinationApp.Services
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+@using Plk.Blazor.DragDrop
+
+@inject ICategoryService CategoryService
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Manage Categories - Family Coordination</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-4">
+    <MudText Typo="Typo.h4" Class="mb-4">Manage Categories</MudText>
+
+    <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+        Customize ingredient categories for your household. Drag to reorder categories to match your store layout.
+    </MudText>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" />
+    }
+    else
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="1">
+            <MudText Typo="Typo.h6" Class="mb-3">Add New Category</MudText>
+
+            <MudGrid>
+                <MudItem xs="12" sm="4">
+                    <MudTextField @bind-Value="_newCategory.Name"
+                                  Label="Name"
+                                  Variant="Variant.Outlined"
+                                  Required="true" />
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudTextField @bind-Value="_newCategory.IconEmoji"
+                                  Label="Emoji"
+                                  Variant="Variant.Outlined"
+                                  HelperText="e.g., meat_on_bone" />
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudColorPicker @bind-Text="_newCategory.Color"
+                                    Label="Color"
+                                    Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="12" sm="2">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               OnClick="AddCategory"
+                               FullWidth="true"
+                               Style="height: 56px;">
+                        Add
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mb-4" Elevation="1">
+            <MudText Typo="Typo.h6" Class="mb-3">Active Categories</MudText>
+
+            <Dropzone Items="_categories"
+                      InstantReplace="true"
+                      TItem="Category"
+                      OnItemDrop="OnCategoryReordered">
+                @foreach (var category in _categories)
+                {
+                    <MudPaper Class="pa-3 mb-2 d-flex align-center justify-space-between"
+                              Elevation="1"
+                              Style="cursor: grab;">
+                        <div class="d-flex align-center">
+                            <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
+                                     Class="mr-2"
+                                     Size="Size.Small" />
+                            <div style="width: 24px; height: 24px; border-radius: 4px; background-color: @category.Color; margin-right: 12px;"></div>
+                            <MudText>@category.Name</MudText>
+                            @if (category.IsDefault)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Info" Class="ml-2">Default</MudChip>
+                            }
+                        </div>
+                        <div>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                           Size="Size.Small"
+                                           OnClick="() => EditCategory(category)" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Size="Size.Small"
+                                           Color="Color.Error"
+                                           OnClick="() => DeleteCategory(category)" />
+                        </div>
+                    </MudPaper>
+                }
+            </Dropzone>
+        </MudPaper>
+
+        @if (_deletedCategories.Count > 0)
+        {
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-3">Deleted Categories</MudText>
+
+                @foreach (var category in _deletedCategories)
+                {
+                    <MudPaper Class="pa-3 mb-2 d-flex align-center justify-space-between"
+                              Elevation="0"
+                              Style="opacity: 0.6;">
+                        <div class="d-flex align-center">
+                            <div style="width: 24px; height: 24px; border-radius: 4px; background-color: @category.Color; margin-right: 12px;"></div>
+                            <MudText>@category.Name</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">
+                                (deleted @category.DeletedAt?.ToString("MMM d"))
+                            </MudText>
+                        </div>
+                        <MudButton Variant="Variant.Text"
+                                   Color="Color.Primary"
+                                   OnClick="() => RestoreCategory(category)">
+                            Restore
+                        </MudButton>
+                    </MudPaper>
+                }
+            </MudPaper>
+        }
+    }
+</MudContainer>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private List<Category> _categories = new();
+    private List<Category> _deletedCategories = new();
+    private Category _newCategory = new() { Color = "#808080" };
+    private bool _loading = true;
+    private int _householdId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadHouseholdId();
+        await LoadCategories();
+        _loading = false;
+    }
+
+    private async Task LoadHouseholdId()
+    {
+        if (AuthState == null) return;
+
+        var authState = await AuthState;
+        var email = authState.User.FindFirstValue(ClaimTypes.Email);
+
+        if (string.IsNullOrEmpty(email)) return;
+
+        await using var context = await DbFactory.CreateDbContextAsync();
+        var user = await context.Users
+            .FirstOrDefaultAsync(u => u.Email == email);
+
+        if (user != null)
+        {
+            _householdId = user.HouseholdId;
+        }
+    }
+
+    private async Task LoadCategories()
+    {
+        var allCategories = await CategoryService.GetCategoriesAsync(_householdId, includeDeleted: true);
+        _categories = allCategories.Where(c => !c.IsDeleted).OrderBy(c => c.SortOrder).ToList();
+        _deletedCategories = allCategories.Where(c => c.IsDeleted).ToList();
+    }
+
+    private async Task AddCategory()
+    {
+        if (string.IsNullOrWhiteSpace(_newCategory.Name))
+        {
+            Snackbar.Add("Category name is required", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            _newCategory.HouseholdId = _householdId;
+            _newCategory.IsDefault = false;
+            await CategoryService.CreateCategoryAsync(_newCategory);
+            Snackbar.Add($"Category \"{_newCategory.Name}\" created", Severity.Success);
+
+            _newCategory = new Category { Color = "#808080" };
+            await LoadCategories();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to create category: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task EditCategory(Category category)
+    {
+        var parameters = new DialogParameters<CategoryEditDialog>
+        {
+            { x => x.Category, category }
+        };
+
+        var dialog = await DialogService.ShowAsync<CategoryEditDialog>("Edit Category", parameters);
+        var result = await dialog.Result;
+
+        if (!result!.Canceled && result.Data is Category updated)
+        {
+            try
+            {
+                await CategoryService.UpdateCategoryAsync(updated);
+                Snackbar.Add("Category updated", Severity.Success);
+                await LoadCategories();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Failed to update category: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task DeleteCategory(Category category)
+    {
+        // Check if category has ingredients
+        if (await CategoryService.HasIngredientsAsync(_householdId, category.Name))
+        {
+            var result = await DialogService.ShowMessageBox(
+                "Category In Use",
+                $"The category \"{category.Name}\" is used by ingredients in your recipes. You can still delete it, but those ingredients will keep their category assignment.",
+                yesText: "Delete Anyway",
+                cancelText: "Cancel");
+
+            if (result != true) return;
+        }
+
+        try
+        {
+            await CategoryService.DeleteCategoryAsync(_householdId, category.CategoryId);
+            Snackbar.Add($"Category \"{category.Name}\" deleted", Severity.Success);
+            await LoadCategories();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to delete category: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RestoreCategory(Category category)
+    {
+        try
+        {
+            await CategoryService.RestoreCategoryAsync(_householdId, category.CategoryId);
+            Snackbar.Add($"Category \"{category.Name}\" restored", Severity.Success);
+            await LoadCategories();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to restore category: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task OnCategoryReordered(Category item)
+    {
+        var sortOrders = _categories
+            .Select((c, i) => (c.CategoryId, SortOrder: i))
+            .ToList();
+
+        try
+        {
+            await CategoryService.UpdateSortOrderAsync(_householdId, sortOrders);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to update order: {ex.Message}", Severity.Error);
+            await LoadCategories(); // Reload to restore original order
+        }
+    }
+}

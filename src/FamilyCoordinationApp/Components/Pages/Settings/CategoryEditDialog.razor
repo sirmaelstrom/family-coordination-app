@@ -1,0 +1,29 @@
+@using FamilyCoordinationApp.Data.Entities
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="Category.Name"
+                      Label="Name"
+                      Variant="Variant.Outlined"
+                      Class="mb-3" />
+        <MudTextField @bind-Value="Category.IconEmoji"
+                      Label="Emoji"
+                      Variant="Variant.Outlined"
+                      Class="mb-3" />
+        <MudColorPicker @bind-Text="Category.Color"
+                        Label="Color"
+                        Variant="Variant.Outlined" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Save">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public Category Category { get; set; } = new();
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Save() => MudDialog.Close(DialogResult.Ok(Category));
+}
