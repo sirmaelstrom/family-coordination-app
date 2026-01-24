@@ -48,9 +48,9 @@
 
 @code {
     [Parameter] public ShoppingListItem Item { get; set; } = default!;
-    [Parameter] public EventCallback OnChecked { get; set; }
-    [Parameter] public EventCallback OnEdit { get; set; }
-    [Parameter] public EventCallback OnDelete { get; set; }
+    [Parameter] public EventCallback<ShoppingListItem> OnChecked { get; set; }
+    [Parameter] public EventCallback<ShoppingListItem> OnEdit { get; set; }
+    [Parameter] public EventCallback<ShoppingListItem> OnDelete { get; set; }
 
     private string GetItemClass()
     {
@@ -71,17 +71,17 @@
     private async Task HandleCheckChanged(bool isChecked)
     {
         // Update the item state (parent handles persistence)
-        await OnChecked.InvokeAsync();
+        await OnChecked.InvokeAsync(Item);
     }
 
     private async Task HandleEdit()
     {
-        await OnEdit.InvokeAsync();
+        await OnEdit.InvokeAsync(Item);
     }
 
     private async Task HandleDelete()
     {
-        await OnDelete.InvokeAsync();
+        await OnDelete.InvokeAsync(Item);
     }
 
     private string FormatQuantity(decimal quantity)
