@@ -21,8 +21,8 @@ RUN echo "=== Checking publish output ===" && \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 
-# Create directories for logs and uploads
-RUN mkdir -p /app/logs /app/uploads
+# Create directories for logs, uploads, and data protection keys
+RUN mkdir -p /app/logs /app/wwwroot/uploads /root/.aspnet/DataProtection-Keys
 
 # Copy published app
 COPY --from=build /app/publish .
