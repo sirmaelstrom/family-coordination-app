@@ -1,4 +1,5 @@
 @using FamilyCoordinationApp.Data.Entities
+@using FamilyCoordinationApp.Components.Shared
 
 <div class="shopping-list-item @GetItemClass()" @onclick="HandleClick">
     <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
@@ -31,6 +32,13 @@
             </MudText>
         }
     </div>
+
+    @if (Item.AddedBy != null)
+    {
+        <MudTooltip Text="@($"Added by {Item.AddedBy.DisplayName}")">
+            <UserAvatar User="@Item.AddedBy" Size="Size.Small" />
+        </MudTooltip>
+    }
 
     <div class="item-actions" @onclick:stopPropagation="true">
         <MudIconButton Icon="@Icons.Material.Filled.Edit"
