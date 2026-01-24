@@ -15,7 +15,7 @@ public class CategoryConfiguration : IEntityTypeConfiguration<Category>
             .HasMaxLength(50);
 
         builder.Property(c => c.IconEmoji)
-            .HasMaxLength(10);
+            .HasMaxLength(30);  // Emoji shortcode names like "cup_with_straw"
 
         builder.Property(c => c.Color)
             .HasMaxLength(7);  // #FFFFFF format
