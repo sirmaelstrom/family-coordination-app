@@ -113,10 +113,16 @@ Plans:
   3. User can see who added each shopping list item with visual indicator
   4. User can see who created each recipe in recipe list
   5. Changes persist across all devices in household after polling refresh
-**Plans**: TBD
+**Plans**: 7 plans
 
 Plans:
-- [ ] (Plans defined during plan-phase)
+- [ ] 05-01-PLAN.md — Schema updates: concurrency tokens, user profile fields, change tracking
+- [ ] 05-02-PLAN.md — Google OAuth picture claim mapping and initials computation
+- [ ] 05-03-PLAN.md — DataNotifier, PresenceService, and PollingService infrastructure
+- [ ] 05-04-PLAN.md — UserAvatar and PresenceBadge components
+- [ ] 05-05-PLAN.md — MainLayout presence/sync indicators and heartbeat integration
+- [ ] 05-06-PLAN.md — Attribution display on recipes and shopping list with auto-refresh
+- [ ] 05-07-PLAN.md — Optimistic concurrency with "checked wins" and human verification
 
 ### Phase 6: Recipe Import
 **Goal**: Users can import recipes from URLs with automatic parsing
@@ -159,7 +165,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 2. Recipe Management | 7/7 | Complete | 2026-01-24 |
 | 3. Meal Planning | 4/4 | Complete | 2026-01-24 |
 | 4. Shopping List Core | 6/6 | Complete | 2026-01-24 |
-| 5. Multi-User Collaboration | 0/? | Not started | - |
+| 5. Multi-User Collaboration | 0/7 | Not started | - |
 | 6. Recipe Import | 0/? | Not started | - |
 | 7. Mobile & UX Polish | 0/? | Not started | - |
 
