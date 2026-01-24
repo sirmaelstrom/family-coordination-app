@@ -50,10 +50,16 @@ Plans:
   3. User can edit existing recipe and changes persist
   4. User can delete recipe with confirmation prompt
   5. Recipe ingredients display with proper categorization (Meat, Produce, Dairy, Pantry, Spices)
-**Plans**: TBD
+**Plans**: 7 plans
 
 Plans:
-- [ ] (Plans defined during plan-phase)
+- [ ] 02-01-PLAN.md — MudBlazor setup, Category entity, SignalR file upload config
+- [ ] 02-02-PLAN.md — Ingredient parser (TDD) for natural language parsing
+- [ ] 02-03-PLAN.md — ImageService and RecipeService for backend CRUD
+- [ ] 02-04-PLAN.md — Ingredient entry component with parsing and drag-drop
+- [ ] 02-05-PLAN.md — Recipe list page with card grid and search
+- [ ] 02-06-PLAN.md — Recipe create/edit form with auto-save drafts
+- [ ] 02-07-PLAN.md — Category management settings and human verification
 
 ### Phase 3: Meal Planning
 **Goal**: Users can assign recipes to weekly meal plan in calendar and list views
@@ -141,8 +147,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Infrastructure | 0/4 | Planned | - |
-| 2. Recipe Management | 0/? | Not started | - |
+| 1. Foundation & Infrastructure | 4/4 | Awaiting verification | - |
+| 2. Recipe Management | 0/7 | Planned | - |
 | 3. Meal Planning | 0/? | Not started | - |
 | 4. Shopping List Core | 0/? | Not started | - |
 | 5. Multi-User Collaboration | 0/? | Not started | - |
@@ -151,4 +157,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-01-22*
+*Last updated: 2026-01-23*
