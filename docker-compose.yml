@@ -20,9 +20,7 @@ services:
       - familyapp-network
 
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: familyapp:latest
     container_name: familyapp-app
     depends_on:
       postgres:
