@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-01-22)
 ## Current Position
 
 Phase: 4 of 7 (Shopping List Core)
-Plan: 3 of 6 (complete)
+Plan: 4 of 6 (complete)
 Status: In progress
-Last activity: 2026-01-24 — Completed 04-03-PLAN.md execution
+Last activity: 2026-01-24 — Completed 04-04-PLAN.md execution
 
-Progress: [█████████████░] 49% (3.50 of 7 phases)
+Progress: [█████████████░] 51% (3.67 of 7 phases)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 17
-- Average duration: 9.4 min
-- Total execution time: 2.6 hours
+- Total plans completed: 18
+- Average duration: 9.8 min
+- Total execution time: 2.9 hours
 
 **By Phase:**
 
@@ -30,11 +30,11 @@ Progress: [█████████████░] 49% (3.50 of 7 phases)
 | 1 | 4 | 16min | 4.0min |
 | 2 | 7 | 32min | 4.6min |
 | 3 | 4 | 90min | 22.5min |
-| 4 | 2 | 13min | 6.5min |
+| 4 | 3 | 24min | 8.0min |
 
 **Recent Trend:**
-- Last 5 plans: 6min, 81min, 3min, 4min, 9min
-- Trend: Component-heavy plans take longer due to Razor compiler issues
+- Last 5 plans: 81min, 3min, 4min, 9min, 11min
+- Trend: Component plans average 10min due to Razor compiler and auto-formatter conflicts
 
 *Updated after each plan completion*
 
@@ -117,25 +117,30 @@ Recent decisions affecting current work:
 - Category as consolidation boundary (different categories prevent consolidation) [04-03]
 - Quantity delta tracking for preserving user adjustments during regeneration [04-03]
 - Source recipe tracking in comma-separated fields (transparency for consolidation) [04-03]
+- EventCallback<T> for component callbacks (child passes item directly vs parent tracking context) [04-04]
+- Defer drag-drop to future enhancement (blazor-dragdrop conflicts with Razor auto-formatter) [04-04]
+- Foreach loop over Dropzone for item rendering (workaround for formatter conflicts) [04-04]
 
 ### Pending Todos
 
-None - Phase 4 in progress (plan 3 of 6 complete).
+- Investigate drag-drop alternative for shopping list item reordering (blazor-dragdrop Dropzone conflicts with Razor formatter) [04-04]
+- Consider configuring .editorconfig for less aggressive Razor formatting [04-04]
 
 ### Blockers/Concerns
 
-- Phase 4: Razor EventCallback type inference fails in Dropzone context (workaround: use EventCallback.Factory in @code, not inline)
+- Phase 4: blazor-dragdrop Dropzone component conflicts with Razor auto-formatter (workaround: defer drag-drop, use foreach)
+- Phase 4: Razor auto-formatter aggressively rewrites nested component patterns (impacts Dropzone ChildContent usage)
 - Phase 4: Simple normalization may miss some ingredient variations (monitor user feedback for false negatives)
 - Phase 5: Conflict resolution strategy for concurrent edits (research flagged)
 - Phase 6: Anti-bot mitigation for recipe scraping (research flagged)
 
 ## Session Continuity
 
-Last session: 2026-01-24T08:31:30Z
-Stopped at: Completed 04-03-PLAN.md execution
+Last session: 2026-01-24T08:32:33Z
+Stopped at: Completed 04-04-PLAN.md execution
 Resume file: None
-Next command: Execute 04-04-PLAN.md (Manual item management with autocomplete)
+Next command: Execute 04-05-PLAN.md (Shopping list page integration)
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-01-24T08:31:30Z*
+*Last updated: 2026-01-24T08:32:33Z*
