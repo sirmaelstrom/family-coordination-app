@@ -1,0 +1,55 @@
+@using FamilyCoordinationApp.Data.Entities
+
+@if (Items == null || Items.Count == 0)
+{
+    <MudAlert Severity="Severity.Info" Class="my-4">
+        No items in shopping list. Generate from meal plan or add items manually.
+    </MudAlert>
+}
+else
+{
+    @foreach (var group in GroupedItems)
+    {
+        <CategorySection Category="@group.Key"
+                         Items="@group.ToList()"
+                         OnItemChecked="@OnItemChecked"
+                         OnItemEdit="@OnItemEdit"
+                         OnItemDelete="@OnItemDelete" />
+    }
+}
+
+@code {
+    [Parameter] public List<ShoppingListItem> Items { get; set; } = new();
+    [Parameter] public EventCallback<ShoppingListItem> OnItemChecked { get; set; }
+    [Parameter] public EventCallback<ShoppingListItem> OnItemEdit { get; set; }
+    [Parameter] public EventCallback<ShoppingListItem> OnItemDelete { get; set; }
+    [Parameter] public EventCallback OnItemsReordered { get; set; }
+
+    private IEnumerable<IGrouping<string, ShoppingListItem>> GroupedItems
+    {
+        get
+        {
+            // Group by category, ordered by category priority
+            return Items
+                .GroupBy(i => i.Category)
+                .OrderBy(g => GetCategoryOrder(g.Key));
+        }
+    }
+
+    private int GetCategoryOrder(string category)
+    {
+        // Define standard category ordering for grocery store layout
+        var order = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "Produce", 1 },
+            { "Bakery", 2 },
+            { "Meat", 3 },
+            { "Dairy", 4 },
+            { "Frozen", 5 },
+            { "Pantry", 6 },
+            { "Spices", 7 }
+        };
+
+        return order.TryGetValue(category, out var ord) ? ord : 99;
+    }
+}
