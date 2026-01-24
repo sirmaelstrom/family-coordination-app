@@ -5,22 +5,22 @@
 See: .planning/PROJECT.md (updated 2026-01-22)
 
 **Core value:** The integrated workflow - recipes → meal plan → shopping list. Automated aggregation and real-time collaboration reduce mental load from scattered information and last-minute decisions.
-**Current focus:** Phase 3 - Meal Planning
+**Current focus:** Phase 4 - Shopping List Core
 
 ## Current Position
 
-Phase: 3 of 7 (Meal Planning)
-Plan: 4 of 4 (complete)
-Status: Phase complete
-Last activity: 2026-01-24 — Completed 03-04-PLAN.md execution
+Phase: 4 of 7 (Shopping List Core)
+Plan: 2 of 6 (in progress)
+Status: In progress
+Last activity: 2026-01-24 — Completed 04-02-PLAN.md execution
 
-Progress: [████████████░░] 43% (3 of 7 phases)
+Progress: [█████████████░] 46% (3.33 of 7 phases)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 15
-- Average duration: 10.0 min
+- Total plans completed: 16
+- Average duration: 9.4 min
 - Total execution time: 2.5 hours
 
 **By Phase:**
@@ -30,10 +30,11 @@ Progress: [████████████░░] 43% (3 of 7 phases)
 | 1 | 4 | 16min | 4.0min |
 | 2 | 7 | 32min | 4.6min |
 | 3 | 4 | 90min | 22.5min |
+| 4 | 1 | 3min | 3.0min |
 
 **Recent Trend:**
-- Last 5 plans: 2min, 3min, 4min, 6min, 81min
-- Trend: Integration plans with human verification take longer (81min for 03-04)
+- Last 5 plans: 3min, 4min, 6min, 81min, 3min
+- Trend: Service-only plans remain fast (3-4min), integration with verification slower
 
 *Updated after each plan completion*
 
@@ -108,10 +109,15 @@ Recent decisions affecting current work:
 - Context-aware HandleClick in MealSlot (empty→picker, filled→details) [03-04]
 - Edit button for changing meal assignments with hover visibility [03-04]
 - @context pattern in Dropzone to prevent ingredient duplication [03-04]
+- StartsWith + Contains fallback for autocomplete (StartsWith primary, Contains if < limit results) [04-02]
+- Autocomplete searches ALL lists including archived (full household history) [04-02]
+- Frequency-based autocomplete ordering (purchase count descending) [04-02]
+- Automatic timestamp management in toggle operations (CheckedAt set/cleared on IsChecked change) [04-02]
+- Operation feedback pattern: return affected count from bulk operations [04-02]
 
 ### Pending Todos
 
-None - Phase 3 complete, ready for Phase 4 planning.
+None - Phase 4 in progress (plan 2 of 6 complete).
 
 ### Blockers/Concerns
 
@@ -121,11 +127,11 @@ None - Phase 3 complete, ready for Phase 4 planning.
 
 ## Session Continuity
 
-Last session: 2026-01-24T06:31:30Z
-Stopped at: Completed 03-04-PLAN.md execution (Phase 3 complete)
+Last session: 2026-01-24T08:15:44Z
+Stopped at: Completed 04-02-PLAN.md execution
 Resume file: None
-Next command: Begin Phase 4 research and planning (Shopping List)
+Next command: Execute 04-03-PLAN.md (ShoppingListGenerator with consolidation logic)
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-01-24T06:31:30Z*
+*Last updated: 2026-01-24T08:15:44Z*
