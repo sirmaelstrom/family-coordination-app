@@ -77,7 +77,16 @@
 
     private async Task HandleClick()
     {
-        await OnClick.InvokeAsync();
+        // Empty slots open picker, filled slots view recipe details
+        if (Entry == null)
+        {
+            await OnClick.InvokeAsync();
+        }
+        else if (Entry.Recipe != null)
+        {
+            await OnViewRecipe.InvokeAsync();
+        }
+        // Custom meals don't have recipes to view, so do nothing
     }
 
     private async Task HandleRemoveClick()
