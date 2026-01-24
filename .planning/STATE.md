@@ -10,29 +10,29 @@ See: .planning/PROJECT.md (updated 2026-01-22)
 ## Current Position
 
 Phase: 2 of 7 (Recipe Management)
-Plan: 4 of 7 complete
+Plan: 5 of 7 complete
 Status: In progress
-Last activity: 2026-01-24 — Completed 02-04-PLAN.md (Ingredient Entry Components)
+Last activity: 2026-01-24 — Completed 02-05-PLAN.md (Recipe List UI)
 
-Progress: [██████░░░░] 57%
+Progress: [██████░░░░] 64%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8
+- Total plans completed: 9
 - Average duration: 4.0 min
-- Total execution time: 0.5 hours
+- Total execution time: 0.6 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 4 | 16min | 4.0min |
-| 2 | 4 | 18min | 4.5min |
+| 2 | 5 | 22min | 4.4min |
 
 **Recent Trend:**
-- Last 5 plans: 3min, 4min, 3min, 8min
-- Trend: Slight increase (UI components take longer than services)
+- Last 5 plans: 4min, 3min, 8min, 4min
+- Trend: Stable around 4min average
 
 *Updated after each plan completion*
 
@@ -78,6 +78,11 @@ Recent decisions affecting current work:
 - Keyword-based category suggestion over ML (good enough for MVP) [02-04]
 - 5 second undo window (standard pattern, not too short or too long) [02-04]
 - Real-time bulk paste parsing (immediate feedback vs parse on import) [02-04]
+- Card-based grid layout with expand in place (no modal, maintains context) [02-05]
+- Only one recipe card expanded at a time (prevents cluttered view) [02-05]
+- 300ms debounce for search input (balances responsiveness with backend load) [02-05]
+- Markdig for markdown rendering in recipe instructions (lightweight parser) [02-05]
+- EventCallback.Factory.Create for parameterized callbacks (Blazor requirement) [02-05]
 
 ### Pending Todos
 
@@ -96,11 +101,11 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-01-24T01:26:46Z
-Stopped at: Completed 02-04-PLAN.md
+Last session: 2026-01-24T01:34:36Z
+Stopped at: Completed 02-05-PLAN.md
 Resume file: None
-Next command: Continue with 02-05-PLAN.md or next phase plan
+Next command: Continue with 02-06-PLAN.md or next phase plan
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-01-24T01:26:46Z*
+*Last updated: 2026-01-24T01:34:36Z*
