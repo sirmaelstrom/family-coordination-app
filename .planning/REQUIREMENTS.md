@@ -47,10 +47,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Collaboration & Sync
 
-- [ ] **COLLAB-01**: Multiple family members can access same household data
-- [ ] **COLLAB-02**: Changes sync across devices when user refreshes (polling-based)
-- [ ] **COLLAB-03**: User can see who added each shopping list item
-- [ ] **COLLAB-04**: User can see who created each recipe
+- [x] **COLLAB-01**: Multiple family members can access same household data
+- [x] **COLLAB-02**: Changes sync across devices when user refreshes (polling-based)
+- [x] **COLLAB-03**: User can see who added each shopping list item
+- [x] **COLLAB-04**: User can see who created each recipe
 
 ### Mobile & UX
 
@@ -169,10 +169,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SHOP-08 | Phase 4 | Complete |
 | SHOP-09 | Phase 4 | Complete |
 | SHOP-10 | Phase 4 | Complete |
-| COLLAB-01 | Phase 5 | Pending |
-| COLLAB-02 | Phase 5 | Pending |
-| COLLAB-03 | Phase 5 | Pending |
-| COLLAB-04 | Phase 5 | Pending |
+| COLLAB-01 | Phase 5 | Complete |
+| COLLAB-02 | Phase 5 | Complete |
+| COLLAB-03 | Phase 5 | Complete |
+| COLLAB-04 | Phase 5 | Complete |
 | RECIPE-01 | Phase 6 | Pending |
 | MOBILE-01 | Phase 7 | Pending |
 | MOBILE-02 | Phase 7 | Pending |
