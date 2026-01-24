@@ -3,6 +3,7 @@
 
 @inject IShoppingListService ShoppingListService
 @inject ISnackbar Snackbar
+@inject ILogger<AddItemDialog> Logger
 
 <MudDialog>
     <DialogContent>
@@ -15,7 +16,9 @@
                          Variant="Variant.Outlined"
                          FullWidth="true"
                          AutoFocus="true"
-                         Required="true" />
+                         Required="true"
+                         CoerceText="true"
+                         CoerceValue="true" />
 
         <MudGrid Class="mt-2">
             <MudItem xs="6">
@@ -108,8 +111,11 @@
 
     private async Task Submit()
     {
+        Logger.LogInformation("Submit button clicked. ItemName: {ItemName}", _itemName);
+
         if (string.IsNullOrWhiteSpace(_itemName))
         {
+            Logger.LogWarning("Item name is empty");
             Snackbar.Add("Item name is required", Severity.Warning);
             return;
         }
@@ -119,6 +125,9 @@
 
         try
         {
+            Logger.LogInformation("Creating item: Name={Name}, Quantity={Quantity}, Unit={Unit}, Category={Category}",
+                _itemName.Trim(), _quantity, _unit, _category);
+
             var item = new ShoppingListItem
             {
                 HouseholdId = HouseholdId,
@@ -132,11 +141,18 @@
                 IsChecked = false
             };
 
+            Logger.LogInformation("Calling AddManualItemAsync for HouseholdId={HouseholdId}, ShoppingListId={ShoppingListId}",
+                HouseholdId, ShoppingListId);
+
             var addedItem = await ShoppingListService.AddManualItemAsync(item);
+
+            Logger.LogInformation("Item added successfully with ItemId={ItemId}", addedItem.ItemId);
+
             MudDialog.Close(DialogResult.Ok(addedItem));
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Error adding item");
             Snackbar.Add($"Error adding item: {ex.Message}", Severity.Error);
             _isSubmitting = false;
             StateHasChanged();
