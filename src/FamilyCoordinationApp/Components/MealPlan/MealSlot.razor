@@ -25,9 +25,11 @@
                         }
                         else
                         {
-                            <div class="slot-recipe-placeholder">
-                                <MudIcon Icon="@Icons.Material.Filled.MenuBook" Size="Size.Small" />
-                            </div>
+                            <MudTooltip Text="Recipe (no image)">
+                                <div class="slot-recipe-placeholder">
+                                    <MudIcon Icon="@Icons.Material.Filled.MenuBook" Size="Size.Small" />
+                                </div>
+                            </MudTooltip>
                         }
                         <div class="slot-recipe-details">
                             <MudText Typo="Typo.body2" Class="slot-recipe-name">
@@ -50,9 +52,11 @@
                 {
                     <!-- Custom meal -->
                     <div class="slot-entry">
-                        <div class="slot-custom-icon">
-                            <MudIcon Icon="@Icons.Material.Filled.Restaurant" Size="Size.Small" />
-                        </div>
+                        <MudTooltip Text="Custom meal (not from recipe)">
+                            <div class="slot-custom-icon">
+                                <MudIcon Icon="@Icons.Material.Filled.Restaurant" Size="Size.Small" />
+                            </div>
+                        </MudTooltip>
                         <div class="slot-recipe-details">
                             <MudText Typo="Typo.body2" Class="slot-recipe-name">
                                 @entry.CustomMealName
