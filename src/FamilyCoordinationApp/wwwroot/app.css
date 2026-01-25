@@ -326,3 +326,22 @@ body {
 .mud-drawer-mini .mud-nav-link-icon {
     margin-right: 0 !important;
 }
+
+/* Smooth drawer transitions */
+.mud-drawer {
+    transition: width 0.2s ease-in-out, transform 0.2s ease-in-out !important;
+}
+
+.mud-drawer-content {
+    transition: opacity 0.15s ease-in-out !important;
+}
+
+/* Smoother nav link hover */
+.mud-nav-link {
+    transition: background-color 0.15s ease, color 0.15s ease !important;
+}
+
+/* Reduce jarring on main content shift */
+.mud-main-content {
+    transition: margin-left 0.2s ease-in-out, padding-left 0.2s ease-in-out !important;
+}
