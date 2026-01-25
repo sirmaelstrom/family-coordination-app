@@ -1,0 +1,233 @@
+@page "/household/request"
+@rendermode InteractiveServer
+@attribute [AllowAnonymous]
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@using FamilyCoordinationApp.Data
+@using FamilyCoordinationApp.Data.Entities
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject NavigationManager Navigation
+@inject IHttpContextAccessor HttpContextAccessor
+@inject ILogger<Request> Logger
+
+<PageTitle>Request Household - Family Coordination</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="d-flex align-center justify-center" Style="min-height: 100vh;">
+    <MudPaper Elevation="4" Class="pa-8" Style="width: 100%; max-width: 400px;">
+        <div class="text-center mb-6">
+            <MudIcon Icon="@Icons.Material.Filled.Home"
+                     Size="Size.Large"
+                     Color="Color.Primary"
+                     Style="font-size: 4rem;" />
+            <MudText Typo="Typo.h4" Class="mt-4">Request a Household</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary">Create your family's coordination space</MudText>
+        </div>
+
+        @if (!_isAuthenticated)
+        {
+            <MudText Typo="Typo.body1" Align="Align.Center" Class="mb-6">
+                First, sign in with Google to request a household.
+            </MudText>
+
+            <form method="post" action="/account/login-google">
+                <input type="hidden" name="returnUrl" value="/household/request" />
+                <MudButton ButtonType="ButtonType.Submit"
+                           Variant="Variant.Outlined"
+                           FullWidth="true"
+                           Size="Size.Large"
+                           Class="py-3">
+                    <svg class="mr-3" width="20" height="20" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                    </svg>
+                    Sign in with Google
+                </MudButton>
+            </form>
+        }
+        else if (_hasExistingRequest)
+        {
+            <MudAlert Severity="Severity.Info" Class="mb-4">
+                You already have a pending request. Redirecting...
+            </MudAlert>
+        }
+        else if (_isAlreadyInHousehold)
+        {
+            <MudAlert Severity="Severity.Success" Class="mb-4">
+                You're already part of a household!
+            </MudAlert>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       FullWidth="true"
+                       Href="/">
+                Go to Home
+            </MudButton>
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                Signed in as <strong>@_userEmail</strong>
+            </MudText>
+
+            <MudTextField @bind-Value="_householdName"
+                          Label="Household Name"
+                          Placeholder="The Smith Family"
+                          Variant="Variant.Outlined"
+                          HelperText="Choose a name for your family's household."
+                          Class="mb-4" />
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Class="mb-4">
+                    @_errorMessage
+                </MudAlert>
+            }
+
+            <MudAlert Severity="Severity.Info" Class="mb-4" Dense="true">
+                <MudText Typo="Typo.body2">
+                    Your request will be reviewed by a site administrator. You'll be notified once approved.
+                </MudText>
+            </MudAlert>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       FullWidth="true"
+                       Size="Size.Large"
+                       Disabled="_isSubmitting"
+                       OnClick="HandleSubmit">
+                @if (_isSubmitting)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>Submitting request...</span>
+                }
+                else
+                {
+                    <span>Request Household</span>
+                }
+            </MudButton>
+        }
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private bool _isAuthenticated;
+    private bool _hasExistingRequest;
+    private bool _isAlreadyInHousehold;
+    private string _userEmail = "";
+    private string _userName = "";
+    private string _googleId = "";
+    private string _householdName = "";
+    private string _errorMessage = "";
+    private bool _isSubmitting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = HttpContextAccessor.HttpContext?.User;
+        _isAuthenticated = user?.Identity?.IsAuthenticated == true;
+
+        if (_isAuthenticated)
+        {
+            _userEmail = user!.FindFirst(ClaimTypes.Email)?.Value ?? "";
+            _userName = user.FindFirst(ClaimTypes.Name)?.Value ?? _userEmail;
+            _googleId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+
+            await using var context = await DbFactory.CreateDbContextAsync();
+
+            // Check if user already exists in a household
+            var existingUser = await context.Users.FirstOrDefaultAsync(u => u.Email == _userEmail);
+            if (existingUser != null)
+            {
+                _isAlreadyInHousehold = true;
+                return;
+            }
+
+            // Check for existing pending request
+            var existingRequest = await context.HouseholdRequests
+                .FirstOrDefaultAsync(r => r.Email == _userEmail && r.Status == HouseholdRequestStatus.Pending);
+            
+            if (existingRequest != null)
+            {
+                _hasExistingRequest = true;
+                // Redirect to pending page after render
+            }
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _hasExistingRequest)
+        {
+            await Task.Delay(1500); // Brief pause to show message
+            Navigation.NavigateTo("/household/pending", forceLoad: true);
+        }
+    }
+
+    private async Task HandleSubmit()
+    {
+        if (string.IsNullOrWhiteSpace(_householdName))
+        {
+            _errorMessage = "Please enter a household name.";
+            return;
+        }
+
+        _isSubmitting = true;
+        _errorMessage = "";
+
+        try
+        {
+            await using var context = await DbFactory.CreateDbContextAsync();
+
+            // Double-check no existing request
+            var existingRequest = await context.HouseholdRequests
+                .FirstOrDefaultAsync(r => r.Email == _userEmail);
+            
+            if (existingRequest != null)
+            {
+                if (existingRequest.Status == HouseholdRequestStatus.Pending)
+                {
+                    Navigation.NavigateTo("/household/pending", forceLoad: true);
+                    return;
+                }
+                else if (existingRequest.Status == HouseholdRequestStatus.Rejected)
+                {
+                    // Allow resubmission after rejection
+                    existingRequest.HouseholdName = _householdName.Trim();
+                    existingRequest.DisplayName = _userName;
+                    existingRequest.GoogleId = _googleId;
+                    existingRequest.Status = HouseholdRequestStatus.Pending;
+                    existingRequest.RequestedAt = DateTime.UtcNow;
+                    existingRequest.ReviewedAt = null;
+                    existingRequest.ReviewedBy = null;
+                    existingRequest.RejectionReason = null;
+                }
+            }
+            else
+            {
+                var request = new HouseholdRequest
+                {
+                    Email = _userEmail,
+                    DisplayName = _userName,
+                    GoogleId = _googleId,
+                    HouseholdName = _householdName.Trim(),
+                    Status = HouseholdRequestStatus.Pending,
+                    RequestedAt = DateTime.UtcNow
+                };
+                context.HouseholdRequests.Add(request);
+            }
+
+            await context.SaveChangesAsync();
+
+            Logger.LogInformation("Household request submitted by {Email} for '{HouseholdName}'", 
+                _userEmail, _householdName);
+
+            Navigation.NavigateTo("/household/pending", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to submit household request for {Email}", _userEmail);
+            _errorMessage = $"Failed to submit request: {ex.Message}";
+            _isSubmitting = false;
+        }
+    }
+}

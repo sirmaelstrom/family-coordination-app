@@ -1,0 +1,37 @@
+@using MudBlazor
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body1" Class="mb-4">
+            Reject household request "<strong>@HouseholdName</strong>" from <strong>@RequestorName</strong>?
+        </MudText>
+        
+        <MudTextField @bind-Value="_reason"
+                      Label="Reason (optional)"
+                      Placeholder="Why is this request being rejected?"
+                      Variant="Variant.Outlined"
+                      Lines="3"
+                      MaxLength="500" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Filled" OnClick="Submit">Reject</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter]
+    public string RequestorName { get; set; } = "";
+
+    [Parameter]
+    public string HouseholdName { get; set; } = "";
+
+    private string _reason = "";
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit() => MudDialog.Close(DialogResult.Ok(_reason));
+}

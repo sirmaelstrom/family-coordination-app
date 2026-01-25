@@ -176,9 +176,10 @@ app.Use(async (context, next) =>
 {
     var path = context.Request.Path.Value?.ToLowerInvariant() ?? "";
 
-    // Skip setup check for these paths (static assets, framework, auth)
+    // Skip setup check for these paths (static assets, framework, auth, household request)
     if (path.StartsWith("/setup") ||
         path.StartsWith("/account") ||
+        path.StartsWith("/household") ||
         path.StartsWith("/_framework") ||
         path.StartsWith("/_blazor") ||
         path.StartsWith("/_") ||
