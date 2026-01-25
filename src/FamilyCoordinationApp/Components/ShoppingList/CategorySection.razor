@@ -11,22 +11,18 @@
 
     @if (_expanded)
     {
-        <div class="category-body">
-            @foreach (var item in Items)
-            {
-                <ShoppingListItemRow Item="@item"
-                                     OnChecked="@OnItemChecked"
-                                     OnEdit="@OnItemEdit"
-                                     OnDelete="@OnItemDelete" />
-            }
-        </div>
+        <MudDropZone T="ShoppingListItem"
+                     Identifier="@Category"
+                     Class="category-body drop-zone"
+                     CanDropClass="drop-zone-active"
+                     AllowReorder="true">
+        </MudDropZone>
     }
 </MudPaper>
 
 @code {
     [Parameter] public string Category { get; set; } = default!;
     [Parameter] public List<ShoppingListItem> Items { get; set; } = new();
-    [Parameter] public EventCallback OnReorder { get; set; }
     [Parameter] public EventCallback<ShoppingListItem> OnItemChecked { get; set; }
     [Parameter] public EventCallback<ShoppingListItem> OnItemEdit { get; set; }
     [Parameter] public EventCallback<ShoppingListItem> OnItemDelete { get; set; }
@@ -47,9 +43,6 @@
     {
         return Items.Count(i => !i.IsChecked);
     }
-
-    // Note: Drag-drop support will be added in a future task
-    // blazor-dragdrop Dropzone component conflicts with Razor auto-formatter
 }
 
 <style>
@@ -70,5 +63,15 @@
 
     .category-body {
         padding-bottom: 8px;
+        min-height: 48px;
+    }
+
+    .drop-zone {
+        transition: background-color 0.2s, border-color 0.2s;
+    }
+
+    .drop-zone-active {
+        background-color: var(--mud-palette-primary-lighten);
+        border: 2px dashed var(--mud-palette-primary);
     }
 </style>

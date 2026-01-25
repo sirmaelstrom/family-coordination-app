@@ -6,11 +6,13 @@
 @using Microsoft.EntityFrameworkCore
 @using MudBlazor
 @attribute [Authorize]
+@implements IDisposable
 
 @inject IMealPlanService MealPlanService
 @inject IDialogService DialogService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject DataNotifier Notifier
 
 <PageTitle>Meal Plan - Family Coordination</PageTitle>
 
@@ -53,27 +55,40 @@
     private List<MealPlanEntry> _entries = new();
     private bool _loading = true;
     private int _householdId;
+    private int _userId;
 
     protected override async Task OnInitializedAsync()
     {
+        Notifier.OnMealPlanChanged += OnDataChanged;
+
         // Get current week's Monday
         var today = DateOnly.FromDateTime(DateTime.Today);
         _weekStartDate = MealPlanService.GetWeekStartDate(today);
 
-        // Get household ID from current user
-        _householdId = await GetHouseholdIdAsync();
+        // Get user context
+        await LoadUserContextAsync();
 
         await LoadMealPlanAsync();
     }
 
-    private async Task<int> GetHouseholdIdAsync()
+    private async Task LoadUserContextAsync()
     {
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
         var email = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
 
         await using var context = await DbFactory.CreateDbContextAsync();
         var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
-        return user?.HouseholdId ?? 1;
+        _householdId = user?.HouseholdId ?? 1;
+        _userId = user?.Id ?? 0;
+    }
+
+    private void OnDataChanged()
+    {
+        InvokeAsync(async () =>
+        {
+            await LoadMealPlanAsync();
+            StateHasChanged();
+        });
     }
 
     private async Task LoadMealPlanAsync()
@@ -126,7 +141,8 @@
                 slot.Date,
                 slot.MealType,
                 selection.RecipeId,
-                selection.CustomMealName);
+                selection.CustomMealName,
+                _userId);
 
             await LoadMealPlanAsync();
         }
@@ -162,5 +178,10 @@
         };
 
         await DialogService.ShowAsync<RecipeDetailDialog>(recipe.Name, parameters, options);
+    }
+
+    public void Dispose()
+    {
+        Notifier.OnMealPlanChanged -= OnDataChanged;
     }
 }

@@ -13,6 +13,7 @@ public interface IShoppingListService
     Task<ShoppingListItem> AddManualItemAsync(ShoppingListItem item, CancellationToken ct = default);
     Task UpdateItemAsync(ShoppingListItem item, CancellationToken ct = default);
     Task<(bool Success, bool WasConflict, string? ConflictMessage)> UpdateItemWithConcurrencyAsync(ShoppingListItem item, CancellationToken ct = default);
+    Task UpdateItemSortOrdersAsync(int householdId, int shoppingListId, List<(int ItemId, int SortOrder, string? Category)> updates, CancellationToken ct = default);
     Task DeleteItemAsync(int householdId, int shoppingListId, int itemId, CancellationToken ct = default);
     Task<ShoppingListItem> ToggleItemCheckedAsync(int householdId, int shoppingListId, int itemId, CancellationToken ct = default);
     Task<List<string>> GetItemNameSuggestionsAsync(int householdId, string prefix, int limit = 10, CancellationToken ct = default);
@@ -367,5 +368,37 @@ public class ShoppingListService(
             count, shoppingListId, householdId);
 
         return count;
+    }
+
+    public async Task UpdateItemSortOrdersAsync(int householdId, int shoppingListId, List<(int ItemId, int SortOrder, string? Category)> updates, CancellationToken ct = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
+
+        var itemIds = updates.Select(u => u.ItemId).ToList();
+        var items = await context.ShoppingListItems
+            .Where(i =>
+                i.HouseholdId == householdId &&
+                i.ShoppingListId == shoppingListId &&
+                itemIds.Contains(i.ItemId))
+            .ToListAsync(ct);
+
+        foreach (var item in items)
+        {
+            var update = updates.FirstOrDefault(u => u.ItemId == item.ItemId);
+            if (update != default)
+            {
+                item.SortOrder = update.SortOrder;
+                if (update.Category != null)
+                {
+                    item.Category = update.Category;
+                }
+                item.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        await context.SaveChangesAsync(ct);
+
+        logger.LogInformation("Updated sort orders for {Count} items in ShoppingList {ShoppingListId} for household {HouseholdId}",
+            updates.Count, shoppingListId, householdId);
     }
 }
