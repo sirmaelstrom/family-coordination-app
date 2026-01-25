@@ -1,11 +1,11 @@
 @using FamilyCoordinationApp.Services
 @implements IDisposable
 
-@inject DataNotifier Notifier
+@inject PollingService PollingService
 
 <MudTooltip Text="@StatusText" Placement="Placement.Bottom">
     <div class="sync-status @StatusClass">
-        @if (_isSyncing)
+        @if (PollingService.Status == SyncStatus.Syncing)
         {
             <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Primary" Style="width: 16px; height: 16px;" />
         }
@@ -17,45 +17,58 @@
 </MudTooltip>
 
 @code {
-    private bool _isSyncing;
-    private DateTime _lastSync = DateTime.UtcNow;
-    private bool _hasError;
+    private string StatusText => PollingService.Status switch
+    {
+        SyncStatus.Synced => $"Synced {GetTimeSinceLastSync()}",
+        SyncStatus.Syncing => "Syncing...",
+        SyncStatus.Offline => "Offline - changes may not sync",
+        SyncStatus.Error => $"Sync error: {PollingService.LastError ?? "Unknown"} (retry {PollingService.ConsecutiveErrors})",
+        _ => "Unknown status"
+    };
 
-    private string StatusText => _hasError
-        ? "Sync error - will retry"
-        : _isSyncing
-            ? "Syncing..."
-            : $"Synced {GetTimeSinceLastSync()}";
+    private string StatusClass => PollingService.Status switch
+    {
+        SyncStatus.Synced => "sync-ok",
+        SyncStatus.Syncing => "sync-active",
+        SyncStatus.Offline => "sync-offline",
+        SyncStatus.Error => "sync-error",
+        _ => ""
+    };
 
-    private string StatusClass => _hasError ? "sync-error" : "sync-ok";
+    private string StatusIcon => PollingService.Status switch
+    {
+        SyncStatus.Synced => Icons.Material.Filled.CloudDone,
+        SyncStatus.Syncing => Icons.Material.Filled.CloudSync,
+        SyncStatus.Offline => Icons.Material.Filled.CloudOff,
+        SyncStatus.Error => Icons.Material.Filled.ErrorOutline,
+        _ => Icons.Material.Filled.Cloud
+    };
 
-    private string StatusIcon => _hasError
-        ? Icons.Material.Filled.CloudOff
-        : Icons.Material.Filled.CloudDone;
-
-    private Color StatusColor => _hasError ? Color.Error : Color.Success;
+    private Color StatusColor => PollingService.Status switch
+    {
+        SyncStatus.Synced => Color.Success,
+        SyncStatus.Syncing => Color.Primary,
+        SyncStatus.Offline => Color.Warning,
+        SyncStatus.Error => Color.Error,
+        _ => Color.Default
+    };
 
     protected override void OnInitialized()
     {
-        Notifier.OnShoppingListChanged += OnDataSynced;
-        Notifier.OnRecipesChanged += OnDataSynced;
-        Notifier.OnMealPlanChanged += OnDataSynced;
+        PollingService.OnStatusChanged += OnStatusChanged;
     }
 
-    private void OnDataSynced()
+    private void OnStatusChanged()
     {
-        InvokeAsync(() =>
-        {
-            _lastSync = DateTime.UtcNow;
-            _isSyncing = false;
-            _hasError = false;
-            StateHasChanged();
-        });
+        InvokeAsync(StateHasChanged);
     }
 
     private string GetTimeSinceLastSync()
     {
-        var elapsed = DateTime.UtcNow - _lastSync;
+        if (PollingService.LastSyncTime == null)
+            return "never";
+
+        var elapsed = DateTime.UtcNow - PollingService.LastSyncTime.Value;
         return elapsed.TotalSeconds < 10 ? "just now"
             : elapsed.TotalMinutes < 1 ? $"{(int)elapsed.TotalSeconds}s ago"
             : elapsed.TotalMinutes < 60 ? $"{(int)elapsed.TotalMinutes}m ago"
@@ -64,9 +77,7 @@
 
     public void Dispose()
     {
-        Notifier.OnShoppingListChanged -= OnDataSynced;
-        Notifier.OnRecipesChanged -= OnDataSynced;
-        Notifier.OnMealPlanChanged -= OnDataSynced;
+        PollingService.OnStatusChanged -= OnStatusChanged;
     }
 }
 
@@ -76,5 +87,23 @@
         align-items: center;
         justify-content: center;
         padding: 4px;
+        min-width: 24px;
+        min-height: 24px;
+    }
+
+    .sync-ok {
+        color: var(--mud-palette-success);
+    }
+
+    .sync-active {
+        color: var(--mud-palette-primary);
+    }
+
+    .sync-offline {
+        color: var(--mud-palette-warning);
+    }
+
+    .sync-error {
+        color: var(--mud-palette-error);
     }
 </style>

@@ -4,8 +4,20 @@ using Microsoft.EntityFrameworkCore;
 namespace FamilyCoordinationApp.Services;
 
 /// <summary>
+/// Sync status for UI display
+/// </summary>
+public enum SyncStatus
+{
+    Synced,
+    Syncing,
+    Offline,
+    Error
+}
+
+/// <summary>
 /// Background service that polls for data changes and notifies subscribers.
 /// Uses PeriodicTimer for clean async cancellation.
+/// Exposes sync status for UI indicators.
 /// </summary>
 public class PollingService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
@@ -16,6 +28,53 @@ public class PollingService(
     private DateTime _lastShoppingListCheck = DateTime.UtcNow;
     private DateTime _lastRecipeCheck = DateTime.UtcNow;
     private DateTime _lastMealPlanCheck = DateTime.UtcNow;
+
+    /// <summary>
+    /// Current sync status
+    /// </summary>
+    public SyncStatus Status { get; private set; } = SyncStatus.Synced;
+
+    /// <summary>
+    /// Last successful sync time
+    /// </summary>
+    public DateTime? LastSyncTime { get; private set; }
+
+    /// <summary>
+    /// Last error message (if Status == Error)
+    /// </summary>
+    public string? LastError { get; private set; }
+
+    /// <summary>
+    /// Number of consecutive errors
+    /// </summary>
+    public int ConsecutiveErrors { get; private set; }
+
+    /// <summary>
+    /// Event raised when sync status changes
+    /// </summary>
+    public event Action? OnStatusChanged;
+
+    private void SetStatus(SyncStatus newStatus, string? error = null)
+    {
+        var changed = Status != newStatus || LastError != error;
+        Status = newStatus;
+        LastError = error;
+
+        if (newStatus == SyncStatus.Synced)
+        {
+            LastSyncTime = DateTime.UtcNow;
+            ConsecutiveErrors = 0;
+        }
+        else if (newStatus == SyncStatus.Error)
+        {
+            ConsecutiveErrors++;
+        }
+
+        if (changed)
+        {
+            OnStatusChanged?.Invoke();
+        }
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -28,17 +87,25 @@ public class PollingService(
         {
             try
             {
+                SetStatus(SyncStatus.Syncing);
                 await CheckForChangesAsync(stoppingToken);
                 presenceService.UpdatePresence();
+                SetStatus(SyncStatus.Synced);
             }
             catch (OperationCanceledException)
             {
                 // Expected on shutdown
                 break;
             }
+            catch (HttpRequestException ex)
+            {
+                logger.LogWarning(ex, "Network error during polling - likely offline");
+                SetStatus(SyncStatus.Offline, "No network connection");
+            }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error during polling check");
+                SetStatus(SyncStatus.Error, ex.Message);
                 // Continue polling even on errors
             }
         }

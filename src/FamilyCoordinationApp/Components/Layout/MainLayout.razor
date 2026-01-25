@@ -6,6 +6,7 @@
 @implements IDisposable
 
 @inject PresenceService PresenceService
+@inject PollingService PollingService
 @inject NavigationManager NavigationManager
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
@@ -33,6 +34,36 @@
                 </Authorized>
             </AuthorizeView>
         </div>
+
+        @* Offline/Error Banner *@
+        @if (PollingService.Status == SyncStatus.Offline)
+        {
+            <MudAlert Severity="Severity.Warning" 
+                      Dense="true" 
+                      Class="mx-4 mt-2"
+                      Icon="@Icons.Material.Filled.WifiOff">
+                <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+                    <span>You're offline. Changes may not sync until connection is restored.</span>
+                </div>
+            </MudAlert>
+        }
+        else if (PollingService.Status == SyncStatus.Error && PollingService.ConsecutiveErrors >= 3)
+        {
+            <MudAlert Severity="Severity.Error" 
+                      Dense="true" 
+                      Class="mx-4 mt-2"
+                      Icon="@Icons.Material.Filled.ErrorOutline">
+                <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+                    <span>Sync error: @(PollingService.LastError ?? "Connection issue")</span>
+                    <MudButton Size="Size.Small" 
+                               Variant="Variant.Text" 
+                               Color="Color.Inherit"
+                               OnClick="RefreshPage">
+                        Refresh
+                    </MudButton>
+                </div>
+            </MudAlert>
+        }
 
         <article class="content px-4">
             @Body
@@ -89,6 +120,17 @@
         await LoadCurrentUser();
         StartHeartbeat();
         NavigationManager.LocationChanged += OnLocationChanged;
+        PollingService.OnStatusChanged += OnSyncStatusChanged;
+    }
+
+    private void OnSyncStatusChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshPage()
+    {
+        NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
     }
 
     private async Task LoadCurrentUser()
@@ -137,6 +179,7 @@
     public void Dispose()
     {
         NavigationManager.LocationChanged -= OnLocationChanged;
+        PollingService.OnStatusChanged -= OnSyncStatusChanged;
         _heartbeatTimer?.Stop();
         _heartbeatTimer?.Dispose();
         if (_currentUserId > 0)
