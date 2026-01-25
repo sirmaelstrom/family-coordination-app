@@ -1,46 +1,64 @@
 @using MudBlazor
 
 <MudNavMenu Bordered="true" Color="Color.Primary" Class="pa-2">
-    <div class="app-brand mb-4 pa-3">
-        <MudIcon Icon="@Icons.Material.Filled.RestaurantMenu" Size="Size.Large" Color="Color.Primary" />
-        <MudText Typo="Typo.h6" Class="ml-2">Family Kitchen</MudText>
-    </div>
+    @if (IsExpanded)
+    {
+        <div class="app-brand mb-4 pa-3">
+            <MudIcon Icon="@Icons.Material.Filled.RestaurantMenu" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.h6" Class="ml-2">Family Kitchen</MudText>
+        </div>
+    }
+    else
+    {
+        <div class="app-brand-mini mb-4 pa-2 d-flex justify-center">
+            <MudIcon Icon="@Icons.Material.Filled.RestaurantMenu" Size="Size.Medium" Color="Color.Primary" />
+        </div>
+    }
     
     <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">
-        Home
+        @if (IsExpanded) { <text>Home</text> }
     </MudNavLink>
     
     <MudNavLink Href="/recipes" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.MenuBook">
-        Recipes
+        @if (IsExpanded) { <text>Recipes</text> }
     </MudNavLink>
     
     <MudNavLink Href="/meal-plan" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.CalendarMonth">
-        Meal Plan
+        @if (IsExpanded) { <text>Meal Plan</text> }
     </MudNavLink>
     
     <MudNavLink Href="/shopping-list" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ShoppingCart">
-        Shopping List
+        @if (IsExpanded) { <text>Shopping List</text> }
     </MudNavLink>
     
     <MudDivider Class="my-4" />
     
     <MudNavLink Href="/settings/categories" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Settings">
-        Settings
+        @if (IsExpanded) { <text>Settings</text> }
     </MudNavLink>
     
     <MudNavLink Href="/settings/users" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.People">
-        Family Members
+        @if (IsExpanded) { <text>Family Members</text> }
     </MudNavLink>
     
     <MudNavLink Href="/settings/feedback" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Feedback">
-        Feedback
+        @if (IsExpanded) { <text>Feedback</text> }
     </MudNavLink>
 </MudNavMenu>
+
+@code {
+    [Parameter]
+    public bool IsExpanded { get; set; } = true;
+}
 
 <style>
     .app-brand {
         display: flex;
         align-items: center;
+        border-bottom: 1px solid var(--mud-palette-divider);
+    }
+    
+    .app-brand-mini {
         border-bottom: 1px solid var(--mud-palette-divider);
     }
 </style>
