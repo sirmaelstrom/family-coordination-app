@@ -36,7 +36,8 @@
                                 Entries="@_entries"
                                 OnSlotClick="HandleSlotClick"
                                 OnRemoveEntry="HandleRemoveEntry"
-                                OnViewRecipe="HandleViewRecipe" />
+                                OnViewRecipe="HandleViewRecipe"
+                                OnViewCustomMeal="HandleViewCustomMeal" />
         </MudHidden>
 
         <!-- Mobile: List View (sm and down) -->
@@ -45,7 +46,8 @@
                             Entries="@_entries"
                             OnSlotClick="HandleSlotClick"
                             OnRemoveEntry="HandleRemoveEntry"
-                            OnViewRecipe="HandleViewRecipe" />
+                            OnViewRecipe="HandleViewRecipe"
+                            OnViewCustomMeal="HandleViewCustomMeal" />
         </MudHidden>
     }
 </MudContainer>
@@ -183,6 +185,24 @@
         };
 
         await DialogService.ShowAsync<RecipeDetailDialog>(recipe.Name, parameters, options);
+    }
+
+    private async Task HandleViewCustomMeal(MealPlanEntry entry)
+    {
+        var content = new List<string> { $"**{entry.CustomMealName}**" };
+        
+        if (!string.IsNullOrWhiteSpace(entry.Notes))
+        {
+            content.Add($"\n📝 Notes:\n{entry.Notes}");
+        }
+
+        content.Add($"\n📅 {entry.Date:dddd, MMMM d}");
+        content.Add($"🍽️ {entry.MealType}");
+
+        await DialogService.ShowMessageBox(
+            "Custom Meal",
+            (MarkupString)string.Join("\n", content).Replace("\n", "<br/>"),
+            yesText: "Close");
     }
 
     public void Dispose()

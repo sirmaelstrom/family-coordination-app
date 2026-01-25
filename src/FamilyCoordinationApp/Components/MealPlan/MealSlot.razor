@@ -51,8 +51,8 @@
                 else if (!string.IsNullOrWhiteSpace(entry.CustomMealName))
                 {
                     <!-- Custom meal -->
-                    <div class="slot-entry">
-                        <MudTooltip Text="Custom meal (not from recipe)">
+                    <div class="slot-entry" @onclick="() => HandleViewCustomMeal(entry)">
+                        <MudTooltip Text="@GetCustomMealTooltip(entry)">
                             <div class="slot-custom-icon">
                                 <MudIcon Icon="@Icons.Material.Filled.Restaurant" Size="Size.Small" />
                             </div>
@@ -71,7 +71,8 @@
                         <MudIconButton Icon="@Icons.Material.Filled.Close"
                                       Size="Size.Small"
                                       Class="slot-remove"
-                                      OnClick="() => HandleRemoveEntry(entry)" />
+                                      OnClick="() => HandleRemoveEntry(entry)"
+                                      OnClick:stopPropagation="true" />
                     </div>
                 }
             }
@@ -103,6 +104,9 @@
     [Parameter]
     public EventCallback<Recipe> OnViewRecipe { get; set; }
 
+    [Parameter]
+    public EventCallback<MealPlanEntry> OnViewCustomMeal { get; set; }
+
     private bool HasEntries => Entries.Any();
 
     private async Task HandleAddClick()
@@ -121,6 +125,20 @@
         {
             await OnViewRecipe.InvokeAsync(entry.Recipe);
         }
+    }
+
+    private async Task HandleViewCustomMeal(MealPlanEntry entry)
+    {
+        await OnViewCustomMeal.InvokeAsync(entry);
+    }
+
+    private string GetCustomMealTooltip(MealPlanEntry entry)
+    {
+        if (string.IsNullOrWhiteSpace(entry.Notes))
+        {
+            return $"Custom meal: {entry.CustomMealName}";
+        }
+        return $"Custom meal: {entry.CustomMealName}\n\nNotes: {entry.Notes}";
     }
 
     private string GetSlotClass()

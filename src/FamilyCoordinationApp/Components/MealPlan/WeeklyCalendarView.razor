@@ -25,7 +25,8 @@
                       Entries="@entries"
                       OnAddClick="@(() => OnSlotClick.InvokeAsync((day, mealType)))"
                       OnRemoveEntry="@OnRemoveEntry"
-                      OnViewRecipe="@OnViewRecipe" />
+                      OnViewRecipe="@OnViewRecipe"
+                      OnViewCustomMeal="@OnViewCustomMeal" />
         }
     }
 </div>
@@ -45,6 +46,9 @@
 
     [Parameter]
     public EventCallback<Recipe> OnViewRecipe { get; set; }
+
+    [Parameter]
+    public EventCallback<MealPlanEntry> OnViewCustomMeal { get; set; }
 
     private DateOnly[] WeekDays => Enumerable.Range(0, 7)
         .Select(i => WeekStartDate.AddDays(i))
