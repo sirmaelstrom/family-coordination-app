@@ -6,9 +6,9 @@ h1:focus {
     outline: none;
 }
 
-/* Prevent flash on initial load */
+/* Prevent initial render flash - hide until Blazor ready */
 .mud-layout {
-    opacity: 1;
+    visibility: visible;
 }
 
 /* Fix nav icon centering in mini drawer */
@@ -22,31 +22,45 @@ h1:focus {
     margin-right: 0 !important;
 }
 
-/* Professional smooth transitions */
-.mud-drawer {
-    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+/* Hover delay on drawer - only expand after 300ms hover */
+.mud-drawer-mini {
+    transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1) 0.3s !important;
 }
 
+.mud-drawer-mini:hover {
+    transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1) 0s !important;
+}
+
+/* Main content shift - smooth */
 .mud-main-content {
-    transition: padding-left 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    transition: padding-left 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
-/* Nav links - smooth but not flashy */
+/* Nav links - subtle */
 .mud-nav-link {
     transition: background-color 0.15s ease-out !important;
 }
 
-/* Card hover - professional */
+/* Card hover */
 .mud-card {
-    transition: box-shadow 0.2s ease-out, transform 0.2s ease-out !important;
+    transition: box-shadow 0.15s ease-out !important;
 }
 
-/* Drawer overlay - smooth fade */
+/* Drawer overlay */
 .mud-overlay {
     transition: opacity 0.2s ease-out !important;
 }
 
-/* Recipe detail drawer - smooth slide */
-.mud-drawer[style*="right"] {
-    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+/* Hide content during initial load to prevent flash */
+.app-loading .mud-appbar,
+.app-loading .mud-main-content,
+.app-loading .mud-drawer {
+    opacity: 0;
+}
+
+.app-loaded .mud-appbar,
+.app-loaded .mud-main-content,
+.app-loaded .mud-drawer {
+    opacity: 1;
+    transition: opacity 0.15s ease-out;
 }
