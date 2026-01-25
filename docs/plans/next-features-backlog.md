@@ -1,24 +1,19 @@
 # Next Features Backlog
 
-*Created: 2026-01-25 01:40 AM*
+*Created: 2026-01-25*
+*Last Updated: 2026-01-25 10:25 AM*
 *Status: Active Development*
 
-## Priority 1: Blocking Issues
+## ✅ Completed
 
-### New Household Creation & Approval
-**Problem:** test-user@example.com is whitelisted for Google API but gets "no access" because there's no way to create a new household after initial setup.
+### New Household Creation & Approval ✅
+**Completed:** 2026-01-25
 
-**Solution:**
-- Allow authenticated users (not in a household) to request/create a new household
-- Site admin approval workflow before household is active
-- Future: monetization hooks, community "public" household
-
-**Implementation:**
-- [ ] New page: `/setup/new-household` for users without a household
-- [ ] Household request stored with pending status
-- [ ] Site admin page to approve/reject household requests
-- [ ] Email notification on approval (optional)
-- [ ] Redirect flow: no household → request form → pending → approved → active
+- ✅ `/household/request` — users without household can request one
+- ✅ `/household/pending` — status page with auto-refresh
+- ✅ `/settings/households` — admin approval/rejection workflow
+- ✅ HouseholdRequest entity with Pending/Approved/Rejected status
+- ✅ Default categories seeded on approval
 
 ---
 
@@ -72,6 +67,13 @@
 
 ## Future Ideas (Not Prioritized)
 
+### Demo Mode 🆕
+- Read-only access for unauthorized/anonymous users
+- Admin seeds and manages demo data (demo household)
+- Showcases features without requiring signup
+- Use case: sharing the app with potential users, portfolio showcase
+- *Mechanics TBD*
+
 ### Community/Public Household
 - Default "community" household anyone can join
 - Public recipe sharing
@@ -88,12 +90,12 @@
 ## Working Order
 
 1. ✅ Capture plan (this document)
-2. 🔄 New household creation + approval (unblocks testing)
-3. Recipe types
-4. Auto-categorization improvements
-5. Image management
-6. Multi-recipe meal slots
+2. ✅ New household creation + approval
+3. Recipe types + multi-recipe meal slots
+4. Auto-categorization for imported ingredients
+5. Image management (library/picker)
+6. Demo mode (future)
 
 ---
 
-*Roland working through these while Justin games 🎮*
+*Updated 2026-01-25*
