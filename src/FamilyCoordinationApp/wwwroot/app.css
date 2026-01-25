@@ -58,3 +58,109 @@ h1:focus {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+
+/* ============================================
+   MOBILE TOUCH TARGET OPTIMIZATION
+   Minimum touch target: 44px (Apple HIG)
+   ============================================ */
+
+/* Touch target optimization for all devices */
+.touch-target {
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Mobile-specific overrides (600px = sm breakpoint) */
+@media (max-width: 600px) {
+    /* Shopping list items */
+    .shopping-list-item {
+        padding: 12px 8px;
+        min-height: 56px;
+        gap: 8px;
+    }
+
+    /* Enhance checkbox touch targets */
+    .shopping-list-item .mud-checkbox,
+    .item-checkbox {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    /* Make checkbox icon larger on mobile */
+    .shopping-list-item .mud-checkbox .mud-icon-root {
+        font-size: 28px !important;
+    }
+
+    /* Icon buttons need larger touch targets */
+    .mud-icon-button {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    /* Action buttons always visible on mobile (no hover needed) */
+    .shopping-list-item .item-actions {
+        opacity: 1;
+    }
+
+    /* Hide drag handle on mobile (no drag support) */
+    .shopping-list-item .drag-handle {
+        display: none;
+    }
+
+    /* Category headers - larger tap area */
+    .category-header {
+        padding: 16px;
+        min-height: 56px;
+    }
+
+    /* FAB positioning - ensure not obscured */
+    .mud-fab {
+        bottom: 24px !important;
+        right: 16px !important;
+    }
+
+    /* Menu items need adequate height */
+    .mud-menu-item {
+        min-height: 48px;
+    }
+
+    /* Dialog buttons */
+    .mud-dialog-actions .mud-button {
+        min-height: 44px;
+        padding: 8px 16px;
+    }
+
+    /* Form fields - adequate touch area */
+    .mud-input-control {
+        min-height: 48px;
+    }
+
+    /* Chip touch targets */
+    .mud-chip {
+        min-height: 36px;
+    }
+}
+
+/* Tablet touch optimization (600px - 960px) */
+@media (min-width: 601px) and (max-width: 960px) {
+    .mud-icon-button {
+        min-width: 40px;
+        min-height: 40px;
+    }
+}
+
+/* Ensure adequate spacing between touch targets */
+.touch-safe-spacing {
+    gap: 8px;
+}
+
+/* Prevent accidental taps on adjacent elements */
+@media (pointer: coarse) {
+    /* Coarse pointer = touch device */
+    .mud-icon-button + .mud-icon-button {
+        margin-left: 4px;
+    }
+}
