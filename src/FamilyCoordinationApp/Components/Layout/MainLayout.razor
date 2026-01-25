@@ -10,6 +10,8 @@
 @inject NavigationManager NavigationManager
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
 
 <MudThemeProvider @bind-IsDarkMode="@_isDarkMode" Theme="@_theme" />
 <MudPopoverProvider />
@@ -70,6 +72,14 @@
         </article>
     </main>
 </div>
+
+<!-- Floating feedback button -->
+<MudFab Color="Color.Tertiary"
+        StartIcon="@Icons.Material.Filled.Feedback"
+        OnClick="OpenFeedbackDialog"
+        Style="position: fixed; bottom: 24px; left: 24px; z-index: 1000;"
+        Size="Size.Medium"
+        aria-label="Send feedback" />
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -193,6 +203,29 @@
         {
             var currentPage = new Uri(NavigationManager.Uri).AbsolutePath;
             PresenceService.Heartbeat(_currentUserId, _currentUserName, _currentUserPicture, _currentUserInitials, currentPage);
+        }
+    }
+
+    private async Task OpenFeedbackDialog()
+    {
+        var parameters = new DialogParameters<FeedbackDialog>
+        {
+            { x => x.CurrentPage, NavigationManager.Uri }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<FeedbackDialog>("Send Feedback", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled)
+        {
+            Snackbar.Add("Thank you for your feedback!", Severity.Success);
         }
     }
 

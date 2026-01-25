@@ -1,0 +1,205 @@
+@page "/settings/feedback"
+@attribute [Authorize]
+@using FamilyCoordinationApp.Data
+@using FamilyCoordinationApp.Data.Entities
+@using Microsoft.EntityFrameworkCore
+
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Feedback - Family Kitchen</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+    <div class="d-flex justify-space-between align-center mb-4">
+        <MudText Typo="Typo.h4">Feedback & Requests</MudText>
+        <MudToggleGroup T="string" @bind-Value="_filter" Color="Color.Primary" Rounded="true">
+            <MudToggleItem Value="@("all")">All</MudToggleItem>
+            <MudToggleItem Value="@("unread")">Unread</MudToggleItem>
+            <MudToggleItem Value="@("open")">Open</MudToggleItem>
+        </MudToggleGroup>
+    </div>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" />
+    }
+    else if (!_feedbackItems.Any())
+    {
+        <MudAlert Severity="Severity.Info">
+            No feedback yet. The feedback button appears in the bottom-left corner of every page.
+        </MudAlert>
+    }
+    else
+    {
+        <MudStack Spacing="3">
+            @foreach (var item in FilteredItems)
+            {
+                <MudCard Elevation="2" Class="@(item.IsRead ? "" : "unread-card")">
+                    <MudCardHeader>
+                        <CardHeaderAvatar>
+                            <MudAvatar Color="@GetTypeColor(item.Type)" Variant="Variant.Outlined">
+                                <MudIcon Icon="@GetTypeIcon(item.Type)" />
+                            </MudAvatar>
+                        </CardHeaderAvatar>
+                        <CardHeaderContent>
+                            <div class="d-flex align-center gap-2">
+                                <MudChip T="string" Size="Size.Small" Color="@GetTypeColor(item.Type)">
+                                    @item.Type
+                                </MudChip>
+                                @if (!item.IsRead)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Info">New</MudChip>
+                                }
+                                @if (item.IsResolved)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Success">Resolved</MudChip>
+                                }
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                @item.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")
+                                @if (item.User != null)
+                                {
+                                    @: — @item.User.DisplayName
+                                }
+                            </MudText>
+                        </CardHeaderContent>
+                        <CardHeaderActions>
+                            <MudMenu Icon="@Icons.Material.Filled.MoreVert">
+                                @if (!item.IsRead)
+                                {
+                                    <MudMenuItem OnClick="@(() => MarkAsRead(item))">
+                                        Mark as Read
+                                    </MudMenuItem>
+                                }
+                                @if (!item.IsResolved)
+                                {
+                                    <MudMenuItem OnClick="@(() => MarkAsResolved(item))">
+                                        Mark as Resolved
+                                    </MudMenuItem>
+                                }
+                                else
+                                {
+                                    <MudMenuItem OnClick="@(() => ReopenItem(item))">
+                                        Reopen
+                                    </MudMenuItem>
+                                }
+                            </MudMenu>
+                        </CardHeaderActions>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudText Style="white-space: pre-wrap;">@item.Message</MudText>
+                        
+                        @if (!string.IsNullOrEmpty(item.CurrentPage))
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                                <MudIcon Icon="@Icons.Material.Filled.Link" Size="Size.Small" Class="mr-1" />
+                                @item.CurrentPage
+                            </MudText>
+                        }
+                    </MudCardContent>
+                </MudCard>
+            }
+        </MudStack>
+    }
+</MudContainer>
+
+<style>
+    .unread-card {
+        border-left: 4px solid var(--mud-palette-info);
+    }
+</style>
+
+@code {
+    private List<Feedback> _feedbackItems = new();
+    private bool _loading = true;
+    private string _filter = "all";
+
+    private IEnumerable<Feedback> FilteredItems => _filter switch
+    {
+        "unread" => _feedbackItems.Where(f => !f.IsRead),
+        "open" => _feedbackItems.Where(f => !f.IsResolved),
+        _ => _feedbackItems
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadFeedback();
+    }
+
+    private async Task LoadFeedback()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            await using var context = await DbFactory.CreateDbContextAsync();
+            _feedbackItems = await context.Feedbacks
+                .Include(f => f.User)
+                .Include(f => f.Household)
+                .OrderByDescending(f => f.CreatedAt)
+                .ToListAsync();
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task MarkAsRead(Feedback item)
+    {
+        await using var context = await DbFactory.CreateDbContextAsync();
+        var feedback = await context.Feedbacks.FindAsync(item.Id);
+        if (feedback != null)
+        {
+            feedback.IsRead = true;
+            await context.SaveChangesAsync();
+            item.IsRead = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task MarkAsResolved(Feedback item)
+    {
+        await using var context = await DbFactory.CreateDbContextAsync();
+        var feedback = await context.Feedbacks.FindAsync(item.Id);
+        if (feedback != null)
+        {
+            feedback.IsRead = true;
+            feedback.IsResolved = true;
+            await context.SaveChangesAsync();
+            item.IsRead = true;
+            item.IsResolved = true;
+            Snackbar.Add("Marked as resolved", Severity.Success);
+            StateHasChanged();
+        }
+    }
+
+    private async Task ReopenItem(Feedback item)
+    {
+        await using var context = await DbFactory.CreateDbContextAsync();
+        var feedback = await context.Feedbacks.FindAsync(item.Id);
+        if (feedback != null)
+        {
+            feedback.IsResolved = false;
+            await context.SaveChangesAsync();
+            item.IsResolved = false;
+            StateHasChanged();
+        }
+    }
+
+    private static Color GetTypeColor(FeedbackType type) => type switch
+    {
+        FeedbackType.Bug => Color.Error,
+        FeedbackType.FeatureRequest => Color.Info,
+        _ => Color.Default
+    };
+
+    private static string GetTypeIcon(FeedbackType type) => type switch
+    {
+        FeedbackType.Bug => Icons.Material.Filled.BugReport,
+        FeedbackType.FeatureRequest => Icons.Material.Filled.Lightbulb,
+        _ => Icons.Material.Filled.Chat
+    };
+}
