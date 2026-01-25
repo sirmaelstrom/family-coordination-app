@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
+using FamilyCoordinationApp.Services.Interfaces;
 
 namespace FamilyCoordinationApp.Services;
 
