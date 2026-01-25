@@ -13,6 +13,7 @@
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject IJSRuntime JSRuntime
+@inject ISiteAdminService SiteAdminService
 
 <MudThemeProvider @bind-IsDarkMode="@_isDarkMode" Theme="@_theme" />
 <MudPopoverProvider />
@@ -35,6 +36,13 @@
                                        Color="Color.Inherit"
                                        OnClick="ToggleDarkMode"
                                        Title="@(_isDarkMode ? "Switch to light mode" : "Switch to dark mode")" />
+                        @if (_isSiteAdmin)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined" Class="px-2">
+                                <MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Size="Size.Small" Class="mr-1" />
+                                Admin
+                            </MudChip>
+                        }
                         <MudText Typo="Typo.body2" Color="Color.Secondary">@context.User.Identity?.Name</MudText>
                         <a href="/account/logout" class="mud-typography mud-typography-body2" style="color: var(--mud-palette-text-secondary);">Sign out</a>
                     </div>
@@ -110,6 +118,7 @@
     private string _currentUserName = string.Empty;
     private System.Timers.Timer? _heartbeatTimer;
     private bool _isDarkMode = false;  // Default to light mode for the warm, inviting look
+    private bool _isSiteAdmin = false;
 
     // Warm, inviting color palette for a family app
     private MudTheme _theme = new()
@@ -220,6 +229,8 @@
 
         if (email != null)
         {
+            _isSiteAdmin = SiteAdminService.IsSiteAdmin(email);
+
             await using var context = await DbFactory.CreateDbContextAsync();
             var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
             if (user != null)

@@ -2,10 +2,13 @@
 @attribute [Authorize]
 @using FamilyCoordinationApp.Data
 @using FamilyCoordinationApp.Data.Entities
+@using FamilyCoordinationApp.Services
 @using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
 
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject ISnackbar Snackbar
+@inject ISiteAdminService SiteAdminService
 
 <PageTitle>Feedback - Family Kitchen</PageTitle>
 
@@ -112,11 +115,16 @@
 @implements IDisposable
 
 @code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
     private List<Feedback> _feedbackItems = new();
     private bool _loading = true;
     private string _filter = "all";
     private System.Timers.Timer? _refreshTimer;
     private int _lastCount = 0;
+    private bool _isSiteAdmin = false;
+    private int? _currentHouseholdId;
 
     private IEnumerable<Feedback> FilteredItems => _filter switch
     {
@@ -127,6 +135,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadCurrentUser();
         await LoadFeedback();
         
         // Auto-refresh every 15 seconds
@@ -134,13 +143,40 @@
         _refreshTimer.Elapsed += async (_, _) => await InvokeAsync(RefreshIfChanged);
         _refreshTimer.Start();
     }
+
+    private async Task LoadCurrentUser()
+    {
+        if (AuthStateTask == null) return;
+
+        var authState = await AuthStateTask;
+        var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+
+        if (!string.IsNullOrEmpty(email))
+        {
+            _isSiteAdmin = SiteAdminService.IsSiteAdmin(email);
+
+            if (!_isSiteAdmin)
+            {
+                await using var context = await DbFactory.CreateDbContextAsync();
+                var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
+                _currentHouseholdId = user?.HouseholdId;
+            }
+        }
+    }
     
     private async Task RefreshIfChanged()
     {
         try
         {
             await using var context = await DbFactory.CreateDbContextAsync();
-            var count = await context.Feedbacks.CountAsync();
+            
+            IQueryable<Feedback> query = context.Feedbacks;
+            if (!_isSiteAdmin && _currentHouseholdId.HasValue)
+            {
+                query = query.Where(f => f.HouseholdId == _currentHouseholdId);
+            }
+            
+            var count = await query.CountAsync();
             
             if (count != _lastCount)
             {
@@ -161,9 +197,18 @@
         try
         {
             await using var context = await DbFactory.CreateDbContextAsync();
-            _feedbackItems = await context.Feedbacks
+            
+            IQueryable<Feedback> query = context.Feedbacks
                 .Include(f => f.User)
-                .Include(f => f.Household)
+                .Include(f => f.Household);
+
+            // Site admins see all feedback; regular users see only their household's
+            if (!_isSiteAdmin && _currentHouseholdId.HasValue)
+            {
+                query = query.Where(f => f.HouseholdId == _currentHouseholdId);
+            }
+
+            _feedbackItems = await query
                 .OrderByDescending(f => f.CreatedAt)
                 .ToListAsync();
             _lastCount = _feedbackItems.Count;
