@@ -26,7 +26,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      ConnectionStrings__DefaultConnection: "Host=postgres;Database=${POSTGRES_DB:-familyapp};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=${POSTGRES_DB:-familyapp};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Ssl Mode=Disable"
       Authentication__Google__ClientId: ${GOOGLE_CLIENT_ID}
       Authentication__Google__ClientSecret: ${GOOGLE_CLIENT_SECRET}
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
