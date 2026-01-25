@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Modern minimal kitchen icon - fork & knife on green circle -->
+  <circle cx="256" cy="256" r="240" fill="#2E7D32"/>
+  
+  <!-- Fork (left) -->
+  <g fill="#ffffff">
+    <!-- Fork handle -->
+    <rect x="165" y="260" width="24" height="140" rx="12"/>
+    <!-- Fork tines -->
+    <rect x="148" y="112" width="10" height="100" rx="5"/>
+    <rect x="172" y="112" width="10" height="100" rx="5"/>
+    <rect x="196" y="112" width="10" height="100" rx="5"/>
+    <!-- Fork neck -->
+    <path d="M148 200 Q148 260 165 260 L189 260 Q206 260 206 200 L206 200 L148 200 Z"/>
+  </g>
+  
+  <!-- Knife (right) -->
+  <g fill="#ffffff">
+    <!-- Knife handle -->
+    <rect x="306" y="260" width="40" height="140" rx="8"/>
+    <!-- Knife blade -->
+    <path d="M306 260 L306 120 Q306 100 326 100 Q346 100 346 120 L346 260 Z"/>
+    <!-- Blade edge detail -->
+    <path d="M306 120 Q280 180 306 260" fill="none" stroke="#2E7D32" stroke-width="3"/>
+  </g>
+</svg>
