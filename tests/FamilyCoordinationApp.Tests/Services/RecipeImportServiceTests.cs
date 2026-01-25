@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
 using FamilyCoordinationApp.Services;
+using FamilyCoordinationApp.Services.Interfaces;
 using FamilyCoordinationApp.Models.SchemaOrg;
 
 namespace FamilyCoordinationApp.Tests.Services;

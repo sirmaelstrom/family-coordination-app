@@ -5,6 +5,7 @@ using Moq;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
+using FamilyCoordinationApp.Services.Interfaces;
 
 namespace FamilyCoordinationApp.Tests.Services;
 
@@ -45,8 +46,8 @@ public class ShoppingListGeneratorTests : IDisposable
     {
         // Create households
         _context.Households.AddRange(
-            new Household { HouseholdId = 1, Name = "Smith Family" },
-            new Household { HouseholdId = 2, Name = "Jones Family" }
+            new Household { Id = 1, Name = "Smith Family" },
+            new Household { Id = 2, Name = "Jones Family" }
         );
 
         // Create recipes for household 1
@@ -206,9 +207,7 @@ public class ShoppingListGeneratorTests : IDisposable
         {
             HouseholdId = 1,
             MealPlanId = 1,
-            Name = "Week 1",
-            StartDate = DateOnly.FromDateTime(DateTime.Today),
-            EndDate = DateOnly.FromDateTime(DateTime.Today.AddDays(6)),
+            WeekStartDate = DateOnly.FromDateTime(DateTime.Today),
             CreatedAt = DateTime.UtcNow
         };
 
@@ -253,9 +252,7 @@ public class ShoppingListGeneratorTests : IDisposable
         {
             HouseholdId = 2,
             MealPlanId = 1,
-            Name = "Week 1",
-            StartDate = DateOnly.FromDateTime(DateTime.Today),
-            EndDate = DateOnly.FromDateTime(DateTime.Today.AddDays(6)),
+            WeekStartDate = DateOnly.FromDateTime(DateTime.Today),
             CreatedAt = DateTime.UtcNow
         };
 

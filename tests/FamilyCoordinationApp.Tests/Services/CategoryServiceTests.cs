@@ -37,8 +37,8 @@ public class CategoryServiceTests : IDisposable
     {
         // Create two households
         _context.Households.AddRange(
-            new Household { HouseholdId = 1, Name = "Smith Family" },
-            new Household { HouseholdId = 2, Name = "Jones Family" }
+            new Household { Id = 1, Name = "Smith Family" },
+            new Household { Id = 2, Name = "Jones Family" }
         );
 
         // Categories for household 1
