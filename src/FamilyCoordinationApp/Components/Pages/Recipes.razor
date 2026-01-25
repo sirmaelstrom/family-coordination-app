@@ -148,10 +148,10 @@
     else
     {
         <!-- Recipe grid -->
-        <MudGrid>
+        <MudGrid Class="recipe-grid">
             @foreach (var recipe in FilteredRecipes)
             {
-                <MudItem xs="12" sm="6" md="4">
+                <MudItem xs="12" sm="6" md="4" Class="recipe-grid-item">
                     <RecipeCard Recipe="recipe"
                                 IsSelected="@(_selectedRecipe?.RecipeId == recipe.RecipeId)"
                                 IsFavorite="@(_favoriteRecipeIds.Contains(recipe.RecipeId))"
@@ -356,6 +356,19 @@
 </MudDialog>
 
 <style>
+    /* Recipe grid - equal height cards */
+    .recipe-grid {
+        align-items: stretch;
+    }
+
+    .recipe-grid-item {
+        display: flex;
+    }
+
+    .recipe-grid-item > * {
+        width: 100%;
+    }
+
     .recipe-drawer-overlay {
         position: fixed;
         top: 0;

@@ -20,26 +20,28 @@
                        OnClick="HandleFavoriteClick" />
     </div>
 
-    <MudCardContent>
-        <div class="d-flex align-center gap-2 mb-2 flex-wrap">
-            <MudText Typo="Typo.h6">@Recipe.Name</MudText>
-            @if (Recipe.RecipeType != RecipeType.Main)
-            {
-                <MudChip T="string" Size="Size.Small" Color="@GetTypeColor(Recipe.RecipeType)" Variant="Variant.Outlined">
-                    @GetTypeLabel(Recipe.RecipeType)
-                </MudChip>
-            }
-            @if (!string.IsNullOrWhiteSpace(Recipe.SourceUrl))
-            {
-                <MudTooltip Text="Imported from web">
-                    <MudIcon Icon="@Icons.Material.Filled.CloudDownload"
-                             Size="Size.Small"
-                             Color="Color.Secondary" />
-                </MudTooltip>
-            }
+    <MudCardContent Class="card-content">
+        <div class="recipe-title-row">
+            <MudText Typo="Typo.h6" Class="recipe-title">@Recipe.Name</MudText>
+            <div class="recipe-badges">
+                @if (Recipe.RecipeType != RecipeType.Main)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="@GetTypeColor(Recipe.RecipeType)" Variant="Variant.Outlined">
+                        @GetTypeLabel(Recipe.RecipeType)
+                    </MudChip>
+                }
+                @if (!string.IsNullOrWhiteSpace(Recipe.SourceUrl))
+                {
+                    <MudTooltip Text="Imported from web">
+                        <MudIcon Icon="@Icons.Material.Filled.CloudDownload"
+                                 Size="Size.Small"
+                                 Color="Color.Secondary" />
+                    </MudTooltip>
+                }
+            </div>
         </div>
 
-        <div class="d-flex align-center gap-2 mb-2">
+        <div class="recipe-author">
             @if (Recipe.CreatedBy != null)
             {
                 <UserAvatar User="@Recipe.CreatedBy" Size="Size.Small" />
@@ -58,18 +60,20 @@
             }
         </div>
 
-        @if (Recipe.Ingredients.Any())
-        {
-            <MudText Typo="Typo.body2" Color="Color.Secondary">
-                @GetIngredientPreview()
-            </MudText>
-        }
-        else
-        {
-            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="font-italic">
-                No ingredients
-            </MudText>
-        }
+        <div class="recipe-ingredients">
+            @if (Recipe.Ingredients.Any())
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    @GetIngredientPreview()
+                </MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="font-italic">
+                    No ingredients
+                </MudText>
+            }
+        </div>
     </MudCardContent>
 </MudCard>
 
@@ -148,6 +152,9 @@
     .recipe-card {
         cursor: pointer;
         transition: transform 0.2s ease, box-shadow 0.2s ease;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
     }
 
     .recipe-card:hover {
@@ -162,6 +169,7 @@
 
     .recipe-image-container {
         position: relative;
+        flex-shrink: 0;
     }
 
     .favorite-button {
@@ -174,5 +182,52 @@
 
     .favorite-button:hover {
         background-color: rgba(255, 255, 255, 1) !important;
+    }
+
+    .card-content {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 120px;
+    }
+
+    .recipe-title-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin-bottom: 8px;
+        min-height: 48px;
+    }
+
+    .recipe-title {
+        flex: 1;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.3;
+    }
+
+    .recipe-badges {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+    }
+
+    .recipe-author {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+
+    .recipe-ingredients {
+        margin-top: auto;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
     }
 </style>
