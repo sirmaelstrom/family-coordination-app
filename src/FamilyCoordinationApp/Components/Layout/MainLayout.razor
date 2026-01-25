@@ -27,9 +27,9 @@
                 <Authorized>
                     <div class="d-flex align-center gap-4">
                         <OnlineUsers CurrentUserId="@_currentUserId" />
-                        <SyncStatus />
+                        <SyncStatusIndicator />
                         <MudText Typo="Typo.body2" Color="Color.Secondary">@context.User.Identity?.Name</MudText>
-                        <MudLink Href="/account/logout" Typo="Typo.body2">Sign out</MudLink>
+                        <a href="/account/logout" class="mud-typography mud-typography-body2" style="color: var(--mud-palette-text-secondary);">Sign out</a>
                     </div>
                 </Authorized>
             </AuthorizeView>

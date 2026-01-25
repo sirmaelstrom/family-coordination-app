@@ -21,6 +21,7 @@
         </div>
 
         <form method="post" action="/account/login-google">
+            <input type="hidden" name="returnUrl" value="@_returnUrl" />
             <MudButton ButtonType="ButtonType.Submit"
                        Variant="Variant.Outlined"
                        FullWidth="true"
@@ -43,13 +44,21 @@
 </MudContainer>
 
 @code {
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    private string _returnUrl = "/";
+
     protected override void OnInitialized()
     {
-        // If already authenticated, redirect to home
+        // Preserve return URL from query string
+        _returnUrl = !string.IsNullOrEmpty(ReturnUrl) ? ReturnUrl : "/";
+
+        // If already authenticated, redirect to intended destination
         var user = HttpContextAccessor.HttpContext?.User;
         if (user?.Identity?.IsAuthenticated == true)
         {
-            Navigation.NavigateTo("/", forceLoad: true);
+            Navigation.NavigateTo(_returnUrl, forceLoad: true);
         }
     }
 }

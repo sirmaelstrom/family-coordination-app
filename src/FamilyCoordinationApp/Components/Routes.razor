@@ -1,3 +1,5 @@
+@inject NavigationManager Navigation
+
 <CascadingAuthenticationState>
     <Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
         <Found Context="routeData">
@@ -9,7 +11,7 @@
                     }
                     else
                     {
-                        <p>Redirecting to login...</p>
+                        <RedirectToLogin />
                     }
                 </NotAuthorized>
             </AuthorizeRouteView>

@@ -39,7 +39,8 @@ builder.Services.AddScoped<IShoppingListGenerator, ShoppingListGenerator>();
 // Collaboration services - singleton for cross-component communication
 builder.Services.AddSingleton<DataNotifier>();
 builder.Services.AddSingleton<PresenceService>();
-builder.Services.AddHostedService<PollingService>();
+builder.Services.AddSingleton<PollingService>();
+builder.Services.AddHostedService<PollingService>(sp => sp.GetRequiredService<PollingService>());
 
 // Recipe import services
 builder.Services.AddSingleton<IUrlValidator, UrlValidator>();
@@ -89,9 +90,6 @@ builder.Services.AddAuthentication(options =>
     options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"]
         ?? throw new InvalidOperationException("Google ClientSecret not configured");
     options.SaveTokens = false;  // Don't need refresh tokens for this app
-    
-    // Fetch claims from userinfo endpoint (email not always in ID token)
-    options.GetClaimsFromUserInfoEndpoint = true;
 
     // Ensure email claim is mapped
     options.ClaimActions.MapJsonKey(ClaimTypes.Email, "email");
