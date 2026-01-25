@@ -53,11 +53,11 @@
         }
         else
         {
-            <!-- Expanded state: show full details -->
+            <!-- Expanded state: show full details with responsive layout -->
             <div class="mb-3">
                 @if (Recipe.PrepTimeMinutes.HasValue || Recipe.CookTimeMinutes.HasValue || Recipe.Servings.HasValue)
                 {
-                    <div class="d-flex gap-4 mb-3">
+                    <div class="recipe-meta-chips mb-3">
                         @if (Recipe.PrepTimeMinutes.HasValue)
                         {
                             <MudChip T="string" Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" Color="Color.Info">
@@ -84,26 +84,33 @@
                     <MudText Typo="Typo.body2" Class="mb-3">@Recipe.Description</MudText>
                 }
 
-                @if (Recipe.Ingredients.Any())
-                {
-                    <MudText Typo="Typo.h6" Class="mb-2">Ingredients</MudText>
-                    <MudList T="string" Dense="true" Class="mb-3">
-                        @foreach (var ingredient in Recipe.Ingredients.OrderBy(i => i.SortOrder))
-                        {
-                            <MudListItem T="string" Icon="@Icons.Material.Filled.Circle" IconSize="Size.Small">
-                                @GetIngredientDisplay(ingredient)
-                            </MudListItem>
-                        }
-                    </MudList>
-                }
+                <!-- Two-column layout for ingredients + instructions on larger screens -->
+                <div class="recipe-details-grid">
+                    @if (Recipe.Ingredients.Any())
+                    {
+                        <div class="recipe-ingredients">
+                            <MudText Typo="Typo.h6" Class="mb-2">Ingredients</MudText>
+                            <MudList T="string" Dense="true">
+                                @foreach (var ingredient in Recipe.Ingredients.OrderBy(i => i.SortOrder))
+                                {
+                                    <MudListItem T="string" Icon="@Icons.Material.Filled.Circle" IconSize="Size.Small">
+                                        @GetIngredientDisplay(ingredient)
+                                    </MudListItem>
+                                }
+                            </MudList>
+                        </div>
+                    }
 
-                @if (!string.IsNullOrWhiteSpace(Recipe.Instructions))
-                {
-                    <MudText Typo="Typo.h6" Class="mb-2">Instructions</MudText>
-                    <div class="recipe-instructions">
-                        @((MarkupString)Markdown.ToHtml(Recipe.Instructions))
-                    </div>
-                }
+                    @if (!string.IsNullOrWhiteSpace(Recipe.Instructions))
+                    {
+                        <div class="recipe-instructions-section">
+                            <MudText Typo="Typo.h6" Class="mb-2">Instructions</MudText>
+                            <div class="recipe-instructions">
+                                @((MarkupString)Markdown.ToHtml(Recipe.Instructions))
+                            </div>
+                        </div>
+                    }
+                </div>
 
                 @if (!string.IsNullOrWhiteSpace(Recipe.SourceUrl))
                 {
@@ -233,6 +240,39 @@
 <style>
     .cursor-pointer {
         cursor: pointer;
+    }
+
+    /* Meta chips - flex wrap for mobile consistency */
+    .recipe-meta-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .recipe-meta-chips .mud-chip {
+        flex-shrink: 0;
+    }
+
+    /* Two-column layout for expanded recipe on larger screens */
+    .recipe-details-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
+
+    /* On medium+ screens, use two columns if we have both ingredients and instructions */
+    @@media (min-width: 960px) {
+        .recipe-details-grid {
+            grid-template-columns: minmax(200px, 1fr) minmax(300px, 2fr);
+        }
+    }
+
+    .recipe-ingredients {
+        min-width: 0;
+    }
+
+    .recipe-instructions-section {
+        min-width: 0;
     }
 
     .recipe-instructions {

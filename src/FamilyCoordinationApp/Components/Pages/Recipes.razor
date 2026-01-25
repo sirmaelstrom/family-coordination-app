@@ -114,13 +114,14 @@
     }
     else
     {
-        <!-- Recipe grid -->
+        <!-- Recipe grid - expanded cards span full width -->
         <MudGrid>
             @foreach (var recipe in _recipes)
             {
-                <MudItem xs="12" sm="6" md="4">
+                var isExpanded = _expandedRecipeId == recipe.RecipeId;
+                <MudItem xs="12" sm="@(isExpanded ? 12 : 6)" md="@(isExpanded ? 12 : 4)">
                     <RecipeCard Recipe="recipe"
-                                IsExpanded="@(_expandedRecipeId == recipe.RecipeId)"
+                                IsExpanded="@isExpanded"
                                 IsExpandedChanged="@(EventCallback.Factory.Create<bool>(this, (expanded) => HandleCardExpanded(recipe.RecipeId, expanded)))"
                                 OnEdit="@(EventCallback.Factory.Create(this, () => HandleEdit(recipe)))"
                                 OnDelete="@(EventCallback.Factory.Create(this, () => HandleDeleteConfirm(recipe)))"
