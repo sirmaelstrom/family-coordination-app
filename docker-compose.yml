@@ -33,6 +33,7 @@ services:
       Authentication__Google__ClientId: ${GOOGLE_CLIENT_ID}
       Authentication__Google__ClientSecret: ${GOOGLE_CLIENT_SECRET}
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      DATAPROTECTION_CERT: ${DATAPROTECTION_CERT:-}
     volumes:
       # Data protection keys persist (prevents logout on restart)
       - ${APP_DATAPROTECTION_PATH:-app-dataprotection}:/root/.aspnet/DataProtection-Keys

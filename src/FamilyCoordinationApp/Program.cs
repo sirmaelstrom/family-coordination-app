@@ -1,5 +1,6 @@
 using System.Net;
 using System.Security.Claims;
+using System.Security.Cryptography.X509Certificates;
 using FamilyCoordinationApp.Authorization;
 using FamilyCoordinationApp.Components;
 using FamilyCoordinationApp.Data;
@@ -19,13 +20,37 @@ using Polly;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Data Protection - persist keys to a stable location to survive container restarts
-// Keys are stored in /root/.aspnet/DataProtection-Keys (volume-mounted in production)
-builder.Services.AddDataProtection()
+// Data Protection configuration
+// Keys are persisted to a volume-mounted directory and optionally protected with a certificate
+var keyDirectory = new DirectoryInfo(
+    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), 
+        ".aspnet", "DataProtection-Keys"));
+
+var dpBuilder = builder.Services.AddDataProtection()
     .SetApplicationName("FamilyCoordinationApp")
-    .PersistKeysToFileSystem(new DirectoryInfo(
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), 
-            ".aspnet", "DataProtection-Keys")));
+    .PersistKeysToFileSystem(keyDirectory);
+
+// If DATAPROTECTION_CERT is set (base64 PFX), use it for key encryption
+// This ensures keys remain usable across container recreations
+var certBase64 = Environment.GetEnvironmentVariable("DATAPROTECTION_CERT");
+if (!string.IsNullOrEmpty(certBase64))
+{
+    try
+    {
+        var certBytes = Convert.FromBase64String(certBase64);
+        var cert = new X509Certificate2(certBytes, (string?)null, X509KeyStorageFlags.MachineKeySet);
+        dpBuilder.ProtectKeysWithCertificate(cert);
+        Console.WriteLine("Data Protection: Using certificate for key encryption");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Data Protection: Failed to load certificate: {ex.Message}");
+    }
+}
+else
+{
+    Console.WriteLine("Data Protection: Keys unprotected (set DATAPROTECTION_CERT for production)");
+}
 
 // Database configuration - DbContextFactory for Blazor Server thread safety
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
