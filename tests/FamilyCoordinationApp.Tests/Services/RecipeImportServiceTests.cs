@@ -13,6 +13,7 @@ public class RecipeImportServiceTests
     private readonly Mock<IUrlValidator> _urlValidatorMock;
     private readonly Mock<IRecipeScraperService> _scraperMock;
     private readonly Mock<IIngredientParser> _ingredientParserMock;
+    private readonly Mock<ICategoryInferenceService> _categoryInferenceMock;
     private readonly Mock<ILogger<RecipeImportService>> _loggerMock;
     private readonly RecipeImportService _service;
 
@@ -21,12 +22,14 @@ public class RecipeImportServiceTests
         _urlValidatorMock = new Mock<IUrlValidator>();
         _scraperMock = new Mock<IRecipeScraperService>();
         _ingredientParserMock = new Mock<IIngredientParser>();
+        _categoryInferenceMock = new Mock<ICategoryInferenceService>();
         _loggerMock = new Mock<ILogger<RecipeImportService>>();
 
         _service = new RecipeImportService(
             _urlValidatorMock.Object,
             _scraperMock.Object,
             _ingredientParserMock.Object,
+            _categoryInferenceMock.Object,
             _loggerMock.Object);
     }
 
