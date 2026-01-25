@@ -69,6 +69,9 @@ jobs:
       - name: Deploy containers
         run: |
           cd ~/familyapp
+          # Stop and remove existing containers to avoid conflicts
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans || true
+          # Start fresh
           docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
           echo "🚀 Containers started"
             
