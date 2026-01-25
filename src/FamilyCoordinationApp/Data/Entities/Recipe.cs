@@ -14,7 +14,7 @@ public class Recipe
     public int? Servings { get; set; }
     public int? PrepTimeMinutes { get; set; }
     public int? CookTimeMinutes { get; set; }
-    public int CreatedByUserId { get; set; }
+    public int? CreatedByUserId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public int? UpdatedByUserId { get; set; }
@@ -26,7 +26,7 @@ public class Recipe
 
     // Navigation
     public Household Household { get; set; } = default!;
-    public User CreatedBy { get; set; } = default!;
+    public User? CreatedBy { get; set; }
     public User? UpdatedBy { get; set; }
     public ICollection<RecipeIngredient> Ingredients { get; set; } = new List<RecipeIngredient>();
 }

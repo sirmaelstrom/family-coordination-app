@@ -64,6 +64,10 @@
                                 {
                                     @: — @item.User.DisplayName
                                 }
+                                else if (item.UserId.HasValue)
+                                {
+                                    @: — <em>Deleted user</em>
+                                }
                             </MudText>
                         </CardHeaderContent>
                         <CardHeaderActions>
