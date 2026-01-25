@@ -6,11 +6,6 @@ h1:focus {
     outline: none;
 }
 
-/* Prevent initial render flash - hide until Blazor ready */
-.mud-layout {
-    visibility: visible;
-}
-
 /* Fix nav icon centering in mini drawer */
 .mud-drawer-mini .mud-nav-link {
     justify-content: center !important;
@@ -28,7 +23,7 @@ h1:focus {
 }
 
 .mud-drawer-mini:hover {
-    transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1) 0s !important;
+    transition-delay: 0s !important;
 }
 
 /* Main content shift - smooth */
@@ -49,18 +44,4 @@ h1:focus {
 /* Drawer overlay */
 .mud-overlay {
     transition: opacity 0.2s ease-out !important;
-}
-
-/* Hide content during initial load to prevent flash */
-.app-loading .mud-appbar,
-.app-loading .mud-main-content,
-.app-loading .mud-drawer {
-    opacity: 0;
-}
-
-.app-loaded .mud-appbar,
-.app-loaded .mud-main-content,
-.app-loaded .mud-drawer {
-    opacity: 1;
-    transition: opacity 0.15s ease-out;
 }
