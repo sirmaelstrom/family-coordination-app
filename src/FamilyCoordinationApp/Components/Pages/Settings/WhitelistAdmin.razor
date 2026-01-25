@@ -170,14 +170,26 @@
         {
             var email = _newEmail.Trim().ToLowerInvariant();
 
-            var existingUser = await _context.Users
-                .FirstOrDefaultAsync(u => u.Email == email);
+            // Check if user exists in THIS household (for re-enabling)
+            var existingUserInHousehold = await _context.Users
+                .FirstOrDefaultAsync(u => u.Email == email && u.HouseholdId == _householdId);
 
-            if (existingUser != null)
+            // Check if user exists in ANY other household (security check)
+            var existingUserElsewhere = await _context.Users
+                .FirstOrDefaultAsync(u => u.Email == email && u.HouseholdId != _householdId);
+
+            if (existingUserElsewhere != null)
             {
-                if (!existingUser.IsWhitelisted)
+                // User belongs to another household - cannot add them
+                Snackbar.Add("This email is already associated with another household", Severity.Error);
+                return;
+            }
+
+            if (existingUserInHousehold != null)
+            {
+                if (!existingUserInHousehold.IsWhitelisted)
                 {
-                    existingUser.IsWhitelisted = true;
+                    existingUserInHousehold.IsWhitelisted = true;
                     await _context.SaveChangesAsync();
                     Snackbar.Add($"Re-enabled {email}", Severity.Success);
                 }

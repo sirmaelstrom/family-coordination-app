@@ -42,7 +42,7 @@ public class RecipeService(
             query = query.Where(r => 
                 r.Name.ToLower().Contains(term) ||
                 (r.Description != null && r.Description.ToLower().Contains(term)) ||
-                (r.RecipeType != null && r.RecipeType.ToString()!.ToLower().Contains(term)) ||
+                r.RecipeType.ToString().ToLower().Contains(term) ||
                 r.Ingredients.Any(i => i.Name.ToLower().Contains(term)));
         }
 
@@ -64,27 +64,33 @@ public class RecipeService(
 
     public async Task<Recipe> CreateRecipeAsync(Recipe recipe, CancellationToken cancellationToken = default)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        return await IdGenerationHelper.ExecuteWithRetryAsync(
+            async (attempt) =>
+            {
+                await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        // Get next recipe ID for this household
-        recipe.RecipeId = await GetNextRecipeIdInternalAsync(context, recipe.HouseholdId, cancellationToken);
-        recipe.CreatedAt = DateTime.UtcNow;
+                // Get next recipe ID for this household
+                recipe.RecipeId = await GetNextRecipeIdInternalAsync(context, recipe.HouseholdId, cancellationToken);
+                recipe.CreatedAt = DateTime.UtcNow;
 
-        // Set ingredient IDs and household IDs
-        var ingredientId = 1;
-        foreach (var ingredient in recipe.Ingredients)
-        {
-            ingredient.HouseholdId = recipe.HouseholdId;
-            ingredient.RecipeId = recipe.RecipeId;
-            ingredient.IngredientId = ingredientId++;
-        }
+                // Set ingredient IDs and household IDs
+                var ingredientId = 1;
+                foreach (var ingredient in recipe.Ingredients)
+                {
+                    ingredient.HouseholdId = recipe.HouseholdId;
+                    ingredient.RecipeId = recipe.RecipeId;
+                    ingredient.IngredientId = ingredientId++;
+                }
 
-        context.Recipes.Add(recipe);
-        await context.SaveChangesAsync(cancellationToken);
+                context.Recipes.Add(recipe);
+                await context.SaveChangesAsync(cancellationToken);
 
-        logger.LogInformation("Created recipe {RecipeId} for household {HouseholdId}", recipe.RecipeId, recipe.HouseholdId);
+                logger.LogInformation("Created recipe {RecipeId} for household {HouseholdId}", recipe.RecipeId, recipe.HouseholdId);
 
-        return recipe;
+                return recipe;
+            },
+            logger,
+            "Recipe");
     }
 
     public async Task<Recipe> UpdateRecipeAsync(Recipe recipe, CancellationToken cancellationToken = default)

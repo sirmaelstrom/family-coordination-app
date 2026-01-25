@@ -9,7 +9,6 @@
 @using FamilyCoordinationApp.Components.Recipe
 @using FamilyCoordinationApp.Components.Shared
 @using Microsoft.EntityFrameworkCore
-@using Markdig
 @inject IRecipeService RecipeService
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject ISnackbar Snackbar
@@ -290,7 +289,7 @@
             {
                 <MudText Typo="Typo.h6" Class="mb-2">Instructions</MudText>
                 <div class="recipe-instructions mb-4">
-                    @((MarkupString)Markdown.ToHtml(_selectedRecipe.Instructions))
+                    @((MarkupString)MarkdownHelper.ToSafeHtml(_selectedRecipe.Instructions))
                 </div>
             }
 

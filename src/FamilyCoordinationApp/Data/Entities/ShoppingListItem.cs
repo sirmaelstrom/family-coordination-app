@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using FamilyCoordinationApp.Constants;
 
 namespace FamilyCoordinationApp.Data.Entities;
 
@@ -10,7 +11,7 @@ public class ShoppingListItem
     public string Name { get; set; } = string.Empty;
     public decimal? Quantity { get; set; }
     public string? Unit { get; set; }
-    public string Category { get; set; } = "Pantry";
+    public string Category { get; set; } = CategoryDefaults.DefaultCategory;
     public bool IsChecked { get; set; }
     public int? AddedByUserId { get; set; }
     public DateTime AddedAt { get; set; }

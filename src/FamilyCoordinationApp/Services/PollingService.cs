@@ -18,6 +18,9 @@ public enum SyncStatus
 /// Background service that polls for data changes and notifies subscribers.
 /// Uses PeriodicTimer for clean async cancellation.
 /// Exposes sync status for UI indicators.
+/// 
+/// Security: All queries are scoped by HouseholdId to prevent cross-tenant
+/// information disclosure. Each household's changes are tracked independently.
 /// </summary>
 public class PollingService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
@@ -25,9 +28,11 @@ public class PollingService(
     PresenceService presenceService,
     ILogger<PollingService> logger) : BackgroundService
 {
-    private DateTime _lastShoppingListCheck = DateTime.UtcNow;
-    private DateTime _lastRecipeCheck = DateTime.UtcNow;
-    private DateTime _lastMealPlanCheck = DateTime.UtcNow;
+    // Track last check times per household for tenant isolation
+    private readonly Dictionary<int, DateTime> _lastShoppingListCheck = new();
+    private readonly Dictionary<int, DateTime> _lastRecipeCheck = new();
+    private readonly Dictionary<int, DateTime> _lastMealPlanCheck = new();
+    private readonly object _lockObj = new();
 
     /// <summary>
     /// Current sync status
@@ -117,37 +122,70 @@ public class PollingService(
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
 
-        // Check shopping list changes
+        // Get all active households to check for changes
+        var householdIds = await db.Households
+            .Select(h => h.Id)
+            .ToListAsync(ct);
+
+        var now = DateTime.UtcNow;
+
+        foreach (var householdId in householdIds)
+        {
+            await CheckHouseholdChangesAsync(db, householdId, now, ct);
+        }
+    }
+
+    private async Task CheckHouseholdChangesAsync(
+        ApplicationDbContext db, 
+        int householdId, 
+        DateTime now, 
+        CancellationToken ct)
+    {
+        DateTime lastShoppingCheck, lastRecipeCheck, lastMealPlanCheck;
+        
+        lock (_lockObj)
+        {
+            lastShoppingCheck = _lastShoppingListCheck.GetValueOrDefault(householdId, DateTime.MinValue);
+            lastRecipeCheck = _lastRecipeCheck.GetValueOrDefault(householdId, DateTime.MinValue);
+            lastMealPlanCheck = _lastMealPlanCheck.GetValueOrDefault(householdId, DateTime.MinValue);
+        }
+
+        // Check shopping list changes for this household only
         var hasShoppingChanges = await db.ShoppingListItems
-            .AnyAsync(item => item.UpdatedAt > _lastShoppingListCheck, ct);
+            .AnyAsync(item => item.HouseholdId == householdId && item.UpdatedAt > lastShoppingCheck, ct);
 
         if (hasShoppingChanges)
         {
-            logger.LogDebug("Shopping list changes detected");
-            notifier.NotifyShoppingListChanged();
+            logger.LogDebug("Shopping list changes detected for household {HouseholdId}", householdId);
+            notifier.NotifyShoppingListChanged(householdId);
         }
-        _lastShoppingListCheck = DateTime.UtcNow;
 
-        // Check recipe changes
+        // Check recipe changes for this household only
         var hasRecipeChanges = await db.Recipes
-            .AnyAsync(r => r.UpdatedAt > _lastRecipeCheck && !r.IsDeleted, ct);
+            .AnyAsync(r => r.HouseholdId == householdId && r.UpdatedAt > lastRecipeCheck && !r.IsDeleted, ct);
 
         if (hasRecipeChanges)
         {
-            logger.LogDebug("Recipe changes detected");
-            notifier.NotifyRecipesChanged();
+            logger.LogDebug("Recipe changes detected for household {HouseholdId}", householdId);
+            notifier.NotifyRecipesChanged(householdId);
         }
-        _lastRecipeCheck = DateTime.UtcNow;
 
-        // Check meal plan changes
+        // Check meal plan changes for this household only
         var hasMealPlanChanges = await db.MealPlanEntries
-            .AnyAsync(e => e.UpdatedAt > _lastMealPlanCheck, ct);
+            .AnyAsync(e => e.HouseholdId == householdId && e.UpdatedAt > lastMealPlanCheck, ct);
 
         if (hasMealPlanChanges)
         {
-            logger.LogDebug("Meal plan changes detected");
-            notifier.NotifyMealPlanChanged();
+            logger.LogDebug("Meal plan changes detected for household {HouseholdId}", householdId);
+            notifier.NotifyMealPlanChanged(householdId);
         }
-        _lastMealPlanCheck = DateTime.UtcNow;
+
+        // Update timestamps for this household
+        lock (_lockObj)
+        {
+            _lastShoppingListCheck[householdId] = now;
+            _lastRecipeCheck[householdId] = now;
+            _lastMealPlanCheck[householdId] = now;
+        }
     }
 }

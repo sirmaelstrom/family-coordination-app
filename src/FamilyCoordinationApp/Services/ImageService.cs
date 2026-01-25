@@ -87,7 +87,14 @@ public class ImageService(
         // Convert URL path to filesystem path
         // imagePath format: /uploads/{householdId}/{filename}
         var relativePath = imagePath.TrimStart('/');
-        var fullPath = Path.Combine(environment.WebRootPath, relativePath);
+        var fullPath = Path.GetFullPath(Path.Combine(environment.WebRootPath, relativePath));
+
+        // Prevent path traversal attacks - ensure resolved path is within WebRootPath
+        if (!fullPath.StartsWith(environment.WebRootPath, StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogWarning("Path traversal attempt blocked: {ImagePath}", imagePath);
+            return Task.CompletedTask;
+        }
 
         if (File.Exists(fullPath))
         {

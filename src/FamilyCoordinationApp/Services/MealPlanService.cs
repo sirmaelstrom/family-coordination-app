@@ -20,38 +20,60 @@ public class MealPlanService(
 
     public async Task<MealPlan> GetOrCreateMealPlanAsync(int householdId, DateOnly weekStart, CancellationToken ct = default)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(ct);
-
-        var mealPlan = await context.MealPlans
-            .Where(mp => mp.HouseholdId == householdId && mp.WeekStartDate == weekStart)
-            .Include(mp => mp.Entries.OrderBy(e => e.Date).ThenBy(e => e.MealType))
-            .ThenInclude(e => e.Recipe)
-            .FirstOrDefaultAsync(ct);
-
-        if (mealPlan != null)
+        // First, try to get existing meal plan (no retry needed for reads)
+        await using (var readContext = await dbFactory.CreateDbContextAsync(ct))
         {
-            logger.LogInformation("Retrieved existing meal plan {MealPlanId} for household {HouseholdId}, week {WeekStart}",
-                mealPlan.MealPlanId, householdId, weekStart);
-            return mealPlan;
+            var existingPlan = await readContext.MealPlans
+                .Where(mp => mp.HouseholdId == householdId && mp.WeekStartDate == weekStart)
+                .Include(mp => mp.Entries.OrderBy(e => e.Date).ThenBy(e => e.MealType))
+                .ThenInclude(e => e.Recipe)
+                .FirstOrDefaultAsync(ct);
+
+            if (existingPlan != null)
+            {
+                logger.LogInformation("Retrieved existing meal plan {MealPlanId} for household {HouseholdId}, week {WeekStart}",
+                    existingPlan.MealPlanId, householdId, weekStart);
+                return existingPlan;
+            }
         }
 
-        // Create new meal plan
-        var nextId = await GetNextMealPlanIdAsync(context, householdId, ct);
-        mealPlan = new MealPlan
-        {
-            HouseholdId = householdId,
-            MealPlanId = nextId,
-            WeekStartDate = weekStart,
-            CreatedAt = DateTime.UtcNow
-        };
+        // Create new meal plan with retry logic for ID collisions
+        return await IdGenerationHelper.ExecuteWithRetryAsync(
+            async (attempt) =>
+            {
+                await using var context = await dbFactory.CreateDbContextAsync(ct);
 
-        context.MealPlans.Add(mealPlan);
-        await context.SaveChangesAsync(ct);
+                // Re-check if another request created the plan while we were retrying
+                var existingPlan = await context.MealPlans
+                    .Where(mp => mp.HouseholdId == householdId && mp.WeekStartDate == weekStart)
+                    .Include(mp => mp.Entries.OrderBy(e => e.Date).ThenBy(e => e.MealType))
+                    .ThenInclude(e => e.Recipe)
+                    .FirstOrDefaultAsync(ct);
 
-        logger.LogInformation("Created new meal plan {MealPlanId} for household {HouseholdId}, week {WeekStart}",
-            mealPlan.MealPlanId, householdId, weekStart);
+                if (existingPlan != null)
+                {
+                    return existingPlan;
+                }
 
-        return mealPlan;
+                var nextId = await GetNextMealPlanIdAsync(context, householdId, ct);
+                var mealPlan = new MealPlan
+                {
+                    HouseholdId = householdId,
+                    MealPlanId = nextId,
+                    WeekStartDate = weekStart,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                context.MealPlans.Add(mealPlan);
+                await context.SaveChangesAsync(ct);
+
+                logger.LogInformation("Created new meal plan {MealPlanId} for household {HouseholdId}, week {WeekStart}",
+                    mealPlan.MealPlanId, householdId, weekStart);
+
+                return mealPlan;
+            },
+            logger,
+            "MealPlan");
     }
 
     public async Task<MealPlanEntry> AddMealAsync(int householdId, DateOnly date, MealType mealType, int? recipeId, string? customMealName, string? notes = null, int? userId = null, CancellationToken ct = default)
@@ -66,65 +88,71 @@ public class MealPlanService(
             throw new InvalidOperationException("Must specify either RecipeId or CustomMealName");
         }
 
-        await using var context = await dbFactory.CreateDbContextAsync(ct);
-
         var weekStart = GetWeekStartDate(date);
         var mealPlan = await GetOrCreateMealPlanAsync(householdId, weekStart, ct);
 
-        // Check for duplicate entry (same date/mealType AND same recipe or custom meal)
-        // This prevents adding the exact same recipe twice, but allows multiple different recipes
-        var duplicateEntry = await context.MealPlanEntries
-            .FirstOrDefaultAsync(e =>
-                e.HouseholdId == householdId &&
-                e.MealPlanId == mealPlan.MealPlanId &&
-                e.Date == date &&
-                e.MealType == mealType &&
-                ((recipeId.HasValue && e.RecipeId == recipeId) ||
-                 (!string.IsNullOrWhiteSpace(customMealName) && e.CustomMealName == customMealName)), ct);
+        return await IdGenerationHelper.ExecuteWithRetryAsync(
+            async (attempt) =>
+            {
+                await using var context = await dbFactory.CreateDbContextAsync(ct);
 
-        if (duplicateEntry != null)
-        {
-            // Update existing entry with same recipe/custom meal (e.g., to update notes)
-            duplicateEntry.Notes = notes;
-            duplicateEntry.UpdatedAt = DateTime.UtcNow;
-            duplicateEntry.UpdatedByUserId = userId;
+                // Check for duplicate entry (same date/mealType AND same recipe or custom meal)
+                // This prevents adding the exact same recipe twice, but allows multiple different recipes
+                var duplicateEntry = await context.MealPlanEntries
+                    .FirstOrDefaultAsync(e =>
+                        e.HouseholdId == householdId &&
+                        e.MealPlanId == mealPlan.MealPlanId &&
+                        e.Date == date &&
+                        e.MealType == mealType &&
+                        ((recipeId.HasValue && e.RecipeId == recipeId) ||
+                         (!string.IsNullOrWhiteSpace(customMealName) && e.CustomMealName == customMealName)), ct);
 
-            // Update parent MealPlan timestamp for polling
-            await UpdateMealPlanTimestampAsync(context, householdId, mealPlan.MealPlanId, ct);
+                if (duplicateEntry != null)
+                {
+                    // Update existing entry with same recipe/custom meal (e.g., to update notes)
+                    duplicateEntry.Notes = notes;
+                    duplicateEntry.UpdatedAt = DateTime.UtcNow;
+                    duplicateEntry.UpdatedByUserId = userId;
 
-            await context.SaveChangesAsync(ct);
+                    // Update parent MealPlan timestamp for polling
+                    await UpdateMealPlanTimestampAsync(context, householdId, mealPlan.MealPlanId, ct);
 
-            logger.LogInformation("Updated duplicate meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
-                duplicateEntry.EntryId, mealPlan.MealPlanId, householdId);
+                    await context.SaveChangesAsync(ct);
 
-            return duplicateEntry;
-        }
+                    logger.LogInformation("Updated duplicate meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
+                        duplicateEntry.EntryId, mealPlan.MealPlanId, householdId);
 
-        // Create new entry
-        var nextEntryId = await GetNextEntryIdAsync(context, householdId, mealPlan.MealPlanId, ct);
-        var entry = new MealPlanEntry
-        {
-            HouseholdId = householdId,
-            MealPlanId = mealPlan.MealPlanId,
-            EntryId = nextEntryId,
-            Date = date,
-            MealType = mealType,
-            RecipeId = recipeId,
-            CustomMealName = customMealName,
-            Notes = notes
-        };
+                    return duplicateEntry;
+                }
 
-        context.MealPlanEntries.Add(entry);
+                // Create new entry
+                var nextEntryId = await GetNextEntryIdAsync(context, householdId, mealPlan.MealPlanId, ct);
+                var entry = new MealPlanEntry
+                {
+                    HouseholdId = householdId,
+                    MealPlanId = mealPlan.MealPlanId,
+                    EntryId = nextEntryId,
+                    Date = date,
+                    MealType = mealType,
+                    RecipeId = recipeId,
+                    CustomMealName = customMealName,
+                    Notes = notes
+                };
 
-        // Update parent MealPlan timestamp for polling
-        await UpdateMealPlanTimestampAsync(context, householdId, mealPlan.MealPlanId, ct);
+                context.MealPlanEntries.Add(entry);
 
-        await context.SaveChangesAsync(ct);
+                // Update parent MealPlan timestamp for polling
+                await UpdateMealPlanTimestampAsync(context, householdId, mealPlan.MealPlanId, ct);
 
-        logger.LogInformation("Created meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
-            entry.EntryId, mealPlan.MealPlanId, householdId);
+                await context.SaveChangesAsync(ct);
 
-        return entry;
+                logger.LogInformation("Created meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
+                    entry.EntryId, mealPlan.MealPlanId, householdId);
+
+                return entry;
+            },
+            logger,
+            "MealPlanEntry");
     }
 
     public async Task RemoveMealAsync(int householdId, int mealPlanId, int entryId, CancellationToken ct = default)

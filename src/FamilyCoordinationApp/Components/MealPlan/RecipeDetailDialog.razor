@@ -1,5 +1,5 @@
 @using FamilyCoordinationApp.Data.Entities
-@using Markdig
+@using FamilyCoordinationApp.Services
 @using MudBlazor
 
 <MudDialog>
@@ -58,7 +58,7 @@
         {
             <MudText Typo="Typo.subtitle1" Class="mb-2">Instructions</MudText>
             <div class="recipe-instructions">
-                @((MarkupString)Markdown.ToHtml(Recipe.Instructions))
+                @((MarkupString)MarkdownHelper.ToSafeHtml(Recipe.Instructions))
             </div>
         }
     </DialogContent>

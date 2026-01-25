@@ -82,13 +82,6 @@ public class SetupService(
         return (household, user);
     }
 
-    [Obsolete("Use GetUserByEmailAsync and access user.Household instead for proper multi-tenancy")]
-    public async Task<Household?> GetHouseholdAsync()
-    {
-        await using var context = await dbFactory.CreateDbContextAsync();
-        return await context.Households.FirstOrDefaultAsync();
-    }
-
     public async Task<User?> GetUserByEmailAsync(string email)
     {
         await using var context = await dbFactory.CreateDbContextAsync();
