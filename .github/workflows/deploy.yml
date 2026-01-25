@@ -69,6 +69,8 @@ jobs:
       - name: Deploy containers
         run: |
           cd ~/familyapp
+          # Force remove any stale containers that might conflict
+          docker rm -f familyapp-app familyapp-nginx 2>/dev/null || true
           # Stop and remove existing containers to avoid conflicts
           docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans || true
           # Start fresh
