@@ -1,3 +1,4 @@
+using FamilyCoordinationApp.Constants;
 namespace FamilyCoordinationApp.Services;
 
 /// <summary>
@@ -177,7 +178,7 @@ public class IngredientCategorizationService : IIngredientCategorizationService
     public string CategorizeIngredient(string ingredientName)
     {
         if (string.IsNullOrWhiteSpace(ingredientName))
-            return "Pantry";
+            return CategoryDefaults.DefaultCategory;
 
         var name = ingredientName.ToLowerInvariant().Trim();
 
@@ -196,6 +197,6 @@ public class IngredientCategorizationService : IIngredientCategorizationService
         }
 
         // Default fallback
-        return "Pantry";
+        return CategoryDefaults.DefaultCategory;
     }
 }

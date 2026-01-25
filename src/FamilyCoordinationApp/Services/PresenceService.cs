@@ -18,8 +18,6 @@ public class UserPresence
 public class PresenceService
 {
     private readonly ConcurrentDictionary<int, UserPresence> _presence = new();
-    private readonly TimeSpan _awayTimeout = TimeSpan.FromMinutes(5);
-    private readonly TimeSpan _offlineTimeout = TimeSpan.FromMinutes(15);
 
     public event Action? OnPresenceChanged;
 

@@ -1,3 +1,4 @@
+using FamilyCoordinationApp.Constants;
 namespace FamilyCoordinationApp.Services;
 
 /// <summary>
@@ -130,7 +131,7 @@ public class CategoryInferenceService : ICategoryInferenceService
     public string InferCategory(string ingredientName)
     {
         if (string.IsNullOrWhiteSpace(ingredientName))
-            return "Pantry";
+            return CategoryDefaults.DefaultCategory;
 
         var normalized = ingredientName.ToLowerInvariant().Trim();
 
@@ -149,6 +150,6 @@ public class CategoryInferenceService : ICategoryInferenceService
         }
 
         // Default fallback
-        return "Pantry";
+        return CategoryDefaults.DefaultCategory;
     }
 }
