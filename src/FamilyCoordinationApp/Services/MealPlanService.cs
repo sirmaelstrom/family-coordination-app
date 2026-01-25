@@ -1,17 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
+using FamilyCoordinationApp.Services.Interfaces;
 
 namespace FamilyCoordinationApp.Services;
-
-public interface IMealPlanService
-{
-    Task<MealPlan> GetOrCreateMealPlanAsync(int householdId, DateOnly weekStart, CancellationToken cancellationToken = default);
-    Task<MealPlanEntry> AddMealAsync(int householdId, DateOnly date, MealType mealType, int? recipeId, string? customMealName, string? notes = null, int? userId = null, CancellationToken cancellationToken = default);
-    Task RemoveMealAsync(int householdId, int mealPlanId, int entryId, CancellationToken cancellationToken = default);
-    DateOnly GetWeekStartDate(DateOnly date);
-    DateOnly[] GetWeekDays(DateOnly weekStart);
-}
 
 public class MealPlanService(
     IDbContextFactory<ApplicationDbContext> dbFactory,

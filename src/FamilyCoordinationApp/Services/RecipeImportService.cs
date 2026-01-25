@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Models.SchemaOrg;
+using FamilyCoordinationApp.Services.Interfaces;
 
 namespace FamilyCoordinationApp.Services;
 
@@ -58,43 +59,20 @@ public class PartialRecipeData
     public int? Servings { get; set; }
 }
 
-public interface IRecipeImportService
+public class RecipeImportService(
+    IUrlValidator urlValidator,
+    IRecipeScraperService scraperService,
+    IIngredientParser ingredientParser,
+    ICategoryInferenceService categoryInference,
+    ILogger<RecipeImportService> logger) : IRecipeImportService
 {
-    /// <summary>
-    /// Imports recipe from URL, returning Recipe entity or error with partial data.
-    /// </summary>
-    Task<RecipeImportResult> ImportFromUrlAsync(string url, int householdId, int userId, CancellationToken cancellationToken = default);
-}
-
-public class RecipeImportService : IRecipeImportService
-{
-    private readonly IUrlValidator _urlValidator;
-    private readonly IRecipeScraperService _scraperService;
-    private readonly IIngredientParser _ingredientParser;
-    private readonly ICategoryInferenceService _categoryInference;
-    private readonly ILogger<RecipeImportService> _logger;
-
-    public RecipeImportService(
-        IUrlValidator urlValidator,
-        IRecipeScraperService scraperService,
-        IIngredientParser ingredientParser,
-        ICategoryInferenceService categoryInference,
-        ILogger<RecipeImportService> logger)
-    {
-        _urlValidator = urlValidator;
-        _scraperService = scraperService;
-        _ingredientParser = ingredientParser;
-        _categoryInference = categoryInference;
-        _logger = logger;
-    }
-
     public async Task<RecipeImportResult> ImportFromUrlAsync(string url, int householdId, int userId, CancellationToken cancellationToken = default)
     {
         // Step 1: Validate URL (SSRF protection)
-        var (isValid, validationError) = _urlValidator.ValidateUrl(url);
+        var (isValid, validationError) = urlValidator.ValidateUrl(url);
         if (!isValid)
         {
-            _logger.LogWarning("URL validation failed for {Url}: {Error}", url, validationError);
+            logger.LogWarning("URL validation failed for {Url}: {Error}", url, validationError);
             return RecipeImportResult.Failed(validationError!, RecipeImportErrorType.InvalidUrl);
         }
 
@@ -102,11 +80,11 @@ public class RecipeImportService : IRecipeImportService
         RecipeSchema? schema;
         try
         {
-            schema = await _scraperService.ScrapeRecipeAsync(url, cancellationToken);
+            schema = await scraperService.ScrapeRecipeAsync(url, cancellationToken);
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex, "Failed to fetch recipe from {Url}", url);
+            logger.LogWarning(ex, "Failed to fetch recipe from {Url}", url);
             return RecipeImportResult.Failed(
                 $"Could not fetch the recipe page. The site may be unavailable or blocking requests. Error: {ex.Message}",
                 RecipeImportErrorType.FetchFailed);
@@ -115,7 +93,7 @@ public class RecipeImportService : IRecipeImportService
         // Step 3: Check if we got any data
         if (schema == null)
         {
-            _logger.LogWarning("No JSON-LD Recipe found at {Url}", url);
+            logger.LogWarning("No JSON-LD Recipe found at {Url}", url);
             return RecipeImportResult.Failed(
                 "Could not find recipe data on this page. The site may not use standard recipe markup.",
                 RecipeImportErrorType.ParsingFailed);
@@ -143,7 +121,7 @@ public class RecipeImportService : IRecipeImportService
         // Step 5: Convert to Recipe entity
         var recipe = ConvertToRecipeEntity(schema, url, householdId, userId);
 
-        _logger.LogInformation("Successfully imported recipe '{Name}' from {Url}", recipe.Name, url);
+        logger.LogInformation("Successfully imported recipe '{Name}' from {Url}", recipe.Name, url);
 
         return RecipeImportResult.Succeeded(recipe);
     }
@@ -175,8 +153,8 @@ public class RecipeImportService : IRecipeImportService
 
             try
             {
-                var parsed = _ingredientParser.ParseIngredient(ingredientString);
-                var inferredCategory = _categoryInference.InferCategory(parsed.Name);
+                var parsed = ingredientParser.ParseIngredient(ingredientString);
+                var inferredCategory = categoryInference.InferCategory(parsed.Name);
 
                 recipe.Ingredients.Add(new RecipeIngredient
                 {
@@ -192,7 +170,7 @@ public class RecipeImportService : IRecipeImportService
             catch (ArgumentException)
             {
                 // If parsing fails, add as raw text with no quantity/unit
-                var inferredCategory = _categoryInference.InferCategory(ingredientString.Trim());
+                var inferredCategory = categoryInference.InferCategory(ingredientString.Trim());
                 recipe.Ingredients.Add(new RecipeIngredient
                 {
                     HouseholdId = householdId,

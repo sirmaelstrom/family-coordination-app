@@ -12,32 +12,21 @@ namespace FamilyCoordinationApp.Authorization;
 /// During initial setup (no households exist), authenticated users are allowed through
 /// to complete the setup process.
 /// </summary>
-public class WhitelistedEmailHandler : AuthorizationHandler<WhitelistedEmailRequirement>
+public class WhitelistedEmailHandler(
+    IDbContextFactory<ApplicationDbContext> dbFactory,
+    ILogger<WhitelistedEmailHandler> logger,
+    SetupService setupService) : AuthorizationHandler<WhitelistedEmailRequirement>
 {
-    private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
-    private readonly ILogger<WhitelistedEmailHandler> _logger;
-    private readonly SetupService _setupService;
-
-    public WhitelistedEmailHandler(
-        IDbContextFactory<ApplicationDbContext> dbFactory,
-        ILogger<WhitelistedEmailHandler> logger,
-        SetupService setupService)
-    {
-        _dbFactory = dbFactory;
-        _logger = logger;
-        _setupService = setupService;
-    }
-
     protected override async Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
         WhitelistedEmailRequirement requirement)
     {
         // If setup is not complete, allow authenticated users through
-        if (!await _setupService.IsSetupCompleteAsync())
+        if (!await setupService.IsSetupCompleteAsync())
         {
             if (context.User.Identity?.IsAuthenticated == true)
             {
-                _logger.LogInformation("Setup not complete - allowing authenticated user through");
+                logger.LogInformation("Setup not complete - allowing authenticated user through");
                 context.Succeed(requirement);
                 return;
             }
@@ -47,7 +36,7 @@ public class WhitelistedEmailHandler : AuthorizationHandler<WhitelistedEmailRequ
         var emailClaim = context.User.FindFirst(ClaimTypes.Email);
         if (emailClaim is null)
         {
-            _logger.LogWarning("No email claim found in user context");
+            logger.LogWarning("No email claim found in user context");
             return; // Fail authorization silently
         }
 
@@ -56,7 +45,7 @@ public class WhitelistedEmailHandler : AuthorizationHandler<WhitelistedEmailRequ
         try
         {
             // Check database for whitelisted user
-            using var dbContext = _dbFactory.CreateDbContext();
+            using var dbContext = dbFactory.CreateDbContext();
             var user = await dbContext.Users
                 .FirstOrDefaultAsync(u => u.Email == email && u.IsWhitelisted);
 
@@ -73,16 +62,16 @@ public class WhitelistedEmailHandler : AuthorizationHandler<WhitelistedEmailRequ
                 await dbContext.SaveChangesAsync();
 
                 context.Succeed(requirement);
-                _logger.LogInformation("User {Email} authorized successfully", email);
+                logger.LogInformation("User {Email} authorized successfully", email);
             }
             else
             {
-                _logger.LogWarning("User {Email} not whitelisted or not found", email);
+                logger.LogWarning("User {Email} not whitelisted or not found", email);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error checking whitelist for {Email}", email);
+            logger.LogError(ex, "Error checking whitelist for {Email}", email);
             // Fail authorization on error (safe default)
         }
     }

@@ -1,25 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
+using FamilyCoordinationApp.Services.Interfaces;
 
 namespace FamilyCoordinationApp.Services;
-
-public interface IRecipeService
-{
-    Task<List<Recipe>> GetRecipesAsync(int householdId, string? searchTerm = null, CancellationToken cancellationToken = default);
-    Task<Recipe?> GetRecipeAsync(int householdId, int recipeId, CancellationToken cancellationToken = default);
-    Task<Recipe> CreateRecipeAsync(Recipe recipe, CancellationToken cancellationToken = default);
-    Task<Recipe> UpdateRecipeAsync(Recipe recipe, CancellationToken cancellationToken = default);
-    Task DeleteRecipeAsync(int householdId, int recipeId, CancellationToken cancellationToken = default);
-    Task<int> GetNextRecipeIdAsync(int householdId, CancellationToken cancellationToken = default);
-    Task<List<string>> GetIngredientSuggestionsAsync(int householdId, string prefix, CancellationToken cancellationToken = default);
-
-    // Favorites
-    Task<bool> IsFavoriteAsync(int userId, int householdId, int recipeId, CancellationToken cancellationToken = default);
-    Task<HashSet<int>> GetFavoriteRecipeIdsAsync(int userId, int householdId, CancellationToken cancellationToken = default);
-    Task ToggleFavoriteAsync(int userId, int householdId, int recipeId, CancellationToken cancellationToken = default);
-    Task<List<Recipe>> GetFavoriteRecipesAsync(int userId, int householdId, CancellationToken cancellationToken = default);
-}
 
 public class RecipeService(
     IDbContextFactory<ApplicationDbContext> dbFactory,

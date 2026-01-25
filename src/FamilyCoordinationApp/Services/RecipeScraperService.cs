@@ -24,11 +24,11 @@ public interface IRecipeScraperService
     Task<RecipeSchema?> ScrapeRecipeAsync(string url, CancellationToken cancellationToken = default);
 }
 
-public class RecipeScraperService : IRecipeScraperService
+public class RecipeScraperService(
+    IHttpClientFactory httpClientFactory,
+    ILogger<RecipeScraperService> logger) : IRecipeScraperService
 {
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly ILogger<RecipeScraperService> _logger;
-    private readonly HtmlParser _htmlParser;
+    private readonly HtmlParser _htmlParser = new();
 
     // Use lenient JSON options to handle edge cases from various recipe sites
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -47,18 +47,9 @@ public class RecipeScraperService : IRecipeScraperService
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
     ];
 
-    public RecipeScraperService(
-        IHttpClientFactory httpClientFactory,
-        ILogger<RecipeScraperService> logger)
-    {
-        _httpClientFactory = httpClientFactory;
-        _logger = logger;
-        _htmlParser = new HtmlParser();
-    }
-
     public async Task<string> FetchHtmlAsync(string url, CancellationToken cancellationToken = default)
     {
-        var client = _httpClientFactory.CreateClient("RecipeScraper");
+        var client = httpClientFactory.CreateClient("RecipeScraper");
 
         // Set realistic User-Agent (critical for anti-bot)
         var userAgent = UserAgents[Random.Shared.Next(UserAgents.Length)];
@@ -67,7 +58,7 @@ public class RecipeScraperService : IRecipeScraperService
         client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
         client.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.9");
 
-        _logger.LogInformation("Fetching recipe from {Url}", url);
+        logger.LogInformation("Fetching recipe from {Url}", url);
 
         var response = await client.GetAsync(url, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -93,18 +84,18 @@ public class RecipeScraperService : IRecipeScraperService
                 var recipe = TryParseRecipeFromJson(jsonContent);
                 if (recipe != null)
                 {
-                    _logger.LogInformation("Extracted recipe '{Name}' from JSON-LD", recipe.Name);
+                    logger.LogInformation("Extracted recipe '{Name}' from JSON-LD", recipe.Name);
                     return recipe;
                 }
             }
             catch (JsonException ex)
             {
-                _logger.LogDebug(ex, "Failed to parse JSON-LD script: {Content}", jsonContent[..Math.Min(100, jsonContent.Length)]);
+                logger.LogDebug(ex, "Failed to parse JSON-LD script: {Content}", jsonContent[..Math.Min(100, jsonContent.Length)]);
                 // Try next script tag
             }
         }
 
-        _logger.LogWarning("No Recipe JSON-LD found in HTML");
+        logger.LogWarning("No Recipe JSON-LD found in HTML");
         return null;
     }
 

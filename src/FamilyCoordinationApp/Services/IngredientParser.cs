@@ -1,3 +1,5 @@
+using FamilyCoordinationApp.Services.Interfaces;
+
 namespace FamilyCoordinationApp.Services;
 
 public class ParsedIngredient
@@ -11,11 +13,6 @@ public class ParsedIngredient
     /// Returns true if the ingredient name is not empty. A complete parse includes at minimum a name.
     /// </summary>
     public bool IsComplete => !string.IsNullOrWhiteSpace(Name);
-}
-
-public interface IIngredientParser
-{
-    ParsedIngredient ParseIngredient(string input);
 }
 
 public class IngredientParser : IIngredientParser

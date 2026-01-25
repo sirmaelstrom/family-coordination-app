@@ -12,20 +12,12 @@ public interface ISiteAdminService
     bool IsSiteAdmin(string? email);
 }
 
-public class SiteAdminService : ISiteAdminService
+public class SiteAdminService(IConfiguration configuration) : ISiteAdminService
 {
-    private readonly HashSet<string> _adminEmails;
-
-    public SiteAdminService(IConfiguration configuration)
-    {
-        // Read comma-separated list of admin emails from environment variable
-        var adminEmailsConfig = configuration["SITE_ADMIN_EMAILS"] ?? "";
-        
-        _adminEmails = adminEmailsConfig
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(e => e.ToLowerInvariant())
-            .ToHashSet();
-    }
+    private readonly HashSet<string> _adminEmails = (configuration["SITE_ADMIN_EMAILS"] ?? "")
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(e => e.ToLowerInvariant())
+        .ToHashSet();
 
     public bool IsSiteAdmin(string? email)
     {
