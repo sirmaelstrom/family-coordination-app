@@ -39,6 +39,9 @@
                               Placeholder="e.g., Leftovers, Eating out, Takeout"
                               Variant="Variant.Outlined"
                               Immediate="true"
+                              Required="true"
+                              RequiredError="Please enter a meal name"
+                              Validation="@(new Func<string, string?>(ValidateCustomMealName))"
                               Class="mt-3" />
             </MudTabPanel>
         </MudTabs>
@@ -68,6 +71,15 @@
     private string? _notes;
 
     private bool CanSubmit => _selectedRecipe != null || !string.IsNullOrWhiteSpace(_customMealName);
+
+    private string? ValidateCustomMealName(string? value)
+    {
+        if (_selectedRecipe != null)
+            return null; // Recipe selected, custom name not needed
+        if (string.IsNullOrWhiteSpace(value))
+            return "Please enter a meal name";
+        return null;
+    }
 
     private async Task<IEnumerable<Recipe>> SearchRecipes(string value, CancellationToken token)
     {

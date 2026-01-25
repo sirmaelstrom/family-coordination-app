@@ -54,11 +54,19 @@
                     }
                     else
                     {
-                        @foreach (var meal in _todaysMeals)
+                        @foreach (var mealGroup in _todaysMeals.GroupBy(m => m.MealType).OrderBy(g => g.Key))
                         {
-                            <div class="meal-item d-flex align-center gap-3 py-2">
-                                <MudChip T="string" Size="Size.Small" Color="Color.Default">@meal.MealType</MudChip>
-                                <MudText>@(meal.Recipe?.Name ?? meal.CustomMealName)</MudText>
+                            <div class="meal-group py-2">
+                                <div class="d-flex align-center gap-2 mb-1">
+                                    <MudIcon Icon="@GetMealTypeIcon(mealGroup.Key)" Size="Size.Small" Color="Color.Secondary" />
+                                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">@mealGroup.Key</MudText>
+                                </div>
+                                @foreach (var meal in mealGroup)
+                                {
+                                    <div class="meal-item ps-6 py-1">
+                                        <MudText>@GetMealDisplayName(meal)</MudText>
+                                    </div>
+                                }
                             </div>
                         }
                     }
@@ -177,12 +185,16 @@
         min-height: 200px;
     }
     
-    .meal-item {
+    .meal-group {
         border-bottom: 1px solid var(--mud-palette-divider);
     }
     
-    .meal-item:last-child {
+    .meal-group:last-child {
         border-bottom: none;
+    }
+    
+    .meal-item {
+        /* Individual meal items within a group */
     }
     
     .quick-action-btn {
@@ -257,5 +269,23 @@
             var total = _shoppingListCount + _shoppingListChecked;
             _shoppingListProgress = total > 0 ? (_shoppingListChecked * 100.0 / total) : 0;
         }
+    }
+
+    private static string GetMealTypeIcon(MealType mealType) => mealType switch
+    {
+        MealType.Breakfast => Icons.Material.Filled.FreeBreakfast,
+        MealType.Lunch => Icons.Material.Filled.LunchDining,
+        MealType.Dinner => Icons.Material.Filled.DinnerDining,
+        MealType.Snack => Icons.Material.Filled.Icecream,
+        _ => Icons.Material.Filled.Restaurant
+    };
+
+    private static string GetMealDisplayName(MealPlanEntry meal)
+    {
+        if (meal.Recipe != null && !string.IsNullOrWhiteSpace(meal.Recipe.Name))
+            return meal.Recipe.Name;
+        if (!string.IsNullOrWhiteSpace(meal.CustomMealName))
+            return meal.CustomMealName;
+        return "Unnamed meal";
     }
 }
