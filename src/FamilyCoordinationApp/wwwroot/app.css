@@ -316,3 +316,13 @@ body {
         bottom: max(24px, calc(env(safe-area-inset-bottom) + 16px)) !important;
     }
 }
+/* Fix nav icon centering in mini drawer */
+.mud-drawer-mini .mud-nav-link {
+    justify-content: center !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+}
+
+.mud-drawer-mini .mud-nav-link-icon {
+    margin-right: 0 !important;
+}
