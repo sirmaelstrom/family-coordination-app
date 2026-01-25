@@ -109,10 +109,14 @@
     }
 </style>
 
+@implements IDisposable
+
 @code {
     private List<Feedback> _feedbackItems = new();
     private bool _loading = true;
     private string _filter = "all";
+    private System.Timers.Timer? _refreshTimer;
+    private int _lastCount = 0;
 
     private IEnumerable<Feedback> FilteredItems => _filter switch
     {
@@ -124,6 +128,29 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadFeedback();
+        
+        // Auto-refresh every 15 seconds
+        _refreshTimer = new System.Timers.Timer(15000);
+        _refreshTimer.Elapsed += async (_, _) => await InvokeAsync(RefreshIfChanged);
+        _refreshTimer.Start();
+    }
+    
+    private async Task RefreshIfChanged()
+    {
+        try
+        {
+            await using var context = await DbFactory.CreateDbContextAsync();
+            var count = await context.Feedbacks.CountAsync();
+            
+            if (count != _lastCount)
+            {
+                await LoadFeedback();
+            }
+        }
+        catch
+        {
+            // Ignore refresh errors
+        }
     }
 
     private async Task LoadFeedback()
@@ -139,6 +166,7 @@
                 .Include(f => f.Household)
                 .OrderByDescending(f => f.CreatedAt)
                 .ToListAsync();
+            _lastCount = _feedbackItems.Count;
         }
         finally
         {
@@ -202,4 +230,10 @@
         FeedbackType.FeatureRequest => Icons.Material.Filled.Lightbulb,
         _ => Icons.Material.Filled.Chat
     };
+    
+    public void Dispose()
+    {
+        _refreshTimer?.Stop();
+        _refreshTimer?.Dispose();
+    }
 }
