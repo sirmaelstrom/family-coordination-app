@@ -66,6 +66,65 @@ namespace FamilyCoordinationApp.Migrations
                     b.ToTable("Categories");
                 });
 
+            modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.Feedback", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AdminNotes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CurrentPage")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int?>("HouseholdId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsRead")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("IsResolved")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HouseholdId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("IsRead", "IsResolved", "CreatedAt");
+
+                    b.ToTable("Feedback", (string)null);
+                });
+
             modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.Household", b =>
                 {
                     b.Property<int>("Id")
@@ -499,6 +558,23 @@ namespace FamilyCoordinationApp.Migrations
                         .IsRequired();
 
                     b.Navigation("Household");
+                });
+
+            modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.Feedback", b =>
+                {
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.Household", "Household")
+                        .WithMany()
+                        .HasForeignKey("HouseholdId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Household");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.MealPlan", b =>

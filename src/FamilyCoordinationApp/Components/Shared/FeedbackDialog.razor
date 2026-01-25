@@ -1,0 +1,153 @@
+@using FamilyCoordinationApp.Data
+@using FamilyCoordinationApp.Data.Entities
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject NavigationManager NavigationManager
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Feedback" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Send Feedback</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+            We'd love to hear from you! Report bugs, request features, or share your thoughts.
+        </MudText>
+
+        <MudSelect T="FeedbackType" 
+                   @bind-Value="_type" 
+                   Label="Type"
+                   Variant="Variant.Outlined"
+                   Class="mb-4">
+            <MudSelectItem Value="FeedbackType.Bug">
+                <div class="d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.BugReport" Size="Size.Small" />
+                    Bug Report
+                </div>
+            </MudSelectItem>
+            <MudSelectItem Value="FeedbackType.FeatureRequest">
+                <div class="d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Lightbulb" Size="Size.Small" />
+                    Feature Request
+                </div>
+            </MudSelectItem>
+            <MudSelectItem Value="FeedbackType.General">
+                <div class="d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Chat" Size="Size.Small" />
+                    General Feedback
+                </div>
+            </MudSelectItem>
+        </MudSelect>
+
+        <MudTextField @bind-Value="_message"
+                      Label="@GetMessageLabel()"
+                      Placeholder="@GetMessagePlaceholder()"
+                      Variant="Variant.Outlined"
+                      Lines="5"
+                      MaxLength="4000"
+                      Counter="4000" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   OnClick="Submit"
+                   Disabled="@(string.IsNullOrWhiteSpace(_message) || _submitting)">
+            @if (_submitting)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            Send Feedback
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    [Parameter]
+    public string? CurrentPage { get; set; }
+
+    private FeedbackType _type = FeedbackType.General;
+    private string _message = "";
+    private bool _submitting;
+
+    private string GetMessageLabel() => _type switch
+    {
+        FeedbackType.Bug => "What went wrong?",
+        FeedbackType.FeatureRequest => "What would you like to see?",
+        _ => "Your feedback"
+    };
+
+    private string GetMessagePlaceholder() => _type switch
+    {
+        FeedbackType.Bug => "Describe what happened, what you expected, and steps to reproduce...",
+        FeedbackType.FeatureRequest => "Describe the feature and how it would help you...",
+        _ => "Tell us what's on your mind..."
+    };
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        if (string.IsNullOrWhiteSpace(_message)) return;
+
+        _submitting = true;
+        StateHasChanged();
+
+        try
+        {
+            await using var context = await DbFactory.CreateDbContextAsync();
+
+            int? userId = null;
+            int? householdId = null;
+
+            if (AuthStateTask != null)
+            {
+                var authState = await AuthStateTask;
+                var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+                if (!string.IsNullOrEmpty(email))
+                {
+                    var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
+                    if (user != null)
+                    {
+                        userId = user.Id;
+                        householdId = user.HouseholdId;
+                    }
+                }
+            }
+
+            var feedback = new Feedback
+            {
+                UserId = userId,
+                HouseholdId = householdId,
+                Type = _type,
+                Message = _message.Trim(),
+                CurrentPage = CurrentPage ?? NavigationManager.Uri,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            context.Feedbacks.Add(feedback);
+            await context.SaveChangesAsync();
+
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception)
+        {
+            // If saving fails, still close but indicate failure
+            MudDialog.Close(DialogResult.Cancel());
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+}
