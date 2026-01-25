@@ -52,7 +52,8 @@ public class RecipeConfiguration : IEntityTypeConfiguration<Recipe>
         builder.HasOne(r => r.CreatedBy)
             .WithMany()
             .HasForeignKey(r => r.CreatedByUserId)
-            .OnDelete(DeleteBehavior.Restrict);
+            .OnDelete(DeleteBehavior.SetNull)
+            .IsRequired(false);
 
         builder.HasOne(r => r.UpdatedBy)
             .WithMany()

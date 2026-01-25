@@ -7,6 +7,7 @@
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject ISnackbar Snackbar
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IDialogService DialogService
 @implements IAsyncDisposable
 
 <PageTitle>Manage Users - Family Coordination</PageTitle>
@@ -59,7 +60,13 @@
                     <MudTh Style="text-align: right;">Actions</MudTh>
                 </HeaderContent>
                 <RowTemplate>
-                    <MudTd DataLabel="Email">@context.Email</MudTd>
+                    <MudTd DataLabel="Email">
+                        @context.Email
+                        @if (context.Id == _currentUserId)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info" Class="ml-2">You</MudChip>
+                        }
+                    </MudTd>
                     <MudTd DataLabel="Name">@context.DisplayName</MudTd>
                     <MudTd DataLabel="Status">
                         @if (context.IsWhitelisted)
@@ -72,28 +79,43 @@
                         }
                     </MudTd>
                     <MudTd DataLabel="Actions" Style="text-align: right;">
-                        @if (context.IsWhitelisted && _users.Count(u => u.IsWhitelisted) > 1)
-                        {
-                            <MudButton Variant="Variant.Text"
-                                       Color="Color.Error"
-                                       Size="Size.Small"
-                                       OnClick="() => ToggleUser(context)">
-                                Disable
-                            </MudButton>
-                        }
-                        else if (!context.IsWhitelisted)
-                        {
-                            <MudButton Variant="Variant.Text"
-                                       Color="Color.Success"
-                                       Size="Size.Small"
-                                       OnClick="() => ToggleUser(context)">
-                                Enable
-                            </MudButton>
-                        }
-                        else
-                        {
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">Last admin</MudText>
-                        }
+                        <div class="d-flex justify-end gap-1">
+                            @if (context.Id != _currentUserId)
+                            {
+                                @if (context.IsWhitelisted && _users.Count(u => u.IsWhitelisted) > 1)
+                                {
+                                    <MudButton Variant="Variant.Text"
+                                               Color="Color.Warning"
+                                               Size="Size.Small"
+                                               OnClick="() => ToggleUser(context)">
+                                        Disable
+                                    </MudButton>
+                                }
+                                else if (!context.IsWhitelisted)
+                                {
+                                    <MudButton Variant="Variant.Text"
+                                               Color="Color.Success"
+                                               Size="Size.Small"
+                                               OnClick="() => ToggleUser(context)">
+                                        Enable
+                                    </MudButton>
+                                }
+                                
+                                @if (_users.Count > 1)
+                                {
+                                    <MudButton Variant="Variant.Text"
+                                               Color="Color.Error"
+                                               Size="Size.Small"
+                                               OnClick="() => DeleteUser(context)">
+                                        Delete
+                                    </MudButton>
+                                }
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Cannot modify self</MudText>
+                            }
+                        </div>
                     </MudTd>
                 </RowTemplate>
             </MudTable>
@@ -108,6 +130,7 @@
     private bool _isLoading = true;
     private bool _isSubmitting;
     private int _householdId;
+    private int _currentUserId;
 
     protected override async Task OnInitializedAsync()
     {
@@ -127,6 +150,7 @@
         if (currentUser != null)
         {
             _householdId = currentUser.HouseholdId;
+            _currentUserId = currentUser.Id;
             _users = await _context.Users
                 .Where(u => u.HouseholdId == _householdId)
                 .OrderBy(u => u.Email)
@@ -200,6 +224,51 @@
             ? $"Enabled {user.Email}"
             : $"Disabled {user.Email}";
         Snackbar.Add(message, Severity.Success);
+    }
+
+    private async Task DeleteUser(User user)
+    {
+        // Safety checks
+        if (user.Id == _currentUserId)
+        {
+            Snackbar.Add("You cannot delete yourself", Severity.Warning);
+            return;
+        }
+
+        if (_users.Count <= 1)
+        {
+            Snackbar.Add("Cannot delete the last user in the household", Severity.Warning);
+            return;
+        }
+
+        // Confirmation dialog
+        var result = await DialogService.ShowMessageBox(
+            "Delete User",
+            $"Are you sure you want to permanently delete {user.DisplayName} ({user.Email})?\n\n" +
+            "This will:\n" +
+            "• Remove their account from the household\n" +
+            "• Keep their recipes (will show \"Deleted user\" as creator)\n" +
+            "• Keep their feedback submissions\n\n" +
+            "This action cannot be undone.",
+            yesText: "Delete",
+            cancelText: "Cancel");
+
+        if (result != true)
+            return;
+
+        try
+        {
+            // Delete the user - FK ON DELETE SET NULL will handle orphaned data
+            _context.Users.Remove(user);
+            await _context.SaveChangesAsync();
+
+            Snackbar.Add($"Deleted {user.Email}", Severity.Success);
+            await LoadUsers();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to delete user: {ex.Message}", Severity.Error);
+        }
     }
 
     public async ValueTask DisposeAsync()

@@ -25,15 +25,24 @@
             }
         </div>
 
-        @if (Recipe.CreatedBy != null)
-        {
-            <div class="d-flex align-center gap-2 mb-2">
+        <div class="d-flex align-center gap-2 mb-2">
+            @if (Recipe.CreatedBy != null)
+            {
                 <UserAvatar User="@Recipe.CreatedBy" Size="Size.Small" />
                 <MudText Typo="Typo.caption" Color="Color.Secondary">
                     @Recipe.CreatedBy.DisplayName
                 </MudText>
-            </div>
-        }
+            }
+            else
+            {
+                <MudAvatar Size="Size.Small" Color="Color.Default">
+                    <MudIcon Icon="@Icons.Material.Filled.PersonOff" Size="Size.Small" />
+                </MudAvatar>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="font-italic">
+                    Deleted user
+                </MudText>
+            }
+        </div>
 
         @if (!_isExpanded)
         {
