@@ -59,8 +59,9 @@
 <style>
     .meal-plan-grid {
         display: grid;
-        grid-template-columns: 60px repeat(7, 1fr);
+        grid-template-columns: 60px repeat(7, minmax(0, 1fr));
         gap: 4px;
+        width: 100%;
     }
 
     .grid-corner {
@@ -70,6 +71,7 @@
     .day-header {
         text-align: center;
         padding: 8px 4px;
+        min-width: 0;
     }
 
     .day-header.today {
@@ -84,5 +86,11 @@
         writing-mode: vertical-rl;
         text-orientation: mixed;
         transform: rotate(180deg);
+    }
+
+    /* Ensure slots don't overflow and have consistent width */
+    .meal-plan-grid > :not(.grid-corner):not(.meal-label):not(.day-header) {
+        min-width: 0;
+        overflow: hidden;
     }
 </style>

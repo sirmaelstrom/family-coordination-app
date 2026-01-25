@@ -71,32 +71,33 @@ public class MealPlanService(
         var weekStart = GetWeekStartDate(date);
         var mealPlan = await GetOrCreateMealPlanAsync(householdId, weekStart, ct);
 
-        // Check for existing entry at same date/mealType
-        var existingEntry = await context.MealPlanEntries
+        // Check for duplicate entry (same date/mealType AND same recipe or custom meal)
+        // This prevents adding the exact same recipe twice, but allows multiple different recipes
+        var duplicateEntry = await context.MealPlanEntries
             .FirstOrDefaultAsync(e =>
                 e.HouseholdId == householdId &&
                 e.MealPlanId == mealPlan.MealPlanId &&
                 e.Date == date &&
-                e.MealType == mealType, ct);
+                e.MealType == mealType &&
+                ((recipeId.HasValue && e.RecipeId == recipeId) ||
+                 (!string.IsNullOrWhiteSpace(customMealName) && e.CustomMealName == customMealName)), ct);
 
-        if (existingEntry != null)
+        if (duplicateEntry != null)
         {
-            // Update existing entry
-            existingEntry.RecipeId = recipeId;
-            existingEntry.CustomMealName = customMealName;
-            existingEntry.Notes = notes;
-            existingEntry.UpdatedAt = DateTime.UtcNow;
-            existingEntry.UpdatedByUserId = userId;
+            // Update existing entry with same recipe/custom meal (e.g., to update notes)
+            duplicateEntry.Notes = notes;
+            duplicateEntry.UpdatedAt = DateTime.UtcNow;
+            duplicateEntry.UpdatedByUserId = userId;
 
             // Update parent MealPlan timestamp for polling
             await UpdateMealPlanTimestampAsync(context, householdId, mealPlan.MealPlanId, ct);
 
             await context.SaveChangesAsync(ct);
 
-            logger.LogInformation("Updated meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
-                existingEntry.EntryId, mealPlan.MealPlanId, householdId);
+            logger.LogInformation("Updated duplicate meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
+                duplicateEntry.EntryId, mealPlan.MealPlanId, householdId);
 
-            return existingEntry;
+            return duplicateEntry;
         }
 
         // Create new entry
