@@ -3,7 +3,7 @@ name: Deploy to Production
 on:
   push:
     branches: [main, master]
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -49,3 +49,17 @@ jobs:
         run: |
           docker image prune -f --filter "until=24h"
           echo "🧹 Cleaned up old images"
+
+      - name: Notify Discord (Success)
+        if: success()
+        run: |
+          curl -H "Content-Type: application/json" \
+            -d "{\"embeds\":[{\"title\":\"✅ Deploy Successful\",\"description\":\"**family-coordination-app** deployed to production\",\"color\":5025616,\"fields\":[{\"name\":\"Commit\",\"value\":\"\`$(cd ~/familyapp && git rev-parse --short HEAD)\`\",\"inline\":true},{\"name\":\"Branch\",\"value\":\"\`${{ github.ref_name }}\`\",\"inline\":true}],\"footer\":{\"text\":\"GitHub Actions\"}}]}" \
+            ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: Notify Discord (Failure)
+        if: failure()
+        run: |
+          curl -H "Content-Type: application/json" \
+            -d "{\"embeds\":[{\"title\":\"❌ Deploy Failed\",\"description\":\"**family-coordination-app** deployment failed!\",\"color\":15158332,\"fields\":[{\"name\":\"Branch\",\"value\":\"\`${{ github.ref_name }}\`\",\"inline\":true},{\"name\":\"Run\",\"value\":\"[View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\",\"inline\":true}],\"footer\":{\"text\":\"GitHub Actions\"}}]}" \
+            ${{ secrets.DISCORD_WEBHOOK_URL }}
