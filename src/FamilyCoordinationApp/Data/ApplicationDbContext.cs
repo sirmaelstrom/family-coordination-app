@@ -18,6 +18,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<RecipeDraft> RecipeDrafts => Set<RecipeDraft>();
     public DbSet<Feedback> Feedbacks => Set<Feedback>();
+    public DbSet<HouseholdRequest> HouseholdRequests => Set<HouseholdRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

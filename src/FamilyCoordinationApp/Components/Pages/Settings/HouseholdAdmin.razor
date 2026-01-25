@@ -1,0 +1,352 @@
+@page "/settings/households"
+@attribute [Authorize]
+@using FamilyCoordinationApp.Data
+@using FamilyCoordinationApp.Data.Entities
+@using FamilyCoordinationApp.Services
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject ISnackbar Snackbar
+@inject ISiteAdminService SiteAdminService
+@inject IDialogService DialogService
+@inject NavigationManager Navigation
+@inject ILogger<HouseholdAdmin> Logger
+
+<PageTitle>Household Requests - Family Kitchen</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+    @if (!_isSiteAdmin)
+    {
+        <MudAlert Severity="Severity.Error">
+            Access denied. Only site administrators can manage household requests.
+        </MudAlert>
+    }
+    else
+    {
+        <div class="d-flex justify-space-between align-center mb-4">
+            <MudText Typo="Typo.h4">Household Requests</MudText>
+            <MudToggleGroup T="string" @bind-Value="_filter" Color="Color.Primary" Rounded="true">
+                <MudToggleItem Value="@("pending")">Pending</MudToggleItem>
+                <MudToggleItem Value="@("all")">All</MudToggleItem>
+            </MudToggleGroup>
+        </div>
+
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" />
+        }
+        else if (!FilteredRequests.Any())
+        {
+            <MudAlert Severity="Severity.Info">
+                @if (_filter == "pending")
+                {
+                    <span>No pending household requests.</span>
+                }
+                else
+                {
+                    <span>No household requests yet.</span>
+                }
+            </MudAlert>
+        }
+        else
+        {
+            <MudStack Spacing="3">
+                @foreach (var request in FilteredRequests)
+                {
+                    <MudCard Elevation="2" Class="@GetCardClass(request)">
+                        <MudCardHeader>
+                            <CardHeaderAvatar>
+                                <MudAvatar Color="@GetStatusColor(request.Status)" Variant="Variant.Outlined">
+                                    <MudIcon Icon="@GetStatusIcon(request.Status)" />
+                                </MudAvatar>
+                            </CardHeaderAvatar>
+                            <CardHeaderContent>
+                                <div class="d-flex align-center gap-2 flex-wrap">
+                                    <MudText Typo="Typo.h6">@request.HouseholdName</MudText>
+                                    <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(request.Status)">
+                                        @request.Status
+                                    </MudChip>
+                                </div>
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                    <strong>@request.DisplayName</strong> (@request.Email)
+                                </MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    Requested: @request.RequestedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")
+                                    @if (request.ReviewedAt.HasValue)
+                                    {
+                                        <span> • Reviewed: @request.ReviewedAt.Value.ToLocalTime().ToString("MMM d, yyyy")</span>
+                                        @if (!string.IsNullOrEmpty(request.ReviewedBy))
+                                        {
+                                            <span> by @request.ReviewedBy</span>
+                                        }
+                                    }
+                                </MudText>
+                            </CardHeaderContent>
+                            <CardHeaderActions>
+                                @if (request.Status == HouseholdRequestStatus.Pending)
+                                {
+                                    <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+                                        <MudButton Color="Color.Success" 
+                                                   StartIcon="@Icons.Material.Filled.Check"
+                                                   OnClick="@(() => ApproveRequest(request))">
+                                            Approve
+                                        </MudButton>
+                                        <MudButton Color="Color.Error"
+                                                   StartIcon="@Icons.Material.Filled.Close"
+                                                   OnClick="@(() => RejectRequest(request))">
+                                            Reject
+                                        </MudButton>
+                                    </MudButtonGroup>
+                                }
+                            </CardHeaderActions>
+                        </MudCardHeader>
+                        @if (request.Status == HouseholdRequestStatus.Rejected && !string.IsNullOrEmpty(request.RejectionReason))
+                        {
+                            <MudCardContent Class="pt-0">
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                    <strong>Rejection reason:</strong> @request.RejectionReason
+                                </MudText>
+                            </MudCardContent>
+                        }
+                    </MudCard>
+                }
+            </MudStack>
+        }
+
+        <MudDivider Class="my-6" />
+
+        <MudText Typo="Typo.h5" Class="mb-4">Existing Households</MudText>
+        
+        @if (_households.Any())
+        {
+            <MudTable Items="_households" Hover="true" Breakpoint="Breakpoint.Sm">
+                <HeaderContent>
+                    <MudTh>Household</MudTh>
+                    <MudTh>Members</MudTh>
+                    <MudTh>Created</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Household">@context.Name</MudTd>
+                    <MudTd DataLabel="Members">@context.Users.Count</MudTd>
+                    <MudTd DataLabel="Created">@context.CreatedAt.ToLocalTime().ToString("MMM d, yyyy")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Info">No households exist yet.</MudAlert>
+        }
+    }
+</MudContainer>
+
+@implements IDisposable
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private List<HouseholdRequest> _requests = new();
+    private List<Household> _households = new();
+    private bool _loading = true;
+    private string _filter = "pending";
+    private bool _isSiteAdmin = false;
+    private string _currentEmail = "";
+    private System.Timers.Timer? _refreshTimer;
+
+    private IEnumerable<HouseholdRequest> FilteredRequests => _filter switch
+    {
+        "pending" => _requests.Where(r => r.Status == HouseholdRequestStatus.Pending),
+        _ => _requests
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCurrentUser();
+        
+        if (_isSiteAdmin)
+        {
+            await LoadData();
+            
+            // Auto-refresh every 30 seconds
+            _refreshTimer = new System.Timers.Timer(30000);
+            _refreshTimer.Elapsed += async (_, _) => await InvokeAsync(LoadData);
+            _refreshTimer.Start();
+        }
+    }
+
+    private async Task LoadCurrentUser()
+    {
+        if (AuthStateTask == null) return;
+
+        var authState = await AuthStateTask;
+        _currentEmail = authState.User.FindFirst(ClaimTypes.Email)?.Value ?? "";
+        _isSiteAdmin = SiteAdminService.IsSiteAdmin(_currentEmail);
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            await using var context = await DbFactory.CreateDbContextAsync();
+
+            _requests = await context.HouseholdRequests
+                .OrderByDescending(r => r.Status == HouseholdRequestStatus.Pending)
+                .ThenByDescending(r => r.RequestedAt)
+                .ToListAsync();
+
+            _households = await context.Households
+                .Include(h => h.Users)
+                .OrderBy(h => h.Name)
+                .ToListAsync();
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ApproveRequest(HouseholdRequest request)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Approve Request",
+            $"Create household '{request.HouseholdName}' for {request.DisplayName}?",
+            yesText: "Approve",
+            cancelText: "Cancel");
+
+        if (confirm != true) return;
+
+        try
+        {
+            await using var context = await DbFactory.CreateDbContextAsync();
+
+            // Create household
+            var household = new Household
+            {
+                Name = request.HouseholdName,
+                CreatedAt = DateTime.UtcNow
+            };
+            context.Households.Add(household);
+            await context.SaveChangesAsync();
+
+            // Create user in household
+            var user = new User
+            {
+                HouseholdId = household.Id,
+                Email = request.Email,
+                DisplayName = request.DisplayName,
+                GoogleId = request.GoogleId,
+                IsWhitelisted = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            context.Users.Add(user);
+
+            // Update request status
+            var dbRequest = await context.HouseholdRequests.FindAsync(request.Id);
+            if (dbRequest != null)
+            {
+                dbRequest.Status = HouseholdRequestStatus.Approved;
+                dbRequest.ReviewedAt = DateTime.UtcNow;
+                dbRequest.ReviewedBy = _currentEmail;
+            }
+
+            await context.SaveChangesAsync();
+
+            // Seed default categories for new household
+            await SeedData.SeedDefaultCategoriesAsync(DbFactory, household.Id);
+
+            Logger.LogInformation(
+                "Approved household request: {HouseholdName} for {Email} by {Admin}",
+                request.HouseholdName, request.Email, _currentEmail);
+
+            Snackbar.Add($"Approved: Created '{request.HouseholdName}' for {request.DisplayName}", Severity.Success);
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to approve household request {RequestId}", request.Id);
+            Snackbar.Add($"Failed to approve: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RejectRequest(HouseholdRequest request)
+    {
+        var parameters = new DialogParameters<RejectReasonDialog>
+        {
+            { x => x.RequestorName, request.DisplayName },
+            { x => x.HouseholdName, request.HouseholdName }
+        };
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small };
+        var dialog = await DialogService.ShowAsync<RejectReasonDialog>("Reject Request", parameters, options);
+        var result = await dialog.Result;
+
+        if (result.Canceled) return;
+
+        var reason = result.Data as string;
+
+        try
+        {
+            await using var context = await DbFactory.CreateDbContextAsync();
+
+            var dbRequest = await context.HouseholdRequests.FindAsync(request.Id);
+            if (dbRequest != null)
+            {
+                dbRequest.Status = HouseholdRequestStatus.Rejected;
+                dbRequest.ReviewedAt = DateTime.UtcNow;
+                dbRequest.ReviewedBy = _currentEmail;
+                dbRequest.RejectionReason = reason;
+                await context.SaveChangesAsync();
+            }
+
+            Logger.LogInformation(
+                "Rejected household request: {HouseholdName} for {Email} by {Admin}. Reason: {Reason}",
+                request.HouseholdName, request.Email, _currentEmail, reason);
+
+            Snackbar.Add($"Rejected request from {request.DisplayName}", Severity.Warning);
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to reject household request {RequestId}", request.Id);
+            Snackbar.Add($"Failed to reject: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static Color GetStatusColor(HouseholdRequestStatus status) => status switch
+    {
+        HouseholdRequestStatus.Pending => Color.Info,
+        HouseholdRequestStatus.Approved => Color.Success,
+        HouseholdRequestStatus.Rejected => Color.Error,
+        _ => Color.Default
+    };
+
+    private static string GetStatusIcon(HouseholdRequestStatus status) => status switch
+    {
+        HouseholdRequestStatus.Pending => Icons.Material.Filled.HourglassTop,
+        HouseholdRequestStatus.Approved => Icons.Material.Filled.CheckCircle,
+        HouseholdRequestStatus.Rejected => Icons.Material.Filled.Cancel,
+        _ => Icons.Material.Filled.Home
+    };
+
+    private static string GetCardClass(HouseholdRequest request) => request.Status switch
+    {
+        HouseholdRequestStatus.Pending => "pending-card",
+        _ => ""
+    };
+
+    public void Dispose()
+    {
+        _refreshTimer?.Stop();
+        _refreshTimer?.Dispose();
+    }
+}
+
+<style>
+    .pending-card {
+        border-left: 4px solid var(--mud-palette-info);
+    }
+</style>

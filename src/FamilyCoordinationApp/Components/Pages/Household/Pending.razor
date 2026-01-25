@@ -1,0 +1,251 @@
+@page "/household/pending"
+@rendermode InteractiveServer
+@attribute [AllowAnonymous]
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@using FamilyCoordinationApp.Data
+@using FamilyCoordinationApp.Data.Entities
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject NavigationManager Navigation
+@inject IHttpContextAccessor HttpContextAccessor
+@inject ILogger<Pending> Logger
+@implements IDisposable
+
+<PageTitle>Request Pending - Family Coordination</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="d-flex align-center justify-center" Style="min-height: 100vh;">
+    <MudPaper Elevation="4" Class="pa-8" Style="width: 100%; max-width: 450px;">
+        @if (!_isAuthenticated)
+        {
+            <div class="text-center mb-6">
+                <MudIcon Icon="@Icons.Material.Filled.Lock"
+                         Size="Size.Large"
+                         Color="Color.Warning"
+                         Style="font-size: 4rem;" />
+                <MudText Typo="Typo.h5" Class="mt-4">Please Sign In</MudText>
+                <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+                    Sign in to check your request status.
+                </MudText>
+            </div>
+
+            <form method="post" action="/account/login-google">
+                <input type="hidden" name="returnUrl" value="/household/pending" />
+                <MudButton ButtonType="ButtonType.Submit"
+                           Variant="Variant.Outlined"
+                           FullWidth="true"
+                           Size="Size.Large"
+                           Class="py-3">
+                    <svg class="mr-3" width="20" height="20" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                    </svg>
+                    Sign in with Google
+                </MudButton>
+            </form>
+        }
+        else if (_request == null)
+        {
+            <div class="text-center mb-6">
+                <MudIcon Icon="@Icons.Material.Filled.QuestionMark"
+                         Size="Size.Large"
+                         Color="Color.Warning"
+                         Style="font-size: 4rem;" />
+                <MudText Typo="Typo.h5" Class="mt-4">No Request Found</MudText>
+                <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+                    You don't have a pending household request.
+                </MudText>
+            </div>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       FullWidth="true"
+                       Href="/household/request">
+                Request a Household
+            </MudButton>
+        }
+        else if (_request.Status == HouseholdRequestStatus.Pending)
+        {
+            <div class="text-center mb-6">
+                <MudIcon Icon="@Icons.Material.Filled.HourglassTop"
+                         Size="Size.Large"
+                         Color="Color.Info"
+                         Style="font-size: 4rem;" />
+                <MudText Typo="Typo.h4" Class="mt-4">Request Pending</MudText>
+                <MudText Typo="Typo.body1" Color="Color.Secondary">Your request is awaiting approval</MudText>
+            </div>
+
+            <MudPaper Class="pa-4 mb-4" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Requested household:</MudText>
+                <MudText Typo="Typo.h6" Class="mb-2">@_request.HouseholdName</MudText>
+                
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Submitted:</MudText>
+                <MudText Typo="Typo.body1">@_request.RequestedAt.ToLocalTime().ToString("MMMM d, yyyy 'at' h:mm tt")</MudText>
+            </MudPaper>
+
+            <MudAlert Severity="Severity.Info" Dense="true">
+                <MudText Typo="Typo.body2">
+                    A site administrator will review your request shortly. You'll be able to access the app once approved.
+                </MudText>
+            </MudAlert>
+
+            <MudButton Variant="Variant.Text"
+                       Color="Color.Secondary"
+                       FullWidth="true"
+                       Class="mt-4"
+                       OnClick="RefreshStatus">
+                <MudIcon Icon="@Icons.Material.Filled.Refresh" Class="mr-2" />
+                Check Status
+            </MudButton>
+        }
+        else if (_request.Status == HouseholdRequestStatus.Approved)
+        {
+            <div class="text-center mb-6">
+                <MudIcon Icon="@Icons.Material.Filled.CheckCircle"
+                         Size="Size.Large"
+                         Color="Color.Success"
+                         Style="font-size: 4rem;" />
+                <MudText Typo="Typo.h4" Class="mt-4">Request Approved!</MudText>
+                <MudText Typo="Typo.body1" Color="Color.Secondary">Welcome to @_request.HouseholdName</MudText>
+            </div>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       FullWidth="true"
+                       Size="Size.Large"
+                       Href="/"
+                       Class="@(_autoRedirect ? "" : "")">
+                Get Started
+            </MudButton>
+        }
+        else if (_request.Status == HouseholdRequestStatus.Rejected)
+        {
+            <div class="text-center mb-6">
+                <MudIcon Icon="@Icons.Material.Filled.Cancel"
+                         Size="Size.Large"
+                         Color="Color.Error"
+                         Style="font-size: 4rem;" />
+                <MudText Typo="Typo.h4" Class="mt-4">Request Declined</MudText>
+                <MudText Typo="Typo.body1" Color="Color.Secondary">Your household request was not approved</MudText>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_request.RejectionReason))
+            {
+                <MudAlert Severity="Severity.Warning" Class="mb-4">
+                    <MudText Typo="Typo.body2"><strong>Reason:</strong> @_request.RejectionReason</MudText>
+                </MudAlert>
+            }
+
+            <MudPaper Class="pa-4 mb-4" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Reviewed on:</MudText>
+                <MudText Typo="Typo.body1">@_request.ReviewedAt?.ToLocalTime().ToString("MMMM d, yyyy")</MudText>
+            </MudPaper>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       FullWidth="true"
+                       Href="/household/request">
+                Submit New Request
+            </MudButton>
+        }
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private bool _isAuthenticated;
+    private string _userEmail = "";
+    private HouseholdRequest? _request;
+    private bool _autoRedirect;
+    private System.Timers.Timer? _refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = HttpContextAccessor.HttpContext?.User;
+        _isAuthenticated = user?.Identity?.IsAuthenticated == true;
+
+        if (_isAuthenticated)
+        {
+            _userEmail = user!.FindFirst(ClaimTypes.Email)?.Value ?? "";
+            await LoadRequest();
+
+            // If user is already in a household, redirect home
+            await using var context = await DbFactory.CreateDbContextAsync();
+            var existingUser = await context.Users.FirstOrDefaultAsync(u => u.Email == _userEmail);
+            if (existingUser != null)
+            {
+                Navigation.NavigateTo("/", forceLoad: true);
+                return;
+            }
+
+            // Auto-refresh every 30 seconds to check for approval
+            _refreshTimer = new System.Timers.Timer(30000);
+            _refreshTimer.Elapsed += async (_, _) => await InvokeAsync(CheckForApproval);
+            _refreshTimer.Start();
+        }
+    }
+
+    private async Task LoadRequest()
+    {
+        await using var context = await DbFactory.CreateDbContextAsync();
+        _request = await context.HouseholdRequests
+            .OrderByDescending(r => r.RequestedAt)
+            .FirstOrDefaultAsync(r => r.Email == _userEmail);
+    }
+
+    private async Task RefreshStatus()
+    {
+        await LoadRequest();
+
+        // If approved, redirect home
+        if (_request?.Status == HouseholdRequestStatus.Approved)
+        {
+            await Task.Delay(1000);
+            Navigation.NavigateTo("/", forceLoad: true);
+        }
+    }
+
+    private async Task CheckForApproval()
+    {
+        try
+        {
+            await using var context = await DbFactory.CreateDbContextAsync();
+            
+            // Check if user now exists in a household (approved)
+            var existingUser = await context.Users.FirstOrDefaultAsync(u => u.Email == _userEmail);
+            if (existingUser != null)
+            {
+                Navigation.NavigateTo("/", forceLoad: true);
+                return;
+            }
+
+            // Reload request status
+            var request = await context.HouseholdRequests
+                .OrderByDescending(r => r.RequestedAt)
+                .FirstOrDefaultAsync(r => r.Email == _userEmail);
+
+            if (request?.Status != _request?.Status)
+            {
+                _request = request;
+                StateHasChanged();
+
+                if (request?.Status == HouseholdRequestStatus.Approved)
+                {
+                    _autoRedirect = true;
+                    await Task.Delay(2000);
+                    Navigation.NavigateTo("/", forceLoad: true);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Error checking approval status");
+        }
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Stop();
+        _refreshTimer?.Dispose();
+    }
+}

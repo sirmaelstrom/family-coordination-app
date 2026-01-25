@@ -1,4 +1,7 @@
 @using MudBlazor
+@using System.Security.Claims
+@using FamilyCoordinationApp.Services
+@inject ISiteAdminService SiteAdminService
 
 <MudNavMenu Bordered="true" Color="Color.Primary" Class="pa-2">
     @if (IsExpanded)
@@ -44,11 +47,37 @@
     <MudNavLink Href="/settings/feedback" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Feedback">
         @if (IsExpanded) { <text>Feedback</text> }
     </MudNavLink>
+
+    @if (_isSiteAdmin)
+    {
+        <MudDivider Class="my-2" />
+        <MudText Typo="Typo.caption" Class="px-3 py-1" Color="Color.Secondary">
+            @if (IsExpanded) { <text>Admin</text> }
+        </MudText>
+        <MudNavLink Href="/settings/households" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AdminPanelSettings">
+            @if (IsExpanded) { <text>Household Requests</text> }
+        </MudNavLink>
+    }
 </MudNavMenu>
 
 @code {
     [Parameter]
     public bool IsExpanded { get; set; } = true;
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private bool _isSiteAdmin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask != null)
+        {
+            var authState = await AuthStateTask;
+            var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+            _isSiteAdmin = SiteAdminService.IsSiteAdmin(email);
+        }
+    }
 }
 
 <style>
