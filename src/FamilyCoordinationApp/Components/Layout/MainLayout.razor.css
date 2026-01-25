@@ -1,10 +1,17 @@
+/* Main content area - flex to push footer down */
+::deep .mud-main-content {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 48px); /* Account for app bar */
+}
+
 /* Main content wrapper */
 .content-wrapper {
     padding: 1rem;
-    min-height: calc(100vh - 180px);
+    flex: 1;
 }
 
-/* Footer styling */
+/* Footer styling - always at bottom */
 .app-footer {
     margin-top: auto;
     border-top: 1px solid var(--mud-palette-divider, rgba(0,0,0,0.12));
