@@ -1,0 +1,64 @@
+@page "/privacy"
+@using Microsoft.AspNetCore.Authorization
+
+<PageTitle>Privacy Policy - Family Kitchen</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="py-6">
+    <MudText Typo="Typo.h3" Class="mb-4">Privacy Policy</MudText>
+    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-4">Last updated: January 25, 2026</MudText>
+    
+    <MudPaper Class="pa-4 mb-4" Elevation="0">
+        <MudText Typo="Typo.h5" Class="mb-2">What We Collect</MudText>
+        <MudText Typo="Typo.body1" Class="mb-3">
+            Family Kitchen collects minimal information needed to provide our service:
+        </MudText>
+        <MudList T="string" Dense="true">
+            <MudListItem T="string" Icon="@Icons.Material.Filled.Email">
+                <strong>Email address</strong> — Used for authentication and to identify your account
+            </MudListItem>
+            <MudListItem T="string" Icon="@Icons.Material.Filled.Person">
+                <strong>Display name and profile picture</strong> — From your Google account, shown to household members
+            </MudListItem>
+            <MudListItem T="string" Icon="@Icons.Material.Filled.Kitchen">
+                <strong>Recipe and meal plan data</strong> — Content you create within the app
+            </MudListItem>
+        </MudList>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0">
+        <MudText Typo="Typo.h5" Class="mb-2">How We Use Your Data</MudText>
+        <MudText Typo="Typo.body1">
+            Your data is used solely to provide the Family Kitchen service to you and your household members. 
+            We do not sell, share, or use your data for advertising purposes.
+        </MudText>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0">
+        <MudText Typo="Typo.h5" Class="mb-2">Data Storage</MudText>
+        <MudText Typo="Typo.body1">
+            All data is stored on privately-owned servers. We do not use third-party cloud services 
+            for data storage. Your recipes, meal plans, and shopping lists remain under our direct control.
+        </MudText>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0">
+        <MudText Typo="Typo.h5" Class="mb-2">Data Deletion</MudText>
+        <MudText Typo="Typo.body1">
+            You may request deletion of your account and all associated data at any time by contacting 
+            the household administrator.
+        </MudText>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0">
+        <MudText Typo="Typo.h5" Class="mb-2">Contact</MudText>
+        <MudText Typo="Typo.body1">
+            For privacy-related questions, please contact the Heath family household administrator.
+        </MudText>
+    </MudPaper>
+
+    <div class="d-flex justify-center mt-6">
+        <MudButton Href="/" Color="Color.Primary" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Home">
+            Back to Home
+        </MudButton>
+    </div>
+</MudContainer>
