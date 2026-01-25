@@ -22,7 +22,7 @@
         SyncStatus.Synced => $"Synced {GetTimeSinceLastSync()}",
         SyncStatus.Syncing => "Syncing...",
         SyncStatus.Offline => "Offline - changes may not sync",
-        SyncStatus.Error => $"Sync error: {PollingService.LastError ?? "Unknown"} (retry {PollingService.ConsecutiveErrors})",
+        SyncStatus.Error => $"Sync error (retry {PollingService.ConsecutiveErrors})",
         _ => "Unknown status"
     };
 
