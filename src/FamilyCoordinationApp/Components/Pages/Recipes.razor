@@ -294,7 +294,7 @@
             }
 
             <!-- Source URL -->
-            @if (!string.IsNullOrWhiteSpace(_selectedRecipe.SourceUrl))
+            @if (!string.IsNullOrWhiteSpace(_selectedRecipe.SourceUrl) && IsSafeUrl(_selectedRecipe.SourceUrl))
             {
                 <div class="d-flex align-center mb-4">
                     <MudIcon Icon="@Icons.Material.Filled.Link" Size="Size.Small" Class="mr-2" />
@@ -733,6 +733,11 @@
             StateHasChanged();
         });
     }
+
+    private static bool IsSafeUrl(string? url) =>
+        !string.IsNullOrEmpty(url) &&
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+        (uri.Scheme == "http" || uri.Scheme == "https");
 
     public void Dispose()
     {

@@ -205,7 +205,7 @@
 
         await DialogService.ShowMessageBox(
             "Custom Meal",
-            (MarkupString)string.Join("\n", content).Replace("\n", "<br/>"),
+            (MarkupString)MarkdownHelper.ToSafeHtml(string.Join("\n", content)),
             yesText: "Close");
     }
 

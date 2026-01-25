@@ -52,12 +52,19 @@
                         <MudIcon Icon="@Icons.Material.Filled.CloudDownload" Size="Size.Small" Class="mr-2" />
                         <MudText Typo="Typo.body2">
                             Imported from
-                            <a href="@_recipe.SourceUrl"
-                               target="_blank"
-                               rel="noopener noreferrer"
-                               class="mud-link">
-                                @GetDomainFromUrl(_recipe.SourceUrl)
-                            </a>
+                            @if (IsSafeUrl(_recipe.SourceUrl))
+                            {
+                                <a href="@_recipe.SourceUrl"
+                                   target="_blank"
+                                   rel="noopener noreferrer"
+                                   class="mud-link">
+                                    @GetDomainFromUrl(_recipe.SourceUrl)
+                                </a>
+                            }
+                            else
+                            {
+                                <span>@GetDomainFromUrl(_recipe.SourceUrl)</span>
+                            }
                         </MudText>
                     </div>
                 </MudAlert>
@@ -550,6 +557,11 @@
             return url;
         }
     }
+
+    private static bool IsSafeUrl(string? url) =>
+        !string.IsNullOrEmpty(url) &&
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+        (uri.Scheme == "http" || uri.Scheme == "https");
 
     private static string GetRecipeTypeLabel(RecipeType type) => type switch
     {

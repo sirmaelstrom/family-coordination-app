@@ -231,6 +231,14 @@ app.MapPost("/account/login-google", async (HttpContext context) =>
     var form = await context.Request.ReadFormAsync();
     var returnUrl = form["returnUrl"].FirstOrDefault() ?? "/";
 
+    // Prevent open redirect - only allow local URLs
+    if (!Uri.TryCreate(returnUrl, UriKind.Relative, out _) ||
+        returnUrl.StartsWith("//") ||
+        returnUrl.StartsWith("/\\"))
+    {
+        returnUrl = "/";
+    }
+
     var properties = new AuthenticationProperties
     {
         RedirectUri = returnUrl,
