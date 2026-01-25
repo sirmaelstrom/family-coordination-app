@@ -17,8 +17,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Meal Planning** - Weekly calendar with recipe assignment
 - [x] **Phase 4: Shopping List Core** - Auto-generation with smart consolidation
 - [x] **Phase 5: Multi-User Collaboration** - Household sharing with polling-based sync
-- [ ] **Phase 6: Recipe Import** - URL scraping with automatic parsing
-- [ ] **Phase 7: Mobile & UX Polish** - PWA support and touch optimization
+- [x] **Phase 6: Recipe Import** - URL scraping with automatic parsing
+- [x] **Phase 7: Mobile & UX Polish** - PWA support and touch optimization
 
 ## Phase Details
 
@@ -157,11 +157,11 @@ Plans:
 **Plans**: 5 plans
 
 Plans:
-- [ ] 07-01-PLAN.md — PWA infrastructure: manifest.json, service worker, icons
-- [ ] 07-02-PLAN.md — Touch target optimization for shopping list and buttons
-- [ ] 07-03-PLAN.md — Responsive layout verification and fixes
-- [ ] 07-04-PLAN.md — Sync status indicator in header
-- [ ] 07-05-PLAN.md — Human verification of mobile experience
+- [x] 07-01-PLAN.md — PWA infrastructure: manifest.json, service worker, icons
+- [x] 07-02-PLAN.md — Touch target optimization for shopping list and buttons
+- [x] 07-03-PLAN.md — Responsive layout verification and fixes
+- [x] 07-04-PLAN.md — Sync status indicator in header
+- [x] 07-05-PLAN.md — Human verification of mobile experience
 
 ## Progress
 
@@ -176,7 +176,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 4. Shopping List Core | 6/6 | Complete | 2026-01-24 |
 | 5. Multi-User Collaboration | 7/7 | Complete | 2026-01-24 |
 | 6. Recipe Import | 6/6 | Complete | 2026-01-24 |
-| 7. Mobile & UX Polish | 0/5 | Planned | - |
+| 7. Mobile & UX Polish | 5/5 | Complete | 2026-01-24 |
 
 ---
 *Created: 2026-01-22*
