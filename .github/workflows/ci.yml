@@ -1,0 +1,86 @@
+name: CI - Build & Test
+
+# ============================================================
+# SAFE FOR PUBLIC FORKS
+# - Runs on GitHub-hosted runners (no access to self-hosted infra)
+# - NO secrets used (secrets.* not referenced anywhere)
+# - Build and test only, NO deployment
+# ============================================================
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+    # Also run on push so main branch shows CI status
+
+concurrency:
+  group: ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest  # GitHub-hosted, safe for untrusted code
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+          
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+            
+      - name: Restore dependencies
+        run: dotnet restore
+        
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+        
+      - name: Run tests
+        run: dotnet test --no-build --configuration Release --verbosity normal
+        
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+          
+      - name: Check formatting
+        run: dotnet format --verify-no-changes --verbosity diagnostic || echo "::warning::Code formatting issues found"
+        
+  docker-build:
+    name: Docker Build (Validation)
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Build Docker image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false  # Never push from PRs
+          tags: familyapp:ci-test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

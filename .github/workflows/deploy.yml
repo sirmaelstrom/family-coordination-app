@@ -1,12 +1,55 @@
 name: Deploy to Production
 
+# ============================================================
+# TRUSTED CODE ONLY - Self-hosted runner
+# - NEVER runs on pull_request (explicit exclusion below)
+# - Only triggers on push to main/master (already-merged code)
+# - Uses secrets (DISCORD_WEBHOOK_URL)
+# - Runs on self-hosted infrastructure
+# ============================================================
+
 on:
   push:
     branches: [main, master]
   workflow_dispatch:
+  # SECURITY: No pull_request trigger. PRs from forks cannot trigger this.
 
+# Explicit permissions - principle of least privilege
+permissions:
+  contents: read
+  
 jobs:
+  # Guard job - extra safety check
+  verify-trusted:
+    name: Verify Trusted Context
+    runs-on: ubuntu-latest  # Quick check on GitHub-hosted first
+    outputs:
+      is-trusted: ${{ steps.check.outputs.trusted }}
+    steps:
+      - name: Check trigger context
+        id: check
+        run: |
+          # Fail if somehow triggered by PR (shouldn't be possible, but defense in depth)
+          if [ "${{ github.event_name }}" = "pull_request" ] || [ "${{ github.event_name }}" = "pull_request_target" ]; then
+            echo "❌ SECURITY: Deploy cannot run on pull requests"
+            echo "trusted=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # Verify we're on a protected branch
+          if [ "${{ github.ref }}" != "refs/heads/main" ] && [ "${{ github.ref }}" != "refs/heads/master" ]; then
+            echo "❌ SECURITY: Deploy only runs on main/master, got: ${{ github.ref }}"
+            echo "trusted=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          echo "✅ Trusted context verified"
+          echo "trusted=true" >> $GITHUB_OUTPUT
+
   deploy:
+    name: Deploy
+    needs: verify-trusted
+    if: needs.verify-trusted.outputs.is-trusted == 'true'
     runs-on: self-hosted
     
     steps:
@@ -52,14 +95,22 @@ jobs:
 
       - name: Notify Discord (Success)
         if: success()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          curl -H "Content-Type: application/json" \
-            -d "{\"embeds\":[{\"title\":\"✅ Deploy Successful\",\"description\":\"**family-coordination-app** deployed to production\",\"color\":5025616,\"fields\":[{\"name\":\"Commit\",\"value\":\"\`$(cd ~/familyapp && git rev-parse --short HEAD)\`\",\"inline\":true},{\"name\":\"Branch\",\"value\":\"\`${{ github.ref_name }}\`\",\"inline\":true}],\"footer\":{\"text\":\"GitHub Actions\"}}]}" \
-            ${{ secrets.DISCORD_WEBHOOK_URL }}
+          if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+            curl -H "Content-Type: application/json" \
+              -d "{\"embeds\":[{\"title\":\"✅ Deploy Successful\",\"description\":\"**family-coordination-app** deployed to production\",\"color\":5025616,\"fields\":[{\"name\":\"Commit\",\"value\":\"\`$(cd ~/familyapp && git rev-parse --short HEAD)\`\",\"inline\":true},{\"name\":\"Branch\",\"value\":\"\`${{ github.ref_name }}\`\",\"inline\":true}],\"footer\":{\"text\":\"GitHub Actions\"}}]}" \
+              "$DISCORD_WEBHOOK_URL"
+          fi
 
       - name: Notify Discord (Failure)
         if: failure()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          curl -H "Content-Type: application/json" \
-            -d "{\"embeds\":[{\"title\":\"❌ Deploy Failed\",\"description\":\"**family-coordination-app** deployment failed!\",\"color\":15158332,\"fields\":[{\"name\":\"Branch\",\"value\":\"\`${{ github.ref_name }}\`\",\"inline\":true},{\"name\":\"Run\",\"value\":\"[View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\",\"inline\":true}],\"footer\":{\"text\":\"GitHub Actions\"}}]}" \
-            ${{ secrets.DISCORD_WEBHOOK_URL }}
+          if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+            curl -H "Content-Type: application/json" \
+              -d "{\"embeds\":[{\"title\":\"❌ Deploy Failed\",\"description\":\"**family-coordination-app** deployment failed!\",\"color\":15158332,\"fields\":[{\"name\":\"Branch\",\"value\":\"\`${{ github.ref_name }}\`\",\"inline\":true},{\"name\":\"Run\",\"value\":\"[View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\",\"inline\":true}],\"footer\":{\"text\":\"GitHub Actions\"}}]}" \
+              "$DISCORD_WEBHOOK_URL"
+          fi
