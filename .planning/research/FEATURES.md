@@ -214,7 +214,7 @@ Based on 2026 market leaders:
 | **Shopping List** | Auto-generated, by aisle | Auto-generated, delivery integration | Auto-generated, delivery | Auto-generated | Auto-generated, smart consolidation (differentiator), no delivery (anti-feature) |
 | **Collaboration** | Multi-user sync | Multi-user sync | Family profiles + sync | Individual only | Multi-user sync (MVP), real-time (v1.1) |
 | **Mobile UX** | iOS/Android apps | iOS/Android apps | Mobile-first AI | Mobile-only | Mobile-first web (responsive), cross-platform |
-| **Pricing** | $49/year | Premium tier | AI premium | Free tier + premium | TBD (freemium likely) |
+| **Pricing** | $49/year | Premium tier | AI premium | Free tier + premium | Open source (MIT) |
 | **Differentiator** | Bring-your-own recipes | 1M+ recipe database | AI personalization | Fast weeknight cooking | Real-time family coordination |
 
 **Our positioning**: Lean into real-time collaboration as differentiator vs Ollie's AI or BigOven's recipe corpus. Compete on "family coordination made easy" not "most recipes" or "smartest AI".

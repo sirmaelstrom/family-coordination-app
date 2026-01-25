@@ -48,7 +48,7 @@ docker-compose up -d
 ## Project Structure
 
 - `src/FamilyCoordinationApp/` - Main application code
-- `.planning/` - Project planning documents, roadmaps, and phase plans
+- `tests/FamilyCoordinationApp.Tests/` - Unit and integration tests
 - `Dockerfile.runtime-only` - Docker build configuration (workaround for SDK bug)
 - `docker-build.sh` - Automated Docker build script
 
@@ -61,9 +61,13 @@ docker-compose up -d
 - MudBlazor UI components
 - Google OAuth authentication
 
-## Development Status
+## Features
 
-This project is under active development. See `.planning/ROADMAP.md` for feature roadmap and `.planning/STATE.md` for current progress.
+- **Recipe Management** - Import from URLs, manual entry, ingredient parsing
+- **Meal Planning** - Weekly calendar with drag-and-drop scheduling
+- **Shopping Lists** - Auto-generated from meal plans with ingredient consolidation
+- **Multi-Household** - Family collaboration with role-based permissions
+- **Google OAuth** - Secure authentication
 
 ## License
 
