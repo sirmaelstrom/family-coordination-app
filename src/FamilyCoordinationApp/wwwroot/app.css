@@ -17,21 +17,28 @@ h1:focus {
     margin-right: 0 !important;
 }
 
-/* Hover delay on drawer - only expand after 300ms hover */
-.mud-drawer-mini {
-    transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1) 0.3s !important;
+/* Simple smooth transitions */
+.mud-drawer {
+    transition: width 0.2s ease-out !important;
 }
 
-.mud-drawer-mini:hover {
-    transition-delay: 0s !important;
-}
-
-/* Main content shift - smooth */
 .mud-main-content {
-    transition: padding-left 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    transition: padding-left 0.2s ease-out !important;
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: calc(100vh - 48px) !important;
 }
 
-/* Nav links - subtle */
+/* Push footer to bottom */
+.content-wrapper {
+    flex: 1 0 auto;
+}
+
+.app-footer {
+    flex-shrink: 0;
+}
+
+/* Nav links */
 .mud-nav-link {
     transition: background-color 0.15s ease-out !important;
 }
