@@ -1,8 +1,10 @@
 ﻿@page "/"
 @attribute [Authorize]
 @using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@using FamilyCoordinationApp.Data
 @using FamilyCoordinationApp.Services
-@inject SetupService SetupService
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject IHttpContextAccessor HttpContextAccessor
 
 <PageTitle>Home - Family Coordination</PageTitle>
@@ -41,12 +43,19 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var user = HttpContextAccessor.HttpContext?.User;
-        _displayName = user?.FindFirst(ClaimTypes.Name)?.Value
-            ?? user?.FindFirst(ClaimTypes.Email)?.Value
+        var claimsPrincipal = HttpContextAccessor.HttpContext?.User;
+        _displayName = claimsPrincipal?.FindFirst(ClaimTypes.Name)?.Value
+            ?? claimsPrincipal?.FindFirst(ClaimTypes.Email)?.Value
             ?? "there";
 
-        var household = await SetupService.GetHouseholdAsync();
-        _householdName = household?.Name ?? "Your Household";
+        var email = claimsPrincipal?.FindFirst(ClaimTypes.Email)?.Value;
+        if (!string.IsNullOrEmpty(email))
+        {
+            await using var context = await DbFactory.CreateDbContextAsync();
+            var user = await context.Users
+                .Include(u => u.Household)
+                .FirstOrDefaultAsync(u => u.Email == email);
+            _householdName = user?.Household?.Name ?? "Your Household";
+        }
     }
 }

@@ -42,6 +42,13 @@
                               Class="mt-3" />
             </MudTabPanel>
         </MudTabs>
+
+        <MudTextField @bind-Value="_notes"
+                      Label="Notes (optional)"
+                      Placeholder="e.g., Make extra for tomorrow, use up leftover chicken"
+                      Variant="Variant.Outlined"
+                      Lines="2"
+                      Class="mt-4" />
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Cancel">Cancel</MudButton>
@@ -58,6 +65,7 @@
 
     private Recipe? _selectedRecipe;
     private string? _customMealName;
+    private string? _notes;
 
     private bool CanSubmit => _selectedRecipe != null || !string.IsNullOrWhiteSpace(_customMealName);
 
@@ -78,7 +86,8 @@
         var result = new MealSelection
         {
             RecipeId = _selectedRecipe?.RecipeId,
-            CustomMealName = _selectedRecipe == null ? _customMealName?.Trim() : null
+            CustomMealName = _selectedRecipe == null ? _customMealName?.Trim() : null,
+            Notes = _notes?.Trim()
         };
         MudDialog.Close(DialogResult.Ok(result));
     }
@@ -88,5 +97,6 @@
     {
         public int? RecipeId { get; set; }
         public string? CustomMealName { get; set; }
+        public string? Notes { get; set; }
     }
 }

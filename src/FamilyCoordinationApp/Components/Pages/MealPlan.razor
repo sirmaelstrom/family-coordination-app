@@ -78,8 +78,12 @@
 
         await using var context = await DbFactory.CreateDbContextAsync();
         var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
-        _householdId = user?.HouseholdId ?? 1;
-        _userId = user?.Id ?? 0;
+        if (user == null)
+        {
+            throw new InvalidOperationException("User not found. Please log in again.");
+        }
+        _householdId = user.HouseholdId;
+        _userId = user.Id;
     }
 
     private void OnDataChanged()
@@ -142,6 +146,7 @@
                 slot.MealType,
                 selection.RecipeId,
                 selection.CustomMealName,
+                selection.Notes,
                 _userId);
 
             await LoadMealPlanAsync();

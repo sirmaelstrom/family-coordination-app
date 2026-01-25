@@ -7,7 +7,7 @@ namespace FamilyCoordinationApp.Services;
 public interface IMealPlanService
 {
     Task<MealPlan> GetOrCreateMealPlanAsync(int householdId, DateOnly weekStart, CancellationToken ct = default);
-    Task<MealPlanEntry> AddMealAsync(int householdId, DateOnly date, MealType mealType, int? recipeId, string? customMealName, int? userId = null, CancellationToken ct = default);
+    Task<MealPlanEntry> AddMealAsync(int householdId, DateOnly date, MealType mealType, int? recipeId, string? customMealName, string? notes = null, int? userId = null, CancellationToken ct = default);
     Task RemoveMealAsync(int householdId, int mealPlanId, int entryId, CancellationToken ct = default);
     DateOnly GetWeekStartDate(DateOnly date);
     DateOnly[] GetWeekDays(DateOnly weekStart);
@@ -54,7 +54,7 @@ public class MealPlanService(
         return mealPlan;
     }
 
-    public async Task<MealPlanEntry> AddMealAsync(int householdId, DateOnly date, MealType mealType, int? recipeId, string? customMealName, int? userId = null, CancellationToken ct = default)
+    public async Task<MealPlanEntry> AddMealAsync(int householdId, DateOnly date, MealType mealType, int? recipeId, string? customMealName, string? notes = null, int? userId = null, CancellationToken ct = default)
     {
         if (recipeId.HasValue && !string.IsNullOrWhiteSpace(customMealName))
         {
@@ -84,6 +84,7 @@ public class MealPlanService(
             // Update existing entry
             existingEntry.RecipeId = recipeId;
             existingEntry.CustomMealName = customMealName;
+            existingEntry.Notes = notes;
             existingEntry.UpdatedAt = DateTime.UtcNow;
             existingEntry.UpdatedByUserId = userId;
 
@@ -105,7 +106,8 @@ public class MealPlanService(
             Date = date,
             MealType = mealType,
             RecipeId = recipeId,
-            CustomMealName = customMealName
+            CustomMealName = customMealName,
+            Notes = notes
         };
 
         context.MealPlanEntries.Add(entry);

@@ -39,9 +39,24 @@
 
         @if (_error != null)
         {
-            <MudAlert Severity="Severity.Warning" Class="mb-4">
+            <MudAlert Severity="@(_existingRecipe != null ? Severity.Info : Severity.Warning)" Class="mb-4">
                 <MudText>@_error</MudText>
-                @if (_showManualOption)
+                @if (_existingRecipe != null)
+                {
+                    <div class="d-flex gap-2 mt-2">
+                        <MudButton Variant="Variant.Text"
+                                   Color="Color.Primary"
+                                   OnClick="ViewExistingRecipe">
+                            View Existing
+                        </MudButton>
+                        <MudButton Variant="Variant.Text"
+                                   Color="Color.Secondary"
+                                   OnClick="ImportAnyway">
+                            Import Anyway
+                        </MudButton>
+                    </div>
+                }
+                else if (_showManualOption)
                 {
                     <MudButton Variant="Variant.Text"
                                Color="Color.Primary"
@@ -80,6 +95,8 @@
     private string? _error;
     private bool _showManualOption;
     private PartialRecipeData? _partialData;
+    private Recipe? _existingRecipe;
+    private bool _duplicateWarningShown;
 
     private void Cancel() => MudDialog.Cancel();
 
@@ -104,6 +121,24 @@
             {
                 _error = "Could not determine current user.";
                 return;
+            }
+
+            // Check for duplicate URL
+            if (!_duplicateWarningShown)
+            {
+                _existingRecipe = await context.Recipes
+                    .FirstOrDefaultAsync(r => r.HouseholdId == user.HouseholdId 
+                                           && r.SourceUrl != null 
+                                           && r.SourceUrl == _url 
+                                           && !r.IsDeleted);
+                
+                if (_existingRecipe != null)
+                {
+                    _error = $"This recipe has already been imported as \"{_existingRecipe.Name}\". Import again to use as a base for a new recipe.";
+                    _showManualOption = false;
+                    _duplicateWarningShown = true;
+                    return;
+                }
             }
 
             var result = await ImportService.ImportFromUrlAsync(_url, user.HouseholdId, user.Id);
@@ -148,5 +183,23 @@
         // Navigate to new recipe page
         // Future enhancement: pass partial data via query string or state
         Navigation.NavigateTo("/recipes/new");
+    }
+
+    private void ViewExistingRecipe()
+    {
+        if (_existingRecipe != null)
+        {
+            MudDialog.Close(DialogResult.Cancel());
+            Navigation.NavigateTo($"/recipes/edit/{_existingRecipe.RecipeId}");
+        }
+    }
+
+    private async Task ImportAnyway()
+    {
+        // Clear the duplicate warning and re-import
+        _error = null;
+        _existingRecipe = null;
+        // Keep _duplicateWarningShown = true so we skip the check on retry
+        await ImportRecipe();
     }
 }
