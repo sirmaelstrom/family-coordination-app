@@ -234,11 +234,33 @@
                             Cook: @_selectedRecipe.CookTimeMinutes min
                         </MudChip>
                     }
-                    @if (_selectedRecipe.Servings.HasValue)
+                </div>
+            }
+
+            <!-- Servings scaler -->
+            @if (_selectedRecipe.Servings.HasValue)
+            {
+                <div class="d-flex align-center gap-2 mb-4">
+                    <MudIcon Icon="@Icons.Material.Filled.Restaurant" Color="Color.Success" />
+                    <MudText Typo="Typo.body2">Servings:</MudText>
+                    <MudIconButton Icon="@Icons.Material.Filled.Remove"
+                                   Size="Size.Small"
+                                   OnClick="DecreaseServings"
+                                   Disabled="@(_scaledServings <= 1)" />
+                    <MudText Typo="Typo.body1" Class="mx-1" Style="min-width: 24px; text-align: center;">
+                        <strong>@_scaledServings</strong>
+                    </MudText>
+                    <MudIconButton Icon="@Icons.Material.Filled.Add"
+                                   Size="Size.Small"
+                                   OnClick="IncreaseServings" />
+                    @if (_scaledServings != _selectedRecipe.Servings)
                     {
-                        <MudChip T="string" Icon="@Icons.Material.Filled.Restaurant" Size="Size.Small" Color="Color.Success">
-                            Servings: @_selectedRecipe.Servings
+                        <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">
+                            @GetScalingLabel()
                         </MudChip>
+                        <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="ResetServings">
+                            Reset
+                        </MudButton>
                     }
                 </div>
             }
@@ -416,6 +438,7 @@
 
     private Recipe? _selectedRecipe;
     private bool _drawerOpen;
+    private int _scaledServings;
 
     private bool _showDeleteDialog;
     private Recipe? _recipeToDelete;
@@ -503,6 +526,7 @@
     private void HandleCardClick(Recipe recipe)
     {
         _selectedRecipe = recipe;
+        _scaledServings = recipe.Servings ?? 1;
         _drawerOpen = true;
     }
 
@@ -601,7 +625,8 @@
 
         if (ingredient.Quantity.HasValue)
         {
-            parts.Add(ingredient.Quantity.Value.ToString("0.##"));
+            var scaledQty = GetScaledQuantity(ingredient.Quantity.Value);
+            parts.Add(FormatQuantity(scaledQty));
         }
 
         if (!string.IsNullOrWhiteSpace(ingredient.Unit))
@@ -617,6 +642,71 @@
         }
 
         return string.Join(" ", parts);
+    }
+
+    // Servings scaling methods
+    private decimal GetScalingFactor()
+    {
+        if (_selectedRecipe?.Servings == null || _selectedRecipe.Servings == 0)
+            return 1m;
+        return (decimal)_scaledServings / _selectedRecipe.Servings.Value;
+    }
+
+    private decimal GetScaledQuantity(decimal original)
+    {
+        return original * GetScalingFactor();
+    }
+
+    private string FormatQuantity(decimal qty)
+    {
+        // Round to sensible fractions
+        if (qty == Math.Floor(qty))
+            return ((int)qty).ToString();
+
+        // Common fractions
+        var fractionalPart = qty - Math.Floor(qty);
+        var wholePart = (int)Math.Floor(qty);
+
+        string fraction = fractionalPart switch
+        {
+            >= 0.2m and < 0.3m => "¼",
+            >= 0.3m and < 0.4m => "⅓",
+            >= 0.45m and < 0.55m => "½",
+            >= 0.6m and < 0.7m => "⅔",
+            >= 0.7m and < 0.8m => "¾",
+            _ => null
+        };
+
+        if (fraction != null)
+            return wholePart > 0 ? $"{wholePart} {fraction}" : fraction;
+
+        // Default to decimal
+        return qty.ToString("0.##");
+    }
+
+    private void IncreaseServings()
+    {
+        _scaledServings++;
+    }
+
+    private void DecreaseServings()
+    {
+        if (_scaledServings > 1)
+            _scaledServings--;
+    }
+
+    private void ResetServings()
+    {
+        _scaledServings = _selectedRecipe?.Servings ?? 1;
+    }
+
+    private string GetScalingLabel()
+    {
+        var factor = GetScalingFactor();
+        if (factor == 2) return "2×";
+        if (factor == 0.5m) return "½×";
+        if (factor == 1.5m) return "1.5×";
+        return $"{factor:0.##}×";
     }
 
     private void OnDataChanged()
