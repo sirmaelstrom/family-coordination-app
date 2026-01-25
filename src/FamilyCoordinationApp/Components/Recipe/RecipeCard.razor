@@ -13,7 +13,17 @@
     }
 
     <MudCardContent>
-        <MudText Typo="Typo.h5" Class="mb-2">@Recipe.Name</MudText>
+        <div class="d-flex align-center gap-2 mb-2">
+            <MudText Typo="Typo.h5">@Recipe.Name</MudText>
+            @if (!string.IsNullOrWhiteSpace(Recipe.SourceUrl))
+            {
+                <MudTooltip Text="Imported from web">
+                    <MudIcon Icon="@Icons.Material.Filled.CloudDownload"
+                             Size="Size.Small"
+                             Color="Color.Secondary" />
+                </MudTooltip>
+            }
+        </div>
 
         @if (Recipe.CreatedBy != null)
         {
@@ -97,11 +107,15 @@
 
                 @if (!string.IsNullOrWhiteSpace(Recipe.SourceUrl))
                 {
-                    <MudLink Href="@Recipe.SourceUrl" Target="_blank" Class="mt-3 d-block">
-                        <MudChip T="string" Icon="@Icons.Material.Filled.Link" Size="Size.Small">
-                            View Source
-                        </MudChip>
-                    </MudLink>
+                    <div class="d-flex align-center mt-3">
+                        <MudIcon Icon="@Icons.Material.Filled.Link" Size="Size.Small" Class="mr-2" />
+                        <a href="@Recipe.SourceUrl"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           class="mud-typography mud-link mud-secondary-text mud-typography-body2">
+                            View Original Recipe
+                        </a>
+                    </div>
                 }
             </div>
         }
