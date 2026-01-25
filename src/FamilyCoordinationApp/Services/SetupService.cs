@@ -75,6 +75,10 @@ public class SetupService(
             "Created household '{HouseholdName}' (ID {HouseholdId}) with initial user {Email} (ID {UserId})",
             householdName, household.Id, userEmail, user.Id);
 
+        // Seed default categories for the new household
+        await SeedData.SeedDefaultCategoriesAsync(dbFactory, household.Id);
+        logger.LogInformation("Seeded default categories for household {HouseholdId}", household.Id);
+
         return (household, user);
     }
 
