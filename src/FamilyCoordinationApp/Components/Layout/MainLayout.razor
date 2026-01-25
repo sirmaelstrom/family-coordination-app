@@ -20,36 +20,62 @@
 <MudDialogProvider />
 <MudSnackbarProvider />
 
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+<MudLayout>
+    <!-- Collapsible Drawer -->
+    <MudDrawer @bind-Open="_drawerOpen" 
+               ClipMode="DrawerClipMode.Always" 
+               Elevation="2"
+               Variant="@DrawerVariant.Mini"
+               OpenMiniOnHover="true">
+        <NavMenu IsExpanded="_drawerOpen" />
+    </MudDrawer>
 
-    <main>
-        <div class="top-row px-4">
-            <AuthorizeView>
-                <Authorized>
-                    <div class="d-flex align-center gap-4">
+    <!-- App Bar -->
+    <MudAppBar Elevation="1" Dense="true">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" 
+                       Color="Color.Inherit" 
+                       Edge="Edge.Start" 
+                       OnClick="@ToggleDrawer"
+                       Title="Toggle menu" />
+        
+        <MudText Typo="Typo.h6" Class="ml-2">Family Kitchen</MudText>
+        
+        <MudSpacer />
+        
+        <AuthorizeView>
+            <Authorized>
+                <div class="d-flex align-center gap-2 gap-md-4">
+                    <MudHidden Breakpoint="Breakpoint.SmAndDown">
                         <OnlineUsers CurrentUserId="@_currentUserId" />
-                        <SyncStatusIndicator />
-                        <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
-                                       Color="Color.Inherit"
-                                       OnClick="ToggleDarkMode"
-                                       Title="@(_isDarkMode ? "Switch to light mode" : "Switch to dark mode")" />
-                        @if (_isSiteAdmin)
-                        {
+                    </MudHidden>
+                    <SyncStatusIndicator />
+                    <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
+                                   Color="Color.Inherit"
+                                   OnClick="ToggleDarkMode"
+                                   Title="@(_isDarkMode ? "Switch to light mode" : "Switch to dark mode")" />
+                    @if (_isSiteAdmin)
+                    {
+                        <MudHidden Breakpoint="Breakpoint.SmAndDown">
                             <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined" Class="px-2">
                                 <MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Size="Size.Small" Class="mr-1" />
                                 Admin
                             </MudChip>
-                        }
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">@context.User.Identity?.Name</MudText>
-                        <a href="/account/logout" class="mud-typography mud-typography-body2" style="color: var(--mud-palette-text-secondary);">Sign out</a>
-                    </div>
-                </Authorized>
-            </AuthorizeView>
-        </div>
+                        </MudHidden>
+                    }
+                    <MudHidden Breakpoint="Breakpoint.SmAndDown">
+                        <MudText Typo="Typo.body2">@context.User.Identity?.Name</MudText>
+                    </MudHidden>
+                    <MudIconButton Icon="@Icons.Material.Filled.Logout" 
+                                   Color="Color.Inherit" 
+                                   Href="/account/logout"
+                                   Title="Sign out" />
+                </div>
+            </Authorized>
+        </AuthorizeView>
+    </MudAppBar>
 
+    <!-- Main Content -->
+    <MudMainContent Class="pt-16">
         @* Offline/Error Banner *@
         @if (PollingService.Status == SyncStatus.Offline)
         {
@@ -80,9 +106,9 @@
             </MudAlert>
         }
 
-        <article class="content px-4">
+        <div class="content-wrapper">
             @Body
-        </article>
+        </div>
         
         <!-- Footer -->
         <footer class="app-footer px-4 py-3">
@@ -94,14 +120,14 @@
                 <MudText Typo="Typo.caption" Color="Color.Secondary">© @DateTime.Now.Year sirmaelstrom</MudText>
             </div>
         </footer>
-    </main>
-</div>
+    </MudMainContent>
+</MudLayout>
 
 <!-- Floating feedback button -->
 <MudFab Color="Color.Tertiary"
         StartIcon="@Icons.Material.Filled.Feedback"
         OnClick="OpenFeedbackDialog"
-        Style="position: fixed; bottom: 24px; left: 24px; z-index: 1000;"
+        Style="position: fixed; bottom: 24px; right: 24px; z-index: 1000;"
         Size="Size.Medium"
         aria-label="Send feedback" />
 
@@ -117,19 +143,19 @@
     private string _currentUserInitials = string.Empty;
     private string _currentUserName = string.Empty;
     private System.Timers.Timer? _heartbeatTimer;
-    private bool _isDarkMode = false;  // Default to light mode for the warm, inviting look
+    private bool _isDarkMode = false;
     private bool _isSiteAdmin = false;
+    private bool _drawerOpen = true;
 
-    // Warm, inviting color palette for a family app
     private MudTheme _theme = new()
     {
         PaletteLight = new PaletteLight()
         {
-            Primary = "#2E7D32",           // Forest green - fresh, natural
+            Primary = "#2E7D32",
             PrimaryContrastText = "#ffffff",
-            Secondary = "#FF6F00",          // Warm orange - inviting, appetizing
+            Secondary = "#FF6F00",
             SecondaryContrastText = "#ffffff",
-            Tertiary = "#5C6BC0",           // Soft indigo - calm accent
+            Tertiary = "#5C6BC0",
             Background = "#FAFAFA",
             Surface = "#FFFFFF",
             DrawerBackground = "#F5F5F5",
@@ -158,9 +184,9 @@
             ActionDisabledBackground = "rgba(255,255,255, 0.12)",
             Divider = "rgba(255,255,255, 0.12)",
             DividerLight = "rgba(255,255,255, 0.06)",
-            Primary = "#66BB6A",            // Lighter green for dark mode
+            Primary = "#66BB6A",
             PrimaryContrastText = "#000000",
-            Secondary = "#FFB74D",          // Softer orange for dark mode
+            Secondary = "#FFB74D",
             SecondaryContrastText = "#000000",
             Tertiary = "#7986CB",
             Info = "#42A5F5",
@@ -182,21 +208,42 @@
     {
         if (firstRender)
         {
-            // Load dark mode preference from localStorage
             try
             {
                 var darkMode = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "darkMode");
                 if (!string.IsNullOrEmpty(darkMode) && bool.TryParse(darkMode, out var isDark))
                 {
                     _isDarkMode = isDark;
-                    StateHasChanged();
                 }
+                
+                var drawerOpen = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "drawerOpen");
+                if (!string.IsNullOrEmpty(drawerOpen) && bool.TryParse(drawerOpen, out var isOpen))
+                {
+                    _drawerOpen = isOpen;
+                }
+                
+                StateHasChanged();
             }
             catch
             {
-                // localStorage not available (SSR or privacy mode)
+                // localStorage not available
             }
         }
+    }
+
+    private void ToggleDrawer()
+    {
+        _drawerOpen = !_drawerOpen;
+        _ = SaveDrawerState();
+    }
+
+    private async Task SaveDrawerState()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("localStorage.setItem", "drawerOpen", _drawerOpen.ToString().ToLower());
+        }
+        catch { }
     }
 
     private async Task ToggleDarkMode()
@@ -206,21 +253,12 @@
         {
             await JSRuntime.InvokeVoidAsync("localStorage.setItem", "darkMode", _isDarkMode.ToString().ToLower());
         }
-        catch
-        {
-            // localStorage not available
-        }
+        catch { }
     }
 
-    private void OnSyncStatusChanged()
-    {
-        InvokeAsync(StateHasChanged);
-    }
+    private void OnSyncStatusChanged() => InvokeAsync(StateHasChanged);
 
-    private void RefreshPage()
-    {
-        NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
-    }
+    private void RefreshPage() => NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
 
     private async Task LoadCurrentUser()
     {
@@ -246,17 +284,13 @@
 
     private void StartHeartbeat()
     {
-        // Send heartbeat every 30 seconds
         _heartbeatTimer = new System.Timers.Timer(30000);
         _heartbeatTimer.Elapsed += (_, _) => SendHeartbeat();
         _heartbeatTimer.AutoReset = true;
         _heartbeatTimer.Start();
     }
 
-    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
-    {
-        SendHeartbeat();
-    }
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => SendHeartbeat();
 
     private void SendHeartbeat()
     {
