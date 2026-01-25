@@ -14,8 +14,14 @@
     }
 
     <MudCardContent>
-        <div class="d-flex align-center gap-2 mb-2">
+        <div class="d-flex align-center gap-2 mb-2 flex-wrap">
             <MudText Typo="Typo.h6">@Recipe.Name</MudText>
+            @if (Recipe.RecipeType != RecipeType.Main)
+            {
+                <MudChip T="string" Size="Size.Small" Color="@GetTypeColor(Recipe.RecipeType)" Variant="Variant.Outlined">
+                    @GetTypeLabel(Recipe.RecipeType)
+                </MudChip>
+            }
             @if (!string.IsNullOrWhiteSpace(Recipe.SourceUrl))
             {
                 <MudTooltip Text="Imported from web">
@@ -96,6 +102,28 @@
 
         return preview;
     }
+
+    private static string GetTypeLabel(RecipeType type) => type switch
+    {
+        RecipeType.Side => "Side",
+        RecipeType.Appetizer => "Appetizer",
+        RecipeType.Dessert => "Dessert",
+        RecipeType.Beverage => "Beverage",
+        RecipeType.Sauce => "Sauce",
+        RecipeType.Breakfast => "Breakfast",
+        RecipeType.Snack => "Snack",
+        RecipeType.Other => "Other",
+        _ => type.ToString()
+    };
+
+    private static Color GetTypeColor(RecipeType type) => type switch
+    {
+        RecipeType.Dessert => Color.Secondary,
+        RecipeType.Beverage => Color.Info,
+        RecipeType.Breakfast => Color.Warning,
+        RecipeType.Appetizer => Color.Tertiary,
+        _ => Color.Default
+    };
 }
 
 <style>

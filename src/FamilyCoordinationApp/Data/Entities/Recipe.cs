@@ -14,6 +14,7 @@ public class Recipe
     public int? Servings { get; set; }
     public int? PrepTimeMinutes { get; set; }
     public int? CookTimeMinutes { get; set; }
+    public RecipeType RecipeType { get; set; } = RecipeType.Main;
     public int? CreatedByUserId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }

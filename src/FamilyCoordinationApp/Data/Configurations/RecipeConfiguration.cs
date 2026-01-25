@@ -37,6 +37,10 @@ public class RecipeConfiguration : IEntityTypeConfiguration<Recipe>
             .IsRequired()
             .HasDefaultValue(false);
 
+        builder.Property(r => r.RecipeType)
+            .HasDefaultValue(RecipeType.Main)
+            .HasConversion<int>();
+
         // Query filter for soft delete
         builder.HasQueryFilter(r => !r.IsDeleted);
 

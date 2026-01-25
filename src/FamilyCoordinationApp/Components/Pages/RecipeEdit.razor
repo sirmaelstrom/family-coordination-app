@@ -111,6 +111,17 @@
                               @oninput="ScheduleAutoSave"
                               Class="mt-3"
                               HelperText="Link to original recipe" />
+
+                <MudSelect @bind-Value="_recipe.RecipeType"
+                           Label="Recipe Type"
+                           Variant="Variant.Outlined"
+                           Class="mt-3"
+                           AnchorOrigin="Origin.BottomCenter">
+                    @foreach (var type in Enum.GetValues<RecipeType>())
+                    {
+                        <MudSelectItem Value="@type">@GetRecipeTypeLabel(type)</MudSelectItem>
+                    }
+                </MudSelect>
             </MudPaper>
 
             <MudPaper Class="pa-4 mb-4" Elevation="1">
@@ -540,6 +551,20 @@
             return url;
         }
     }
+
+    private static string GetRecipeTypeLabel(RecipeType type) => type switch
+    {
+        RecipeType.Main => "Main Dish",
+        RecipeType.Side => "Side Dish",
+        RecipeType.Appetizer => "Appetizer",
+        RecipeType.Dessert => "Dessert",
+        RecipeType.Beverage => "Beverage",
+        RecipeType.Sauce => "Sauce/Condiment",
+        RecipeType.Breakfast => "Breakfast",
+        RecipeType.Snack => "Snack",
+        RecipeType.Other => "Other",
+        _ => type.ToString()
+    };
 
     public void Dispose()
     {

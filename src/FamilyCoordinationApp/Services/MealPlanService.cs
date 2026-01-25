@@ -88,6 +88,9 @@ public class MealPlanService(
             existingEntry.UpdatedAt = DateTime.UtcNow;
             existingEntry.UpdatedByUserId = userId;
 
+            // Update parent MealPlan timestamp for polling
+            await UpdateMealPlanTimestampAsync(context, householdId, mealPlan.MealPlanId, ct);
+
             await context.SaveChangesAsync(ct);
 
             logger.LogInformation("Updated meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
@@ -111,6 +114,10 @@ public class MealPlanService(
         };
 
         context.MealPlanEntries.Add(entry);
+
+        // Update parent MealPlan timestamp for polling
+        await UpdateMealPlanTimestampAsync(context, householdId, mealPlan.MealPlanId, ct);
+
         await context.SaveChangesAsync(ct);
 
         logger.LogInformation("Created meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
@@ -136,6 +143,10 @@ public class MealPlanService(
 
         // Hard delete
         context.MealPlanEntries.Remove(entry);
+
+        // Update parent MealPlan timestamp for polling
+        await UpdateMealPlanTimestampAsync(context, householdId, mealPlanId, ct);
+
         await context.SaveChangesAsync(ct);
 
         logger.LogInformation("Removed meal entry {EntryId} from plan {MealPlanId} for household {HouseholdId}",
@@ -171,5 +182,16 @@ public class MealPlanService(
             .MaxAsync(e => (int?)e.EntryId, ct) ?? 0;
 
         return maxId + 1;
+    }
+
+    private static async Task UpdateMealPlanTimestampAsync(ApplicationDbContext context, int householdId, int mealPlanId, CancellationToken ct)
+    {
+        var mealPlan = await context.MealPlans
+            .FirstOrDefaultAsync(mp => mp.HouseholdId == householdId && mp.MealPlanId == mealPlanId, ct);
+
+        if (mealPlan != null)
+        {
+            mealPlan.UpdatedAt = DateTime.UtcNow;
+        }
     }
 }
