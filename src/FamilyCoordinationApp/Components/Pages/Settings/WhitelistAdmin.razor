@@ -1,10 +1,12 @@
 @page "/settings/users"
 @attribute [Authorize]
 @using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
 @using FamilyCoordinationApp.Data
 @using FamilyCoordinationApp.Data.Entities
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
 @implements IAsyncDisposable
 
 <PageTitle>Manage Users - Family Coordination</PageTitle>
@@ -116,10 +118,15 @@
     private async Task LoadUsers()
     {
         _isLoading = true;
-        var household = await _context.Households.FirstOrDefaultAsync();
-        if (household != null)
+        
+        // Get current user's household
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+        
+        var currentUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
+        if (currentUser != null)
         {
-            _householdId = household.Id;
+            _householdId = currentUser.HouseholdId;
             _users = await _context.Users
                 .Where(u => u.HouseholdId == _householdId)
                 .OrderBy(u => u.Email)
