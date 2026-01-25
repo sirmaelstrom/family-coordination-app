@@ -6,6 +6,11 @@ h1:focus {
     outline: none;
 }
 
+/* Prevent flash on initial load */
+.mud-layout {
+    opacity: 1;
+}
+
 /* Fix nav icon centering in mini drawer */
 .mud-drawer-mini .mud-nav-link {
     justify-content: center !important;
@@ -17,29 +22,31 @@ h1:focus {
     margin-right: 0 !important;
 }
 
-/* Minimal/instant transitions - no flashy animations */
+/* Professional smooth transitions */
 .mud-drawer {
-    transition: width 0.1s ease-out !important;
-}
-
-.mud-drawer-content {
-    transition: none !important;
+    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 .mud-main-content {
-    transition: none !important;
+    transition: padding-left 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
-/* Disable nav text fade animations */
+/* Nav links - smooth but not flashy */
 .mud-nav-link {
-    transition: background-color 0.1s ease !important;
+    transition: background-color 0.15s ease-out !important;
 }
 
-.mud-nav-link-text {
-    transition: none !important;
-}
-
-/* Card hover - subtle, not flashy */
+/* Card hover - professional */
 .mud-card {
-    transition: box-shadow 0.1s ease !important;
+    transition: box-shadow 0.2s ease-out, transform 0.2s ease-out !important;
+}
+
+/* Drawer overlay - smooth fade */
+.mud-overlay {
+    transition: opacity 0.2s ease-out !important;
+}
+
+/* Recipe detail drawer - smooth slide */
+.mud-drawer[style*="right"] {
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }

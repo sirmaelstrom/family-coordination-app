@@ -21,12 +21,12 @@
 <MudSnackbarProvider />
 
 <MudLayout>
-    <!-- Collapsible Drawer - click only, no hover -->
+    <!-- Collapsible Drawer with hover -->
     <MudDrawer @bind-Open="_drawerOpen" 
                ClipMode="DrawerClipMode.Always" 
                Elevation="2"
                Variant="@DrawerVariant.Mini"
-               OpenMiniOnHover="false">
+               OpenMiniOnHover="true">
         <NavMenu IsExpanded="_drawerOpen" />
     </MudDrawer>
 
