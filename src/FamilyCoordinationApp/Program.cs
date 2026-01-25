@@ -89,6 +89,9 @@ builder.Services.AddAuthentication(options =>
     options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"]
         ?? throw new InvalidOperationException("Google ClientSecret not configured");
     options.SaveTokens = false;  // Don't need refresh tokens for this app
+    
+    // Fetch claims from userinfo endpoint (email not always in ID token)
+    options.GetClaimsFromUserInfoEndpoint = true;
 
     // Ensure email claim is mapped
     options.ClaimActions.MapJsonKey(ClaimTypes.Email, "email");
