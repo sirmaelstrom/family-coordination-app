@@ -12,6 +12,7 @@
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject IJSRuntime JSRuntime
 
 <MudThemeProvider @bind-IsDarkMode="@_isDarkMode" Theme="@_theme" />
 <MudPopoverProvider />
@@ -30,6 +31,10 @@
                     <div class="d-flex align-center gap-4">
                         <OnlineUsers CurrentUserId="@_currentUserId" />
                         <SyncStatusIndicator />
+                        <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
+                                       Color="Color.Inherit"
+                                       OnClick="ToggleDarkMode"
+                                       Title="@(_isDarkMode ? "Switch to light mode" : "Switch to dark mode")" />
                         <MudText Typo="Typo.body2" Color="Color.Secondary">@context.User.Identity?.Name</MudText>
                         <a href="/account/logout" class="mud-typography mud-typography-body2" style="color: var(--mud-palette-text-secondary);">Sign out</a>
                     </div>
@@ -162,6 +167,40 @@
         StartHeartbeat();
         NavigationManager.LocationChanged += OnLocationChanged;
         PollingService.OnStatusChanged += OnSyncStatusChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Load dark mode preference from localStorage
+            try
+            {
+                var darkMode = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "darkMode");
+                if (!string.IsNullOrEmpty(darkMode) && bool.TryParse(darkMode, out var isDark))
+                {
+                    _isDarkMode = isDark;
+                    StateHasChanged();
+                }
+            }
+            catch
+            {
+                // localStorage not available (SSR or privacy mode)
+            }
+        }
+    }
+
+    private async Task ToggleDarkMode()
+    {
+        _isDarkMode = !_isDarkMode;
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("localStorage.setItem", "darkMode", _isDarkMode.ToString().ToLower());
+        }
+        catch
+        {
+            // localStorage not available
+        }
     }
 
     private void OnSyncStatusChanged()
