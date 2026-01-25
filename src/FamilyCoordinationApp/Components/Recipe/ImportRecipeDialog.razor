@@ -1,0 +1,152 @@
+@using FamilyCoordinationApp.Services
+@using FamilyCoordinationApp.Data
+@using FamilyCoordinationApp.Data.Entities
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+
+@inject IRecipeImportService ImportService
+@inject IRecipeService RecipeService
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body1" Class="mb-4">
+            Paste a recipe URL to import. Tested and working with:
+        </MudText>
+        <MudText Typo="Typo.body2" Class="mb-4" Style="color: var(--mud-palette-text-secondary);">
+            ✓ AllRecipes • BBC Good Food • NYT Cooking • Serious Eats
+        </MudText>
+
+        <MudTextField @bind-Value="_url"
+                      Label="Recipe URL"
+                      Placeholder="https://www.allrecipes.com/recipe/..."
+                      Variant="Variant.Outlined"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Link"
+                      Disabled="_importing"
+                      FullWidth="true"
+                      Class="mb-4" />
+
+        @if (_importing)
+        {
+            <div class="d-flex align-center gap-3 mb-4">
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                <MudText>Importing recipe...</MudText>
+            </div>
+        }
+
+        @if (_error != null)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-4">
+                <MudText>@_error</MudText>
+                @if (_showManualOption)
+                {
+                    <MudButton Variant="Variant.Text"
+                               Color="Color.Primary"
+                               OnClick="ProceedToManualEntry"
+                               Class="mt-2">
+                        Add Recipe Manually
+                    </MudButton>
+                }
+            </MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Disabled="_importing">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   OnClick="ImportRecipe"
+                   Disabled="_importing || string.IsNullOrWhiteSpace(_url)">
+            @if (_importing)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+            }
+            Import
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthStateTask { get; set; } = default!;
+
+    private string? _url;
+    private bool _importing;
+    private string? _error;
+    private bool _showManualOption;
+    private PartialRecipeData? _partialData;
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task ImportRecipe()
+    {
+        if (string.IsNullOrWhiteSpace(_url))
+            return;
+
+        _importing = true;
+        _error = null;
+        _showManualOption = false;
+        StateHasChanged();
+
+        try
+        {
+            var authState = await AuthStateTask;
+            var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+
+            await using var context = await DbFactory.CreateDbContextAsync();
+            var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
+            if (user == null)
+            {
+                _error = "Could not determine current user.";
+                return;
+            }
+
+            var result = await ImportService.ImportFromUrlAsync(_url, user.HouseholdId, user.Id);
+
+            if (result.Success && result.Recipe != null)
+            {
+                // Save the recipe
+                var savedRecipe = await RecipeService.CreateRecipeAsync(result.Recipe);
+
+                Snackbar.Add($"Imported \"{savedRecipe.Name}\"", Severity.Success);
+                MudDialog.Close(DialogResult.Ok(savedRecipe.RecipeId));
+
+                // Navigate to edit page to review/adjust
+                Navigation.NavigateTo($"/recipes/edit/{savedRecipe.RecipeId}");
+            }
+            else
+            {
+                _error = result.ErrorMessage ?? "Import failed for unknown reason.";
+                _partialData = result.PartialData;
+                _showManualOption = result.ErrorType != RecipeImportErrorType.InvalidUrl;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log full exception for debugging
+            Console.WriteLine($"[ImportRecipeDialog] Exception: {ex.GetType().Name}: {ex.Message}");
+            Console.WriteLine($"[ImportRecipeDialog] Stack trace: {ex.StackTrace}");
+            _error = $"An error occurred: {ex.Message}";
+            _showManualOption = true;
+        }
+        finally
+        {
+            _importing = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ProceedToManualEntry()
+    {
+        MudDialog.Close(DialogResult.Cancel());
+
+        // Navigate to new recipe page
+        // Future enhancement: pass partial data via query string or state
+        Navigation.NavigateTo("/recipes/new");
+    }
+}

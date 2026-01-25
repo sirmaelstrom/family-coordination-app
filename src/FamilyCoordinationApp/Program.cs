@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Claims;
 using FamilyCoordinationApp.Authorization;
 using FamilyCoordinationApp.Components;
@@ -9,8 +10,10 @@ using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Http.Resilience;
 using MudBlazor.Services;
 using Plk.Blazor.DragDrop;
+using Polly;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,6 +40,29 @@ builder.Services.AddScoped<IShoppingListGenerator, ShoppingListGenerator>();
 builder.Services.AddSingleton<DataNotifier>();
 builder.Services.AddSingleton<PresenceService>();
 builder.Services.AddHostedService<PollingService>();
+
+// Recipe import services
+builder.Services.AddSingleton<IUrlValidator, UrlValidator>();
+builder.Services.AddScoped<IRecipeScraperService, RecipeScraperService>();
+builder.Services.AddScoped<IRecipeImportService, RecipeImportService>();
+
+// HttpClient for recipe scraping with Polly resilience
+builder.Services.AddHttpClient("RecipeScraper")
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+    })
+    .AddStandardResilienceHandler(options =>
+    {
+        options.Retry.MaxRetryAttempts = 3;
+        options.Retry.BackoffType = DelayBackoffType.Exponential;
+        options.Retry.UseJitter = true;
+        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
+        options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(60);
+        options.CircuitBreaker.FailureRatio = 0.5;
+        options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
+        options.CircuitBreaker.BreakDuration = TimeSpan.FromSeconds(30);
+    });
 
 // Authentication
 builder.Services.AddAuthentication(options =>

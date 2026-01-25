@@ -13,18 +13,27 @@
 @inject ISnackbar Snackbar
 @inject NavigationManager NavigationManager
 @inject DataNotifier Notifier
+@inject IDialogService DialogService
 
 <PageTitle>Recipes - Family Coordination</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
     <div class="d-flex justify-space-between align-center mb-4">
         <MudText Typo="Typo.h3">Recipes</MudText>
-        <MudButton StartIcon="@Icons.Material.Filled.Add"
-                   Color="Color.Primary"
-                   Variant="Variant.Filled"
-                   OnClick="HandleAddRecipe">
-            Add Recipe
-        </MudButton>
+        <div class="d-flex gap-2">
+            <MudButton StartIcon="@Icons.Material.Filled.CloudDownload"
+                       Color="Color.Secondary"
+                       Variant="Variant.Outlined"
+                       OnClick="OpenImportDialog">
+                Import from URL
+            </MudButton>
+            <MudButton StartIcon="@Icons.Material.Filled.Add"
+                       Color="Color.Primary"
+                       Variant="Variant.Filled"
+                       OnClick="HandleAddRecipe">
+                Add Recipe
+            </MudButton>
+        </div>
     </div>
 
     <MudTextField @bind-Value="_searchTerm"
@@ -208,6 +217,25 @@
     private void HandleAddRecipe()
     {
         NavigationManager.NavigateTo("/recipes/new");
+    }
+
+    private async Task OpenImportDialog()
+    {
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true,
+            CloseButton = true
+        };
+
+        var dialog = await DialogService.ShowAsync<ImportRecipeDialog>("Import Recipe", options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled)
+        {
+            // Refresh recipe list after successful import
+            await LoadRecipes();
+        }
     }
 
     private void HandleEdit(Recipe recipe)

@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-01-22)
 
 **Core value:** The integrated workflow - recipes → meal plan → shopping list. Automated aggregation and real-time collaboration reduce mental load from scattered information and last-minute decisions.
-**Current focus:** Phase 5 - Multi-User Collaboration
+**Current focus:** Phase 6 - Recipe Import
 
 ## Current Position
 
-Phase: 5 of 7 (Multi-User Collaboration)
-Plan: 7 of 7 (complete)
-Status: Phase complete
-Last activity: 2026-01-24 — Completed 05-07-PLAN.md
+Phase: 6 of 7 (Recipe Import)
+Plan: 6 of 6 (human verification checkpoint)
+Status: Awaiting human verification
+Last activity: 2026-01-24 — Completed 06-01 through 06-05 PLAN.md
 
-Progress: [█████████████████] 71% (5.00 of 7 phases)
+Progress: [███████████████████] 83% (5.83 of 7 phases)
 
 ## Performance Metrics
 
@@ -32,10 +32,11 @@ Progress: [█████████████████] 71% (5.00 of 7 p
 | 3 | 4 | 90min | 22.5min |
 | 4 | 6 | 34min | 5.7min |
 | 5 | 6 | 34min | 5.7min |
+| 6 | 5 | ~15min | ~3min |
 
 **Recent Trend:**
-- Last 5 plans: 2min (05-03), 3min (05-04), 2min (05-05), 4.4min (05-06), 18min (05-07)
-- Trend: Phase 5 complete - 05-07 took longer due to verification checkpoint and fixes
+- Last 5 plans: 06-01 through 06-05 completed in single session (~15min total)
+- Trend: Phase 6 plans 1-5 complete, awaiting human verification (06-06)
 
 *Updated after each plan completion*
 
@@ -151,6 +152,23 @@ Recent decisions affecting current work:
 - Fresh entity fetch in concurrency retry loops (avoids disposed context errors) [05-07]
 - UpdatedAt set on all operations including soft deletes (ensures polling detection) [05-07]
 - Last-write-wins for non-checkbox fields with conflict notification (acceptable for family collaboration) [05-07]
+- AngleSharp over HtmlAgilityPack for HTML parsing (CSS selectors vs XPath, better HTML5 support) [06-01]
+- Polly v8 resilience pipelines for HTTP retry (exponential backoff, jitter, circuit breaker) [06-01]
+- System.Text.Json over json-ld.net for JSON-LD parsing (simple Recipe extraction, no full processor needed) [06-01]
+- DNS resolution for SSRF protection (blocks localhost, private IPs, link-local addresses) [06-01]
+- User-Agent rotation from 4 real browser strings (anti-bot mitigation) [06-02]
+- JsonElement for polymorphic schema.org fields (image, instructions can be string or object) [06-02]
+- @graph structure handling for nested JSON-LD (common format on recipe sites) [06-02]
+- ISO 8601 duration parsing for prep/cook times (PT15M → 15 minutes) [06-03]
+- HowToStep array → numbered list conversion for instructions [06-03]
+- Partial data extraction on failure (for manual completion fallback) [06-03]
+- Import navigates to edit page for review/adjustment [06-04]
+- Cloud download icon for imported recipes in card view [06-05]
+- Domain extraction for source display (allrecipes.com instead of full URL) [06-05]
+- Checked wins strategy for concurrent shopping item check-offs (if either user checked, it stays checked) [05-07]
+- Fresh entity fetch in concurrency retry loops (avoids disposed context errors) [05-07]
+- UpdatedAt set on all operations including soft deletes (ensures polling detection) [05-07]
+- Last-write-wins for non-checkbox fields with conflict notification (acceptable for family collaboration) [05-07]
 
 ### Pending Todos
 
@@ -165,10 +183,20 @@ None - Phase 5 complete
 
 ## Session Continuity
 
-Last session: 2026-01-24T20:10:00Z
-Stopped at: Completed 05-07-PLAN.md (Optimistic Concurrency)
+Last session: 2026-01-24T22:00:00Z
+Stopped at: Completed 06-05-PLAN.md (Source URL Indicators), awaiting human verification for 06-06
 Resume file: None
-Next command: Phase 5 complete. Ready to begin Phase 6 (Recipe Scraping) - requires research and planning phase
+Next command: Human verification checkpoint for recipe import feature
+
+**What was built (Phase 6 plans 1-5):**
+- AngleSharp + Polly packages installed for HTML parsing and HTTP resilience
+- RecipeSchema POCO for schema.org JSON-LD deserialization
+- UrlValidator service for SSRF protection (blocks localhost, private IPs)
+- RecipeScraperService with User-Agent rotation, JSON-LD extraction
+- RecipeImportService orchestrates: URL validation → fetch → extract → parse → Recipe entity
+- ImportRecipeDialog UI with URL input, progress indicator, error handling
+- Import button added to Recipes page
+- Source URL indicators: cloud icon on cards, "View Original Recipe" link, domain badge on edit page
 
 ---
 *Created: 2026-01-22*

@@ -45,6 +45,24 @@
             <DataAnnotationsValidator />
             <NavigationLock ConfirmExternalNavigation="_hasUnsavedChanges" />
 
+            @if (!string.IsNullOrWhiteSpace(_recipe.SourceUrl) && IsEdit)
+            {
+                <MudAlert Severity="Severity.Info" Class="mb-4" Dense="true">
+                    <div class="d-flex align-center">
+                        <MudIcon Icon="@Icons.Material.Filled.CloudDownload" Size="Size.Small" Class="mr-2" />
+                        <MudText Typo="Typo.body2">
+                            Imported from
+                            <a href="@_recipe.SourceUrl"
+                               target="_blank"
+                               rel="noopener noreferrer"
+                               class="mud-link">
+                                @GetDomainFromUrl(_recipe.SourceUrl)
+                            </a>
+                        </MudText>
+                    </div>
+                </MudAlert>
+            }
+
             <MudPaper Class="pa-4 mb-4" Elevation="1">
                 <MudText Typo="Typo.h6" Class="mb-3">Basic Info</MudText>
 
@@ -506,6 +524,19 @@
     private void Cancel()
     {
         Navigation.NavigateTo("/recipes");
+    }
+
+    private static string GetDomainFromUrl(string url)
+    {
+        try
+        {
+            var uri = new Uri(url);
+            return uri.Host.Replace("www.", "");
+        }
+        catch
+        {
+            return url;
+        }
     }
 
     public void Dispose()
