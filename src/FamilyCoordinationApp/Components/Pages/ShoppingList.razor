@@ -21,10 +21,10 @@
 <PageTitle>Shopping List - Family Coordination</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Medium" Class="py-4">
-    <div class="d-flex justify-space-between align-center mb-4">
+    <div class="d-flex justify-space-between align-center flex-wrap mb-4 gap-2">
         <MudText Typo="Typo.h4">Shopping List</MudText>
 
-        <div class="d-flex gap-2 align-center">
+        <div class="d-flex gap-2 align-center flex-wrap">
             @if (_activeLists.Count > 1)
             {
                 <MudSelect T="Data.Entities.ShoppingList"
