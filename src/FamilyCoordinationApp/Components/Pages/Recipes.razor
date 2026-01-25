@@ -18,20 +18,29 @@
 <PageTitle>Recipes - Family Coordination</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
-    <div class="d-flex justify-space-between align-center mb-4">
-        <MudText Typo="Typo.h3">Recipes</MudText>
-        <div class="d-flex gap-2">
-            <MudButton StartIcon="@Icons.Material.Filled.CloudDownload"
-                       Color="Color.Secondary"
-                       Variant="Variant.Outlined"
-                       OnClick="OpenImportDialog">
-                Import from URL
-            </MudButton>
+    <div class="d-flex justify-space-between align-center flex-wrap mb-4 gap-3">
+        <MudText Typo="Typo.h4">Recipes</MudText>
+        <div class="d-flex gap-2 flex-wrap">
+            <MudHidden Breakpoint="Breakpoint.Xs">
+                <MudButton StartIcon="@Icons.Material.Filled.CloudDownload"
+                           Color="Color.Secondary"
+                           Variant="Variant.Outlined"
+                           OnClick="OpenImportDialog">
+                    Import from URL
+                </MudButton>
+            </MudHidden>
+            <MudHidden Breakpoint="Breakpoint.SmAndUp" Invert="true">
+                <MudIconButton Icon="@Icons.Material.Filled.CloudDownload"
+                               Color="Color.Secondary"
+                               OnClick="OpenImportDialog"
+                               aria-label="Import from URL" />
+            </MudHidden>
             <MudButton StartIcon="@Icons.Material.Filled.Add"
                        Color="Color.Primary"
                        Variant="Variant.Filled"
                        OnClick="HandleAddRecipe">
-                Add Recipe
+                <MudHidden Breakpoint="Breakpoint.Xs">Add Recipe</MudHidden>
+                <MudHidden Breakpoint="Breakpoint.SmAndUp" Invert="true">Add</MudHidden>
             </MudButton>
         </div>
     </div>

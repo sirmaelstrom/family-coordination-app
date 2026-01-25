@@ -164,3 +164,155 @@ h1:focus {
         margin-left: 4px;
     }
 }
+
+/* ============================================
+   RESPONSIVE LAYOUT UTILITIES
+   Ensure pages work from 320px to 1920px
+   ============================================ */
+
+/* Prevent horizontal scrolling */
+.mud-main-content,
+.page,
+main,
+article.content {
+    overflow-x: hidden;
+    max-width: 100vw;
+}
+
+/* Mobile-first responsive utilities (max-width: 600px) */
+@media (max-width: 600px) {
+    /* Full width on mobile */
+    .mobile-full-width {
+        width: 100% !important;
+    }
+
+    /* Stack flex items vertically */
+    .mobile-stack {
+        flex-direction: column !important;
+        gap: 8px;
+    }
+
+    /* Hide on mobile */
+    .mobile-hide {
+        display: none !important;
+    }
+
+    /* Page headers - stack on mobile */
+    .d-flex.justify-space-between.align-center.mb-4 {
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    /* Recipe page buttons - stack on mobile */
+    .d-flex.gap-2 > .mud-button {
+        flex: 1;
+        min-width: 0;
+    }
+
+    /* Container padding adjustment */
+    .mud-container {
+        padding-left: 12px !important;
+        padding-right: 12px !important;
+    }
+
+    /* List selector on shopping list - full width */
+    .list-selector {
+        min-width: 150px !important;
+        max-width: 200px;
+    }
+
+    /* MealPlan navigation - tighter on mobile */
+    .meal-plan-navigation .navigation-header {
+        gap: 8px;
+    }
+
+    .meal-plan-navigation .mud-typography-h5 {
+        font-size: 1.1rem !important;
+    }
+
+    /* Recipe cards - single column */
+    .mud-grid > .mud-item {
+        padding: 8px !important;
+    }
+
+    /* Dialog - nearly full width on mobile */
+    .mud-dialog {
+        margin: 8px !important;
+        max-width: calc(100vw - 16px) !important;
+    }
+
+    /* Form fields - full width */
+    .mud-input-control {
+        width: 100%;
+    }
+
+    /* Table responsiveness */
+    .mud-table {
+        font-size: 0.9rem;
+    }
+
+    /* Text truncation for long content */
+    .text-truncate-mobile {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 150px;
+    }
+}
+
+/* Small mobile (320px - 375px) */
+@media (max-width: 375px) {
+    /* Even tighter spacing */
+    .mud-container {
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+    }
+
+    /* Smaller typography */
+    .mud-typography-h4 {
+        font-size: 1.5rem !important;
+    }
+
+    .mud-typography-h5 {
+        font-size: 1.25rem !important;
+    }
+
+    /* Hide non-essential text */
+    .hide-xs {
+        display: none !important;
+    }
+}
+
+/* Tablet (600px - 960px) */
+@media (min-width: 601px) and (max-width: 960px) {
+    /* Two-column recipe grid is fine */
+    /* Adjust dialog width */
+    .mud-dialog {
+        max-width: 500px !important;
+    }
+}
+
+/* Ensure body text is readable (minimum 16px) */
+body {
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+}
+
+/* Smooth scrolling for mobile */
+@media (prefers-reduced-motion: no-preference) {
+    html {
+        scroll-behavior: smooth;
+    }
+}
+
+/* Safe area padding for notched phones */
+@supports (padding: max(0px)) {
+    .page {
+        padding-left: max(0px, env(safe-area-inset-left));
+        padding-right: max(0px, env(safe-area-inset-right));
+    }
+
+    .mud-fab {
+        bottom: max(24px, calc(env(safe-area-inset-bottom) + 16px)) !important;
+    }
+}
