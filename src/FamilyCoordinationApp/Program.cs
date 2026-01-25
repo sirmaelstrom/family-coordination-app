@@ -129,6 +129,23 @@ builder.Services.AddAuthentication(options =>
     // Request email scope
     options.Scope.Add("email");
     options.Scope.Add("profile");
+    
+    // Handle OAuth failures gracefully (e.g., invalid state from key rotation)
+    // Instead of showing an error page, redirect to login to start fresh
+    options.Events.OnRemoteFailure = context =>
+    {
+        var logger = context.HttpContext.RequestServices.GetService<ILogger<Program>>();
+        logger?.LogWarning("OAuth remote failure: {Message}. Redirecting to login.", 
+            context.Failure?.Message ?? "Unknown error");
+        
+        // Clear any stale cookies that might cause issues
+        context.Response.Cookies.Delete("FamilyApp.Auth");
+        context.Response.Cookies.Delete(".AspNetCore.Correlation.Google");
+        
+        context.Response.Redirect("/account/login");
+        context.HandleResponse();  // Prevent further processing
+        return Task.CompletedTask;
+    };
 });
 
 // Authorization
