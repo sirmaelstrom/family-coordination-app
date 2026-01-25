@@ -9,19 +9,19 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Authentication
 
-- [ ] **AUTH-01**: User can sign in with Google OAuth
-- [ ] **AUTH-02**: User email is validated against whitelist for family access
-- [ ] **AUTH-03**: User session persists across browser restarts
-- [ ] **AUTH-04**: User can log out from any page
+- [x] **AUTH-01**: User can sign in with Google OAuth
+- [x] **AUTH-02**: User email is validated against whitelist for family access
+- [x] **AUTH-03**: User session persists across browser restarts
+- [x] **AUTH-04**: User can log out from any page
 
 ### Recipe Management
 
-- [ ] **RECIPE-01**: User can import recipe from URL with automatic parsing (schema.org JSON-LD)
-- [ ] **RECIPE-02**: User can manually create recipe with name, ingredients, and instructions
-- [ ] **RECIPE-03**: Recipe ingredients include name, quantity, unit, and category
-- [ ] **RECIPE-04**: User can view list of all recipes
-- [ ] **RECIPE-05**: User can edit existing recipes
-- [ ] **RECIPE-06**: User can delete recipes (soft delete with confirmation)
+- [x] **RECIPE-01**: User can import recipe from URL with automatic parsing (schema.org JSON-LD)
+- [x] **RECIPE-02**: User can manually create recipe with name, ingredients, and instructions
+- [x] **RECIPE-03**: Recipe ingredients include name, quantity, unit, and category
+- [x] **RECIPE-04**: User can view list of all recipes
+- [x] **RECIPE-05**: User can edit existing recipes
+- [x] **RECIPE-06**: User can delete recipes (soft delete with confirmation)
 
 ### Meal Planning
 
@@ -34,16 +34,16 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Shopping Lists
 
-- [ ] **SHOP-01**: User can generate shopping list from weekly meal plan
-- [ ] **SHOP-02**: Shopping list aggregates ingredients from multiple recipes with smart consolidation
-- [ ] **SHOP-03**: Shopping list groups items by category (Meat, Produce, Dairy, Pantry, Spices)
-- [ ] **SHOP-04**: User can manually add items to shopping list
-- [ ] **SHOP-05**: User can edit item quantity/name in shopping list
-- [ ] **SHOP-06**: User can check off items while shopping
-- [ ] **SHOP-07**: User can uncheck items (if picked up wrong item)
-- [ ] **SHOP-08**: User can delete items from shopping list
-- [ ] **SHOP-09**: Checked items appear grayed out at bottom of list
-- [ ] **SHOP-10**: Unchecked items appear at top of list
+- [x] **SHOP-01**: User can generate shopping list from weekly meal plan
+- [x] **SHOP-02**: Shopping list aggregates ingredients from multiple recipes with smart consolidation
+- [x] **SHOP-03**: Shopping list groups items by category (Meat, Produce, Dairy, Pantry, Spices)
+- [x] **SHOP-04**: User can manually add items to shopping list
+- [x] **SHOP-05**: User can edit item quantity/name in shopping list
+- [x] **SHOP-06**: User can check off items while shopping
+- [x] **SHOP-07**: User can uncheck items (if picked up wrong item)
+- [x] **SHOP-08**: User can delete items from shopping list
+- [x] **SHOP-09**: Checked items appear grayed out at bottom of list
+- [x] **SHOP-10**: Unchecked items appear at top of list
 
 ### Collaboration & Sync
 
@@ -54,17 +54,17 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Mobile & UX
 
-- [ ] **MOBILE-01**: Application is responsive and works on mobile phones
-- [ ] **MOBILE-02**: Touch targets are minimum 40px for shopping list checkboxes
-- [ ] **MOBILE-03**: Application supports PWA installation (Add to Home Screen)
-- [ ] **MOBILE-04**: Application shows sync status (loading, synced, error)
+- [x] **MOBILE-01**: Application is responsive and works on mobile phones
+- [x] **MOBILE-02**: Touch targets are minimum 40px for shopping list checkboxes
+- [x] **MOBILE-03**: Application supports PWA installation (Add to Home Screen)
+- [x] **MOBILE-04**: Application shows sync status (loading, synced, error)
 
 ### Data & Infrastructure
 
-- [ ] **DATA-01**: All data includes HouseholdId for future multi-tenant expansion
-- [ ] **DATA-02**: Database enforces composite foreign keys (HouseholdId + EntityId)
-- [ ] **DATA-03**: Application uses DbContextFactory pattern (Blazor Server concurrency)
-- [ ] **DATA-04**: Components implement proper disposal (IAsyncDisposable)
+- [x] **DATA-01**: All data includes HouseholdId for future multi-tenant expansion
+- [x] **DATA-02**: Database enforces composite foreign keys (HouseholdId + EntityId)
+- [x] **DATA-03**: Application uses DbContextFactory pattern (Blazor Server concurrency)
+- [x] **DATA-04**: Components implement proper disposal (IAsyncDisposable)
 
 ## v2 Requirements
 
@@ -140,19 +140,19 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | Phase 1 | Pending |
-| AUTH-02 | Phase 1 | Pending |
-| AUTH-03 | Phase 1 | Pending |
-| AUTH-04 | Phase 1 | Pending |
-| DATA-01 | Phase 1 | Pending |
-| DATA-02 | Phase 1 | Pending |
-| DATA-03 | Phase 1 | Pending |
-| DATA-04 | Phase 1 | Pending |
-| RECIPE-02 | Phase 2 | Pending |
-| RECIPE-03 | Phase 2 | Pending |
-| RECIPE-04 | Phase 2 | Pending |
-| RECIPE-05 | Phase 2 | Pending |
-| RECIPE-06 | Phase 2 | Pending |
+| AUTH-01 | Phase 1 | Complete |
+| AUTH-02 | Phase 1 | Complete |
+| AUTH-03 | Phase 1 | Complete |
+| AUTH-04 | Phase 1 | Complete |
+| DATA-01 | Phase 1 | Complete |
+| DATA-02 | Phase 1 | Complete |
+| DATA-03 | Phase 1 | Complete |
+| DATA-04 | Phase 1 | Complete |
+| RECIPE-02 | Phase 2 | Complete |
+| RECIPE-03 | Phase 2 | Complete |
+| RECIPE-04 | Phase 2 | Complete |
+| RECIPE-05 | Phase 2 | Complete |
+| RECIPE-06 | Phase 2 | Complete |
 | MEAL-01 | Phase 3 | Complete |
 | MEAL-02 | Phase 3 | Complete |
 | MEAL-03 | Phase 3 | Complete |
@@ -173,11 +173,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COLLAB-02 | Phase 5 | Complete |
 | COLLAB-03 | Phase 5 | Complete |
 | COLLAB-04 | Phase 5 | Complete |
-| RECIPE-01 | Phase 6 | Pending |
-| MOBILE-01 | Phase 7 | Pending |
-| MOBILE-02 | Phase 7 | Pending |
-| MOBILE-03 | Phase 7 | Pending |
-| MOBILE-04 | Phase 7 | Pending |
+| RECIPE-01 | Phase 6 | Complete |
+| MOBILE-01 | Phase 7 | Complete |
+| MOBILE-02 | Phase 7 | Complete |
+| MOBILE-03 | Phase 7 | Complete |
+| MOBILE-04 | Phase 7 | Complete |
 
 **Coverage:**
 - v1 requirements: 34 total
@@ -186,4 +186,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-01-22*
-*Last updated: 2026-01-22 after roadmap creation*
+*Last updated: 2026-01-25 — all v1 requirements complete*
