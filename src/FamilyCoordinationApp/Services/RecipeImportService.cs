@@ -71,17 +71,20 @@ public class RecipeImportService : IRecipeImportService
     private readonly IUrlValidator _urlValidator;
     private readonly IRecipeScraperService _scraperService;
     private readonly IIngredientParser _ingredientParser;
+    private readonly ICategoryInferenceService _categoryInference;
     private readonly ILogger<RecipeImportService> _logger;
 
     public RecipeImportService(
         IUrlValidator urlValidator,
         IRecipeScraperService scraperService,
         IIngredientParser ingredientParser,
+        ICategoryInferenceService categoryInference,
         ILogger<RecipeImportService> logger)
     {
         _urlValidator = urlValidator;
         _scraperService = scraperService;
         _ingredientParser = ingredientParser;
+        _categoryInference = categoryInference;
         _logger = logger;
     }
 
@@ -173,6 +176,7 @@ public class RecipeImportService : IRecipeImportService
             try
             {
                 var parsed = _ingredientParser.ParseIngredient(ingredientString);
+                var inferredCategory = _categoryInference.InferCategory(parsed.Name);
 
                 recipe.Ingredients.Add(new RecipeIngredient
                 {
@@ -181,16 +185,19 @@ public class RecipeImportService : IRecipeImportService
                     Quantity = parsed.Quantity,
                     Unit = parsed.Unit,
                     Notes = parsed.Notes,
+                    Category = inferredCategory,
                     SortOrder = sortOrder++
                 });
             }
             catch (ArgumentException)
             {
                 // If parsing fails, add as raw text with no quantity/unit
+                var inferredCategory = _categoryInference.InferCategory(ingredientString.Trim());
                 recipe.Ingredients.Add(new RecipeIngredient
                 {
                     HouseholdId = householdId,
                     Name = ingredientString.Trim(),
+                    Category = inferredCategory,
                     SortOrder = sortOrder++
                 });
             }

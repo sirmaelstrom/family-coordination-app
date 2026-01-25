@@ -27,6 +27,7 @@ builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
 // Services
 builder.Services.AddScoped<SetupService>();
 builder.Services.AddScoped<IIngredientParser, IngredientParser>();
+builder.Services.AddScoped<ICategoryInferenceService, CategoryInferenceService>();
 builder.Services.AddScoped<IImageService, ImageService>();
 builder.Services.AddScoped<IRecipeService, RecipeService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
