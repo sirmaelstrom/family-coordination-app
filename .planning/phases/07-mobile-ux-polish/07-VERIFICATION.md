@@ -97,7 +97,7 @@ All implementations are substantive. No placeholder content, TODO comments, or s
 #### 1. PWA Installation on Mobile Device
 
 **Test:** 
-1. Deploy app to production environment with HTTPS (family.example.com)
+1. Deploy app to production environment with HTTPS (your-domain.example.com)
 2. Open in Safari on iPhone or Chrome on Android
 3. Look for browser install prompt or "Add to Home Screen" option
 4. Install and launch from home screen

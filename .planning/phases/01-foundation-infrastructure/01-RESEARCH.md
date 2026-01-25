@@ -301,7 +301,7 @@ volumes:
 # Source: https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/linux-nginx
 server {
     listen 80;
-    server_name family.example.com;
+    server_name your-domain.example.com;
 
     location / {
         proxy_pass http://app:8080;
@@ -669,7 +669,7 @@ Things that couldn't be fully resolved:
 4. **Google OAuth client separation (dev vs prod)**
    - What we know: Best practice is separate OAuth clients for different environments; not strictly required
    - What's unclear: Whether managing multiple redirect URIs in single client is problematic
-   - Recommendation: Use separate OAuth clients (one for localhost:*, one for family.example.com) to avoid accidental production auth with dev credentials. Minimal setup overhead.
+   - Recommendation: Use separate OAuth clients (one for localhost:*, one for your-domain.example.com) to avoid accidental production auth with dev credentials. Minimal setup overhead.
 
 5. **Docker Compose override usage (separate dev/prod configs)**
    - What we know: `docker-compose.override.yml` auto-loaded in dev, can use separate files for prod

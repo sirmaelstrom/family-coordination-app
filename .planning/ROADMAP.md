@@ -33,7 +33,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. User session persists across browser restarts without re-authentication
   3. User can log out from any page and be redirected to login
   4. Database enforces composite foreign keys preventing cross-household data access
-  5. Application runs on [SERVER] via Docker Compose accessible at family.example.com
+  5. Application runs on [SERVER] via Docker Compose accessible at your-domain.example.com
 **Plans**: 4 plans
 
 Plans:

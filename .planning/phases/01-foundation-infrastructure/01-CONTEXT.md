@@ -28,7 +28,7 @@ Establish database schema with multi-tenant isolation patterns and Google OAuth 
 - Phase 1 delivers Docker Compose files only (test locally, deploy to [SERVER] in later phase)
 - Secrets managed via `.env` file (gitignored, not in version control)
 - PostgreSQL database and uploads map to explicit ZFS paths (/[ZFS_POOL]/docker-data/family-app/)
-- Include nginx configuration (provide complete server block for family.example.com)
+- Include nginx configuration (provide complete server block for your-domain.example.com)
 - Single-stage Dockerfile (simpler, includes SDK in final image)
 - Logs go to console + file volume (/app/logs mapped to ZFS for persistence)
 

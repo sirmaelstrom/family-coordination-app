@@ -144,7 +144,7 @@ Users must create Google OAuth credentials before authentication works:
 3. Application type: Web application
 4. Add authorized redirect URIs:
    - Development: `https://localhost:7xxx/signin-google` (replace xxx with actual port)
-   - Production: `https://family.example.com/signin-google`
+   - Production: `https://your-domain.example.com/signin-google`
 5. Copy Client ID and Client Secret
 6. Set environment variables:
    - `Authentication__Google__ClientId`

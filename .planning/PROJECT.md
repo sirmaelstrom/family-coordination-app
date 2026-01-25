@@ -60,7 +60,7 @@ The integrated workflow: recipes → meal plan → shopping list. Manual coordin
 ## Constraints
 
 - **Tech stack**: Blazor Server (.NET 8), PostgreSQL, Docker — chosen for C# expertise everywhere and built-in SignalR for real-time collaboration
-- **Deployment**: Must run on [SERVER] (Ubuntu 24.04) via Docker Compose, accessible at family.example.com
+- **Deployment**: Must run on [SERVER] (Ubuntu 24.04) via Docker Compose, accessible at your-domain.example.com
 - **Authentication**: Google OAuth only, email whitelist for authorized family members (no public signup)
 - **Real-time**: SignalR over WebSocket for collaborative shopping list editing (must work on mobile with spotty WiFi)
 - **Mobile-first**: Must be usable at grocery store on phone (large touch targets, fast load, offline-tolerant)

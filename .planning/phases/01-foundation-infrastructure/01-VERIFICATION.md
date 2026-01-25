@@ -44,7 +44,7 @@ human_verification:
 | 2 | User session persists across browser restarts without re-authentication | ✓ VERIFIED | Cookie config: 30-day ExpireTimeSpan with SlidingExpiration=true (line 36 Program.cs) |
 | 3 | User can log out from any page and be redirected to login | ✓ VERIFIED | MapGet "/account/logout" endpoint, Logout.razor exists, MainLayout has logout link |
 | 4 | Database enforces composite foreign keys preventing cross-household data access | ✓ VERIFIED | All 6 tenant entities have composite keys, composite FKs in configs |
-| 5 | Application runs on [SERVER] via Docker Compose accessible at family.example.com | ? UNCERTAIN | Docker files complete, nginx configured for domain, needs human deployment test |
+| 5 | Application runs on [SERVER] via Docker Compose accessible at your-domain.example.com | ? UNCERTAIN | Docker files complete, nginx configured for domain, needs human deployment test |
 
 **Score:** 3/5 truths verified (2 need human testing)
 

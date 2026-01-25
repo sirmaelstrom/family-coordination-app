@@ -114,7 +114,7 @@ Each task was committed atomically:
 
 **nginx configuration:**
 - `nginx/nginx.conf` - Main nginx config with WebSocket upgrade mapping
-- `nginx/family-app.conf` - Server block for family.example.com
+- `nginx/family-app.conf` - Server block for your-domain.example.com
 - `nginx/certs/.gitkeep` - Placeholder for SSL certificates directory
 - `nginx/certs/privkey.pem` - Self-signed private key (not committed)
 - `nginx/certs/fullchain.pem` - Self-signed certificate (not committed)
@@ -158,7 +158,7 @@ None - plan executed exactly as written.
 1. Uncomment ZFS path variables in `.env`
 2. Set paths to [SERVER] ZFS locations
 3. Replace self-signed certs with Let's Encrypt certificates
-4. Configure Cloudflare DNS for family.example.com
+4. Configure Cloudflare DNS for your-domain.example.com
 
 ## Next Phase Readiness
 
