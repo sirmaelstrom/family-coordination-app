@@ -20,25 +20,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
     <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
     <script>
-        // Apply dark mode and loading state immediately to prevent flash
+        // Apply dark mode immediately to prevent flash
         (function() {
-            // Set loading state
-            document.documentElement.classList.add('app-loading');
-            
-            // Apply dark mode
             var darkMode = localStorage.getItem('darkMode');
             if (darkMode === 'true') {
                 document.documentElement.classList.add('mud-theme-dark');
                 document.body.style.backgroundColor = '#121212';
             }
-            
-            // Remove loading state after Blazor initializes
-            document.addEventListener('DOMContentLoaded', function() {
-                setTimeout(function() {
-                    document.documentElement.classList.remove('app-loading');
-                    document.documentElement.classList.add('app-loaded');
-                }, 100);
-            });
         })();
     </script>
     <script src="https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0-rc.2/index.min.js"></script>
