@@ -1,0 +1,12 @@
+# Production override - use host nginx instead of familyapp-nginx
+services:
+  app:
+    ports:
+      - "8085:8080"
+    environment:
+      SITE_ADMIN_EMAILS: "${SITE_ADMIN_EMAILS:-}"
+  
+  nginx:
+    # Disable the bundled nginx - host nginx handles SSL/proxy
+    profiles:
+      - disabled
