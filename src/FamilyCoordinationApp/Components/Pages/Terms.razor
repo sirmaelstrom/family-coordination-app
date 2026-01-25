@@ -1,0 +1,68 @@
+@page "/terms"
+@using Microsoft.AspNetCore.Authorization
+
+<PageTitle>Terms of Service - Family Kitchen</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="py-6">
+    <MudText Typo="Typo.h3" Class="mb-4">Terms of Service</MudText>
+    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-4">Last updated: January 25, 2026</MudText>
+    
+    <MudPaper Class="pa-4 mb-4" Elevation="0">
+        <MudText Typo="Typo.h5" Class="mb-2">Acceptance of Terms</MudText>
+        <MudText Typo="Typo.body1">
+            By accessing and using Family Kitchen, you accept and agree to be bound by these Terms of Service. 
+            This is a private family application intended for use by invited household members only.
+        </MudText>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0">
+        <MudText Typo="Typo.h5" Class="mb-2">Use of Service</MudText>
+        <MudText Typo="Typo.body1" Class="mb-3">
+            Family Kitchen is provided for personal, non-commercial use to help families coordinate:
+        </MudText>
+        <MudList T="string" Dense="true">
+            <MudListItem T="string" Icon="@Icons.Material.Filled.MenuBook">Recipe collection and sharing</MudListItem>
+            <MudListItem T="string" Icon="@Icons.Material.Filled.CalendarMonth">Meal planning</MudListItem>
+            <MudListItem T="string" Icon="@Icons.Material.Filled.ShoppingCart">Shopping list management</MudListItem>
+        </MudList>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0">
+        <MudText Typo="Typo.h5" Class="mb-2">User Content</MudText>
+        <MudText Typo="Typo.body1">
+            You retain ownership of any content you create within Family Kitchen, including recipes and meal plans. 
+            By using the service, you grant household members the ability to view and interact with shared content.
+        </MudText>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0">
+        <MudText Typo="Typo.h5" Class="mb-2">Access Control</MudText>
+        <MudText Typo="Typo.body1">
+            Access to Family Kitchen is controlled by invitation only. The household administrator manages 
+            which email addresses are permitted to access the application.
+        </MudText>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0">
+        <MudText Typo="Typo.h5" Class="mb-2">Disclaimer</MudText>
+        <MudText Typo="Typo.body1">
+            Family Kitchen is provided "as is" without warranty of any kind. This is a personal project 
+            and not a commercial service. We do our best to keep it running smoothly, but cannot guarantee 
+            uninterrupted availability.
+        </MudText>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0">
+        <MudText Typo="Typo.h5" Class="mb-2">Changes to Terms</MudText>
+        <MudText Typo="Typo.body1">
+            These terms may be updated from time to time. Continued use of the service constitutes 
+            acceptance of any changes.
+        </MudText>
+    </MudPaper>
+
+    <div class="d-flex justify-center mt-6">
+        <MudButton Href="/" Color="Color.Primary" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Home">
+            Back to Home
+        </MudButton>
+    </div>
+</MudContainer>
