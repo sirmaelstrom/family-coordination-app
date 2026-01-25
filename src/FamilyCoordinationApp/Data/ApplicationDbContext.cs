@@ -19,6 +19,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<RecipeDraft> RecipeDrafts => Set<RecipeDraft>();
     public DbSet<Feedback> Feedbacks => Set<Feedback>();
     public DbSet<HouseholdRequest> HouseholdRequests => Set<HouseholdRequest>();
+    public DbSet<UserFavorite> UserFavorites => Set<UserFavorite>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

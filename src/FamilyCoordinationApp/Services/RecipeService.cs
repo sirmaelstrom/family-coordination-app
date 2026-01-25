@@ -13,6 +13,12 @@ public interface IRecipeService
     Task DeleteRecipeAsync(int householdId, int recipeId, CancellationToken cancellationToken = default);
     Task<int> GetNextRecipeIdAsync(int householdId, CancellationToken cancellationToken = default);
     Task<List<string>> GetIngredientSuggestionsAsync(int householdId, string prefix, CancellationToken cancellationToken = default);
+
+    // Favorites
+    Task<bool> IsFavoriteAsync(int userId, int householdId, int recipeId, CancellationToken cancellationToken = default);
+    Task<HashSet<int>> GetFavoriteRecipeIdsAsync(int userId, int householdId, CancellationToken cancellationToken = default);
+    Task ToggleFavoriteAsync(int userId, int householdId, int recipeId, CancellationToken cancellationToken = default);
+    Task<List<Recipe>> GetFavoriteRecipesAsync(int userId, int householdId, CancellationToken cancellationToken = default);
 }
 
 public class RecipeService(
@@ -181,6 +187,67 @@ public class RecipeService(
             .Select(i => i.Name)
             .Distinct()
             .Take(20)
+            .ToListAsync(cancellationToken);
+    }
+
+    // Favorites implementation
+
+    public async Task<bool> IsFavoriteAsync(int userId, int householdId, int recipeId, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        return await context.UserFavorites
+            .AnyAsync(f => f.UserId == userId && f.HouseholdId == householdId && f.RecipeId == recipeId, cancellationToken);
+    }
+
+    public async Task<HashSet<int>> GetFavoriteRecipeIdsAsync(int userId, int householdId, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var ids = await context.UserFavorites
+            .Where(f => f.UserId == userId && f.HouseholdId == householdId)
+            .Select(f => f.RecipeId)
+            .ToListAsync(cancellationToken);
+        return ids.ToHashSet();
+    }
+
+    public async Task ToggleFavoriteAsync(int userId, int householdId, int recipeId, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        var existing = await context.UserFavorites
+            .FirstOrDefaultAsync(f => f.UserId == userId && f.HouseholdId == householdId && f.RecipeId == recipeId, cancellationToken);
+
+        if (existing != null)
+        {
+            context.UserFavorites.Remove(existing);
+            logger.LogInformation("User {UserId} unfavorited recipe {RecipeId}", userId, recipeId);
+        }
+        else
+        {
+            context.UserFavorites.Add(new UserFavorite
+            {
+                UserId = userId,
+                HouseholdId = householdId,
+                RecipeId = recipeId,
+                CreatedAt = DateTime.UtcNow
+            });
+            logger.LogInformation("User {UserId} favorited recipe {RecipeId}", userId, recipeId);
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<List<Recipe>> GetFavoriteRecipesAsync(int userId, int householdId, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        return await context.UserFavorites
+            .Where(f => f.UserId == userId && f.HouseholdId == householdId)
+            .Include(f => f.Recipe)
+                .ThenInclude(r => r.Ingredients.OrderBy(i => i.SortOrder))
+            .Include(f => f.Recipe)
+                .ThenInclude(r => r.CreatedBy)
+            .Select(f => f.Recipe)
+            .OrderBy(r => r.Name)
             .ToListAsync(cancellationToken);
     }
 }

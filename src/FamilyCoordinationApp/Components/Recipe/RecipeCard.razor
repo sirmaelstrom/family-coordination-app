@@ -4,14 +4,21 @@
 <MudCard Elevation="@(IsSelected ? 4 : 2)" 
          Class="@CardClass" 
          @onclick="HandleClick">
-    @if (!string.IsNullOrWhiteSpace(Recipe.ImagePath))
-    {
-        <MudCardMedia Image="@Recipe.ImagePath" Height="200" />
-    }
-    else
-    {
-        <MudCardMedia Image="/images/recipe-placeholder.svg" Height="200" />
-    }
+    <div class="recipe-image-container">
+        @if (!string.IsNullOrWhiteSpace(Recipe.ImagePath))
+        {
+            <MudCardMedia Image="@Recipe.ImagePath" Height="200" />
+        }
+        else
+        {
+            <MudCardMedia Image="/images/recipe-placeholder.svg" Height="200" />
+        }
+        <MudIconButton Icon="@(IsFavorite ? Icons.Material.Filled.Favorite : Icons.Material.Outlined.FavoriteBorder)"
+                       Color="@(IsFavorite ? Color.Error : Color.Default)"
+                       Class="favorite-button"
+                       Size="Size.Small"
+                       OnClick="HandleFavoriteClick" />
+    </div>
 
     <MudCardContent>
         <div class="d-flex align-center gap-2 mb-2 flex-wrap">
@@ -74,7 +81,13 @@
     public bool IsSelected { get; set; }
 
     [Parameter]
+    public bool IsFavorite { get; set; }
+
+    [Parameter]
     public EventCallback<Recipe> OnClick { get; set; }
+
+    [Parameter]
+    public EventCallback<Recipe> OnToggleFavorite { get; set; }
 
     private string CardClass => IsSelected 
         ? "recipe-card recipe-card-selected" 
@@ -83,6 +96,11 @@
     private async Task HandleClick()
     {
         await OnClick.InvokeAsync(Recipe);
+    }
+
+    private async Task HandleFavoriteClick()
+    {
+        await OnToggleFavorite.InvokeAsync(Recipe);
     }
 
     private string GetIngredientPreview()
@@ -140,5 +158,21 @@
     .recipe-card-selected {
         outline: 2px solid var(--mud-palette-primary);
         outline-offset: 2px;
+    }
+
+    .recipe-image-container {
+        position: relative;
+    }
+
+    .favorite-button {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        background-color: rgba(255, 255, 255, 0.9) !important;
+        backdrop-filter: blur(4px);
+    }
+
+    .favorite-button:hover {
+        background-color: rgba(255, 255, 255, 1) !important;
     }
 </style>

@@ -47,14 +47,23 @@
         </div>
     </div>
 
-    <MudTextField @bind-Value="_searchTerm"
-                  Label="Search recipes"
-                  Variant="Variant.Outlined"
-                  Adornment="Adornment.Start"
-                  AdornmentIcon="@Icons.Material.Filled.Search"
-                  DebounceInterval="300"
-                  OnDebounceIntervalElapsed="LoadRecipes"
-                  Class="mb-4" />
+    <div class="d-flex gap-3 align-center mb-4 flex-wrap">
+        <MudTextField @bind-Value="_searchTerm"
+                      Label="Search recipes"
+                      Variant="Variant.Outlined"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      DebounceInterval="300"
+                      OnDebounceIntervalElapsed="LoadRecipes"
+                      Style="flex: 1; min-width: 200px;" />
+        <MudChip T="bool"
+                 Icon="@Icons.Material.Filled.Favorite"
+                 Color="@(_showFavoritesOnly ? Color.Error : Color.Default)"
+                 Variant="@(_showFavoritesOnly ? Variant.Filled : Variant.Outlined)"
+                 OnClick="ToggleFavoritesFilter">
+            Favorites
+        </MudChip>
+    </div>
 
     @if (_loading)
     {
@@ -74,17 +83,30 @@
             }
         </MudGrid>
     }
-    else if (!_recipes.Any())
+    else if (!FilteredRecipes.Any())
     {
         <!-- Empty state -->
         <div class="d-flex flex-column align-center justify-center" style="min-height: 400px;">
-            <MudIcon Icon="@Icons.Material.Filled.MenuBook"
+            <MudIcon Icon="@(_showFavoritesOnly ? Icons.Material.Filled.FavoriteBorder : Icons.Material.Filled.MenuBook)"
                      Size="Size.Large"
                      Color="Color.Secondary"
                      Style="font-size: 6rem; margin-bottom: 1rem;" />
-            <MudText Typo="Typo.h5" Class="mb-2">No recipes yet</MudText>
+            <MudText Typo="Typo.h5" Class="mb-2">
+                @if (_showFavoritesOnly)
+                {
+                    <text>No favorites yet</text>
+                }
+                else
+                {
+                    <text>No recipes yet</text>
+                }
+            </MudText>
             <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
-                @if (string.IsNullOrWhiteSpace(_searchTerm))
+                @if (_showFavoritesOnly)
+                {
+                    <text>Click the heart icon on recipes to add them to your favorites</text>
+                }
+                else if (string.IsNullOrWhiteSpace(_searchTerm))
                 {
                     <text>Start building your family recipe collection</text>
                 }
@@ -93,7 +115,16 @@
                     <text>No recipes found matching "@_searchTerm"</text>
                 }
             </MudText>
-            @if (string.IsNullOrWhiteSpace(_searchTerm))
+            @if (_showFavoritesOnly)
+            {
+                <MudButton StartIcon="@Icons.Material.Filled.Clear"
+                           Color="Color.Primary"
+                           Variant="Variant.Text"
+                           OnClick="ToggleFavoritesFilter">
+                    Show All Recipes
+                </MudButton>
+            }
+            else if (string.IsNullOrWhiteSpace(_searchTerm))
             {
                 <MudButton StartIcon="@Icons.Material.Filled.Add"
                            Color="Color.Primary"
@@ -118,12 +149,14 @@
     {
         <!-- Recipe grid -->
         <MudGrid>
-            @foreach (var recipe in _recipes)
+            @foreach (var recipe in FilteredRecipes)
             {
                 <MudItem xs="12" sm="6" md="4">
                     <RecipeCard Recipe="recipe"
                                 IsSelected="@(_selectedRecipe?.RecipeId == recipe.RecipeId)"
-                                OnClick="HandleCardClick" />
+                                IsFavorite="@(_favoriteRecipeIds.Contains(recipe.RecipeId))"
+                                OnClick="HandleCardClick"
+                                OnToggleFavorite="HandleToggleFavorite" />
                 </MudItem>
             }
         </MudGrid>
@@ -377,6 +410,9 @@
     private bool _loading = true;
     private string _searchTerm = string.Empty;
     private int _householdId;
+    private int _userId;
+    private HashSet<int> _favoriteRecipeIds = new();
+    private bool _showFavoritesOnly;
 
     private Recipe? _selectedRecipe;
     private bool _drawerOpen;
@@ -422,6 +458,7 @@
         if (user != null)
         {
             _householdId = user.HouseholdId;
+            _userId = user.Id;
         }
     }
 
@@ -431,6 +468,7 @@
         {
             _loading = true;
             _recipes = await RecipeService.GetRecipesAsync(_householdId, _searchTerm);
+            _favoriteRecipeIds = await RecipeService.GetFavoriteRecipeIdsAsync(_userId, _householdId);
         }
         catch (Exception ex)
         {
@@ -441,6 +479,26 @@
             _loading = false;
         }
     }
+
+    private async Task HandleToggleFavorite(Recipe recipe)
+    {
+        await RecipeService.ToggleFavoriteAsync(_userId, _householdId, recipe.RecipeId);
+        // Toggle local state immediately for responsive UI
+        if (_favoriteRecipeIds.Contains(recipe.RecipeId))
+            _favoriteRecipeIds.Remove(recipe.RecipeId);
+        else
+            _favoriteRecipeIds.Add(recipe.RecipeId);
+    }
+
+    private void ToggleFavoritesFilter()
+    {
+        _showFavoritesOnly = !_showFavoritesOnly;
+    }
+
+    private IEnumerable<Recipe> FilteredRecipes =>
+        _showFavoritesOnly
+            ? _recipes.Where(r => _favoriteRecipeIds.Contains(r.RecipeId))
+            : _recipes;
 
     private void HandleCardClick(Recipe recipe)
     {
