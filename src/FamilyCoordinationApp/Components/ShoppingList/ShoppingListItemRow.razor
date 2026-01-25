@@ -6,9 +6,11 @@
              Class="drag-handle"
              Size="Size.Small" />
 
-    <MudCheckbox Checked="@Item.IsChecked"
-                 CheckedChanged="HandleCheckChanged"
+    <MudCheckBox T="bool" 
+                 Value="@Item.IsChecked"
+                 ValueChanged="HandleCheckChanged"
                  Class="item-checkbox"
+                 Size="Size.Medium"
                  @onclick:stopPropagation="true"
                  Color="Color.Primary" />
 
@@ -42,11 +44,11 @@
 
     <div class="item-actions" @onclick:stopPropagation="true">
         <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                       Size="Size.Small"
+                       Size="Size.Medium"
                        OnClick="HandleEdit"
                        aria-label="Edit item" />
         <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                       Size="Size.Small"
+                       Size="Size.Medium"
                        Color="Color.Error"
                        OnClick="HandleDelete"
                        aria-label="Delete item" />
@@ -135,6 +137,11 @@
 
     .item-checkbox {
         flex-shrink: 0;
+        min-width: 44px;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 
     .item-content {
