@@ -19,7 +19,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Database configuration - DbContextFactory for Blazor Server thread safety
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? "Host=localhost;Database=familyapp;Username=familyapp;Password=***REDACTED***";
+    ?? throw new InvalidOperationException("Database connection string not configured. Set ConnectionStrings__DefaultConnection environment variable.");
 
 builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
