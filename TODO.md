@@ -27,7 +27,7 @@
 
 4. **Verified End-to-End Setup**
    - Successfully created household "La Familia Heath"
-   - User jmheath@gmail.com created and whitelisted
+   - User admin@example.com created and whitelisted
    - Can access home page and see welcome message
 
 ### 📋 Remaining Work
