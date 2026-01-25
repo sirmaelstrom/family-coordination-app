@@ -14,7 +14,7 @@
   - **Answer:** `/setup` page → Google sign-in → enter household name → create
 
 ### Access Control
-- [x] Q4: Who can see the feedback admin page? (Just Justin, any authenticated user, or role-based?)
+- [x] Q4: Who can see the feedback admin page? (Just the site owner, any authenticated user, or role-based?)
   - **Answer:** Any authenticated/whitelisted user sees ALL feedback (including other households)
 - [x] Q5: How does the whitelist system work for inviting family?
   - **Answer:** Admin adds email → User record created with HouseholdId → they can sign in
@@ -24,7 +24,7 @@
 ### Edge Cases
 - [x] Q7: What if multiple households whitelist the same email address?
   - **Answer:** Not possible - email is globally unique (DB constraint)
-- [x] Q8: Justin has a second Gmail as API owner, set up under family but can only disable - what's the expected behavior?
+- [x] Q8: The admin has a second Gmail as API owner, set up under family but can only disable - what's the expected behavior?
   - **Answer:** "Last admin" protection - can't disable the last whitelisted user
 - [x] Q9: Is there a way to fully delete accounts (not just disable)?
   - **Answer:** No - only disable (toggle `IsWhitelisted`)
@@ -39,7 +39,7 @@
 
 ### High Priority - Admin Visibility
 1. **Server Admin Role**
-   - Special role for Justin (site owner)
+   - Special role for the site owner (site owner)
    - Separate from household admin
    - Access to cross-household data for troubleshooting
 
