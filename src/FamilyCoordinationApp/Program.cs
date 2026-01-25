@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Http.Resilience;
@@ -17,6 +18,14 @@ using Plk.Blazor.DragDrop;
 using Polly;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Data Protection - persist keys to a stable location to survive container restarts
+// Keys are stored in /root/.aspnet/DataProtection-Keys (volume-mounted in production)
+builder.Services.AddDataProtection()
+    .SetApplicationName("FamilyCoordinationApp")
+    .PersistKeysToFileSystem(new DirectoryInfo(
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), 
+            ".aspnet", "DataProtection-Keys")));
 
 // Database configuration - DbContextFactory for Blazor Server thread safety
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
@@ -87,6 +96,19 @@ builder.Services.AddAuthentication(options =>
     options.LoginPath = "/account/login";
     options.LogoutPath = "/account/logout";
     options.AccessDeniedPath = "/account/access-denied";
+    
+    // Handle cookie decryption failures gracefully (e.g., after key rotation)
+    // Instead of throwing, reject the cookie and force re-authentication
+    options.Events.OnValidatePrincipal = context =>
+    {
+        // If we get here with a null principal, the cookie couldn't be decrypted
+        // This happens when data protection keys have changed
+        if (context.Principal == null)
+        {
+            context.RejectPrincipal();
+        }
+        return Task.CompletedTask;
+    };
 })
 .AddGoogle(options =>
 {
@@ -174,7 +196,30 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseAntiforgery();
 
-// Auth middleware
+// Auth middleware with graceful handling of corrupted/expired auth cookies
+// This catches CryptographicException when data protection keys have rotated
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception ex) when (
+        ex is System.Security.Cryptography.CryptographicException ||
+        (ex.InnerException is System.Security.Cryptography.CryptographicException))
+    {
+        // Clear the corrupted auth cookie and redirect to login
+        context.Response.Cookies.Delete("FamilyApp.Auth");
+        context.Response.Cookies.Delete(".AspNetCore.Correlation.Google");
+        
+        // Log the issue
+        var logger = context.RequestServices.GetService<ILogger<Program>>();
+        logger?.LogWarning("Cleared corrupted auth cookie due to key rotation. User will need to re-authenticate.");
+        
+        // Redirect to login page
+        context.Response.Redirect("/account/login");
+    }
+});
 app.UseAuthentication();
 
 // First-run setup redirect middleware (BEFORE authorization)
