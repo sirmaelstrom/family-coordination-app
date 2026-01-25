@@ -1,42 +1,42 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">FamilyCoordinationApp</a>
+@using MudBlazor
+
+<MudNavMenu Bordered="true" Color="Color.Primary" Class="pa-2">
+    <div class="app-brand mb-4 pa-3">
+        <MudIcon Icon="@Icons.Material.Filled.RestaurantMenu" Size="Size.Large" Color="Color.Primary" />
+        <MudText Typo="Typo.h6" Class="ml-2">Family Kitchen</MudText>
     </div>
-</div>
+    
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">
+        Home
+    </MudNavLink>
+    
+    <MudNavLink Href="/recipes" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.MenuBook">
+        Recipes
+    </MudNavLink>
+    
+    <MudNavLink Href="/meal-plan" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.CalendarMonth">
+        Meal Plan
+    </MudNavLink>
+    
+    <MudNavLink Href="/shopping-list" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ShoppingCart">
+        Shopping List
+    </MudNavLink>
+    
+    <MudDivider Class="my-4" />
+    
+    <MudNavLink Href="/settings/categories" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Settings">
+        Settings
+    </MudNavLink>
+    
+    <MudNavLink Href="/settings/users" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.People">
+        Family Members
+    </MudNavLink>
+</MudNavMenu>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
-
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="recipes">
-                <span class="bi bi-book-fill-nav-menu" aria-hidden="true"></span> Recipes
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="meal-plan">
-                <span class="bi bi-calendar-week-fill-nav-menu" aria-hidden="true"></span> Meal Plan
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="shopping-list">
-                <span class="bi bi-cart-fill-nav-menu" aria-hidden="true"></span> Shopping List
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="settings/categories">
-                <span class="bi bi-gear-fill-nav-menu" aria-hidden="true"></span> Settings
-            </NavLink>
-        </div>
-    </nav>
-</div>
-
+<style>
+    .app-brand {
+        display: flex;
+        align-items: center;
+        border-bottom: 1px solid var(--mud-palette-divider);
+    }
+</style>

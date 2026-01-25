@@ -1,51 +1,210 @@
-﻿@page "/"
+@page "/"
 @attribute [Authorize]
 @using System.Security.Claims
 @using Microsoft.EntityFrameworkCore
 @using FamilyCoordinationApp.Data
+@using FamilyCoordinationApp.Data.Entities
 @using FamilyCoordinationApp.Services
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject IHttpContextAccessor HttpContextAccessor
+@inject IMealPlanService MealPlanService
+@inject IShoppingListService ShoppingListService
 
-<PageTitle>Home - Family Coordination</PageTitle>
+<PageTitle>Home - Family Kitchen</PageTitle>
 
-<div class="max-w-4xl mx-auto py-8 px-4">
-    <h1 class="text-3xl font-bold text-gray-900 mb-2">Welcome, @_displayName!</h1>
-    <p class="text-gray-600 mb-8">@_householdName</p>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <!-- Quick links - placeholders for future phases -->
-        <a href="/recipes" class="block p-6 bg-white rounded-lg shadow hover:shadow-md transition-shadow">
-            <h2 class="text-xl font-semibold text-gray-900 mb-2">Recipes</h2>
-            <p class="text-gray-600">Browse and manage your family recipes</p>
-        </a>
-
-        <a href="/meal-plan" class="block p-6 bg-white rounded-lg shadow hover:shadow-md transition-shadow">
-            <h2 class="text-xl font-semibold text-gray-900 mb-2">Meal Plan</h2>
-            <p class="text-gray-600">Plan your meals for the week</p>
-        </a>
-
-        <a href="/shopping-list" class="block p-6 bg-white rounded-lg shadow hover:shadow-md transition-shadow">
-            <h2 class="text-xl font-semibold text-gray-900 mb-2">Shopping List</h2>
-            <p class="text-gray-600">View and manage your shopping list</p>
-        </a>
-
-        <a href="/settings/users" class="block p-6 bg-white rounded-lg shadow hover:shadow-md transition-shadow">
-            <h2 class="text-xl font-semibold text-gray-900 mb-2">Family Members</h2>
-            <p class="text-gray-600">Manage who has access to this app</p>
-        </a>
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+    <div class="welcome-section mb-6">
+        <MudText Typo="Typo.h4" Class="mb-1">
+            Welcome back, @_displayName! 👋
+        </MudText>
+        <MudText Typo="Typo.body1" Color="Color.Secondary">
+            @_householdName • @DateTime.Now.ToString("dddd, MMMM d")
+        </MudText>
     </div>
-</div>
+
+    <MudGrid Spacing="4">
+        <!-- Today's Meals Card -->
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="2" Class="dashboard-card">
+                <MudCardHeader>
+                    <CardHeaderAvatar>
+                        <MudAvatar Color="Color.Primary" Variant="Variant.Outlined">
+                            <MudIcon Icon="@Icons.Material.Filled.Today" />
+                        </MudAvatar>
+                    </CardHeaderAvatar>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Today's Meals</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">@DateTime.Today.ToString("MMM d")</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudIconButton Icon="@Icons.Material.Filled.ArrowForward" Href="/meal-plan" />
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent Class="pt-0">
+                    @if (_todaysMeals.Count == 0)
+                    {
+                        <MudText Color="Color.Secondary" Class="text-center py-4">
+                            No meals planned for today
+                        </MudText>
+                        <div class="text-center">
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/meal-plan">
+                                Plan something
+                            </MudButton>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var meal in _todaysMeals)
+                        {
+                            <div class="meal-item d-flex align-center gap-3 py-2">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default">@meal.MealType</MudChip>
+                                <MudText>@(meal.Recipe?.Name ?? meal.CustomMealName)</MudText>
+                            </div>
+                        }
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- Shopping List Card -->
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="2" Class="dashboard-card">
+                <MudCardHeader>
+                    <CardHeaderAvatar>
+                        <MudAvatar Color="Color.Secondary" Variant="Variant.Outlined">
+                            <MudIcon Icon="@Icons.Material.Filled.ShoppingCart" />
+                        </MudAvatar>
+                    </CardHeaderAvatar>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Shopping List</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            @if (_shoppingListCount > 0)
+                            {
+                                @:@_shoppingListCount items remaining
+                            }
+                            else
+                            {
+                                @:All done!
+                            }
+                        </MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudIconButton Icon="@Icons.Material.Filled.ArrowForward" Href="/shopping-list" />
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent Class="pt-0">
+                    @if (_shoppingListCount == 0)
+                    {
+                        <MudText Color="Color.Secondary" Class="text-center py-4">
+                            Shopping list is empty
+                        </MudText>
+                        <div class="text-center">
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/shopping-list">
+                                Generate from meal plan
+                            </MudButton>
+                        </div>
+                    }
+                    else
+                    {
+                        <MudProgressLinear Color="Color.Success" 
+                                           Value="@_shoppingListProgress" 
+                                           Class="my-3" 
+                                           Rounded="true" />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="text-center">
+                            @_shoppingListChecked of @(_shoppingListChecked + _shoppingListCount) items checked
+                        </MudText>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- Quick Actions -->
+        <MudItem xs="12">
+            <MudText Typo="Typo.h6" Class="mb-3">Quick Actions</MudText>
+            <MudGrid Spacing="3">
+                <MudItem xs="6" sm="3">
+                    <MudButton Variant="Variant.Outlined" 
+                               Color="Color.Primary" 
+                               FullWidth="true"
+                               Href="/recipes/new"
+                               StartIcon="@Icons.Material.Filled.Add"
+                               Class="quick-action-btn">
+                        New Recipe
+                    </MudButton>
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudButton Variant="Variant.Outlined" 
+                               Color="Color.Primary" 
+                               FullWidth="true"
+                               Href="/recipes"
+                               StartIcon="@Icons.Material.Filled.MenuBook"
+                               Class="quick-action-btn">
+                        Browse Recipes
+                    </MudButton>
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudButton Variant="Variant.Outlined" 
+                               Color="Color.Primary" 
+                               FullWidth="true"
+                               Href="/meal-plan"
+                               StartIcon="@Icons.Material.Filled.CalendarMonth"
+                               Class="quick-action-btn">
+                        This Week
+                    </MudButton>
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudButton Variant="Variant.Outlined" 
+                               Color="Color.Primary" 
+                               FullWidth="true"
+                               Href="/settings/users"
+                               StartIcon="@Icons.Material.Filled.PersonAdd"
+                               Class="quick-action-btn">
+                        Invite Family
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+<style>
+    .welcome-section {
+        padding: 1rem 0;
+    }
+    
+    .dashboard-card {
+        height: 100%;
+        min-height: 200px;
+    }
+    
+    .meal-item {
+        border-bottom: 1px solid var(--mud-palette-divider);
+    }
+    
+    .meal-item:last-child {
+        border-bottom: none;
+    }
+    
+    .quick-action-btn {
+        height: 56px;
+    }
+</style>
 
 @code {
     private string _displayName = "";
     private string _householdName = "";
+    private int _householdId;
+    private List<MealPlanEntry> _todaysMeals = new();
+    private int _shoppingListCount;
+    private int _shoppingListChecked;
+    private double _shoppingListProgress;
 
     protected override async Task OnInitializedAsync()
     {
         var claimsPrincipal = HttpContextAccessor.HttpContext?.User;
-        _displayName = claimsPrincipal?.FindFirst(ClaimTypes.Name)?.Value
-            ?? claimsPrincipal?.FindFirst(ClaimTypes.Email)?.Value
+        _displayName = claimsPrincipal?.FindFirst(ClaimTypes.GivenName)?.Value
+            ?? claimsPrincipal?.FindFirst(ClaimTypes.Name)?.Value?.Split(' ').FirstOrDefault()
+            ?? claimsPrincipal?.FindFirst(ClaimTypes.Email)?.Value?.Split('@').FirstOrDefault()
             ?? "there";
 
         var email = claimsPrincipal?.FindFirst(ClaimTypes.Email)?.Value;
@@ -55,7 +214,48 @@
             var user = await context.Users
                 .Include(u => u.Household)
                 .FirstOrDefaultAsync(u => u.Email == email);
-            _householdName = user?.Household?.Name ?? "Your Household";
+            
+            if (user != null)
+            {
+                _householdId = user.HouseholdId;
+                _householdName = user.Household?.Name ?? "Your Household";
+                
+                await LoadTodaysMeals(context);
+                await LoadShoppingListStats();
+            }
+        }
+    }
+
+    private async Task LoadTodaysMeals(ApplicationDbContext context)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var weekStart = MealPlanService.GetWeekStartDate(today);
+        
+        var mealPlan = await context.MealPlans
+            .Where(mp => mp.HouseholdId == _householdId && mp.WeekStartDate == weekStart)
+            .Include(mp => mp.Entries.Where(e => e.Date == today))
+            .ThenInclude(e => e.Recipe)
+            .FirstOrDefaultAsync();
+
+        if (mealPlan != null)
+        {
+            _todaysMeals = mealPlan.Entries
+                .OrderBy(e => e.MealType)
+                .ToList();
+        }
+    }
+
+    private async Task LoadShoppingListStats()
+    {
+        var lists = await ShoppingListService.GetActiveShoppingListsAsync(_householdId);
+        var currentList = lists.OrderByDescending(l => l.CreatedAt).FirstOrDefault();
+        
+        if (currentList != null)
+        {
+            _shoppingListCount = currentList.Items.Count(i => !i.IsChecked);
+            _shoppingListChecked = currentList.Items.Count(i => i.IsChecked);
+            var total = _shoppingListCount + _shoppingListChecked;
+            _shoppingListProgress = total > 0 ? (_shoppingListChecked * 100.0 / total) : 0;
         }
     }
 }

@@ -1,11 +1,11 @@
 {
-  "name": "Family Coordination",
-  "short_name": "Family",
+  "name": "Family Kitchen",
+  "short_name": "Kitchen",
   "description": "Coordinate meals, recipes, and shopping lists for your family",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1e1e2d",
-  "theme_color": "#1e1e2d",
+  "background_color": "#FAFAFA",
+  "theme_color": "#2E7D32",
   "orientation": "portrait-primary",
   "icons": [
     {
