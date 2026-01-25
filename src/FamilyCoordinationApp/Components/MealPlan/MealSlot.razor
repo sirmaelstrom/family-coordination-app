@@ -23,6 +23,12 @@
                         {
                             <img src="@entry.Recipe.ImagePath" alt="@entry.Recipe.Name" class="slot-recipe-image" />
                         }
+                        else
+                        {
+                            <div class="slot-recipe-placeholder">
+                                <MudIcon Icon="@Icons.Material.Filled.MenuBook" Size="Size.Small" />
+                            </div>
+                        }
                         <div class="slot-recipe-details">
                             <MudText Typo="Typo.body2" Class="slot-recipe-name">
                                 @entry.Recipe.Name
@@ -44,10 +50,20 @@
                 {
                     <!-- Custom meal -->
                     <div class="slot-entry">
-                        <MudIcon Icon="@Icons.Material.Filled.Restaurant" Size="Size.Small" Color="Color.Secondary" Class="mr-2" />
-                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="slot-custom-name">
-                            @entry.CustomMealName
-                        </MudText>
+                        <div class="slot-custom-icon">
+                            <MudIcon Icon="@Icons.Material.Filled.Restaurant" Size="Size.Small" />
+                        </div>
+                        <div class="slot-recipe-details">
+                            <MudText Typo="Typo.body2" Class="slot-recipe-name">
+                                @entry.CustomMealName
+                            </MudText>
+                            @if (!string.IsNullOrWhiteSpace(entry.Notes))
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="slot-notes">
+                                    @entry.Notes
+                                </MudText>
+                            }
+                        </div>
                         <MudIconButton Icon="@Icons.Material.Filled.Close"
                                       Size="Size.Small"
                                       Class="slot-remove"
@@ -163,6 +179,37 @@
         object-fit: cover;
         border-radius: 4px;
         flex-shrink: 0;
+    }
+
+    .slot-recipe-placeholder {
+        width: 40px;
+        height: 40px;
+        border-radius: 4px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: var(--mud-palette-secondary);
+        color: var(--mud-palette-secondary-text);
+    }
+
+    .slot-custom-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 4px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: var(--mud-palette-primary);
+        color: var(--mud-palette-primary-text);
+    }
+
+    .slot-notes {
+        font-style: italic;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .slot-recipe-details {
