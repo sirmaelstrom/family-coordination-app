@@ -7,7 +7,9 @@
 @using FamilyCoordinationApp.Data.Entities
 @using FamilyCoordinationApp.Services
 @using FamilyCoordinationApp.Components.Recipe
+@using FamilyCoordinationApp.Components.Shared
 @using Microsoft.EntityFrameworkCore
+@using Markdig
 @inject IRecipeService RecipeService
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject ISnackbar Snackbar
@@ -114,23 +116,172 @@
     }
     else
     {
-        <!-- Recipe grid - expanded cards span full width -->
+        <!-- Recipe grid -->
         <MudGrid>
             @foreach (var recipe in _recipes)
             {
-                var isExpanded = _expandedRecipeId == recipe.RecipeId;
-                <MudItem xs="12" sm="@(isExpanded ? 12 : 6)" md="@(isExpanded ? 12 : 4)">
+                <MudItem xs="12" sm="6" md="4">
                     <RecipeCard Recipe="recipe"
-                                IsExpanded="@isExpanded"
-                                IsExpandedChanged="@(EventCallback.Factory.Create<bool>(this, (expanded) => HandleCardExpanded(recipe.RecipeId, expanded)))"
-                                OnEdit="@(EventCallback.Factory.Create(this, () => HandleEdit(recipe)))"
-                                OnDelete="@(EventCallback.Factory.Create(this, () => HandleDeleteConfirm(recipe)))"
-                                OnAddToMealPlan="@(EventCallback.Factory.Create(this, () => HandleAddToMealPlan(recipe)))" />
+                                IsSelected="@(_selectedRecipe?.RecipeId == recipe.RecipeId)"
+                                OnClick="HandleCardClick" />
                 </MudItem>
             }
         </MudGrid>
     }
 </MudContainer>
+
+<!-- Overlay for dimming when drawer is open -->
+@if (_drawerOpen)
+{
+    <div class="recipe-drawer-overlay" @onclick="CloseDrawer"></div>
+}
+
+<!-- Recipe detail slide-out panel -->
+<MudDrawer @bind-Open="_drawerOpen"
+           Anchor="Anchor.End"
+           Elevation="4"
+           Variant="DrawerVariant.Temporary"
+           Width="min(600px, 100vw)"
+           Class="recipe-detail-drawer">
+    @if (_selectedRecipe != null)
+    {
+        <MudDrawerHeader Class="recipe-drawer-header">
+            <div class="d-flex justify-space-between align-center" style="width: 100%;">
+                <MudText Typo="Typo.h5" Class="text-truncate" Style="max-width: calc(100% - 48px);">
+                    @_selectedRecipe.Name
+                </MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.Close"
+                               OnClick="CloseDrawer"
+                               aria-label="Close panel" />
+            </div>
+        </MudDrawerHeader>
+
+        <div class="recipe-drawer-content">
+            <!-- Recipe Image -->
+            @if (!string.IsNullOrWhiteSpace(_selectedRecipe.ImagePath))
+            {
+                <div class="recipe-detail-image">
+                    <img src="@_selectedRecipe.ImagePath" alt="@_selectedRecipe.Name" />
+                </div>
+            }
+
+            <!-- Author info -->
+            <div class="d-flex align-center gap-2 mb-3">
+                @if (_selectedRecipe.CreatedBy != null)
+                {
+                    <UserAvatar User="@_selectedRecipe.CreatedBy" Size="Size.Small" />
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Added by @_selectedRecipe.CreatedBy.DisplayName
+                    </MudText>
+                }
+                else
+                {
+                    <MudAvatar Size="Size.Small" Color="Color.Default">
+                        <MudIcon Icon="@Icons.Material.Filled.PersonOff" Size="Size.Small" />
+                    </MudAvatar>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="font-italic">
+                        Added by deleted user
+                    </MudText>
+                }
+            </div>
+
+            <!-- Meta chips -->
+            @if (_selectedRecipe.PrepTimeMinutes.HasValue || _selectedRecipe.CookTimeMinutes.HasValue || _selectedRecipe.Servings.HasValue)
+            {
+                <div class="recipe-meta-chips mb-4">
+                    @if (_selectedRecipe.PrepTimeMinutes.HasValue)
+                    {
+                        <MudChip T="string" Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" Color="Color.Info">
+                            Prep: @_selectedRecipe.PrepTimeMinutes min
+                        </MudChip>
+                    }
+                    @if (_selectedRecipe.CookTimeMinutes.HasValue)
+                    {
+                        <MudChip T="string" Icon="@Icons.Material.Filled.Whatshot" Size="Size.Small" Color="Color.Warning">
+                            Cook: @_selectedRecipe.CookTimeMinutes min
+                        </MudChip>
+                    }
+                    @if (_selectedRecipe.Servings.HasValue)
+                    {
+                        <MudChip T="string" Icon="@Icons.Material.Filled.Restaurant" Size="Size.Small" Color="Color.Success">
+                            Servings: @_selectedRecipe.Servings
+                        </MudChip>
+                    }
+                </div>
+            }
+
+            <!-- Description -->
+            @if (!string.IsNullOrWhiteSpace(_selectedRecipe.Description))
+            {
+                <MudText Typo="Typo.body1" Class="mb-4">@_selectedRecipe.Description</MudText>
+            }
+
+            <!-- Ingredients -->
+            @if (_selectedRecipe.Ingredients.Any())
+            {
+                <MudText Typo="Typo.h6" Class="mb-2">Ingredients</MudText>
+                <MudList T="string" Dense="true" Class="mb-4">
+                    @foreach (var ingredient in _selectedRecipe.Ingredients.OrderBy(i => i.SortOrder))
+                    {
+                        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle" IconSize="Size.Small">
+                            @GetIngredientDisplay(ingredient)
+                        </MudListItem>
+                    }
+                </MudList>
+            }
+
+            <!-- Instructions -->
+            @if (!string.IsNullOrWhiteSpace(_selectedRecipe.Instructions))
+            {
+                <MudText Typo="Typo.h6" Class="mb-2">Instructions</MudText>
+                <div class="recipe-instructions mb-4">
+                    @((MarkupString)Markdown.ToHtml(_selectedRecipe.Instructions))
+                </div>
+            }
+
+            <!-- Source URL -->
+            @if (!string.IsNullOrWhiteSpace(_selectedRecipe.SourceUrl))
+            {
+                <div class="d-flex align-center mb-4">
+                    <MudIcon Icon="@Icons.Material.Filled.Link" Size="Size.Small" Class="mr-2" />
+                    <a href="@_selectedRecipe.SourceUrl"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       class="mud-typography mud-link mud-secondary-text mud-typography-body2">
+                        View Original Recipe
+                    </a>
+                </div>
+            }
+        </div>
+
+        <!-- Action buttons -->
+        <div class="recipe-drawer-actions">
+            <MudButton StartIcon="@Icons.Material.Filled.Edit"
+                       Color="Color.Primary"
+                       Variant="Variant.Filled"
+                       OnClick="@(() => HandleEdit(_selectedRecipe))"
+                       FullWidth="true"
+                       Class="mb-2">
+                Edit Recipe
+            </MudButton>
+            <MudButton StartIcon="@Icons.Material.Filled.CalendarMonth"
+                       Color="Color.Secondary"
+                       Variant="Variant.Outlined"
+                       OnClick="@(() => HandleAddToMealPlan(_selectedRecipe))"
+                       FullWidth="true"
+                       Class="mb-2">
+                Add to Meal Plan
+            </MudButton>
+            <MudButton StartIcon="@Icons.Material.Filled.Delete"
+                       Color="Color.Error"
+                       Variant="Variant.Text"
+                       OnClick="@(() => HandleDeleteConfirm(_selectedRecipe))"
+                       FullWidth="true">
+                Delete Recipe
+            </MudButton>
+        </div>
+    }
+</MudDrawer>
 
 <!-- Delete confirmation dialog -->
 <MudDialog @bind-Visible="_showDeleteDialog" Options="_dialogOptions">
@@ -149,14 +300,86 @@
     </DialogActions>
 </MudDialog>
 
+<style>
+    .recipe-drawer-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1299; /* Just below MudDrawer's z-index */
+    }
+
+    .recipe-detail-drawer {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+    }
+
+    .recipe-drawer-header {
+        flex-shrink: 0;
+        border-bottom: 1px solid var(--mud-palette-lines-default);
+    }
+
+    .recipe-drawer-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px 24px;
+    }
+
+    .recipe-detail-image {
+        width: 100%;
+        height: 250px;
+        margin-bottom: 16px;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .recipe-detail-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .recipe-meta-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .recipe-instructions {
+        line-height: 1.6;
+    }
+
+    .recipe-instructions ol,
+    .recipe-instructions ul {
+        margin-left: 1.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .recipe-instructions li {
+        margin-bottom: 0.5rem;
+    }
+
+    .recipe-drawer-actions {
+        flex-shrink: 0;
+        padding: 16px 24px;
+        border-top: 1px solid var(--mud-palette-lines-default);
+        background: var(--mud-palette-background);
+    }
+</style>
+
 @code {
     [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
 
     private List<Recipe> _recipes = new();
     private bool _loading = true;
     private string _searchTerm = string.Empty;
-    private int? _expandedRecipeId;
     private int _householdId;
+
+    private Recipe? _selectedRecipe;
+    private bool _drawerOpen;
 
     private bool _showDeleteDialog;
     private Recipe? _recipeToDelete;
@@ -219,9 +442,16 @@
         }
     }
 
-    private void HandleCardExpanded(int recipeId, bool expanded)
+    private void HandleCardClick(Recipe recipe)
     {
-        _expandedRecipeId = expanded ? recipeId : null;
+        _selectedRecipe = recipe;
+        _drawerOpen = true;
+    }
+
+    private void CloseDrawer()
+    {
+        _drawerOpen = false;
+        // Keep _selectedRecipe so the drawer content doesn't flash during close animation
     }
 
     private void HandleAddRecipe()
@@ -274,10 +504,11 @@
             await RecipeService.DeleteRecipeAsync(_householdId, _recipeToDelete.RecipeId);
             Snackbar.Add($"Recipe '{_recipeToDelete.Name}' deleted", Severity.Success);
 
-            // Collapse if this was the expanded recipe
-            if (_expandedRecipeId == _recipeToDelete.RecipeId)
+            // Close drawer if this was the selected recipe
+            if (_selectedRecipe?.RecipeId == _recipeToDelete.RecipeId)
             {
-                _expandedRecipeId = null;
+                _drawerOpen = false;
+                _selectedRecipe = null;
             }
 
             // Reload recipes
@@ -304,6 +535,30 @@
     {
         _searchTerm = string.Empty;
         await LoadRecipes();
+    }
+
+    private string GetIngredientDisplay(RecipeIngredient ingredient)
+    {
+        var parts = new List<string>();
+
+        if (ingredient.Quantity.HasValue)
+        {
+            parts.Add(ingredient.Quantity.Value.ToString("0.##"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(ingredient.Unit))
+        {
+            parts.Add(ingredient.Unit);
+        }
+
+        parts.Add(ingredient.Name);
+
+        if (!string.IsNullOrWhiteSpace(ingredient.Notes))
+        {
+            parts.Add($"({ingredient.Notes})");
+        }
+
+        return string.Join(" ", parts);
     }
 
     private void OnDataChanged()

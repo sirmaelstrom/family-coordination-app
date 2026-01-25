@@ -1,8 +1,9 @@
 @using FamilyCoordinationApp.Data.Entities
 @using FamilyCoordinationApp.Components.Shared
-@using Markdig
 
-<MudCard Elevation="@(_isExpanded ? 8 : 2)" Class="mb-3 cursor-pointer" @onclick="ToggleExpanded">
+<MudCard Elevation="@(IsSelected ? 4 : 2)" 
+         Class="@CardClass" 
+         @onclick="HandleClick">
     @if (!string.IsNullOrWhiteSpace(Recipe.ImagePath))
     {
         <MudCardMedia Image="@Recipe.ImagePath" Height="200" />
@@ -14,7 +15,7 @@
 
     <MudCardContent>
         <div class="d-flex align-center gap-2 mb-2">
-            <MudText Typo="Typo.h5">@Recipe.Name</MudText>
+            <MudText Typo="Typo.h6">@Recipe.Name</MudText>
             @if (!string.IsNullOrWhiteSpace(Recipe.SourceUrl))
             {
                 <MudTooltip Text="Imported from web">
@@ -44,122 +45,19 @@
             }
         </div>
 
-        @if (!_isExpanded)
+        @if (Recipe.Ingredients.Any())
         {
-            <!-- Collapsed state: show ingredient preview -->
-            @if (Recipe.Ingredients.Any())
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    @GetIngredientPreview()
-                </MudText>
-            }
-            else
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="font-italic">
-                    No ingredients
-                </MudText>
-            }
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                @GetIngredientPreview()
+            </MudText>
         }
         else
         {
-            <!-- Expanded state: show full details with responsive layout -->
-            <div class="mb-3">
-                @if (Recipe.PrepTimeMinutes.HasValue || Recipe.CookTimeMinutes.HasValue || Recipe.Servings.HasValue)
-                {
-                    <div class="recipe-meta-chips mb-3">
-                        @if (Recipe.PrepTimeMinutes.HasValue)
-                        {
-                            <MudChip T="string" Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" Color="Color.Info">
-                                Prep: @Recipe.PrepTimeMinutes min
-                            </MudChip>
-                        }
-                        @if (Recipe.CookTimeMinutes.HasValue)
-                        {
-                            <MudChip T="string" Icon="@Icons.Material.Filled.Whatshot" Size="Size.Small" Color="Color.Warning">
-                                Cook: @Recipe.CookTimeMinutes min
-                            </MudChip>
-                        }
-                        @if (Recipe.Servings.HasValue)
-                        {
-                            <MudChip T="string" Icon="@Icons.Material.Filled.Restaurant" Size="Size.Small" Color="Color.Success">
-                                Servings: @Recipe.Servings
-                            </MudChip>
-                        }
-                    </div>
-                }
-
-                @if (!string.IsNullOrWhiteSpace(Recipe.Description))
-                {
-                    <MudText Typo="Typo.body2" Class="mb-3">@Recipe.Description</MudText>
-                }
-
-                <!-- Two-column layout for ingredients + instructions on larger screens -->
-                <div class="recipe-details-grid">
-                    @if (Recipe.Ingredients.Any())
-                    {
-                        <div class="recipe-ingredients">
-                            <MudText Typo="Typo.h6" Class="mb-2">Ingredients</MudText>
-                            <MudList T="string" Dense="true">
-                                @foreach (var ingredient in Recipe.Ingredients.OrderBy(i => i.SortOrder))
-                                {
-                                    <MudListItem T="string" Icon="@Icons.Material.Filled.Circle" IconSize="Size.Small">
-                                        @GetIngredientDisplay(ingredient)
-                                    </MudListItem>
-                                }
-                            </MudList>
-                        </div>
-                    }
-
-                    @if (!string.IsNullOrWhiteSpace(Recipe.Instructions))
-                    {
-                        <div class="recipe-instructions-section">
-                            <MudText Typo="Typo.h6" Class="mb-2">Instructions</MudText>
-                            <div class="recipe-instructions">
-                                @((MarkupString)Markdown.ToHtml(Recipe.Instructions))
-                            </div>
-                        </div>
-                    }
-                </div>
-
-                @if (!string.IsNullOrWhiteSpace(Recipe.SourceUrl))
-                {
-                    <div class="d-flex align-center mt-3">
-                        <MudIcon Icon="@Icons.Material.Filled.Link" Size="Size.Small" Class="mr-2" />
-                        <a href="@Recipe.SourceUrl"
-                           target="_blank"
-                           rel="noopener noreferrer"
-                           class="mud-typography mud-link mud-secondary-text mud-typography-body2">
-                            View Original Recipe
-                        </a>
-                    </div>
-                }
-            </div>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="font-italic">
+                No ingredients
+            </MudText>
         }
     </MudCardContent>
-
-    @if (_isExpanded)
-    {
-        <MudCardActions @onclick:stopPropagation="true">
-            <MudButton StartIcon="@Icons.Material.Filled.Edit"
-                       Color="Color.Primary"
-                       Variant="Variant.Text"
-                       OnClick="HandleEdit">
-                Edit
-            </MudButton>
-            <MudButton StartIcon="@Icons.Material.Filled.Delete"
-                       Color="Color.Error"
-                       Variant="Variant.Text"
-                       OnClick="HandleDelete">
-                Delete
-            </MudButton>
-            <MudButton StartIcon="@Icons.Material.Filled.CalendarMonth"
-                       Color="Color.Secondary"
-                       Variant="Variant.Text"
-                       OnClick="HandleAddToMealPlan">
-                Add to Meal Plan
-            </MudButton>
-        </MudCardActions>
-    }
 </MudCard>
 
 @code {
@@ -167,40 +65,18 @@
     public Recipe Recipe { get; set; } = default!;
 
     [Parameter]
-    public bool IsExpanded { get; set; }
+    public bool IsSelected { get; set; }
 
     [Parameter]
-    public EventCallback<bool> IsExpandedChanged { get; set; }
+    public EventCallback<Recipe> OnClick { get; set; }
 
-    [Parameter]
-    public EventCallback OnEdit { get; set; }
+    private string CardClass => IsSelected 
+        ? "recipe-card recipe-card-selected" 
+        : "recipe-card";
 
-    [Parameter]
-    public EventCallback OnDelete { get; set; }
-
-    [Parameter]
-    public EventCallback OnAddToMealPlan { get; set; }
-
-    private bool _isExpanded => IsExpanded;
-
-    private async Task ToggleExpanded()
+    private async Task HandleClick()
     {
-        await IsExpandedChanged.InvokeAsync(!IsExpanded);
-    }
-
-    private async Task HandleEdit()
-    {
-        await OnEdit.InvokeAsync();
-    }
-
-    private async Task HandleDelete()
-    {
-        await OnDelete.InvokeAsync();
-    }
-
-    private async Task HandleAddToMealPlan()
-    {
-        await OnAddToMealPlan.InvokeAsync();
+        await OnClick.InvokeAsync(Recipe);
     }
 
     private string GetIngredientPreview()
@@ -220,81 +96,21 @@
 
         return preview;
     }
-
-    private string GetIngredientDisplay(RecipeIngredient ingredient)
-    {
-        var parts = new List<string>();
-
-        if (ingredient.Quantity.HasValue)
-        {
-            parts.Add(ingredient.Quantity.Value.ToString("0.##"));
-        }
-
-        if (!string.IsNullOrWhiteSpace(ingredient.Unit))
-        {
-            parts.Add(ingredient.Unit);
-        }
-
-        parts.Add(ingredient.Name);
-
-        if (!string.IsNullOrWhiteSpace(ingredient.Notes))
-        {
-            parts.Add($"({ingredient.Notes})");
-        }
-
-        return string.Join(" ", parts);
-    }
 }
 
 <style>
-    .cursor-pointer {
+    .recipe-card {
         cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
 
-    /* Meta chips - flex wrap for mobile consistency */
-    .recipe-meta-chips {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
+    .recipe-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
 
-    .recipe-meta-chips .mud-chip {
-        flex-shrink: 0;
-    }
-
-    /* Two-column layout for expanded recipe on larger screens */
-    .recipe-details-grid {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 1.5rem;
-    }
-
-    /* On medium+ screens, use two columns if we have both ingredients and instructions */
-    @@media (min-width: 960px) {
-        .recipe-details-grid {
-            grid-template-columns: minmax(200px, 1fr) minmax(300px, 2fr);
-        }
-    }
-
-    .recipe-ingredients {
-        min-width: 0;
-    }
-
-    .recipe-instructions-section {
-        min-width: 0;
-    }
-
-    .recipe-instructions {
-        line-height: 1.6;
-    }
-
-    .recipe-instructions ol,
-    .recipe-instructions ul {
-        margin-left: 1.5rem;
-        margin-bottom: 1rem;
-    }
-
-    .recipe-instructions li {
-        margin-bottom: 0.5rem;
+    .recipe-card-selected {
+        outline: 2px solid var(--mud-palette-primary);
+        outline-offset: 2px;
     }
 </style>
