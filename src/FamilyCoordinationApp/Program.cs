@@ -42,6 +42,9 @@ builder.Services.AddSingleton<PresenceService>();
 builder.Services.AddSingleton<PollingService>();
 builder.Services.AddHostedService<PollingService>(sp => sp.GetRequiredService<PollingService>());
 
+// Site admin service - config-based admin role
+builder.Services.AddSingleton<ISiteAdminService, SiteAdminService>();
+
 // Recipe import services
 builder.Services.AddSingleton<IUrlValidator, UrlValidator>();
 builder.Services.AddScoped<IRecipeScraperService, RecipeScraperService>();
