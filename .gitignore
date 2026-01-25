@@ -79,3 +79,6 @@ bld/
 *.trx
 .docker-data/
 bin\Debug/
+
+# Local documentation (not committed)
+LOCAL-DOCS/
