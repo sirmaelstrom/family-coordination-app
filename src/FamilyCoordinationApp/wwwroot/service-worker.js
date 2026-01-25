@@ -1,7 +1,9 @@
 // Service Worker for Family Coordination App
 // Simple caching strategy for PWA support
+// CACHE_VERSION is replaced at build time by the deploy script
 
-const CACHE_NAME = 'family-app-v1';
+const CACHE_VERSION = '__BUILD_TIMESTAMP__';
+const CACHE_NAME = `family-app-${CACHE_VERSION}`;
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -53,10 +55,23 @@ self.addEventListener('fetch', event => {
     return;
   }
   
-  // Cache-first for static assets (icons, css, images)
+  // Network-first for CSS (ensures fresh styles after deploy)
+  if (url.pathname.endsWith('.css')) {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Cache-first for other static assets (icons, images, fonts)
   if (url.pathname.startsWith('/icons/') ||
       url.pathname.startsWith('/images/') ||
-      url.pathname.endsWith('.css') ||
       url.pathname.endsWith('.png') ||
       url.pathname.endsWith('.jpg') ||
       url.pathname.endsWith('.woff2')) {
