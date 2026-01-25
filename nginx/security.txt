@@ -1,0 +1,7 @@
+# Family Kitchen Security Contact
+# https://securitytxt.org/
+
+Contact: mailto:security@heathdev.me
+Expires: 2027-01-25T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://family.heathdev.me/.well-known/security.txt
