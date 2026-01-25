@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-01-22)
 
 **Core value:** The integrated workflow - recipes → meal plan → shopping list. Automated aggregation and real-time collaboration reduce mental load from scattered information and last-minute decisions.
-**Current focus:** Milestone v1.0 complete
+**Current focus:** Gap closure phases for v1.0
 
 ## Current Position
 
-Phase: 7 of 7 (Mobile & UX Polish)
-Plan: 5 of 5 (complete)
-Status: All phases complete, milestone ready for completion
-Last activity: 2026-01-24 — Phase 7 human verification approved
+Phase: 8 of 9 (Collaboration Wiring Fixes)
+Plan: 0 of ? (needs planning)
+Status: Gap closure phases added, ready to plan
+Last activity: 2026-01-25 — Gap closure phases 8-9 added
 
-Progress: [████████████████████] 100% (7 of 7 phases)
+Progress: [██████████████████░░] 78% (7 of 9 phases)
 
 ## Performance Metrics
 
