@@ -19,14 +19,13 @@
         </div>
         @foreach (var day in WeekDays)
         {
-            var entry = GetEntry(day, mealType);
+            var entries = GetEntries(day, mealType);
             <MealSlot Date="@day"
                       MealType="@mealType"
-                      Entry="@entry"
-                      OnClick="@(() => OnSlotClick.InvokeAsync((day, mealType)))"
-                      OnRemove="@(() => HandleRemove(day, mealType))"
-                      OnEdit="@(() => OnSlotClick.InvokeAsync((day, mealType)))"
-                      OnViewRecipe="@(() => HandleViewRecipe(entry))" />
+                      Entries="@entries"
+                      OnAddClick="@(() => OnSlotClick.InvokeAsync((day, mealType)))"
+                      OnRemoveEntry="@OnRemoveEntry"
+                      OnViewRecipe="@OnViewRecipe" />
         }
     }
 </div>
@@ -51,26 +50,9 @@
         .Select(i => WeekStartDate.AddDays(i))
         .ToArray();
 
-    private MealPlanEntry? GetEntry(DateOnly date, MealType mealType)
+    private List<MealPlanEntry> GetEntries(DateOnly date, MealType mealType)
     {
-        return Entries?.FirstOrDefault(e => e.Date == date && e.MealType == mealType);
-    }
-
-    private async Task HandleRemove(DateOnly date, MealType mealType)
-    {
-        var entry = GetEntry(date, mealType);
-        if (entry != null)
-        {
-            await OnRemoveEntry.InvokeAsync(entry);
-        }
-    }
-
-    private async Task HandleViewRecipe(MealPlanEntry? entry)
-    {
-        if (entry?.Recipe != null)
-        {
-            await OnViewRecipe.InvokeAsync(entry.Recipe);
-        }
+        return Entries?.Where(e => e.Date == date && e.MealType == mealType).ToList() ?? new();
     }
 }
 

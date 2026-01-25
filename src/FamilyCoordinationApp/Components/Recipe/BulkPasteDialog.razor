@@ -3,6 +3,7 @@
 
 @inject IIngredientParser Parser
 @inject ICategoryService CategoryService
+@inject ICategoryInferenceService CategoryInference
 
 <MudDialog>
     <DialogContent>
@@ -143,36 +144,9 @@
 
     private string SuggestCategory(string ingredientName)
     {
-        var lower = ingredientName.ToLowerInvariant();
-
-        if (lower.Contains("chicken") || lower.Contains("beef") || lower.Contains("pork") ||
-            lower.Contains("fish") || lower.Contains("salmon") || lower.Contains("shrimp") ||
-            lower.Contains("bacon") || lower.Contains("sausage") || lower.Contains("turkey"))
-            return FindCategory("Meat");
-
-        if (lower.Contains("milk") || lower.Contains("cheese") || lower.Contains("cream") ||
-            lower.Contains("butter") || lower.Contains("yogurt") || lower.Contains("egg"))
-            return FindCategory("Dairy");
-
-        if (lower.Contains("lettuce") || lower.Contains("tomato") || lower.Contains("onion") ||
-            lower.Contains("garlic") || lower.Contains("pepper") || lower.Contains("carrot") ||
-            lower.Contains("celery") || lower.Contains("potato") || lower.Contains("broccoli") ||
-            lower.Contains("spinach") || lower.Contains("cucumber") || lower.Contains("avocado"))
-            return FindCategory("Produce");
-
-        if (lower.Contains("salt") || lower.Contains("pepper") || lower.Contains("cumin") ||
-            lower.Contains("paprika") || lower.Contains("oregano") || lower.Contains("basil") ||
-            lower.Contains("thyme") || lower.Contains("rosemary") || lower.Contains("cinnamon"))
-            return FindCategory("Spices");
-
-        if (lower.Contains("bread") || lower.Contains("bun") || lower.Contains("roll") ||
-            lower.Contains("tortilla") || lower.Contains("bagel"))
-            return FindCategory("Bakery");
-
-        if (lower.Contains("frozen"))
-            return FindCategory("Frozen");
-
-        return FindCategory("Pantry");
+        // Use the centralized category inference service
+        var inferredCategory = CategoryInference.InferCategory(ingredientName);
+        return FindCategory(inferredCategory);
     }
 
     private string FindCategory(string name)

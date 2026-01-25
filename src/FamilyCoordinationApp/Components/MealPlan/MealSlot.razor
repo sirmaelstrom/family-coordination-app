@@ -1,65 +1,65 @@
 @using FamilyCoordinationApp.Data.Entities
 
-<MudPaper Elevation="@(Entry != null ? 2 : 0)"
-          Class="@GetSlotClass()"
-          @onclick="HandleClick">
-    @if (Entry == null)
+<MudPaper Elevation="@(HasEntries ? 2 : 0)"
+          Class="@GetSlotClass()">
+    @if (!HasEntries)
     {
         <!-- Empty slot -->
-        <div class="slot-empty-content">
+        <div class="slot-empty-content" @onclick="HandleAddClick">
             <MudIcon Icon="@Icons.Material.Filled.Add" Color="Color.Secondary" Size="Size.Large" />
         </div>
     }
-    else if (Entry.Recipe != null)
+    else
     {
-        <!-- Recipe meal -->
-        <div class="slot-recipe-content">
-            @if (!string.IsNullOrWhiteSpace(Entry.Recipe.ImagePath))
+        <!-- Entries list -->
+        <div class="slot-entries-container">
+            @foreach (var entry in Entries)
             {
-                <img src="@Entry.Recipe.ImagePath" alt="@Entry.Recipe.Name" class="slot-recipe-image" />
-            }
-            <div class="slot-recipe-details">
-                <MudText Typo="Typo.body2" Class="slot-recipe-name">
-                    @Entry.Recipe.Name
-                </MudText>
-                @if (!string.IsNullOrWhiteSpace(Entry.Notes))
+                @if (entry.Recipe != null)
                 {
-                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="slot-notes">
-                        @Entry.Notes
-                    </MudText>
+                    <!-- Recipe meal -->
+                    <div class="slot-entry" @onclick="() => HandleViewRecipe(entry)">
+                        @if (!string.IsNullOrWhiteSpace(entry.Recipe.ImagePath))
+                        {
+                            <img src="@entry.Recipe.ImagePath" alt="@entry.Recipe.Name" class="slot-recipe-image" />
+                        }
+                        <div class="slot-recipe-details">
+                            <MudText Typo="Typo.body2" Class="slot-recipe-name">
+                                @entry.Recipe.Name
+                            </MudText>
+                            @if (entry.Recipe.RecipeType != RecipeType.Main)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Class="slot-type-chip">
+                                    @entry.Recipe.RecipeType.ToString()
+                                </MudChip>
+                            }
+                        </div>
+                        <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                      Size="Size.Small"
+                                      Class="slot-remove"
+                                      OnClick="() => HandleRemoveEntry(entry)" />
+                    </div>
                 }
-            </div>
-            <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                          Size="Size.Small"
-                          Class="slot-edit"
-                          OnClick="HandleEditClick" />
-            <MudIconButton Icon="@Icons.Material.Filled.Close"
-                          Size="Size.Small"
-                          Class="slot-remove"
-                          OnClick="HandleRemoveClick" />
-        </div>
-    }
-    else if (!string.IsNullOrWhiteSpace(Entry.CustomMealName))
-    {
-        <!-- Custom meal -->
-        <div class="slot-custom-content">
-            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="slot-custom-name">
-                @Entry.CustomMealName
-            </MudText>
-            @if (!string.IsNullOrWhiteSpace(Entry.Notes))
-            {
-                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="slot-notes">
-                    @Entry.Notes
-                </MudText>
+                else if (!string.IsNullOrWhiteSpace(entry.CustomMealName))
+                {
+                    <!-- Custom meal -->
+                    <div class="slot-entry">
+                        <MudIcon Icon="@Icons.Material.Filled.Restaurant" Size="Size.Small" Color="Color.Secondary" Class="mr-2" />
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="slot-custom-name">
+                            @entry.CustomMealName
+                        </MudText>
+                        <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                      Size="Size.Small"
+                                      Class="slot-remove"
+                                      OnClick="() => HandleRemoveEntry(entry)" />
+                    </div>
+                }
             }
-            <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                          Size="Size.Small"
-                          Class="slot-edit"
-                          OnClick="HandleEditClick" />
-            <MudIconButton Icon="@Icons.Material.Filled.Close"
-                          Size="Size.Small"
-                          Class="slot-remove"
-                          OnClick="HandleRemoveClick" />
+            <!-- Add more button -->
+            <div class="slot-add-more" @onclick="HandleAddClick">
+                <MudIcon Icon="@Icons.Material.Filled.Add" Size="Size.Small" Color="Color.Secondary" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Add side/dessert</MudText>
+            </div>
         </div>
     }
 </MudPaper>
@@ -72,65 +72,58 @@
     public MealType MealType { get; set; }
 
     [Parameter]
-    public MealPlanEntry? Entry { get; set; }
+    public List<MealPlanEntry> Entries { get; set; } = new();
 
     [Parameter]
-    public EventCallback OnClick { get; set; }
+    public EventCallback OnAddClick { get; set; }
 
     [Parameter]
-    public EventCallback OnRemove { get; set; }
+    public EventCallback<MealPlanEntry> OnRemoveEntry { get; set; }
 
     [Parameter]
-    public EventCallback OnEdit { get; set; }
+    public EventCallback<Recipe> OnViewRecipe { get; set; }
 
-    [Parameter]
-    public EventCallback OnViewRecipe { get; set; }
+    private bool HasEntries => Entries.Any();
 
-    private async Task HandleClick()
+    private async Task HandleAddClick()
     {
-        // Empty slots open picker, filled slots view recipe details
-        if (Entry == null)
-        {
-            await OnClick.InvokeAsync();
-        }
-        else if (Entry.Recipe != null)
-        {
-            await OnViewRecipe.InvokeAsync();
-        }
-        // Custom meals don't have recipes to view, so do nothing
+        await OnAddClick.InvokeAsync();
     }
 
-    private async Task HandleRemoveClick()
+    private async Task HandleRemoveEntry(MealPlanEntry entry)
     {
-        await OnRemove.InvokeAsync();
+        await OnRemoveEntry.InvokeAsync(entry);
     }
 
-    private async Task HandleEditClick()
+    private async Task HandleViewRecipe(MealPlanEntry entry)
     {
-        await OnEdit.InvokeAsync();
+        if (entry.Recipe != null)
+        {
+            await OnViewRecipe.InvokeAsync(entry.Recipe);
+        }
     }
 
     private string GetSlotClass()
     {
-        return Entry == null ? "meal-slot meal-slot-empty" : "meal-slot";
+        return HasEntries ? "meal-slot" : "meal-slot meal-slot-empty";
     }
 }
 
 <style>
     .meal-slot {
         min-height: 80px;
-        cursor: pointer;
         position: relative;
         transition: background-color 0.2s ease;
-    }
-
-    .meal-slot:hover {
-        background-color: var(--mud-palette-action-default-hover);
     }
 
     .meal-slot-empty {
         border: 2px dashed var(--mud-palette-lines-default);
         background-color: transparent;
+        cursor: pointer;
+    }
+
+    .meal-slot-empty:hover {
+        background-color: var(--mud-palette-action-default-hover);
     }
 
     .slot-empty-content {
@@ -140,19 +133,31 @@
         min-height: 80px;
     }
 
-    .slot-recipe-content,
-    .slot-custom-content {
+    .slot-entries-container {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 8px;
+    }
+
+    .slot-entry {
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 12px;
-        min-height: 80px;
+        gap: 8px;
+        padding: 6px 8px;
+        border-radius: 4px;
         position: relative;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+    }
+
+    .slot-entry:hover {
+        background-color: var(--mud-palette-action-default-hover);
     }
 
     .slot-recipe-image {
-        width: 60px;
-        height: 60px;
+        width: 40px;
+        height: 40px;
         object-fit: cover;
         border-radius: 4px;
         flex-shrink: 0;
@@ -160,11 +165,23 @@
 
     .slot-recipe-details {
         flex: 1;
-        min-width: 0; /* Allow text truncation */
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
     }
 
     .slot-recipe-name {
-        /* Normal text styling - no hyperlink appearance */
+        line-height: 1.2;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .slot-type-chip {
+        padding: 0 4px !important;
+        height: 18px !important;
+        font-size: 0.65rem !important;
     }
 
     .slot-custom-name {
@@ -172,29 +189,32 @@
         flex: 1;
     }
 
-    .slot-notes {
-        margin-top: 4px;
-        font-size: 0.75rem;
-    }
-
-    .slot-edit {
-        position: absolute;
-        top: 4px;
-        right: 36px;
-        opacity: 0;
-        transition: opacity 0.2s ease;
-    }
-
     .slot-remove {
-        position: absolute;
-        top: 4px;
-        right: 4px;
         opacity: 0;
+        transition: opacity 0.2s ease;
+        flex-shrink: 0;
+    }
+
+    .slot-entry:hover .slot-remove {
+        opacity: 1;
+    }
+
+    .slot-add-more {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 6px;
+        border: 1px dashed var(--mud-palette-lines-default);
+        border-radius: 4px;
+        cursor: pointer;
+        margin-top: 4px;
+        opacity: 0.6;
         transition: opacity 0.2s ease;
     }
 
-    .meal-slot:hover .slot-edit,
-    .meal-slot:hover .slot-remove {
+    .slot-add-more:hover {
         opacity: 1;
+        background-color: var(--mud-palette-action-default-hover);
     }
 </style>
