@@ -118,14 +118,14 @@ public class PollingService(
         logger.LogInformation("PollingService stopped");
     }
 
-    private async Task CheckForChangesAsync(CancellationToken ct)
+    private async Task CheckForChangesAsync(CancellationToken cancellationToken)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         // Get all active households to check for changes
         var householdIds = await db.Households
             .Select(h => h.Id)
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         var now = DateTime.UtcNow;
 
@@ -139,7 +139,7 @@ public class PollingService(
         ApplicationDbContext db, 
         int householdId, 
         DateTime now, 
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         DateTime lastShoppingCheck, lastRecipeCheck, lastMealPlanCheck;
         

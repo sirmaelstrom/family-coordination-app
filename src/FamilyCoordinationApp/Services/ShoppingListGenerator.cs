@@ -37,7 +37,7 @@ public class ShoppingListGenerator(
         DateOnly? endDate = null,
         CancellationToken cancellationToken = default)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         // Load meal plan with entries, recipes, and ingredients
         var mealPlan = await context.MealPlans
@@ -45,7 +45,7 @@ public class ShoppingListGenerator(
             .Include(mp => mp.Entries)
                 .ThenInclude(e => e.Recipe)
                     .ThenInclude(r => r!.Ingredients)
-            .FirstOrDefaultAsync(ct);
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (mealPlan == null)
         {
@@ -113,7 +113,7 @@ public class ShoppingListGenerator(
         int shoppingListId,
         CancellationToken cancellationToken = default)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         // Load existing list with items
         var existingList = await shoppingListService.GetShoppingListAsync(householdId, shoppingListId, cancellationToken);
@@ -139,7 +139,7 @@ public class ShoppingListGenerator(
             .Include(mp => mp.Entries)
                 .ThenInclude(e => e.Recipe)
                     .ThenInclude(r => r!.Ingredients)
-            .FirstOrDefaultAsync(ct);
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (mealPlan == null)
         {

@@ -31,7 +31,7 @@ public class ShoppingListService(
         return await IdGenerationHelper.ExecuteWithRetryAsync(
             async (attempt) =>
             {
-                await using var context = await dbFactory.CreateDbContextAsync(ct);
+                await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
                 var maxId = await context.ShoppingLists
                     .Where(sl => sl.HouseholdId == householdId)
@@ -48,7 +48,7 @@ public class ShoppingListService(
                 };
 
                 context.ShoppingLists.Add(shoppingList);
-                await context.SaveChangesAsync(ct);
+                await context.SaveChangesAsync(cancellationToken);
 
                 logger.LogInformation("Created ShoppingList {ShoppingListId} for household {HouseholdId}",
                     shoppingList.ShoppingListId, householdId);
@@ -61,26 +61,26 @@ public class ShoppingListService(
 
     public async Task<ShoppingList?> GetShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await context.ShoppingLists
             .Where(sl => sl.HouseholdId == householdId && sl.ShoppingListId == shoppingListId)
             .Include(sl => sl.Items)
                 .ThenInclude(i => i.AddedBy)
             .Include(sl => sl.MealPlan)
-            .FirstOrDefaultAsync(ct);
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     public async Task<List<ShoppingList>> GetActiveShoppingListsAsync(int householdId, CancellationToken cancellationToken = default)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await context.ShoppingLists
             .Where(sl => sl.HouseholdId == householdId && !sl.IsArchived)
             .OrderByDescending(sl => sl.CreatedAt)
             .Include(sl => sl.Items)
                 .ThenInclude(i => i.AddedBy)
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<ShoppingListItem> AddManualItemAsync(ShoppingListItem item, CancellationToken cancellationToken = default)
@@ -88,7 +88,7 @@ public class ShoppingListService(
         return await IdGenerationHelper.ExecuteWithRetryAsync(
             async (attempt) =>
             {
-                await using var context = await dbFactory.CreateDbContextAsync(ct);
+                await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
                 var maxItemId = await context.ShoppingListItems
                     .Where(i => i.HouseholdId == item.HouseholdId && i.ShoppingListId == item.ShoppingListId)
@@ -100,7 +100,7 @@ public class ShoppingListService(
                 item.IsChecked = false;
 
                 context.ShoppingListItems.Add(item);
-                await context.SaveChangesAsync(ct);
+                await context.SaveChangesAsync(cancellationToken);
 
                 logger.LogInformation("Added manual item {ItemId} to ShoppingList {ShoppingListId} for household {HouseholdId}",
                     item.ItemId, item.ShoppingListId, item.HouseholdId);
@@ -113,7 +113,7 @@ public class ShoppingListService(
 
     public async Task UpdateItemAsync(ShoppingListItem item, CancellationToken cancellationToken = default)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var existing = await context.ShoppingListItems
             .FirstOrDefaultAsync(i =>
@@ -135,7 +135,7 @@ public class ShoppingListService(
         existing.UpdatedByUserId = item.UpdatedByUserId;
         existing.UpdatedAt = DateTime.UtcNow;
 
-        await context.SaveChangesAsync(ct);
+        await context.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Updated item {ItemId} in ShoppingList {ShoppingListId} for household {HouseholdId}",
             item.ItemId, item.ShoppingListId, item.HouseholdId);
@@ -157,7 +157,7 @@ public class ShoppingListService(
         {
             try
             {
-                await using var context = await dbFactory.CreateDbContextAsync(ct);
+                await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
                 // Fetch fresh entity from this context to avoid disposed context error
                 var existing = await context.ShoppingListItems
@@ -182,7 +182,7 @@ public class ShoppingListService(
                 existing.UpdatedByUserId = item.UpdatedByUserId;
                 existing.UpdatedAt = DateTime.UtcNow;
 
-                await context.SaveChangesAsync(ct);
+                await context.SaveChangesAsync(cancellationToken);
 
                 logger.LogInformation("Updated item {ItemId} in ShoppingList {ShoppingListId} for household {HouseholdId} (conflict: {WasConflict})",
                     item.ItemId, item.ShoppingListId, item.HouseholdId, wasConflict);
@@ -198,7 +198,7 @@ public class ShoppingListService(
                 {
                     if (entry.Entity is ShoppingListItem)
                     {
-                        var databaseValues = await entry.GetDatabaseValuesAsync(ct);
+                        var databaseValues = await entry.GetDatabaseValuesAsync(cancellationToken);
 
                         if (databaseValues == null)
                         {
@@ -255,7 +255,7 @@ public class ShoppingListService(
 
     public async Task DeleteItemAsync(int householdId, int shoppingListId, int itemId, CancellationToken cancellationToken = default)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var item = await context.ShoppingListItems
             .FirstOrDefaultAsync(i =>
@@ -269,7 +269,7 @@ public class ShoppingListService(
         }
 
         context.ShoppingListItems.Remove(item);
-        await context.SaveChangesAsync(ct);
+        await context.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Deleted item {ItemId} from ShoppingList {ShoppingListId} for household {HouseholdId}",
             itemId, shoppingListId, householdId);
@@ -277,7 +277,7 @@ public class ShoppingListService(
 
     public async Task<ShoppingListItem> ToggleItemCheckedAsync(int householdId, int shoppingListId, int itemId, CancellationToken cancellationToken = default)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var item = await context.ShoppingListItems
             .FirstOrDefaultAsync(i =>
@@ -294,7 +294,7 @@ public class ShoppingListService(
         item.CheckedAt = item.IsChecked ? DateTime.UtcNow : null;
         item.UpdatedAt = DateTime.UtcNow;
 
-        await context.SaveChangesAsync(ct);
+        await context.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Toggled item {ItemId} checked state to {IsChecked} in ShoppingList {ShoppingListId} for household {HouseholdId}",
             itemId, item.IsChecked, shoppingListId, householdId);
@@ -304,7 +304,7 @@ public class ShoppingListService(
 
     public async Task<List<string>> GetItemNameSuggestionsAsync(int householdId, string prefix, int limit = 10, CancellationToken cancellationToken = default)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var lower = prefix.ToLowerInvariant();
 
@@ -317,7 +317,7 @@ public class ShoppingListService(
             .OrderByDescending(x => x.Count)
             .Take(limit)
             .Select(x => x.Name)
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         if (startsWithMatches.Count >= limit)
         {
@@ -334,14 +334,14 @@ public class ShoppingListService(
             .OrderByDescending(x => x.Count)
             .Take(limit - startsWithMatches.Count)
             .Select(x => x.Name)
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         return startsWithMatches.Concat(containsMatches).ToList();
     }
 
     public async Task ArchiveShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var shoppingList = await context.ShoppingLists
             .FirstOrDefaultAsync(sl =>
@@ -354,7 +354,7 @@ public class ShoppingListService(
         }
 
         shoppingList.IsArchived = true;
-        await context.SaveChangesAsync(ct);
+        await context.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Archived ShoppingList {ShoppingListId} for household {HouseholdId}",
             shoppingListId, householdId);
@@ -362,19 +362,19 @@ public class ShoppingListService(
 
     public async Task<int> ClearCheckedItemsAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var checkedItems = await context.ShoppingListItems
             .Where(i =>
                 i.HouseholdId == householdId &&
                 i.ShoppingListId == shoppingListId &&
                 i.IsChecked)
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         var count = checkedItems.Count;
 
         context.ShoppingListItems.RemoveRange(checkedItems);
-        await context.SaveChangesAsync(ct);
+        await context.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Cleared {Count} checked items from ShoppingList {ShoppingListId} for household {HouseholdId}",
             count, shoppingListId, householdId);
@@ -384,7 +384,7 @@ public class ShoppingListService(
 
     public async Task UpdateItemSortOrdersAsync(int householdId, int shoppingListId, List<(int ItemId, int SortOrder, string? Category)> updates, CancellationToken cancellationToken = default)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var itemIds = updates.Select(u => u.ItemId).ToList();
         var items = await context.ShoppingListItems
@@ -392,7 +392,7 @@ public class ShoppingListService(
                 i.HouseholdId == householdId &&
                 i.ShoppingListId == shoppingListId &&
                 itemIds.Contains(i.ItemId))
-            .ToListAsync(ct);
+            .ToListAsync(cancellationToken);
 
         foreach (var item in items)
         {
@@ -408,7 +408,7 @@ public class ShoppingListService(
             }
         }
 
-        await context.SaveChangesAsync(ct);
+        await context.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Updated sort orders for {Count} items in ShoppingList {ShoppingListId} for household {HouseholdId}",
             updates.Count, shoppingListId, householdId);
