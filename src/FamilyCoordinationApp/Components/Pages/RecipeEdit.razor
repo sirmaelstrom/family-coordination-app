@@ -471,6 +471,8 @@
 
             if (IsEdit)
             {
+                _recipe.UpdatedByUserId = _userId;
+                _recipe.UpdatedAt = DateTime.UtcNow;
                 await RecipeService.UpdateRecipeAsync(_recipe);
                 Snackbar.Add("Recipe updated", Severity.Success);
             }

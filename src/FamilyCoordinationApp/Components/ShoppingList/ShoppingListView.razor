@@ -8,14 +8,41 @@
 }
 else
 {
-    @foreach (var group in GroupedItems)
-    {
-        <CategorySection Category="@group.Key"
-                         Items="@group.ToList()"
-                         OnItemChecked="@OnItemChecked"
-                         OnItemEdit="@OnItemEdit"
-                         OnItemDelete="@OnItemDelete" />
-    }
+    <MudDropContainer T="ShoppingListItem"
+                      Items="@SortedItems"
+                      ItemDropped="@HandleItemDropped"
+                      ItemsSelector="@((item, dropzone) => item.Category == dropzone)"
+                      Class="d-flex flex-column gap-0">
+        <ChildContent>
+            @foreach (var category in OrderedCategories)
+            {
+                <MudPaper Class="mb-4" Elevation="2">
+                    <div class="category-header" @onclick="@(() => ToggleCategory(category))">
+                        <MudText Typo="Typo.h6">@category</MudText>
+                        <div class="d-flex align-center gap-2">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Text="@GetUncheckedCount(category).ToString()" />
+                            <MudIcon Icon="@GetExpandIcon(category)" Size="Size.Small" />
+                        </div>
+                    </div>
+
+                    @if (IsCategoryExpanded(category))
+                    {
+                        <MudDropZone T="ShoppingListItem"
+                                     Identifier="@category"
+                                     Class="category-body drop-zone"
+                                     CanDropClass="drop-zone-active"
+                                     AllowReorder="true" />
+                    }
+                </MudPaper>
+            }
+        </ChildContent>
+        <ItemRenderer>
+            <ShoppingListItemRow Item="@context"
+                                 OnChecked="@OnItemChecked"
+                                 OnEdit="@OnItemEdit"
+                                 OnDelete="@OnItemDelete" />
+        </ItemRenderer>
+    </MudDropContainer>
 }
 
 @code {
@@ -23,17 +50,65 @@ else
     [Parameter] public EventCallback<ShoppingListItem> OnItemChecked { get; set; }
     [Parameter] public EventCallback<ShoppingListItem> OnItemEdit { get; set; }
     [Parameter] public EventCallback<ShoppingListItem> OnItemDelete { get; set; }
-    [Parameter] public EventCallback OnItemsReordered { get; set; }
+    [Parameter] public EventCallback<List<ShoppingListItem>> OnItemsReordered { get; set; }
 
-    private IEnumerable<IGrouping<string, ShoppingListItem>> GroupedItems
+    private HashSet<string> _collapsedCategories = new();
+
+    private List<ShoppingListItem> SortedItems => Items
+        .OrderBy(i => i.IsChecked)  // Unchecked items first
+        .ThenBy(i => i.SortOrder)
+        .ToList();
+
+    private IEnumerable<string> OrderedCategories => Items
+        .Select(i => i.Category)
+        .Distinct()
+        .OrderBy(GetCategoryOrder);
+
+    private void ToggleCategory(string category)
     {
-        get
+        if (_collapsedCategories.Contains(category))
+            _collapsedCategories.Remove(category);
+        else
+            _collapsedCategories.Add(category);
+    }
+
+    private bool IsCategoryExpanded(string category) => !_collapsedCategories.Contains(category);
+
+    private string GetExpandIcon(string category) =>
+        IsCategoryExpanded(category) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore;
+
+    private int GetUncheckedCount(string category) =>
+        Items.Count(i => i.Category == category && !i.IsChecked);
+
+    private async Task HandleItemDropped(MudItemDropInfo<ShoppingListItem> dropInfo)
+    {
+        if (dropInfo.Item == null) return;
+
+        var item = dropInfo.Item;
+        var targetCategory = dropInfo.DropzoneIdentifier;
+
+        // Update category if dropped in different zone
+        if (!string.IsNullOrEmpty(targetCategory) && item.Category != targetCategory)
         {
-            // Group by category, ordered by category priority
-            return Items
-                .GroupBy(i => i.Category)
-                .OrderBy(g => GetCategoryOrder(g.Key));
+            item.Category = targetCategory;
         }
+
+        // Calculate new sort order based on drop index
+        var categoryItems = Items
+            .Where(i => i.Category == item.Category && i.ItemId != item.ItemId)
+            .OrderBy(i => i.SortOrder)
+            .ToList();
+
+        var insertIndex = Math.Min(dropInfo.IndexInZone, categoryItems.Count);
+        categoryItems.Insert(insertIndex, item);
+
+        // Update sort orders for all items in category
+        for (int i = 0; i < categoryItems.Count; i++)
+        {
+            categoryItems[i].SortOrder = i;
+        }
+
+        await OnItemsReordered.InvokeAsync(categoryItems);
     }
 
     private int GetCategoryOrder(string category)
@@ -53,3 +128,34 @@ else
         return order.TryGetValue(category, out var ord) ? ord : 99;
     }
 }
+
+<style>
+    .category-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px;
+        min-height: 56px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .category-header:hover {
+        background-color: var(--mud-palette-action-default-hover);
+    }
+
+    .category-body {
+        padding-bottom: 8px;
+        min-height: 48px;
+    }
+
+    .drop-zone {
+        transition: background-color 0.2s, border-color 0.2s;
+    }
+
+    .drop-zone-active {
+        background-color: var(--mud-palette-primary-lighten);
+        border: 2px dashed var(--mud-palette-primary);
+    }
+</style>

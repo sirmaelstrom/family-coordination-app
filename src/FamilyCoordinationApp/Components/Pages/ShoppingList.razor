@@ -98,7 +98,8 @@
         <ShoppingListView Items="@_currentList.Items.ToList()"
                           OnItemChecked="@HandleItemChecked"
                           OnItemEdit="@HandleItemEdit"
-                          OnItemDelete="@HandleItemDelete" />
+                          OnItemDelete="@HandleItemDelete"
+                          OnItemsReordered="@HandleItemsReordered" />
     }
 
     @if (_currentList != null)
@@ -423,6 +424,29 @@
     {
         _currentList = selectedList;
         StateHasChanged();
+    }
+
+    private async Task HandleItemsReordered(List<ShoppingListItem> reorderedItems)
+    {
+        if (_currentList == null || reorderedItems.Count == 0) return;
+
+        try
+        {
+            var updates = reorderedItems
+                .Select(i => (i.ItemId, i.SortOrder, (string?)i.Category))
+                .ToList();
+
+            await ShoppingListService.UpdateItemSortOrdersAsync(
+                _householdId,
+                _currentList.ShoppingListId,
+                updates);
+
+            await LoadShoppingListsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error reordering items: {ex.Message}", Severity.Error);
+        }
     }
 
     private void OnDataChanged()
