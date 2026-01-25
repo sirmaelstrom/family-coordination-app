@@ -7,7 +7,7 @@
 @using FamilyCoordinationApp.Data.Entities
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject NavigationManager Navigation
-@inject IHttpContextAccessor HttpContextAccessor
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Access Denied - Family Coordination</PageTitle>
 
@@ -20,48 +20,55 @@
 
         <MudText Typo="Typo.h5" Class="mt-4 mb-2">Access Denied</MudText>
 
-        <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-6">
+        @if (!_isLoaded)
+        {
+            <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="my-4" />
+        }
+        else
+        {
+            <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-6">
+                @if (_isAuthenticated && !_isInHousehold)
+                {
+                    <span>You're not part of any household yet. Request one to get started!</span>
+                }
+                else
+                {
+                    <span>This app is for family members only. If you should have access,
+                    please contact the family administrator to add your email to the whitelist.</span>
+                }
+            </MudText>
+
             @if (_isAuthenticated && !_isInHousehold)
             {
-                <span>You're not part of any household yet. Request one to get started!</span>
+                @if (_hasPendingRequest)
+                {
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               FullWidth="true"
+                               Class="mb-3"
+                               Href="/household/pending">
+                        Check Request Status
+                    </MudButton>
+                }
+                else
+                {
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               FullWidth="true"
+                               Class="mb-3"
+                               Href="/household/request">
+                        Request a Household
+                    </MudButton>
+                }
             }
-            else
-            {
-                <span>This app is for family members only. If you should have access,
-                please contact the family administrator to add your email to the whitelist.</span>
-            }
-        </MudText>
 
-        @if (_isAuthenticated && !_isInHousehold)
-        {
-            @if (_hasPendingRequest)
-            {
-                <MudButton Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           FullWidth="true"
-                           Class="mb-3"
-                           Href="/household/pending">
-                    Check Request Status
-                </MudButton>
-            }
-            else
-            {
-                <MudButton Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           FullWidth="true"
-                           Class="mb-3"
-                           Href="/household/request">
-                    Request a Household
-                </MudButton>
-            }
+            <MudButton Variant="@(_isAuthenticated && !_isInHousehold ? Variant.Outlined : Variant.Filled)"
+                       Color="Color.Default"
+                       FullWidth="true"
+                       Href="/account/logout">
+                Sign out and try another account
+            </MudButton>
         }
-
-        <MudButton Variant="@(_isAuthenticated && !_isInHousehold ? Variant.Outlined : Variant.Filled)"
-                   Color="Color.Default"
-                   FullWidth="true"
-                   Href="/account/logout">
-            Sign out and try another account
-        </MudButton>
     </MudPaper>
 </MudContainer>
 
@@ -69,29 +76,37 @@
     private bool _isAuthenticated;
     private bool _isInHousehold;
     private bool _hasPendingRequest;
+    private bool _isLoaded;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        var user = HttpContextAccessor.HttpContext?.User;
-        _isAuthenticated = user?.Identity?.IsAuthenticated == true;
-
-        if (_isAuthenticated)
+        if (firstRender)
         {
-            var email = user!.FindFirst(ClaimTypes.Email)?.Value ?? "";
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            _isAuthenticated = user.Identity?.IsAuthenticated == true;
 
-            await using var context = await DbFactory.CreateDbContextAsync();
-            
-            // Check if user is in a household
-            var existingUser = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
-            _isInHousehold = existingUser != null;
-
-            if (!_isInHousehold)
+            if (_isAuthenticated)
             {
-                // Check for pending request
-                var request = await context.HouseholdRequests
-                    .FirstOrDefaultAsync(r => r.Email == email && r.Status == HouseholdRequestStatus.Pending);
-                _hasPendingRequest = request != null;
+                var email = user.FindFirst(ClaimTypes.Email)?.Value ?? "";
+
+                await using var context = await DbFactory.CreateDbContextAsync();
+                
+                // Check if user is in a household
+                var existingUser = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
+                _isInHousehold = existingUser != null;
+
+                if (!_isInHousehold)
+                {
+                    // Check for pending request
+                    var request = await context.HouseholdRequests
+                        .FirstOrDefaultAsync(r => r.Email == email && r.Status == HouseholdRequestStatus.Pending);
+                    _hasPendingRequest = request != null;
+                }
             }
+            
+            _isLoaded = true;
+            StateHasChanged();
         }
     }
 }

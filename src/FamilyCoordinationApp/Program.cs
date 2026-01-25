@@ -150,10 +150,14 @@ if (app.Environment.IsDevelopment())
 }
 
 // Forwarded headers MUST come first (for nginx reverse proxy)
-app.UseForwardedHeaders(new ForwardedHeadersOptions
+// Clear KnownProxies/KnownNetworks to trust Docker network headers
+var forwardedHeadersOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-});
+};
+forwardedHeadersOptions.KnownProxies.Clear();
+forwardedHeadersOptions.KnownNetworks.Clear();
+app.UseForwardedHeaders(forwardedHeadersOptions);
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
