@@ -26,7 +26,7 @@
    - Setup flow now properly returns user to setup page after Google auth
 
 4. **Verified End-to-End Setup**
-   - Successfully created household "La Familia Heath"
+   - Successfully created household via setup wizard
    - User admin@example.com created and whitelisted
    - Can access home page and see welcome message
 

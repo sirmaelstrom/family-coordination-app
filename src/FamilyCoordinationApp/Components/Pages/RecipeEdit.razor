@@ -436,8 +436,7 @@
 
     private void EditIngredient(RecipeIngredient ingredient)
     {
-        // For now, remove and let user re-add with changes
-        // TODO: Implement inline editing in future
+        // Simple edit flow: remove and re-add. Inline editing planned for future release.
         _ingredients.Remove(ingredient);
         Snackbar.Add("Re-add ingredient with changes", Severity.Info);
     }

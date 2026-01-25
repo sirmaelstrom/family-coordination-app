@@ -25,9 +25,9 @@ Establish database schema with multi-tenant isolation patterns and Google OAuth 
 - All family members can manage whitelist (any whitelisted user can add others)
 
 ### Docker Deployment Setup
-- Phase 1 delivers Docker Compose files only (test locally, deploy to production-server in later phase)
+- Phase 1 delivers Docker Compose files only (test locally, deploy to [SERVER] in later phase)
 - Secrets managed via `.env` file (gitignored, not in version control)
-- PostgreSQL database and uploads map to explicit ZFS paths (/themanjesus/docker-data/family-app/)
+- PostgreSQL database and uploads map to explicit ZFS paths (/[ZFS_POOL]/docker-data/family-app/)
 - Include nginx configuration (provide complete server block for family.example.com)
 - Single-stage Dockerfile (simpler, includes SDK in final image)
 - Logs go to console + file volume (/app/logs mapped to ZFS for persistence)
@@ -49,7 +49,7 @@ Establish database schema with multi-tenant isolation patterns and Google OAuth 
 <specifics>
 ## Specific Ideas
 
-- ZFS paths follow existing production-server convention: `/themanjesus/docker-data/family-app/`
+- ZFS paths follow existing [SERVER] convention: `/[ZFS_POOL]/docker-data/family-app/`
 - Admin UI should be simple - just a settings page to add/remove email addresses from whitelist
 - Seed data should include realistic recipe examples (not just "Test Recipe 1")
 - Nginx config needs WebSocket support for future SignalR (Phase 5)

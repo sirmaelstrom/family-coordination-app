@@ -47,8 +47,8 @@ The integrated workflow: recipes → meal plan → shopping list. Manual coordin
 **Success metric:** Less mental load. Coordination feels easier and less stressful than the current ad-hoc approach. Qualitative measure: family actually uses it regularly instead of falling back to old habits.
 
 **Home infrastructure:**
-- production-server: Ubuntu 24.04 server (Intel i3-4170, 23GB RAM, 10Gbps NIC)
-- Domain: *.example.com (via Cloudflare, points to production-server)
+- [SERVER]: Ubuntu 24.04 server (Intel i3-4170, 23GB RAM, 10Gbps NIC)
+- Domain: *.example.com (via Cloudflare, points to [SERVER])
 - Existing: Docker Compose services, nginx reverse proxy, ZFS storage pool
 - Development: flagg (Windows 11 WSL) with .NET 8 SDK
 
@@ -60,7 +60,7 @@ The integrated workflow: recipes → meal plan → shopping list. Manual coordin
 ## Constraints
 
 - **Tech stack**: Blazor Server (.NET 8), PostgreSQL, Docker — chosen for C# expertise everywhere and built-in SignalR for real-time collaboration
-- **Deployment**: Must run on production-server (Ubuntu 24.04) via Docker Compose, accessible at family.example.com
+- **Deployment**: Must run on [SERVER] (Ubuntu 24.04) via Docker Compose, accessible at family.example.com
 - **Authentication**: Google OAuth only, email whitelist for authorized family members (no public signup)
 - **Real-time**: SignalR over WebSocket for collaborative shopping list editing (must work on mobile with spotty WiFi)
 - **Mobile-first**: Must be usable at grocery store on phone (large touch targets, fast load, offline-tolerant)
@@ -72,7 +72,7 @@ The integrated workflow: recipes → meal plan → shopping list. Manual coordin
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Blazor Server over Blazor WASM | C# on both client and server (leverage .NET expertise), built-in SignalR for real-time (no WebSocket plumbing), simpler deployment (no client-side secrets) | — Pending |
-| PostgreSQL over SQL Server | Linux deployment target (production-server is Ubuntu), open source, Docker-friendly, sufficient for single-tenant scale | — Pending |
+| PostgreSQL over SQL Server | Linux deployment target ([SERVER] is Ubuntu), open source, Docker-friendly, sufficient for single-tenant scale | — Pending |
 | Single-tenant MVP, designed for multi-tenant | Ship faster for family use (no tenant isolation complexity), but include HouseholdId in data model for future expansion | — Pending |
 | Defer calendar sync and to-do lists to Phase 2 | Focus MVP on core meal planning workflow (recipes → meal plan → shopping), calendar sync is nice-to-have, to-do lists are separate concern | — Pending |
 | Both URL import and manual recipe entry in Phase 1 | Family won't adopt if they have to manually type all recipes, but manual entry needed for custom/family recipes | — Pending |

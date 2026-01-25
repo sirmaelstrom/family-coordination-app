@@ -9,6 +9,7 @@
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject NavigationManager Navigation
 @inject ISnackbar Snackbar
+@inject ILogger<ImportRecipeDialog> Logger
 
 <MudDialog>
     <DialogContent>
@@ -163,9 +164,7 @@
         }
         catch (Exception ex)
         {
-            // Log full exception for debugging
-            Console.WriteLine($"[ImportRecipeDialog] Exception: {ex.GetType().Name}: {ex.Message}");
-            Console.WriteLine($"[ImportRecipeDialog] Stack trace: {ex.StackTrace}");
+            Logger.LogError(ex, "Recipe import failed for URL: {Url}", _url);
             _error = $"An error occurred: {ex.Message}";
             _showManualOption = true;
         }

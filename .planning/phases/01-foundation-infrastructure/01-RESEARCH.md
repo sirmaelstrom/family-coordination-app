@@ -43,7 +43,7 @@ The established libraries/tools for this domain:
 | DbContextFactory | Scoped DbContext | Factory required for thread safety in Blazor Server circuits |
 | Composite FK constraints | Application-level filtering | Database constraints prevent data leaks at lowest level |
 | Google OAuth | Azure AD / Auth0 | Google chosen per requirements; others add complexity |
-| Docker Compose | Kubernetes | Compose simpler for single-server deployment (production-server) |
+| Docker Compose | Kubernetes | Compose simpler for single-server deployment ([SERVER]) |
 
 **Installation:**
 ```bash
@@ -619,7 +619,7 @@ services:
     volumes:
       # For PostgreSQL 17 and below - mount at /var/lib/postgresql/data
       # NOT /var/lib/postgresql (that won't persist data)
-      - /themanjesus/docker-data/family-app/postgres:/var/lib/postgresql/data
+      - /[ZFS_POOL]/docker-data/family-app/postgres:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
@@ -673,7 +673,7 @@ Things that couldn't be fully resolved:
 
 5. **Docker Compose override usage (separate dev/prod configs)**
    - What we know: `docker-compose.override.yml` auto-loaded in dev, can use separate files for prod
-   - What's unclear: Best practice for single-server deployment where dev and prod are same environment (production-server)
+   - What's unclear: Best practice for single-server deployment where dev and prod are same environment ([SERVER])
    - Recommendation: Use override pattern anyway - docker-compose.yml = production config, docker-compose.override.yml = development additions (volume mounts for hot reload, debug ports). Supports future multi-environment expansion.
 
 ## Sources

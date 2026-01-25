@@ -1,4 +1,3 @@
-using Bogus;
 using FamilyCoordinationApp.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -25,68 +24,97 @@ public static class SeedData
         // Seed default categories
         await SeedDefaultCategoriesAsync(dbFactory, household.Id);
 
-        // Real recipe names for realistic data
-        var recipeNames = new[]
-        {
-            "Spaghetti Bolognese",
-            "Chicken Stir Fry",
-            "Beef Tacos",
-            "Grilled Salmon",
-            "Vegetable Curry",
-            "Caesar Salad",
-            "Mushroom Risotto",
-            "BBQ Pulled Pork",
-            "Thai Green Curry",
-            "Lasagna",
-            "Chicken Parmesan",
-            "Shrimp Scampi",
-            "Beef Stroganoff",
-            "Fish and Chips",
-            "Pad Thai"
-        };
-
-        var categories = new[] { "Meat", "Produce", "Dairy", "Pantry", "Spices" };
-        var units = new[] { "lb", "oz", "cup", "tbsp", "tsp", "piece", "clove", "can" };
-
-        var ingredientFaker = new Faker<RecipeIngredient>()
-            .RuleFor(i => i.Name, f => f.Commerce.ProductName())
-            .RuleFor(i => i.Quantity, f => f.Random.Decimal(0.25m, 4m))
-            .RuleFor(i => i.Unit, f => f.PickRandom(units))
-            .RuleFor(i => i.Category, f => f.PickRandom(categories))
-            .RuleFor(i => i.SortOrder, (f, i) => f.IndexFaker);
-
+        // Sample recipes with realistic ingredients
+        var sampleRecipes = GetSampleRecipes();
         var recipeId = 1;
-        foreach (var name in recipeNames)
+
+        foreach (var (name, description, servings, prepTime, cookTime, ingredients) in sampleRecipes)
         {
             var recipe = new Recipe
             {
                 HouseholdId = household.Id,
                 RecipeId = recipeId++,
                 Name = name,
-                Description = $"A delicious {name.ToLower()} recipe",
-                Instructions = $"1. Prepare ingredients\n2. Cook {name.ToLower()}\n3. Serve hot",
-                Servings = new Random().Next(2, 8),
-                PrepTimeMinutes = new Random().Next(10, 30),
-                CookTimeMinutes = new Random().Next(15, 60),
+                Description = description,
+                Instructions = $"1. Prepare all ingredients\n2. Follow standard cooking method for {name.ToLower()}\n3. Serve and enjoy",
+                Servings = servings,
+                PrepTimeMinutes = prepTime,
+                CookTimeMinutes = cookTime,
                 CreatedByUserId = user.Id,
-                CreatedAt = DateTime.UtcNow.AddDays(-new Random().Next(1, 30))
+                CreatedAt = DateTime.UtcNow.AddDays(-recipeId)
             };
 
-            // Add 4-8 ingredients per recipe
-            var ingredientCount = new Random().Next(4, 9);
-            for (int i = 0; i < ingredientCount; i++)
+            var ingredientId = 1;
+            foreach (var (ingName, qty, unit, category) in ingredients)
             {
-                var ingredient = ingredientFaker.Generate();
-                ingredient.HouseholdId = household.Id;
-                ingredient.RecipeId = recipe.RecipeId;
-                ingredient.IngredientId = i + 1;
-                recipe.Ingredients.Add(ingredient);
+                recipe.Ingredients.Add(new RecipeIngredient
+                {
+                    HouseholdId = household.Id,
+                    RecipeId = recipe.RecipeId,
+                    IngredientId = ingredientId,
+                    Name = ingName,
+                    Quantity = qty,
+                    Unit = unit,
+                    Category = category,
+                    SortOrder = ingredientId++
+                });
             }
 
             context.Recipes.Add(recipe);
         }
 
         await context.SaveChangesAsync();
+    }
+
+    private static List<(string Name, string Description, int Servings, int PrepTime, int CookTime, 
+        List<(string Name, decimal Qty, string Unit, string Category)> Ingredients)> GetSampleRecipes()
+    {
+        return new()
+        {
+            ("Spaghetti Bolognese", "Classic Italian meat sauce over pasta", 4, 15, 45, new()
+            {
+                ("Ground Beef", 1m, "lb", "Meat"),
+                ("Spaghetti", 1m, "lb", "Pantry"),
+                ("Crushed Tomatoes", 28m, "oz", "Pantry"),
+                ("Onion", 1m, "piece", "Produce"),
+                ("Garlic", 3m, "clove", "Produce"),
+                ("Olive Oil", 2m, "tbsp", "Pantry")
+            }),
+            ("Chicken Stir Fry", "Quick and healthy Asian-inspired dish", 4, 20, 15, new()
+            {
+                ("Chicken Breast", 1.5m, "lb", "Meat"),
+                ("Bell Peppers", 2m, "piece", "Produce"),
+                ("Broccoli", 2m, "cup", "Produce"),
+                ("Soy Sauce", 3m, "tbsp", "Pantry"),
+                ("Sesame Oil", 1m, "tbsp", "Pantry"),
+                ("Ginger", 1m, "tbsp", "Produce")
+            }),
+            ("Beef Tacos", "Seasoned ground beef in crispy shells", 6, 10, 20, new()
+            {
+                ("Ground Beef", 1m, "lb", "Meat"),
+                ("Taco Shells", 12m, "piece", "Pantry"),
+                ("Cheddar Cheese", 1m, "cup", "Dairy"),
+                ("Lettuce", 2m, "cup", "Produce"),
+                ("Tomato", 2m, "piece", "Produce"),
+                ("Taco Seasoning", 1m, "packet", "Spices")
+            }),
+            ("Grilled Salmon", "Simple herb-crusted salmon fillets", 4, 10, 15, new()
+            {
+                ("Salmon Fillets", 2m, "lb", "Meat"),
+                ("Lemon", 1m, "piece", "Produce"),
+                ("Dill", 2m, "tbsp", "Spices"),
+                ("Olive Oil", 2m, "tbsp", "Pantry"),
+                ("Garlic", 2m, "clove", "Produce")
+            }),
+            ("Caesar Salad", "Crisp romaine with classic dressing", 4, 15, 0, new()
+            {
+                ("Romaine Lettuce", 2m, "head", "Produce"),
+                ("Parmesan Cheese", 0.5m, "cup", "Dairy"),
+                ("Croutons", 1m, "cup", "Pantry"),
+                ("Caesar Dressing", 0.5m, "cup", "Dairy"),
+                ("Lemon", 1m, "piece", "Produce")
+            })
+        };
     }
 
     public static async Task SeedDefaultCategoriesAsync(IDbContextFactory<ApplicationDbContext> dbFactory, int householdId)

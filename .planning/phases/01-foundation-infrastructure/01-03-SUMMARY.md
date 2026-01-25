@@ -65,7 +65,7 @@ patterns-established:
   - "WebSocket proxying: proxy_http_version 1.1 + Upgrade/Connection headers"
   - "Environment templating: .env.example committed, .env gitignored"
   - "Development override pattern: separate docker-compose.override.yml"
-  - "ZFS path convention: /themanjesus/docker-data/family-app/{service}"
+  - "ZFS path convention: /[ZFS_POOL]/docker-data/family-app/{service}"
 
 # Metrics
 duration: 3min
@@ -92,7 +92,7 @@ completed: 2026-01-23
 - Created nginx reverse proxy configuration with WebSocket support for Blazor Server SignalR
 - Generated self-signed SSL certificate for local HTTPS testing
 - Established environment variable templating pattern with .env.example
-- Configured ZFS volume paths for production deployment on production-server
+- Configured ZFS volume paths for production deployment on [SERVER]
 
 ## Task Commits
 
@@ -134,9 +134,9 @@ Each task was committed atomically:
 
 **Environment variable templating:** Created `.env.example` with all required variables as template. Actual `.env` file is gitignored to protect secrets. Pattern supports local dev and production with same compose files.
 
-**ZFS path configuration:** Added environment variables for production-server production deployment paths (`/themanjesus/docker-data/family-app/`). Development uses named volumes via docker-compose.override.yml.
+**ZFS path configuration:** Added environment variables for [SERVER] production deployment paths (`/[ZFS_POOL]/docker-data/family-app/`). Development uses named volumes via docker-compose.override.yml.
 
-**Self-signed certificates:** Generated local SSL certs for HTTPS testing during development. Production will use Let's Encrypt certificates from production-server's existing setup.
+**Self-signed certificates:** Generated local SSL certs for HTTPS testing during development. Production will use Let's Encrypt certificates from [SERVER]'s existing setup.
 
 ## Deviations from Plan
 
@@ -144,7 +144,7 @@ None - plan executed exactly as written.
 
 ## Issues Encountered
 
-**Docker Compose not installed in WSL:** Could not validate docker-compose configuration with `docker-compose config`. This is expected - Docker Compose will be available on production-server deployment target. YAML syntax is valid.
+**Docker Compose not installed in WSL:** Could not validate docker-compose configuration with `docker-compose config`. This is expected - Docker Compose will be available on [SERVER] deployment target. YAML syntax is valid.
 
 ## User Setup Required
 
@@ -154,9 +154,9 @@ None - plan executed exactly as written.
 3. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (from Google Cloud Console)
 4. Run `docker-compose up` to start all services
 
-**For production on production-server:**
+**For production on [SERVER]:**
 1. Uncomment ZFS path variables in `.env`
-2. Set paths to production-server ZFS locations
+2. Set paths to [SERVER] ZFS locations
 3. Replace self-signed certs with Let's Encrypt certificates
 4. Configure Cloudflare DNS for family.example.com
 
@@ -166,7 +166,7 @@ Complete Docker infrastructure established. Ready for:
 - **Plan 01-02:** Google OAuth authentication (runs in Docker environment)
 - **Plan 01-04:** First-run setup wizard and seed data (requires Docker database)
 
-**Current state:** Infrastructure files created and committed. Docker Compose can be tested locally (requires Docker Desktop with WSL integration) or deployed to production-server for testing.
+**Current state:** Infrastructure files created and committed. Docker Compose can be tested locally (requires Docker Desktop with WSL integration) or deployed to [SERVER] for testing.
 
 **Remaining work in Phase 1:**
 - Google OAuth integration (01-02)

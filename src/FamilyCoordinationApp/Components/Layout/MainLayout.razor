@@ -14,6 +14,7 @@
 @inject ISnackbar Snackbar
 @inject IJSRuntime JSRuntime
 @inject ISiteAdminService SiteAdminService
+@inject ILogger<MainLayout> Logger
 
 <MudThemeProvider @bind-IsDarkMode="@_isDarkMode" Theme="@_theme" />
 <MudPopoverProvider />
@@ -243,7 +244,11 @@
         {
             await JSRuntime.InvokeVoidAsync("localStorage.setItem", "drawerOpen", _drawerOpen.ToString().ToLower());
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // JS interop can fail during prerendering or if JS is unavailable
+            Logger.LogDebug(ex, "Failed to save drawer state to localStorage");
+        }
     }
 
     private async Task ToggleDarkMode()
@@ -253,7 +258,11 @@
         {
             await JSRuntime.InvokeVoidAsync("localStorage.setItem", "darkMode", _isDarkMode.ToString().ToLower());
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // JS interop can fail during prerendering or if JS is unavailable
+            Logger.LogDebug(ex, "Failed to save dark mode preference to localStorage");
+        }
     }
 
     private void OnSyncStatusChanged() => InvokeAsync(StateHasChanged);
