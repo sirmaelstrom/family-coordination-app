@@ -50,25 +50,31 @@ public class CategoryService(
 
     public async Task<Category> CreateCategoryAsync(Category category, CancellationToken cancellationToken = default)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        return await IdGenerationHelper.ExecuteWithRetryAsync(
+            async (attempt) =>
+            {
+                await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        category.CategoryId = await GetNextCategoryIdInternalAsync(context, category.HouseholdId, cancellationToken);
+                category.CategoryId = await GetNextCategoryIdInternalAsync(context, category.HouseholdId, cancellationToken);
 
-        // Set sort order to end of list if not specified
-        if (category.SortOrder == 0)
-        {
-            var maxOrder = await context.Categories
-                .Where(c => c.HouseholdId == category.HouseholdId)
-                .MaxAsync(c => (int?)c.SortOrder, cancellationToken) ?? 0;
-            category.SortOrder = maxOrder + 1;
-        }
+                // Set sort order to end of list if not specified
+                if (category.SortOrder == 0)
+                {
+                    var maxOrder = await context.Categories
+                        .Where(c => c.HouseholdId == category.HouseholdId)
+                        .MaxAsync(c => (int?)c.SortOrder, cancellationToken) ?? 0;
+                    category.SortOrder = maxOrder + 1;
+                }
 
-        context.Categories.Add(category);
-        await context.SaveChangesAsync(cancellationToken);
+                context.Categories.Add(category);
+                await context.SaveChangesAsync(cancellationToken);
 
-        logger.LogInformation("Created category {CategoryId} for household {HouseholdId}", category.CategoryId, category.HouseholdId);
+                logger.LogInformation("Created category {CategoryId} for household {HouseholdId}", category.CategoryId, category.HouseholdId);
 
-        return category;
+                return category;
+            },
+            logger,
+            "Category");
     }
 
     public async Task<Category> UpdateCategoryAsync(Category category, CancellationToken cancellationToken = default)

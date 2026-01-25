@@ -6,9 +6,9 @@ namespace FamilyCoordinationApp.Services;
 
 public interface IMealPlanService
 {
-    Task<MealPlan> GetOrCreateMealPlanAsync(int householdId, DateOnly weekStart, CancellationToken ct = default);
-    Task<MealPlanEntry> AddMealAsync(int householdId, DateOnly date, MealType mealType, int? recipeId, string? customMealName, string? notes = null, int? userId = null, CancellationToken ct = default);
-    Task RemoveMealAsync(int householdId, int mealPlanId, int entryId, CancellationToken ct = default);
+    Task<MealPlan> GetOrCreateMealPlanAsync(int householdId, DateOnly weekStart, CancellationToken cancellationToken = default);
+    Task<MealPlanEntry> AddMealAsync(int householdId, DateOnly date, MealType mealType, int? recipeId, string? customMealName, string? notes = null, int? userId = null, CancellationToken cancellationToken = default);
+    Task RemoveMealAsync(int householdId, int mealPlanId, int entryId, CancellationToken cancellationToken = default);
     DateOnly GetWeekStartDate(DateOnly date);
     DateOnly[] GetWeekDays(DateOnly weekStart);
 }
@@ -18,16 +18,16 @@ public class MealPlanService(
     ILogger<MealPlanService> logger) : IMealPlanService
 {
 
-    public async Task<MealPlan> GetOrCreateMealPlanAsync(int householdId, DateOnly weekStart, CancellationToken ct = default)
+    public async Task<MealPlan> GetOrCreateMealPlanAsync(int householdId, DateOnly weekStart, CancellationToken cancellationToken = default)
     {
         // First, try to get existing meal plan (no retry needed for reads)
-        await using (var readContext = await dbFactory.CreateDbContextAsync(ct))
+        await using (var readContext = await dbFactory.CreateDbContextAsync(cancellationToken))
         {
             var existingPlan = await readContext.MealPlans
                 .Where(mp => mp.HouseholdId == householdId && mp.WeekStartDate == weekStart)
                 .Include(mp => mp.Entries.OrderBy(e => e.Date).ThenBy(e => e.MealType))
                 .ThenInclude(e => e.Recipe)
-                .FirstOrDefaultAsync(ct);
+                .FirstOrDefaultAsync(cancellationToken);
 
             if (existingPlan != null)
             {
@@ -41,21 +41,21 @@ public class MealPlanService(
         return await IdGenerationHelper.ExecuteWithRetryAsync(
             async (attempt) =>
             {
-                await using var context = await dbFactory.CreateDbContextAsync(ct);
+                await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
                 // Re-check if another request created the plan while we were retrying
                 var existingPlan = await context.MealPlans
                     .Where(mp => mp.HouseholdId == householdId && mp.WeekStartDate == weekStart)
                     .Include(mp => mp.Entries.OrderBy(e => e.Date).ThenBy(e => e.MealType))
                     .ThenInclude(e => e.Recipe)
-                    .FirstOrDefaultAsync(ct);
+                    .FirstOrDefaultAsync(cancellationToken);
 
                 if (existingPlan != null)
                 {
                     return existingPlan;
                 }
 
-                var nextId = await GetNextMealPlanIdAsync(context, householdId, ct);
+                var nextId = await GetNextMealPlanIdAsync(context, householdId, cancellationToken);
                 var mealPlan = new MealPlan
                 {
                     HouseholdId = householdId,
@@ -65,7 +65,7 @@ public class MealPlanService(
                 };
 
                 context.MealPlans.Add(mealPlan);
-                await context.SaveChangesAsync(ct);
+                await context.SaveChangesAsync(cancellationToken);
 
                 logger.LogInformation("Created new meal plan {MealPlanId} for household {HouseholdId}, week {WeekStart}",
                     mealPlan.MealPlanId, householdId, weekStart);
@@ -76,7 +76,7 @@ public class MealPlanService(
             "MealPlan");
     }
 
-    public async Task<MealPlanEntry> AddMealAsync(int householdId, DateOnly date, MealType mealType, int? recipeId, string? customMealName, string? notes = null, int? userId = null, CancellationToken ct = default)
+    public async Task<MealPlanEntry> AddMealAsync(int householdId, DateOnly date, MealType mealType, int? recipeId, string? customMealName, string? notes = null, int? userId = null, CancellationToken cancellationToken = default)
     {
         if (recipeId.HasValue && !string.IsNullOrWhiteSpace(customMealName))
         {
@@ -89,12 +89,12 @@ public class MealPlanService(
         }
 
         var weekStart = GetWeekStartDate(date);
-        var mealPlan = await GetOrCreateMealPlanAsync(householdId, weekStart, ct);
+        var mealPlan = await GetOrCreateMealPlanAsync(householdId, weekStart, cancellationToken);
 
         return await IdGenerationHelper.ExecuteWithRetryAsync(
             async (attempt) =>
             {
-                await using var context = await dbFactory.CreateDbContextAsync(ct);
+                await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
                 // Check for duplicate entry (same date/mealType AND same recipe or custom meal)
                 // This prevents adding the exact same recipe twice, but allows multiple different recipes
@@ -105,7 +105,7 @@ public class MealPlanService(
                         e.Date == date &&
                         e.MealType == mealType &&
                         ((recipeId.HasValue && e.RecipeId == recipeId) ||
-                         (!string.IsNullOrWhiteSpace(customMealName) && e.CustomMealName == customMealName)), ct);
+                         (!string.IsNullOrWhiteSpace(customMealName) && e.CustomMealName == customMealName)), cancellationToken);
 
                 if (duplicateEntry != null)
                 {
@@ -115,9 +115,9 @@ public class MealPlanService(
                     duplicateEntry.UpdatedByUserId = userId;
 
                     // Update parent MealPlan timestamp for polling
-                    await UpdateMealPlanTimestampAsync(context, householdId, mealPlan.MealPlanId, ct);
+                    await UpdateMealPlanTimestampAsync(context, householdId, mealPlan.MealPlanId, cancellationToken);
 
-                    await context.SaveChangesAsync(ct);
+                    await context.SaveChangesAsync(cancellationToken);
 
                     logger.LogInformation("Updated duplicate meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
                         duplicateEntry.EntryId, mealPlan.MealPlanId, householdId);
@@ -126,7 +126,7 @@ public class MealPlanService(
                 }
 
                 // Create new entry
-                var nextEntryId = await GetNextEntryIdAsync(context, householdId, mealPlan.MealPlanId, ct);
+                var nextEntryId = await GetNextEntryIdAsync(context, householdId, mealPlan.MealPlanId, cancellationToken);
                 var entry = new MealPlanEntry
                 {
                     HouseholdId = householdId,
@@ -142,9 +142,9 @@ public class MealPlanService(
                 context.MealPlanEntries.Add(entry);
 
                 // Update parent MealPlan timestamp for polling
-                await UpdateMealPlanTimestampAsync(context, householdId, mealPlan.MealPlanId, ct);
+                await UpdateMealPlanTimestampAsync(context, householdId, mealPlan.MealPlanId, cancellationToken);
 
-                await context.SaveChangesAsync(ct);
+                await context.SaveChangesAsync(cancellationToken);
 
                 logger.LogInformation("Created meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
                     entry.EntryId, mealPlan.MealPlanId, householdId);
@@ -155,15 +155,15 @@ public class MealPlanService(
             "MealPlanEntry");
     }
 
-    public async Task RemoveMealAsync(int householdId, int mealPlanId, int entryId, CancellationToken ct = default)
+    public async Task RemoveMealAsync(int householdId, int mealPlanId, int entryId, CancellationToken cancellationToken = default)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(ct);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var entry = await context.MealPlanEntries
             .FirstOrDefaultAsync(e =>
                 e.HouseholdId == householdId &&
                 e.MealPlanId == mealPlanId &&
-                e.EntryId == entryId, ct);
+                e.EntryId == entryId, cancellationToken);
 
         if (entry == null)
         {
@@ -174,9 +174,9 @@ public class MealPlanService(
         context.MealPlanEntries.Remove(entry);
 
         // Update parent MealPlan timestamp for polling
-        await UpdateMealPlanTimestampAsync(context, householdId, mealPlanId, ct);
+        await UpdateMealPlanTimestampAsync(context, householdId, mealPlanId, cancellationToken);
 
-        await context.SaveChangesAsync(ct);
+        await context.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Removed meal entry {EntryId} from plan {MealPlanId} for household {HouseholdId}",
             entryId, mealPlanId, householdId);
@@ -195,28 +195,28 @@ public class MealPlanService(
             .ToArray();
     }
 
-    private static async Task<int> GetNextMealPlanIdAsync(ApplicationDbContext context, int householdId, CancellationToken ct)
+    private static async Task<int> GetNextMealPlanIdAsync(ApplicationDbContext context, int householdId, CancellationToken cancellationToken)
     {
         var maxId = await context.MealPlans
             .Where(mp => mp.HouseholdId == householdId)
-            .MaxAsync(mp => (int?)mp.MealPlanId, ct) ?? 0;
+            .MaxAsync(mp => (int?)mp.MealPlanId, cancellationToken) ?? 0;
 
         return maxId + 1;
     }
 
-    private static async Task<int> GetNextEntryIdAsync(ApplicationDbContext context, int householdId, int mealPlanId, CancellationToken ct)
+    private static async Task<int> GetNextEntryIdAsync(ApplicationDbContext context, int householdId, int mealPlanId, CancellationToken cancellationToken)
     {
         var maxId = await context.MealPlanEntries
             .Where(e => e.HouseholdId == householdId && e.MealPlanId == mealPlanId)
-            .MaxAsync(e => (int?)e.EntryId, ct) ?? 0;
+            .MaxAsync(e => (int?)e.EntryId, cancellationToken) ?? 0;
 
         return maxId + 1;
     }
 
-    private static async Task UpdateMealPlanTimestampAsync(ApplicationDbContext context, int householdId, int mealPlanId, CancellationToken ct)
+    private static async Task UpdateMealPlanTimestampAsync(ApplicationDbContext context, int householdId, int mealPlanId, CancellationToken cancellationToken)
     {
         var mealPlan = await context.MealPlans
-            .FirstOrDefaultAsync(mp => mp.HouseholdId == householdId && mp.MealPlanId == mealPlanId, ct);
+            .FirstOrDefaultAsync(mp => mp.HouseholdId == householdId && mp.MealPlanId == mealPlanId, cancellationToken);
 
         if (mealPlan != null)
         {

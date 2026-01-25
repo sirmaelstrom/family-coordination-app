@@ -131,7 +131,7 @@ public class PollingService(
 
         foreach (var householdId in householdIds)
         {
-            await CheckHouseholdChangesAsync(db, householdId, now, ct);
+            await CheckHouseholdChangesAsync(db, householdId, now, cancellationToken);
         }
     }
 
@@ -152,7 +152,7 @@ public class PollingService(
 
         // Check shopping list changes for this household only
         var hasShoppingChanges = await db.ShoppingListItems
-            .AnyAsync(item => item.HouseholdId == householdId && item.UpdatedAt > lastShoppingCheck, ct);
+            .AnyAsync(item => item.HouseholdId == householdId && item.UpdatedAt > lastShoppingCheck, cancellationToken);
 
         if (hasShoppingChanges)
         {
@@ -162,7 +162,7 @@ public class PollingService(
 
         // Check recipe changes for this household only
         var hasRecipeChanges = await db.Recipes
-            .AnyAsync(r => r.HouseholdId == householdId && r.UpdatedAt > lastRecipeCheck && !r.IsDeleted, ct);
+            .AnyAsync(r => r.HouseholdId == householdId && r.UpdatedAt > lastRecipeCheck && !r.IsDeleted, cancellationToken);
 
         if (hasRecipeChanges)
         {
@@ -172,7 +172,7 @@ public class PollingService(
 
         // Check meal plan changes for this household only
         var hasMealPlanChanges = await db.MealPlanEntries
-            .AnyAsync(e => e.HouseholdId == householdId && e.UpdatedAt > lastMealPlanCheck, ct);
+            .AnyAsync(e => e.HouseholdId == householdId && e.UpdatedAt > lastMealPlanCheck, cancellationToken);
 
         if (hasMealPlanChanges)
         {

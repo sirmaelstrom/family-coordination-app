@@ -721,8 +721,12 @@
         return $"{factor:0.##}×";
     }
 
-    private void OnDataChanged()
+    private void OnDataChanged(int householdId)
     {
+        // Security: Only respond to changes for our household
+        if (householdId != _householdId)
+            return;
+            
         InvokeAsync(async () =>
         {
             await LoadRecipes();

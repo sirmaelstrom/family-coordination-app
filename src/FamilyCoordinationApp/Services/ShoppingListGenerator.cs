@@ -17,8 +17,8 @@ public record ConsolidationResult
 
 public interface IShoppingListGenerator
 {
-    Task<ShoppingList> GenerateFromMealPlanAsync(int householdId, int mealPlanId, string listName, DateOnly? startDate = null, DateOnly? endDate = null, CancellationToken ct = default);
-    Task<ShoppingList> RegenerateShoppingListAsync(int householdId, int shoppingListId, CancellationToken ct = default);
+    Task<ShoppingList> GenerateFromMealPlanAsync(int householdId, int mealPlanId, string listName, DateOnly? startDate = null, DateOnly? endDate = null, CancellationToken cancellationToken = default);
+    Task<ShoppingList> RegenerateShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default);
     Task<List<ConsolidationResult>> ConsolidateIngredientsAsync(List<RecipeIngredient> ingredients, bool autoConsolidate = true);
 }
 
@@ -35,7 +35,7 @@ public class ShoppingListGenerator(
         string listName,
         DateOnly? startDate = null,
         DateOnly? endDate = null,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(ct);
 
@@ -74,7 +74,7 @@ public class ShoppingListGenerator(
 
         // Create shopping list via service
         var shoppingList = await shoppingListService.CreateShoppingListAsync(
-            householdId, listName, mealPlanId, ct);
+            householdId, listName, mealPlanId, cancellationToken);
 
         // Add items from consolidation results
         foreach (var result in consolidationResults)
@@ -98,7 +98,7 @@ public class ShoppingListGenerator(
                 SortOrder = 0
             };
 
-            await shoppingListService.AddManualItemAsync(item, ct);
+            await shoppingListService.AddManualItemAsync(item, cancellationToken);
         }
 
         logger.LogInformation(
@@ -111,12 +111,12 @@ public class ShoppingListGenerator(
     public async Task<ShoppingList> RegenerateShoppingListAsync(
         int householdId,
         int shoppingListId,
-        CancellationToken ct = default)
+        CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(ct);
 
         // Load existing list with items
-        var existingList = await shoppingListService.GetShoppingListAsync(householdId, shoppingListId, ct);
+        var existingList = await shoppingListService.GetShoppingListAsync(householdId, shoppingListId, cancellationToken);
         if (existingList == null)
         {
             throw new InvalidOperationException($"ShoppingList {shoppingListId} not found for household {householdId}");
@@ -157,7 +157,7 @@ public class ShoppingListGenerator(
         // Clear existing non-manual items
         foreach (var item in existingList.Items.Where(i => !i.IsManuallyAdded).ToList())
         {
-            await shoppingListService.DeleteItemAsync(householdId, shoppingListId, item.ItemId, ct);
+            await shoppingListService.DeleteItemAsync(householdId, shoppingListId, item.ItemId, cancellationToken);
         }
 
         // Add new items from consolidation, applying quantity deltas
@@ -188,7 +188,7 @@ public class ShoppingListGenerator(
                 SortOrder = 0
             };
 
-            await shoppingListService.AddManualItemAsync(item, ct);
+            await shoppingListService.AddManualItemAsync(item, cancellationToken);
         }
 
         // Manual items are already in the list (they weren't deleted)
@@ -197,7 +197,7 @@ public class ShoppingListGenerator(
             "Regenerated shopping list {ShoppingListId} from meal plan {MealPlanId} with {ItemCount} items",
             shoppingListId, existingList.MealPlanId, consolidationResults.Count);
 
-        return await shoppingListService.GetShoppingListAsync(householdId, shoppingListId, ct)
+        return await shoppingListService.GetShoppingListAsync(householdId, shoppingListId, cancellationToken)
             ?? existingList;
     }
 
