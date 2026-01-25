@@ -39,7 +39,11 @@ public class RecipeService(
         if (!string.IsNullOrWhiteSpace(searchTerm))
         {
             var term = searchTerm.Trim().ToLower();
-            query = query.Where(r => r.Name.ToLower().Contains(term));
+            query = query.Where(r => 
+                r.Name.ToLower().Contains(term) ||
+                (r.Description != null && r.Description.ToLower().Contains(term)) ||
+                (r.RecipeType != null && r.RecipeType.ToString()!.ToLower().Contains(term)) ||
+                r.Ingredients.Any(i => i.Name.ToLower().Contains(term)));
         }
 
         return await query
