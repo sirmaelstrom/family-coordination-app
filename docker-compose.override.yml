@@ -8,7 +8,8 @@ services:
 
   app:
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
+      # Use env var from .env file, defaults to Production
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
     ports:
       - "8080:8080"  # Direct access for debugging
