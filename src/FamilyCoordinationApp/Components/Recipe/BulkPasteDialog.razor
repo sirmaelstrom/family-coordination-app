@@ -90,7 +90,7 @@
 </MudDialog>
 
 @code {
-    [CascadingParameter] public MudDialogInstance MudDialog { get; set; } = default!;
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
     [Parameter] public int HouseholdId { get; set; }
 
     private string _pastedText = string.Empty;
