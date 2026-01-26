@@ -7,6 +7,7 @@ public interface IImageService
     Task<string> SaveImageAsync(IBrowserFile file, int householdId, CancellationToken cancellationToken = default);
     Task DeleteImageAsync(string imagePath, CancellationToken cancellationToken = default);
     string GetImageUrl(string? imagePath);
+    Task<IEnumerable<string>> ListImagesAsync(int householdId, CancellationToken cancellationToken = default);
 }
 
 public class ImageService(
@@ -122,5 +123,23 @@ public class ImageService(
         }
 
         return imagePath;
+    }
+
+    public Task<IEnumerable<string>> ListImagesAsync(int householdId, CancellationToken cancellationToken = default)
+    {
+        var uploadsPath = Path.Combine(environment.WebRootPath, "uploads", householdId.ToString());
+
+        if (!Directory.Exists(uploadsPath))
+        {
+            return Task.FromResult<IEnumerable<string>>(Array.Empty<string>());
+        }
+
+        var images = Directory.EnumerateFiles(uploadsPath)
+            .Where(f => AllowedExtensions.Contains(Path.GetExtension(f)))
+            .Select(f => $"/uploads/{householdId}/{Path.GetFileName(f)}")
+            .OrderByDescending(f => f) // Newest first (GUIDs sort roughly by creation time)
+            .ToList();
+
+        return Task.FromResult<IEnumerable<string>>(images);
     }
 }

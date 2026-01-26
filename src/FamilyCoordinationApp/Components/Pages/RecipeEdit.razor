@@ -152,18 +152,26 @@
                     </div>
                 }
 
-                <MudFileUpload T="IBrowserFile"
-                               FilesChanged="UploadImage"
-                               Accept="image/*"
-                               MaximumFileCount="1">
-                    <ActivatorContent>
-                        <MudButton Variant="Variant.Outlined"
-                                   Color="Color.Primary"
-                                   StartIcon="@Icons.Material.Filled.CloudUpload">
-                            @(string.IsNullOrWhiteSpace(_recipe.ImagePath) ? "Upload Image" : "Change Image")
-                        </MudButton>
-                    </ActivatorContent>
-                </MudFileUpload>
+                <div class="d-flex gap-2 flex-wrap">
+                    <MudFileUpload T="IBrowserFile"
+                                   FilesChanged="UploadImage"
+                                   Accept="image/*"
+                                   MaximumFileCount="1">
+                        <ActivatorContent>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.CloudUpload">
+                                @(string.IsNullOrWhiteSpace(_recipe.ImagePath) ? "Upload Image" : "Change Image")
+                            </MudButton>
+                        </ActivatorContent>
+                    </MudFileUpload>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Secondary"
+                               StartIcon="@Icons.Material.Filled.PhotoLibrary"
+                               OnClick="OpenImagePicker">
+                        Choose Existing
+                    </MudButton>
+                </div>
                 <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
                     Max 10 MB. Supported: JPG, PNG, GIF, WebP
                 </MudText>
@@ -468,6 +476,30 @@
         // Note: Don't delete the file yet - it might be the original recipe's image
         _recipe.ImagePath = null;
         ScheduleAutoSave();
+    }
+
+    private async Task OpenImagePicker()
+    {
+        var parameters = new DialogParameters<ImagePickerDialog>
+        {
+            { x => x.HouseholdId, _householdId },
+            { x => x.CurrentImage, _recipe.ImagePath }
+        };
+
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Medium,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<ImagePickerDialog>("Select Image", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: string selectedImage })
+        {
+            _recipe.ImagePath = selectedImage;
+            ScheduleAutoSave();
+        }
     }
 
     private async Task SaveRecipe()
