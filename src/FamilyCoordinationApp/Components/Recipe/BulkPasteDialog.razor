@@ -89,7 +89,7 @@
 </MudDialog>
 
 @code {
-    [CascadingParameter] public IDialogReference? MudDialog { get; set; }
+    [CascadingParameter] public MudDialogInstance MudDialog { get; set; } = default!;
     [Parameter] public int HouseholdId { get; set; }
 
     private string _pastedText = string.Empty;
@@ -124,7 +124,7 @@
 
     private void Cancel()
     {
-        MudDialog?.Close();
+        MudDialog.Cancel();
     }
 
     private void ImportIngredients()
@@ -139,7 +139,7 @@
             SortOrder = index
         }).ToList();
 
-        MudDialog?.Close(DialogResult.Ok(ingredients));
+        MudDialog.Close(DialogResult.Ok(ingredients));
     }
 
     private string SuggestCategory(string ingredientName)
