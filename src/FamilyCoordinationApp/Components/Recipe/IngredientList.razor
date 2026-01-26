@@ -17,7 +17,8 @@ else
     <Plk.Blazor.DragDrop.Dropzone Items="Ingredients"
                                   InstantReplace="true"
                                   TItem="RecipeIngredient"
-                                  Class="ingredient-dropzone">
+                                  Class="ingredient-dropzone"
+                                  OnItemDrop="@HandleItemDrop">
         <MudPaper Class="pa-3 mb-2 d-flex align-center justify-space-between ingredient-item"
                   Elevation="1"
                   Style="cursor: grab;">
@@ -189,5 +190,12 @@ else
         {
             Ingredients[i].SortOrder = i;
         }
+    }
+
+    private async Task HandleItemDrop(RecipeIngredient _)
+    {
+        // After drag-drop reorder, update sort orders and notify parent
+        UpdateSortOrder();
+        await IngredientsChanged.InvokeAsync(Ingredients);
     }
 }
