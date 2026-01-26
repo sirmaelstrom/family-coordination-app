@@ -1,4 +1,5 @@
 @using FamilyCoordinationApp.Data.Entities
+@using MudBlazor
 
 @inject ISnackbar Snackbar
 
@@ -14,46 +15,54 @@
 }
 else
 {
-    <Plk.Blazor.DragDrop.Dropzone Items="Ingredients"
-                                  InstantReplace="true"
-                                  TItem="RecipeIngredient"
-                                  Class="ingredient-dropzone"
-                                  OnItemDrop="@HandleItemDrop">
-        <MudPaper Class="pa-3 mb-2 d-flex align-center justify-space-between ingredient-item"
-                  Elevation="1"
-                  Style="cursor: grab;">
-            <div class="d-flex align-center">
-                <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
-                         Class="mr-2"
-                         Color="Color.Default"
-                         Size="Size.Small" />
-                <div>
-                    <MudText Typo="Typo.body1">
-                        @FormatIngredient(context)
-                    </MudText>
-                    @if (!string.IsNullOrWhiteSpace(context.Notes))
-                    {
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">
-                            @context.Notes
+    <MudDropContainer T="RecipeIngredient"
+                      Items="Ingredients"
+                      ItemsSelector="@((item, zone) => true)"
+                      ItemDropped="HandleItemDropped"
+                      Class="ingredient-dropzone">
+        <ChildContent>
+            <MudDropZone T="RecipeIngredient"
+                         Identifier="ingredients"
+                         AllowReorder="true"
+                         Class="d-flex flex-column gap-2" />
+        </ChildContent>
+        <ItemRenderer>
+            <MudPaper Class="pa-3 d-flex align-center justify-space-between ingredient-item"
+                      Elevation="1"
+                      Style="cursor: grab;">
+                <div class="d-flex align-center">
+                    <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
+                             Class="mr-2"
+                             Color="Color.Default"
+                             Size="Size.Small" />
+                    <div>
+                        <MudText Typo="Typo.body1">
+                            @FormatIngredient(context)
                         </MudText>
-                    }
+                        @if (!string.IsNullOrWhiteSpace(context.Notes))
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                @context.Notes
+                            </MudText>
+                        }
+                    </div>
                 </div>
-            </div>
-            <div class="d-flex align-center">
-                <MudChip T="string" Size="Size.Small" Color="@GetCategoryColor(context.Category)">
-                    @context.Category
-                </MudChip>
-                <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                               Size="Size.Small"
-                               OnClick="() => EditIngredient(context)"
-                               Class="ml-2" />
-                <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                               Size="Size.Small"
-                               Color="Color.Error"
-                               OnClick="() => DeleteIngredient(context)" />
-            </div>
-        </MudPaper>
-    </Plk.Blazor.DragDrop.Dropzone>
+                <div class="d-flex align-center">
+                    <MudChip T="string" Size="Size.Small" Color="@GetCategoryColor(context.Category)">
+                        @context.Category
+                    </MudChip>
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                   Size="Size.Small"
+                                   OnClick="() => EditIngredient(context)"
+                                   Class="ml-2" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                   Size="Size.Small"
+                                   Color="Color.Error"
+                                   OnClick="() => DeleteIngredient(context)" />
+                </div>
+            </MudPaper>
+        </ItemRenderer>
+    </MudDropContainer>
 }
 
 <style>
@@ -192,9 +201,24 @@ else
         }
     }
 
-    private async Task HandleItemDrop(RecipeIngredient _)
+    private async Task HandleItemDropped(MudItemDropInfo<RecipeIngredient> dropInfo)
     {
-        // After drag-drop reorder, update sort orders and notify parent
+        if (dropInfo.Item == null) return;
+        
+        // MudBlazor handles the visual reorder, but we need to update our list
+        var item = dropInfo.Item;
+        var oldIndex = Ingredients.IndexOf(item);
+        var newIndex = dropInfo.DropzoneIdentifier == "ingredients" ? dropInfo.IndexInZone : Ingredients.Count - 1;
+        
+        if (oldIndex >= 0 && oldIndex != newIndex)
+        {
+            Ingredients.RemoveAt(oldIndex);
+            if (newIndex > oldIndex) newIndex--;
+            if (newIndex < 0) newIndex = 0;
+            if (newIndex > Ingredients.Count) newIndex = Ingredients.Count;
+            Ingredients.Insert(newIndex, item);
+        }
+        
         UpdateSortOrder();
         await IngredientsChanged.InvokeAsync(Ingredients);
     }
