@@ -47,14 +47,14 @@
             <Authorized>
                 <div class="d-flex align-center gap-2 gap-md-4">
                     <MudHidden Breakpoint="Breakpoint.SmAndDown">
-                        <OnlineUsers CurrentUserId="@_currentUserId" />
+                        <OnlineUsers CurrentUserId="@CurrentUserId" />
                     </MudHidden>
                     <SyncStatusIndicator />
                     <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
                                    Color="Color.Inherit"
                                    OnClick="ToggleDarkMode"
                                    Title="@(_isDarkMode ? "Switch to light mode" : "Switch to dark mode")" />
-                    @if (_isSiteAdmin)
+                    @if (IsSiteAdmin)
                     {
                         <MudHidden Breakpoint="Breakpoint.SmAndDown">
                             <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined" Class="px-2">
@@ -139,13 +139,25 @@
 </div>
 
 @code {
-    private int _currentUserId;
-    private string? _currentUserPicture;
-    private string _currentUserInitials = string.Empty;
-    private string _currentUserName = string.Empty;
+    // Persisted state to prevent prerender flash
+    [PersistentState(AllowUpdates = true)]
+    public int CurrentUserId { get; set; }
+    
+    [PersistentState(AllowUpdates = true)]
+    public string? CurrentUserPicture { get; set; }
+    
+    [PersistentState(AllowUpdates = true)]
+    public string CurrentUserInitials { get; set; } = string.Empty;
+    
+    [PersistentState(AllowUpdates = true)]
+    public string CurrentUserName { get; set; } = string.Empty;
+    
+    [PersistentState(AllowUpdates = true)]
+    public bool IsSiteAdmin { get; set; }
+    
+    // Non-persisted state
     private System.Timers.Timer? _heartbeatTimer;
     private bool _isDarkMode = false;
-    private bool _isSiteAdmin = false;
     private bool _drawerOpen = true;
 
     private MudTheme _theme = new()
@@ -271,21 +283,28 @@
 
     private async Task LoadCurrentUser()
     {
+        // Skip loading if already persisted from prerender
+        if (CurrentUserId > 0)
+        {
+            SendHeartbeat();
+            return;
+        }
+        
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
         var email = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
 
         if (email != null)
         {
-            _isSiteAdmin = SiteAdminService.IsSiteAdmin(email);
+            IsSiteAdmin = SiteAdminService.IsSiteAdmin(email);
 
             await using var context = await DbFactory.CreateDbContextAsync();
             var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
             if (user != null)
             {
-                _currentUserId = user.Id;
-                _currentUserPicture = user.PictureUrl;
-                _currentUserInitials = user.Initials;
-                _currentUserName = user.DisplayName;
+                CurrentUserId = user.Id;
+                CurrentUserPicture = user.PictureUrl;
+                CurrentUserInitials = user.Initials;
+                CurrentUserName = user.DisplayName;
                 SendHeartbeat();
             }
         }
@@ -303,10 +322,10 @@
 
     private void SendHeartbeat()
     {
-        if (_currentUserId > 0)
+        if (CurrentUserId > 0)
         {
             var currentPage = new Uri(NavigationManager.Uri).AbsolutePath;
-            PresenceService.Heartbeat(_currentUserId, _currentUserName, _currentUserPicture, _currentUserInitials, currentPage);
+            PresenceService.Heartbeat(CurrentUserId, CurrentUserName, CurrentUserPicture, CurrentUserInitials, currentPage);
         }
     }
 
@@ -339,9 +358,9 @@
         PollingService.OnStatusChanged -= OnSyncStatusChanged;
         _heartbeatTimer?.Stop();
         _heartbeatTimer?.Dispose();
-        if (_currentUserId > 0)
+        if (CurrentUserId > 0)
         {
-            PresenceService.UserDisconnected(_currentUserId);
+            PresenceService.UserDisconnected(CurrentUserId);
         }
     }
 }

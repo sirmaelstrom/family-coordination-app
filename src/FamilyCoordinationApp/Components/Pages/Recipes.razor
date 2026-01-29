@@ -153,7 +153,7 @@
                 <MudItem xs="12" sm="6" md="4" Class="recipe-grid-item">
                     <RecipeCard Recipe="recipe"
                                 IsSelected="@(_selectedRecipe?.RecipeId == recipe.RecipeId)"
-                                IsFavorite="@(_favoriteRecipeIds.Contains(recipe.RecipeId))"
+                                IsFavorite="@(FavoriteRecipeIds.Contains(recipe.RecipeId))"
                                 OnClick="HandleCardClick"
                                 OnToggleFavorite="HandleToggleFavorite" />
                 </MudItem>
@@ -440,12 +440,22 @@
 @code {
     [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
 
-    private List<Recipe> _recipes = new();
+    // Persisted state to prevent prerender flash
+    [PersistentState(AllowUpdates = true)]
+    public List<Recipe> RecipeList { get; set; } = new();
+    
+    [PersistentState(AllowUpdates = true)]
+    public HashSet<int> FavoriteRecipeIds { get; set; } = new();
+    
+    [PersistentState(AllowUpdates = true)]
+    public int HouseholdId { get; set; }
+    
+    [PersistentState(AllowUpdates = true)]
+    public int UserId { get; set; }
+    
+    // Non-persisted state
     private bool _loading = true;
     private string _searchTerm = string.Empty;
-    private int _householdId;
-    private int _userId;
-    private HashSet<int> _favoriteRecipeIds = new();
     private bool _showFavoritesOnly;
 
     private Recipe? _selectedRecipe;
@@ -465,8 +475,15 @@
     {
         Notifier.OnRecipesChanged += OnDataChanged;
 
+        // Skip loading if already persisted from prerender
+        if (HouseholdId > 0 && RecipeList.Any())
+        {
+            _loading = false;
+            return;
+        }
+
         await LoadUserContext();
-        if (_householdId > 0)
+        if (HouseholdId > 0)
         {
             await LoadRecipes();
         }
@@ -492,8 +509,8 @@
 
         if (user != null)
         {
-            _householdId = user.HouseholdId;
-            _userId = user.Id;
+            HouseholdId = user.HouseholdId;
+            UserId = user.Id;
         }
     }
 
@@ -502,8 +519,8 @@
         try
         {
             _loading = true;
-            _recipes = await RecipeService.GetRecipesAsync(_householdId, _searchTerm);
-            _favoriteRecipeIds = await RecipeService.GetFavoriteRecipeIdsAsync(_userId, _householdId);
+            RecipeList = await RecipeService.GetRecipesAsync(HouseholdId, _searchTerm);
+            FavoriteRecipeIds = await RecipeService.GetFavoriteRecipeIdsAsync(UserId, HouseholdId);
         }
         catch (Exception ex)
         {
@@ -517,12 +534,12 @@
 
     private async Task HandleToggleFavorite(Recipe recipe)
     {
-        await RecipeService.ToggleFavoriteAsync(_userId, _householdId, recipe.RecipeId);
+        await RecipeService.ToggleFavoriteAsync(UserId, HouseholdId, recipe.RecipeId);
         // Toggle local state immediately for responsive UI
-        if (_favoriteRecipeIds.Contains(recipe.RecipeId))
-            _favoriteRecipeIds.Remove(recipe.RecipeId);
+        if (FavoriteRecipeIds.Contains(recipe.RecipeId))
+            FavoriteRecipeIds.Remove(recipe.RecipeId);
         else
-            _favoriteRecipeIds.Add(recipe.RecipeId);
+            FavoriteRecipeIds.Add(recipe.RecipeId);
     }
 
     private void ToggleFavoritesFilter()
@@ -532,8 +549,8 @@
 
     private IEnumerable<Recipe> FilteredRecipes =>
         _showFavoritesOnly
-            ? _recipes.Where(r => _favoriteRecipeIds.Contains(r.RecipeId))
-            : _recipes;
+            ? RecipeList.Where(r => FavoriteRecipeIds.Contains(r.RecipeId))
+            : RecipeList;
 
     private void HandleCardClick(Recipe recipe)
     {
@@ -595,7 +612,7 @@
 
         try
         {
-            await RecipeService.DeleteRecipeAsync(_householdId, _recipeToDelete.RecipeId);
+            await RecipeService.DeleteRecipeAsync(HouseholdId, _recipeToDelete.RecipeId);
             Snackbar.Add($"Recipe '{_recipeToDelete.Name}' deleted", Severity.Success);
 
             // Close drawer if this was the selected recipe
@@ -724,7 +741,7 @@
     private void OnDataChanged(int householdId)
     {
         // Security: Only respond to changes for our household
-        if (householdId != _householdId)
+        if (householdId != HouseholdId)
             return;
             
         InvokeAsync(async () =>
