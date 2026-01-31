@@ -22,22 +22,26 @@
 <MudSnackbarProvider />
 
 <MudLayout>
-    <!-- Collapsible Drawer - simple click toggle -->
-    <MudDrawer @bind-Open="_drawerOpen" 
-               ClipMode="DrawerClipMode.Always" 
-               Elevation="2"
-               Variant="@DrawerVariant.Mini"
-               OpenMiniOnHover="false">
-        <NavMenu IsExpanded="_drawerOpen" />
-    </MudDrawer>
+    <!-- Collapsible Drawer - hidden on mobile -->
+    <MudHidden Breakpoint="Breakpoint.SmAndDown">
+        <MudDrawer @bind-Open="_drawerOpen" 
+                   ClipMode="DrawerClipMode.Always" 
+                   Elevation="2"
+                   Variant="@DrawerVariant.Mini"
+                   OpenMiniOnHover="false">
+            <NavMenu IsExpanded="_drawerOpen" />
+        </MudDrawer>
+    </MudHidden>
 
     <!-- App Bar -->
     <MudAppBar Elevation="1" Dense="true">
-        <MudIconButton Icon="@Icons.Material.Filled.Menu" 
-                       Color="Color.Inherit" 
-                       Edge="Edge.Start" 
-                       OnClick="@ToggleDrawer"
-                       Title="Toggle menu" />
+        <MudHidden Breakpoint="Breakpoint.SmAndDown">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu" 
+                           Color="Color.Inherit" 
+                           Edge="Edge.Start" 
+                           OnClick="@ToggleDrawer"
+                           Title="Toggle menu" />
+        </MudHidden>
         
         <MudText Typo="Typo.h6" Class="ml-2">Family Kitchen</MudText>
         
@@ -122,15 +126,47 @@
             </div>
         </footer>
     </MudMainContent>
+    
+    <!-- Bottom Navigation - mobile only -->
+    <MudHidden Breakpoint="Breakpoint.MdAndUp">
+        <div class="mobile-bottom-nav">
+            <MudPaper Elevation="4" Class="bottom-nav-paper">
+                <div class="d-flex justify-space-around align-center py-1">
+                    <MudIconButton Icon="@Icons.Material.Filled.Home" 
+                                   Color="@(IsCurrentPage("/dashboard") ? Color.Primary : Color.Default)"
+                                   Href="/dashboard"
+                                   Size="Size.Medium" />
+                    <MudIconButton Icon="@Icons.Material.Filled.MenuBook" 
+                                   Color="@(IsCurrentPage("/recipes") ? Color.Primary : Color.Default)"
+                                   Href="/recipes"
+                                   Size="Size.Medium" />
+                    <MudIconButton Icon="@Icons.Material.Filled.CalendarMonth" 
+                                   Color="@(IsCurrentPage("/meal-plan") ? Color.Primary : Color.Default)"
+                                   Href="/meal-plan"
+                                   Size="Size.Medium" />
+                    <MudIconButton Icon="@Icons.Material.Filled.ShoppingCart" 
+                                   Color="@(IsCurrentPage("/shopping-list") ? Color.Primary : Color.Default)"
+                                   Href="/shopping-list"
+                                   Size="Size.Medium" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Settings" 
+                                   Color="@(IsCurrentPage("/settings") ? Color.Primary : Color.Default)"
+                                   Href="/settings/categories"
+                                   Size="Size.Medium" />
+                </div>
+            </MudPaper>
+        </div>
+    </MudHidden>
 </MudLayout>
 
-<!-- Floating feedback button (above page FABs) -->
-<MudFab Color="Color.Tertiary"
-        StartIcon="@Icons.Material.Filled.Feedback"
-        OnClick="OpenFeedbackDialog"
-        Style="position: fixed; bottom: 88px; right: 24px; z-index: 1000;"
-        Size="Size.Medium"
-        aria-label="Send feedback" />
+<!-- Floating feedback button - hidden on mobile (use settings in bottom nav) -->
+<MudHidden Breakpoint="Breakpoint.SmAndDown">
+    <MudFab Color="Color.Tertiary"
+            StartIcon="@Icons.Material.Filled.Feedback"
+            OnClick="OpenFeedbackDialog"
+            Style="position: fixed; bottom: 88px; right: 24px; z-index: 1000;"
+            Size="Size.Medium"
+            aria-label="Send feedback" />
+</MudHidden>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -248,6 +284,16 @@
     {
         _drawerOpen = !_drawerOpen;
         _ = SaveDrawerState();
+    }
+
+    private bool IsCurrentPage(string path)
+    {
+        var currentPath = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        if (string.IsNullOrEmpty(currentPath)) currentPath = "/";
+        else currentPath = "/" + currentPath;
+        
+        if (path == "/dashboard") return currentPath == "/" || currentPath == "/dashboard";
+        return currentPath.StartsWith(path, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task SaveDrawerState()

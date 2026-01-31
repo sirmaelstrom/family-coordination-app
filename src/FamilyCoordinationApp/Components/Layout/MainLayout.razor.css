@@ -37,3 +37,28 @@
     right: 0.75rem;
     top: 0.5rem;
 }
+
+/* Mobile bottom navigation */
+.mobile-bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1100;
+}
+
+.bottom-nav-paper {
+    border-radius: 0 !important;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* Add padding to content area on mobile for bottom nav */
+@media (max-width: 960px) {
+    .content-wrapper {
+        padding-bottom: 72px !important;
+    }
+    
+    .app-footer {
+        padding-bottom: 72px !important;
+    }
+}
