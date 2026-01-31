@@ -136,3 +136,21 @@ h1:focus {
         bottom: 80px !important; /* Above bottom nav */
     }
 }
+
+/* Disable drag-and-drop on touch devices to prevent scroll conflicts */
+@media (pointer: coarse) {
+    .mud-drop-zone {
+        touch-action: pan-y !important;
+    }
+    
+    .mud-drop-zone [draggable="true"] {
+        -webkit-user-drag: none !important;
+        user-drag: none !important;
+        -webkit-touch-callout: none !important;
+    }
+    
+    /* Disable drag cursor on touch */
+    .mud-drop-zone * {
+        cursor: default !important;
+    }
+}
