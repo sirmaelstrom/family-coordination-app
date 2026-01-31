@@ -7,6 +7,7 @@
         <MudText Typo="Typo.h6">@Recipe.Name</MudText>
     </TitleContent>
     <DialogContent>
+        <div style="overflow-y: auto; max-height: calc(80vh - 100px);">
         @if (!string.IsNullOrWhiteSpace(Recipe.ImagePath))
         {
             <MudImage Src="@Recipe.ImagePath"
@@ -61,6 +62,7 @@
                 @((MarkupString)MarkdownHelper.ToSafeHtml(Recipe.Instructions))
             </div>
         }
+        </div>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Close">Close</MudButton>

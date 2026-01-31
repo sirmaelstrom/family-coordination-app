@@ -13,6 +13,7 @@
 
 <MudDialog>
     <DialogContent>
+        <div style="overflow-y: auto; max-height: calc(80vh - 100px);">
         <MudText Typo="Typo.body1" Class="mb-4">
             Paste a recipe URL to import. Tested and working with:
         </MudText>
@@ -68,6 +69,7 @@
                 }
             </MudAlert>
         }
+        </div>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Cancel" Disabled="_importing">Cancel</MudButton>

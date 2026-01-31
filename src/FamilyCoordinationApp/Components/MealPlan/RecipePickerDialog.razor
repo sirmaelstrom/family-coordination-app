@@ -6,6 +6,7 @@
 
 <MudDialog>
     <DialogContent>
+        <div style="overflow-y: auto; max-height: calc(80vh - 100px);">
         <MudTabs @bind-ActivePanelIndex="_activeTab">
             <MudTabPanel Text="Pick Recipe">
                 <MudAutocomplete T="Recipe"
@@ -79,6 +80,7 @@
                       Variant="Variant.Outlined"
                       Lines="2"
                       Class="mt-4" />
+        </div>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Cancel">Cancel</MudButton>
