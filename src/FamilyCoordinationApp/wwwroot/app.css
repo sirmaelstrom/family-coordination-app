@@ -71,3 +71,37 @@ h1:focus {
 #blazor-error-ui {
     display: none !important;
 }
+
+/* Mobile dialog fixes */
+@media (max-width: 600px) {
+    /* Make dialogs fullscreen on mobile */
+    .mud-dialog {
+        margin: 0 !important;
+        max-height: 100vh !important;
+        max-width: 100vw !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        border-radius: 0 !important;
+    }
+    
+    .mud-dialog-container {
+        align-items: stretch !important;
+    }
+    
+    /* Ensure content area scrolls */
+    .mud-dialog-content {
+        flex: 1 !important;
+        overflow-y: auto !important;
+        max-height: none !important;
+    }
+    
+    /* Fix dropdown/select positioning on mobile */
+    .mud-popover {
+        position: fixed !important;
+    }
+    
+    .mud-list {
+        max-height: 40vh !important;
+        overflow-y: auto !important;
+    }
+}
