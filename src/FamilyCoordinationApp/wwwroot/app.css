@@ -122,3 +122,17 @@ h1:focus {
         overflow-y: auto !important;
     }
 }
+
+/* FAB positioning - account for bottom nav on mobile */
+.page-fab {
+    position: fixed !important;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1050;
+}
+
+@media (max-width: 960px) {
+    .page-fab {
+        bottom: 80px !important; /* Above bottom nav */
+    }
+}
