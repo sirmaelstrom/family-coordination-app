@@ -1,3 +1,4 @@
+@using FamilyCoordinationApp.Constants
 @using FamilyCoordinationApp.Data.Entities
 @using FamilyCoordinationApp.Services
 
@@ -73,8 +74,7 @@
     private string _category = "Pantry";
     private bool _isSubmitting = false;
 
-    private static readonly string[] Categories =
-        { "Meat", "Produce", "Dairy", "Pantry", "Spices", "Bakery", "Frozen" };
+    private static string[] Categories => CategoryDefaults.StandardCategories;
 
     private static readonly string[] CommonUnits =
         { "cup", "tbsp", "tsp", "oz", "lb", "g", "kg", "piece", "can", "bunch" };

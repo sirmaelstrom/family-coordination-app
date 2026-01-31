@@ -1,3 +1,4 @@
+@using FamilyCoordinationApp.Constants
 @using FamilyCoordinationApp.Data.Entities
 
 @if (Items == null || Items.Count == 0)
@@ -111,22 +112,7 @@ else
         await OnItemsReordered.InvokeAsync(categoryItems);
     }
 
-    private int GetCategoryOrder(string category)
-    {
-        // Define standard category ordering for grocery store layout
-        var order = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
-        {
-            { "Produce", 1 },
-            { "Bakery", 2 },
-            { "Meat", 3 },
-            { "Dairy", 4 },
-            { "Frozen", 5 },
-            { "Pantry", 6 },
-            { "Spices", 7 }
-        };
-
-        return order.TryGetValue(category, out var ord) ? ord : 99;
-    }
+    private int GetCategoryOrder(string category) => CategoryDefaults.GetCategoryOrder(category);
 }
 
 <style>

@@ -1,10 +1,12 @@
 @using FamilyCoordinationApp.Data.Entities
 @using FamilyCoordinationApp.Services
+@using System.Security.Claims
 @inject IRecipeService RecipeService
+@inject ISnackbar Snackbar
 
 <MudDialog>
     <DialogContent>
-        <MudTabs>
+        <MudTabs @bind-ActivePanelIndex="_activeTab">
             <MudTabPanel Text="Pick Recipe">
                 <MudAutocomplete T="Recipe"
                                  Label="Search recipes"
@@ -44,6 +46,31 @@
                               Validation="@(new Func<string, string?>(ValidateCustomMealName))"
                               Class="mt-3" />
             </MudTabPanel>
+            <MudTabPanel Text="New Recipe" Icon="@Icons.Material.Filled.Add">
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-3 mb-2">
+                    Quick-add a recipe. You can add ingredients and details later.
+                </MudText>
+                <MudTextField @bind-Value="_newRecipeName"
+                              Label="Recipe name"
+                              Placeholder="e.g., Mom's Lasagna"
+                              Variant="Variant.Outlined"
+                              Immediate="true"
+                              Required="true"
+                              Class="mb-3" />
+                <MudSelect @bind-Value="_newRecipeType"
+                           Label="Type"
+                           Variant="Variant.Outlined"
+                           AnchorOrigin="Origin.BottomCenter">
+                    @foreach (var type in Enum.GetValues<RecipeType>())
+                    {
+                        <MudSelectItem Value="@type">@GetRecipeTypeLabel(type)</MudSelectItem>
+                    }
+                </MudSelect>
+                @if (_creatingRecipe)
+                {
+                    <MudProgressLinear Indeterminate="true" Class="mt-3" />
+                }
+            </MudTabPanel>
         </MudTabs>
 
         <MudTextField @bind-Value="_notes"
@@ -55,7 +82,22 @@
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Cancel">Cancel</MudButton>
-        <MudButton Color="Color.Primary" OnClick="Submit" Disabled="@(!CanSubmit)">Add</MudButton>
+        @if (_activeTab == 2)
+        {
+            <MudButton Color="Color.Primary" 
+                       OnClick="CreateAndAddRecipe" 
+                       Disabled="@(!CanCreateRecipe || _creatingRecipe)">
+                @if (_creatingRecipe)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                }
+                Create & Add
+            </MudButton>
+        }
+        else
+        {
+            <MudButton Color="Color.Primary" OnClick="Submit" Disabled="@(!CanSubmit)">Add</MudButton>
+        }
     </DialogActions>
 </MudDialog>
 
@@ -66,11 +108,21 @@
     [Parameter]
     public int HouseholdId { get; set; }
 
+    [Parameter]
+    public int UserId { get; set; }
+
+    private int _activeTab = 0;
     private Recipe? _selectedRecipe;
     private string? _customMealName;
     private string? _notes;
 
+    // New recipe fields
+    private string? _newRecipeName;
+    private RecipeType _newRecipeType = RecipeType.Main;
+    private bool _creatingRecipe = false;
+
     private bool CanSubmit => _selectedRecipe != null || !string.IsNullOrWhiteSpace(_customMealName);
+    private bool CanCreateRecipe => !string.IsNullOrWhiteSpace(_newRecipeName);
 
     private string? ValidateCustomMealName(string? value)
     {
@@ -103,6 +155,58 @@
         };
         MudDialog.Close(DialogResult.Ok(result));
     }
+
+    private async Task CreateAndAddRecipe()
+    {
+        if (string.IsNullOrWhiteSpace(_newRecipeName))
+            return;
+
+        _creatingRecipe = true;
+        StateHasChanged();
+
+        try
+        {
+            var newRecipe = new Recipe
+            {
+                HouseholdId = HouseholdId,
+                Name = _newRecipeName.Trim(),
+                RecipeType = _newRecipeType,
+                CreatedByUserId = UserId,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            var created = await RecipeService.CreateRecipeAsync(newRecipe);
+            
+            Snackbar.Add($"Recipe \"{created.Name}\" created!", Severity.Success);
+
+            // Return the newly created recipe as the selection
+            var result = new MealSelection
+            {
+                RecipeId = created.RecipeId,
+                Notes = _notes?.Trim()
+            };
+            MudDialog.Close(DialogResult.Ok(result));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to create recipe: {ex.Message}", Severity.Error);
+            _creatingRecipe = false;
+        }
+    }
+
+    private static string GetRecipeTypeLabel(RecipeType type) => type switch
+    {
+        RecipeType.Main => "Main Dish",
+        RecipeType.Side => "Side Dish",
+        RecipeType.Appetizer => "Appetizer",
+        RecipeType.Dessert => "Dessert",
+        RecipeType.Beverage => "Beverage",
+        RecipeType.Sauce => "Sauce/Condiment",
+        RecipeType.Breakfast => "Breakfast",
+        RecipeType.Snack => "Snack",
+        RecipeType.Other => "Other",
+        _ => type.ToString()
+    };
 
     // Nested public class for dialog result - accessible as RecipePickerDialog.MealSelection
     public class MealSelection

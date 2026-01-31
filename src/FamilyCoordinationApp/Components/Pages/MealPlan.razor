@@ -130,7 +130,8 @@
     {
         var parameters = new DialogParameters<RecipePickerDialog>
         {
-            { x => x.HouseholdId, _householdId }
+            { x => x.HouseholdId, _householdId },
+            { x => x.UserId, _userId }
         };
 
         var options = new DialogOptions
