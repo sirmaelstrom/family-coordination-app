@@ -45,11 +45,14 @@
     left: 0;
     right: 0;
     z-index: 1100;
+    background-color: var(--mud-palette-background) !important;
 }
 
 .bottom-nav-paper {
     border-radius: 0 !important;
-    padding-bottom: env(safe-area-inset-bottom, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0) !important;
+    background-color: var(--mud-palette-background) !important;
+    box-shadow: 0 -2px 4px rgba(0,0,0,0.2) !important;
 }
 
 /* Add padding to content area on mobile for bottom nav */
