@@ -20,6 +20,7 @@ h1:focus {
     min-height: 100vh !important;
     display: flex !important;
     flex-direction: column !important;
+    background-color: var(--mud-palette-background) !important;
 }
 
 /* Fix nav icon centering in mini drawer */
@@ -44,6 +45,7 @@ h1:focus {
     flex: 1 !important;
     display: flex !important;
     flex-direction: column !important;
+    background-color: var(--mud-palette-background) !important;
 }
 
 /* Content area grows */
