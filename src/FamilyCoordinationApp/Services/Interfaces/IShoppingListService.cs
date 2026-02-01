@@ -10,6 +10,7 @@ public interface IShoppingListService
     Task<List<ShoppingList>> GetArchivedShoppingListsAsync(int householdId, bool? favoritesOnly = null, CancellationToken cancellationToken = default);
     Task RestoreShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default);
     Task DeleteShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default);
+    Task<ShoppingList> RenameShoppingListAsync(int householdId, int shoppingListId, string newName, CancellationToken cancellationToken = default);
     Task<ShoppingListItem> AddManualItemAsync(ShoppingListItem item, CancellationToken cancellationToken = default);
     Task UpdateItemAsync(ShoppingListItem item, CancellationToken cancellationToken = default);
     Task<(bool Success, bool WasConflict, string? ConflictMessage)> UpdateItemWithConcurrencyAsync(ShoppingListItem item, CancellationToken cancellationToken = default);

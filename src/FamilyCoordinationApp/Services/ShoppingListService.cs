@@ -123,6 +123,23 @@ public class ShoppingListService(
             shoppingListId, householdId);
     }
 
+    public async Task<ShoppingList> RenameShoppingListAsync(int householdId, int shoppingListId, string newName, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        var shoppingList = await context.ShoppingLists
+            .FirstOrDefaultAsync(sl => sl.HouseholdId == householdId && sl.ShoppingListId == shoppingListId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Shopping list {shoppingListId} not found");
+
+        shoppingList.Name = newName.Trim();
+        await context.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("Renamed ShoppingList {ShoppingListId} to '{NewName}' for household {HouseholdId}",
+            shoppingListId, newName, householdId);
+
+        return shoppingList;
+    }
+
     public async Task<ShoppingListItem> AddManualItemAsync(ShoppingListItem item, CancellationToken cancellationToken = default)
     {
         return await IdGenerationHelper.ExecuteWithRetryAsync(

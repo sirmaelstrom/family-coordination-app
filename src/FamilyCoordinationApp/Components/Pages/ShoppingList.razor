@@ -67,6 +67,11 @@
                              Icon="@Icons.Material.Filled.Add">
                     Create New List
                 </MudMenuItem>
+                <MudMenuItem OnClick="RenameList"
+                             Icon="@Icons.Material.Filled.Edit"
+                             Disabled="@(_currentList == null)">
+                    Rename List
+                </MudMenuItem>
                 <MudMenuItem OnClick="GenerateFromMealPlan"
                              Icon="@Icons.Material.Filled.AutoAwesome"
                              Disabled="@_isGenerating">
@@ -277,6 +282,40 @@
             catch (Exception ex)
             {
                 Snackbar.Add($"Error creating list: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task RenameList()
+    {
+        if (_currentList == null) return;
+
+        var parameters = new DialogParameters<CreateListDialog>
+        {
+            { x => x.DefaultName, _currentList.Name }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<CreateListDialog>("Rename List", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled && result.Data is string newName && !string.IsNullOrWhiteSpace(newName))
+        {
+            try
+            {
+                await ShoppingListService.RenameShoppingListAsync(_householdId, _currentList.ShoppingListId, newName.Trim());
+                await LoadShoppingListsAsync();
+                Snackbar.Add($"Renamed to '{newName}'", Severity.Success);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error renaming list: {ex.Message}", Severity.Error);
             }
         }
     }

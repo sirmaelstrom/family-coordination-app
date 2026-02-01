@@ -3,6 +3,12 @@ html, body {
     margin: 0;
     padding: 0;
     height: 100%;
+    background-color: var(--mud-palette-background);
+}
+
+/* Dark mode background override */
+.mud-theme-dark, .mud-theme-dark body {
+    background-color: #121212;
 }
 
 h1:focus {
