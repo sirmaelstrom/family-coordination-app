@@ -19,6 +19,7 @@
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject DataNotifier Notifier
 @inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
 
 <PageTitle>Shopping List - Family Kitchen</PageTitle>
 
@@ -664,8 +665,15 @@
             
         InvokeAsync(async () =>
         {
+            // Save scroll position before reload
+            var scrollY = await JSRuntime.InvokeAsync<double>("eval", "window.scrollY");
+            
             await LoadShoppingListsAsync();
             StateHasChanged();
+            
+            // Restore scroll position after render
+            await Task.Delay(50); // Brief delay for DOM update
+            await JSRuntime.InvokeVoidAsync("eval", $"window.scrollTo(0, {scrollY})");
         });
     }
 
