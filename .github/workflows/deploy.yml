@@ -70,11 +70,15 @@ jobs:
         run: |
           cd ~/familyapp
           # Force remove any stale containers that might conflict
-          docker rm -f familyapp-app familyapp-nginx 2>/dev/null || true
-          # Stop and remove existing containers to avoid conflicts
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans || true
+          docker rm -f familyapp-app familyapp-nginx familyapp-postgres 2>/dev/null || true
+          # Stop and remove existing containers (preserve volumes for data!)
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+          # Clear any orphan networks
+          docker network prune -f 2>/dev/null || true
+          # Brief pause to let Docker daemon settle
+          sleep 2
           # Start fresh
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate
           echo "🚀 Containers started"
             
       - name: Health check
