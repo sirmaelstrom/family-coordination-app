@@ -7,12 +7,11 @@ services:
 
   app:
     environment:
-      # Use env var from .env file, defaults to Production
-      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
     ports:
       - "8080:8080"  # Direct access for debugging
     # Uses bind mounts from main compose file
+    # ASPNETCORE_ENVIRONMENT inherited from main compose (defaults to Production)
 
   nginx:
     # Use self-signed certs for local HTTPS testing
