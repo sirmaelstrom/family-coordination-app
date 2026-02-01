@@ -19,7 +19,6 @@
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject DataNotifier Notifier
 @inject NavigationManager Navigation
-@inject IJSRuntime JSRuntime
 
 <PageTitle>Shopping List - Family Kitchen</PageTitle>
 
@@ -153,6 +152,10 @@
     private bool _isLoading = true;
     private bool _isGenerating = false;
     private bool _isTogglingFavorite = false;
+    
+    // Suppress polling reload when we just made a change (avoids scroll jump)
+    private DateTime _lastLocalChange = DateTime.MinValue;
+    private static readonly TimeSpan ChangeSuppressionWindow = TimeSpan.FromSeconds(6); // Slightly longer than poll interval
 
     protected override async Task OnInitializedAsync()
     {
@@ -224,6 +227,7 @@
         try
         {
             var updatedList = await ShoppingListService.ToggleFavoriteAsync(_householdId, _currentList.ShoppingListId);
+            MarkLocalChange();
             
             // Update local state with server response
             _currentList.IsFavorite = updatedList.IsFavorite;
@@ -275,6 +279,7 @@
             try
             {
                 var newList = await ShoppingListService.CreateShoppingListAsync(_householdId, name.Trim());
+                MarkLocalChange();
                 await LoadShoppingListsAsync();
                 _currentList = _activeLists.FirstOrDefault(l => l.ShoppingListId == newList.ShoppingListId) ?? _currentList;
                 StateHasChanged();
@@ -311,6 +316,7 @@
             try
             {
                 await ShoppingListService.RenameShoppingListAsync(_householdId, _currentList.ShoppingListId, newName.Trim());
+                MarkLocalChange();
                 await LoadShoppingListsAsync();
                 Snackbar.Add($"Renamed to '{newName}'", Severity.Success);
             }
@@ -361,6 +367,7 @@
             Snackbar.Add($"Generated shopping list with {newList.Items.Count} items", Severity.Success);
 
             // Reload lists
+            MarkLocalChange();
             await LoadShoppingListsAsync();
         }
         catch (Exception ex)
@@ -388,6 +395,7 @@
             item.CheckedAt = item.IsChecked ? DateTime.UtcNow : null;
 
             var (success, wasConflict, conflictMessage) = await ShoppingListService.UpdateItemWithConcurrencyAsync(item);
+            MarkLocalChange();
 
             if (!success)
             {
@@ -440,6 +448,7 @@
         try
         {
             var (success, wasConflict, conflictMessage) = await ShoppingListService.UpdateItemWithConcurrencyAsync(item);
+            MarkLocalChange();
 
             if (!success)
             {
@@ -491,6 +500,7 @@
             try
             {
                 var (success, wasConflict, conflictMessage) = await ShoppingListService.UpdateItemWithConcurrencyAsync(updatedItem);
+                MarkLocalChange();
 
                 if (!success)
                 {
@@ -541,6 +551,7 @@
             try
             {
                 await ShoppingListService.DeleteItemAsync(_householdId, item.ShoppingListId, item.ItemId);
+                MarkLocalChange();
                 await LoadShoppingListsAsync();
                 Snackbar.Add("Item deleted", Severity.Success);
             }
@@ -573,6 +584,7 @@
 
         if (result != null && !result.Canceled)
         {
+            MarkLocalChange();
             await LoadShoppingListsAsync();
             Snackbar.Add("Item added", Severity.Success);
         }
@@ -593,6 +605,7 @@
             try
             {
                 var count = await ShoppingListService.ClearCheckedItemsAsync(_householdId, _currentList.ShoppingListId);
+                MarkLocalChange();
                 await LoadShoppingListsAsync();
                 Snackbar.Add($"Cleared {count} checked items", Severity.Success);
             }
@@ -618,6 +631,7 @@
             try
             {
                 await ShoppingListService.ArchiveShoppingListAsync(_householdId, _currentList.ShoppingListId);
+                MarkLocalChange();
                 await LoadShoppingListsAsync();
                 Snackbar.Add("List archived", Severity.Success);
             }
@@ -649,6 +663,7 @@
                 _currentList.ShoppingListId,
                 updates);
 
+            MarkLocalChange();
             await LoadShoppingListsAsync();
         }
         catch (Exception ex)
@@ -662,19 +677,22 @@
         // Security: Only respond to changes for our household
         if (householdId != _householdId)
             return;
+        
+        // Skip reload if we just made a change - the UI is already up to date
+        // This prevents the jarring scroll-to-top on our own edits
+        if (DateTime.UtcNow - _lastLocalChange < ChangeSuppressionWindow)
+            return;
             
         InvokeAsync(async () =>
         {
-            // Save scroll position before reload
-            var scrollY = await JSRuntime.InvokeAsync<double>("eval", "window.scrollY");
-            
             await LoadShoppingListsAsync();
             StateHasChanged();
-            
-            // Restore scroll position after render
-            await Task.Delay(50); // Brief delay for DOM update
-            await JSRuntime.InvokeVoidAsync("eval", $"window.scrollTo(0, {scrollY})");
         });
+    }
+    
+    private void MarkLocalChange()
+    {
+        _lastLocalChange = DateTime.UtcNow;
     }
 
     public void Dispose()
