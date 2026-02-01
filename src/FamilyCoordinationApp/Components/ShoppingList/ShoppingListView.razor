@@ -41,7 +41,8 @@ else
             <ShoppingListItemRow Item="@context"
                                  OnChecked="@OnItemChecked"
                                  OnEdit="@OnItemEdit"
-                                 OnDelete="@OnItemDelete" />
+                                 OnDelete="@OnItemDelete"
+                                 OnQuantityChanged="@OnItemQuantityChanged" />
         </ItemRenderer>
     </MudDropContainer>
 }
@@ -51,6 +52,7 @@ else
     [Parameter] public EventCallback<ShoppingListItem> OnItemChecked { get; set; }
     [Parameter] public EventCallback<ShoppingListItem> OnItemEdit { get; set; }
     [Parameter] public EventCallback<ShoppingListItem> OnItemDelete { get; set; }
+    [Parameter] public EventCallback<ShoppingListItem> OnItemQuantityChanged { get; set; }
     [Parameter] public EventCallback<List<ShoppingListItem>> OnItemsReordered { get; set; }
 
     private HashSet<string> _collapsedCategories = new();

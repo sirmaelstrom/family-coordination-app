@@ -3,8 +3,7 @@ services:
   postgres:
     ports:
       - "5432:5432"  # Expose for local tooling (pgAdmin, etc.)
-    volumes:
-      - postgres-data:/var/lib/postgresql/data  # Use named volume for dev
+    # Uses bind mount from main compose file (./data/postgres)
 
   app:
     environment:
@@ -13,9 +12,7 @@ services:
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
     ports:
       - "8080:8080"  # Direct access for debugging
-    volumes:
-      - app-uploads:/app/uploads
-      - app-logs:/app/logs
+    # Uses bind mounts from main compose file
 
   nginx:
     # Use self-signed certs for local HTTPS testing

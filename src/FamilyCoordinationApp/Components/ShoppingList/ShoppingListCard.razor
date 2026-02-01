@@ -1,0 +1,175 @@
+@using FamilyCoordinationApp.Data.Entities
+@using MudBlazor
+
+<MudCard Class="shopping-list-card" @onclick="@OnClick" Style="cursor: pointer;">
+    <MudCardContent>
+        <div class="d-flex justify-space-between align-start gap-3">
+            <div class="flex-grow-1" style="min-width: 0;">
+                <div class="d-flex align-center gap-2 mb-1">
+                    @if (List.IsFavorite)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Star"
+                                 Color="Color.Warning"
+                                 Size="Size.Small" />
+                    }
+                    <MudText Typo="Typo.h6" Style="overflow: hidden; text-overflow: ellipsis;">
+                        @List.Name
+                    </MudText>
+                </div>
+
+                <div class="d-flex flex-wrap gap-3 align-center">
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        <MudIcon Icon="@Icons.Material.Filled.ShoppingCart" Size="Size.Small" Class="mr-1" />
+                        @GetItemCountText()
+                    </MudText>
+
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" Class="mr-1" />
+                        @GetRelativeTime()
+                    </MudText>
+
+                    @if (List.Items.Any(i => i.IsChecked))
+                    {
+                        var checkedCount = List.Items.Count(i => i.IsChecked);
+                        var totalCount = List.Items.Count;
+                        var percentage = (int)((double)checkedCount / totalCount * 100);
+
+                        <MudText Typo="Typo.body2" Color="Color.Success">
+                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Class="mr-1" />
+                            @percentage% complete
+                        </MudText>
+                    }
+                </div>
+            </div>
+
+            <div class="d-flex gap-1" @onclick:stopPropagation="true">
+                <MudIconButton Icon="@(List.IsFavorite ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarOutline)"
+                               Color="@(List.IsFavorite ? Color.Warning : Color.Default)"
+                               Size="Size.Small"
+                               OnClick="@HandleToggleFavorite"
+                               title="@(List.IsFavorite ? "Remove from favorites" : "Add to favorites")" />
+
+                @if (IsArchived)
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.Restore"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   OnClick="@HandleRestore"
+                                   title="Restore list" />
+                    <MudIconButton Icon="@Icons.Material.Filled.DeleteForever"
+                                   Color="Color.Error"
+                                   Size="Size.Small"
+                                   OnClick="@HandlePermanentDelete"
+                                   title="Delete permanently" />
+                }
+                else
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                   Color="Color.Default"
+                                   Size="Size.Small"
+                                   OnClick="@HandleDelete"
+                                   title="Archive list" />
+                }
+            </div>
+        </div>
+
+        @if (List.Items.Any())
+        {
+            <MudProgressLinear Value="@GetProgress()"
+                               Color="Color.Success"
+                               Class="mt-3"
+                               Size="Size.Small" />
+        }
+    </MudCardContent>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired]
+    public ShoppingList List { get; set; } = default!;
+
+    [Parameter]
+    public bool IsArchived { get; set; }
+
+    [Parameter]
+    public EventCallback<ShoppingList> OnToggleFavorite { get; set; }
+
+    [Parameter]
+    public EventCallback<ShoppingList> OnDelete { get; set; }
+
+    [Parameter]
+    public EventCallback<ShoppingList> OnRestore { get; set; }
+
+    [Parameter]
+    public EventCallback<ShoppingList> OnPermanentDelete { get; set; }
+
+    [Parameter]
+    public EventCallback OnClick { get; set; }
+    
+    private async Task HandleRestore()
+    {
+        await OnRestore.InvokeAsync(List);
+    }
+
+    private async Task HandlePermanentDelete()
+    {
+        await OnPermanentDelete.InvokeAsync(List);
+    }
+
+    private string GetItemCountText()
+    {
+        var count = List.Items.Count;
+        return count == 1 ? "1 item" : $"{count} items";
+    }
+
+    private string GetRelativeTime()
+    {
+        var timeSpan = DateTime.UtcNow - List.CreatedAt;
+
+        if (timeSpan.TotalMinutes < 1)
+            return "just now";
+        if (timeSpan.TotalMinutes < 60)
+            return $"{(int)timeSpan.TotalMinutes}m ago";
+        if (timeSpan.TotalHours < 24)
+            return $"{(int)timeSpan.TotalHours}h ago";
+        if (timeSpan.TotalDays < 7)
+            return $"{(int)timeSpan.TotalDays}d ago";
+        if (timeSpan.TotalDays < 30)
+            return $"{(int)(timeSpan.TotalDays / 7)}w ago";
+
+        return List.CreatedAt.ToString("MMM d, yyyy");
+    }
+
+    private double GetProgress()
+    {
+        if (!List.Items.Any())
+            return 0;
+
+        var checkedCount = List.Items.Count(i => i.IsChecked);
+        return (double)checkedCount / List.Items.Count * 100;
+    }
+
+    private async Task HandleToggleFavorite()
+    {
+        await OnToggleFavorite.InvokeAsync(List);
+    }
+
+    private async Task HandleDelete()
+    {
+        await OnDelete.InvokeAsync(List);
+    }
+}
+
+<style>
+    .shopping-list-card {
+        transition: all 0.2s ease-in-out;
+    }
+
+    .shopping-list-card:hover {
+        box-shadow: 0 4px 8px rgba(0,0,0,0.12);
+        transform: translateY(-2px);
+    }
+
+    .shopping-list-card:active {
+        transform: translateY(0);
+    }
+</style>

@@ -18,11 +18,23 @@
         <MudText Typo="Typo.body1" Class="@GetTextClass()">
             @if (Item.Quantity.HasValue)
             {
-                <span class="quantity">@FormatQuantity(Item.Quantity.Value)</span>
-                @if (!string.IsNullOrEmpty(Item.Unit))
-                {
-                    <span class="unit">@Item.Unit</span>
-                }
+                <span class="quantity-controls" @onclick:stopPropagation="true">
+                    <MudIconButton Icon="@Icons.Material.Filled.Remove"
+                                   Size="Size.Small"
+                                   OnClick="HandleDecrement"
+                                   aria-label="Decrease quantity"
+                                   Class="quantity-button" />
+                    <span class="quantity">@FormatQuantity(Item.Quantity.Value)</span>
+                    @if (!string.IsNullOrEmpty(Item.Unit))
+                    {
+                        <span class="unit">@Item.Unit</span>
+                    }
+                    <MudIconButton Icon="@Icons.Material.Filled.Add"
+                                   Size="Size.Small"
+                                   OnClick="HandleIncrement"
+                                   aria-label="Increase quantity"
+                                   Class="quantity-button" />
+                </span>
             }
             <span class="name">@Item.Name</span>
         </MudText>
@@ -60,6 +72,7 @@
     [Parameter] public EventCallback<ShoppingListItem> OnChecked { get; set; }
     [Parameter] public EventCallback<ShoppingListItem> OnEdit { get; set; }
     [Parameter] public EventCallback<ShoppingListItem> OnDelete { get; set; }
+    [Parameter] public EventCallback<ShoppingListItem> OnQuantityChanged { get; set; }
 
     private string GetItemClass()
     {
@@ -91,6 +104,58 @@
     private async Task HandleDelete()
     {
         await OnDelete.InvokeAsync(Item);
+    }
+
+    private async Task HandleIncrement()
+    {
+        if (!Item.Quantity.HasValue) return;
+
+        // Increment quantity by 1
+        var oldQuantity = Item.Quantity.Value;
+        Item.Quantity = oldQuantity + 1;
+
+        // Update QuantityDelta to track user adjustment
+        // If this was from a meal plan, preserve the delta
+        if (Item.QuantityDelta.HasValue)
+        {
+            Item.QuantityDelta += 1;
+        }
+        else
+        {
+            Item.QuantityDelta = 1;
+        }
+
+        Item.UpdatedAt = DateTime.UtcNow;
+
+        // Notify parent to persist the change
+        await OnQuantityChanged.InvokeAsync(Item);
+    }
+
+    private async Task HandleDecrement()
+    {
+        if (!Item.Quantity.HasValue) return;
+
+        // Minimum quantity is 1
+        if (Item.Quantity.Value <= 1) return;
+
+        // Decrement quantity by 1
+        var oldQuantity = Item.Quantity.Value;
+        Item.Quantity = oldQuantity - 1;
+
+        // Update QuantityDelta to track user adjustment
+        if (Item.QuantityDelta.HasValue)
+        {
+            Item.QuantityDelta -= 1;
+        }
+        else
+        {
+            Item.QuantityDelta = -1;
+        }
+
+        Item.UpdatedAt = DateTime.UtcNow;
+
+        // Notify parent to persist the change
+        await OnQuantityChanged.InvokeAsync(Item);
     }
 
     private string FormatQuantity(decimal quantity)
@@ -149,6 +214,19 @@
         min-width: 0; /* Allow text truncation */
     }
 
+    .quantity-controls {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        margin-right: 8px;
+    }
+
+    .quantity-button {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 8px;
+    }
+
     .item-actions {
         display: flex;
         gap: 4px;
@@ -166,11 +244,13 @@
 
     .quantity {
         font-weight: 600;
-        margin-right: 4px;
+        margin: 0 4px;
+        min-width: 20px;
+        text-align: center;
     }
 
     .unit {
-        margin-right: 8px;
+        margin-right: 4px;
     }
 
     .source-recipes {

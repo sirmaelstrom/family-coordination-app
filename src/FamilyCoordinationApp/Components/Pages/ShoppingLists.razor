@@ -1,0 +1,337 @@
+@page "/shoppinglists"
+@using FamilyCoordinationApp.Data
+@using FamilyCoordinationApp.Data.Entities
+@using FamilyCoordinationApp.Services
+@using FamilyCoordinationApp.Components.ShoppingList
+@using Microsoft.EntityFrameworkCore
+@using MudBlazor
+@attribute [Authorize]
+@implements IAsyncDisposable
+@implements IDisposable
+
+@inject IShoppingListService ShoppingListService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject DataNotifier Notifier
+@inject NavigationManager Navigation
+
+<PageTitle>Shopping Lists - Family Kitchen</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="py-4">
+    <div class="d-flex justify-space-between align-center flex-wrap mb-4 gap-2">
+        <MudText Typo="Typo.h4">Shopping Lists</MudText>
+        <div class="d-flex gap-2 align-center">
+            <MudToggleIconButton @bind-Toggled="ShowArchived"
+                                 Icon="@Icons.Material.Outlined.Archive"
+                                 ToggledIcon="@Icons.Material.Filled.Archive"
+                                 Color="Color.Default"
+                                 ToggledColor="Color.Primary"
+                                 Title="@(ShowArchived ? "Showing archived" : "Show archived")" />
+            @if (ShowArchived)
+            {
+                <MudToggleIconButton @bind-Toggled="FavoritesOnly"
+                                     Icon="@Icons.Material.Outlined.StarOutline"
+                                     ToggledIcon="@Icons.Material.Filled.Star"
+                                     Color="Color.Default"
+                                     ToggledColor="Color.Warning"
+                                     Title="@(FavoritesOnly ? "Favorites only" : "Show all")" />
+            }
+            else
+            {
+                <MudButton Href="/shopping-list"
+                           Color="Color.Secondary"
+                           Variant="Variant.Outlined"
+                           StartIcon="@Icons.Material.Filled.ShoppingCart"
+                           Class="mr-2">
+                    Current
+                </MudButton>
+                <MudButton Href="/shopping-list"
+                           Color="Color.Primary"
+                           Variant="Variant.Filled"
+                           StartIcon="@Icons.Material.Filled.Add">
+                    New List
+                </MudButton>
+            }
+        </div>
+    </div>
+
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="my-4" />
+    }
+    else if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <MudAlert Severity="Severity.Error" Class="my-4">@_errorMessage</MudAlert>
+    }
+    else if (!_allLists.Any())
+    {
+        <MudAlert Severity="Severity.Info" Class="my-4">
+            <div class="d-flex flex-column gap-2">
+                <MudText>No shopping lists yet.</MudText>
+                <MudButton Href="/shopping-list"
+                           Color="Color.Primary"
+                           Variant="Variant.Filled"
+                           StartIcon="@Icons.Material.Filled.Add">
+                    Create Your First List
+                </MudButton>
+            </div>
+        </MudAlert>
+    }
+    else
+    {
+        @* Favorites Section *@
+        @if (_favoriteLists.Any())
+        {
+            <div class="mb-6">
+                <MudText Typo="Typo.h6" Class="mb-3 d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Star" Color="Color.Warning" Size="Size.Small" />
+                    Favorites
+                </MudText>
+                <MudStack Spacing="2">
+                    @foreach (var list in _favoriteLists)
+                    {
+                        <ShoppingListCard List="@list"
+                                          IsArchived="@ShowArchived"
+                                          OnToggleFavorite="@HandleToggleFavorite"
+                                          OnDelete="@HandleDelete"
+                                          OnRestore="@HandleRestore"
+                                          OnPermanentDelete="@HandlePermanentDelete"
+                                          OnClick="@(() => NavigateToList(list))" />
+                    }
+                </MudStack>
+            </div>
+        }
+
+        @* All Lists Section *@
+        @if (_nonFavoriteLists.Any())
+        {
+            <div>
+                @if (_favoriteLists.Any())
+                {
+                    <MudText Typo="Typo.h6" Class="mb-3">All Lists</MudText>
+                }
+                <MudStack Spacing="2">
+                    @foreach (var list in _nonFavoriteLists)
+                    {
+                        <ShoppingListCard List="@list"
+                                          IsArchived="@ShowArchived"
+                                          OnToggleFavorite="@HandleToggleFavorite"
+                                          OnDelete="@HandleDelete"
+                                          OnRestore="@HandleRestore"
+                                          OnPermanentDelete="@HandlePermanentDelete"
+                                          OnClick="@(() => NavigateToList(list))" />
+                    }
+                </MudStack>
+            </div>
+        }
+    }
+</MudContainer>
+
+@code {
+    private int _householdId;
+    private List<Data.Entities.ShoppingList> _allLists = new();
+    private List<Data.Entities.ShoppingList> _favoriteLists = new();
+    private List<Data.Entities.ShoppingList> _nonFavoriteLists = new();
+    private bool _isLoading = true;
+    private string? _errorMessage;
+    
+    private bool _showArchived;
+    private bool _favoritesOnly;
+
+    private bool ShowArchived
+    {
+        get => _showArchived;
+        set
+        {
+            if (_showArchived != value)
+            {
+                _showArchived = value;
+                _favoritesOnly = false; // Reset filter when switching views
+                _ = LoadShoppingListsAsync();
+            }
+        }
+    }
+
+    private bool FavoritesOnly
+    {
+        get => _favoritesOnly;
+        set
+        {
+            if (_favoritesOnly != value)
+            {
+                _favoritesOnly = value;
+                _ = LoadShoppingListsAsync();
+            }
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Notifier.OnShoppingListChanged += OnDataChanged;
+
+        _householdId = await GetHouseholdIdAsync();
+        await LoadShoppingListsAsync();
+    }
+
+    private async Task<int> GetHouseholdIdAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var email = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+
+        await using var context = await DbFactory.CreateDbContextAsync();
+        var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
+        if (user == null)
+        {
+            throw new InvalidOperationException("User not found. Please log in again.");
+        }
+        return user.HouseholdId;
+    }
+
+    private async Task LoadShoppingListsAsync()
+    {
+        _isLoading = true;
+        _errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            if (_showArchived)
+            {
+                _allLists = await ShoppingListService.GetArchivedShoppingListsAsync(_householdId, _favoritesOnly ? true : null);
+            }
+            else
+            {
+                _allLists = await ShoppingListService.GetActiveShoppingListsAsync(_householdId);
+            }
+
+            // Split into favorites and non-favorites
+            _favoriteLists = _allLists
+                .Where(l => l.IsFavorite)
+                .OrderByDescending(l => l.CreatedAt)
+                .ToList();
+
+            _nonFavoriteLists = _allLists
+                .Where(l => !l.IsFavorite)
+                .OrderByDescending(l => l.CreatedAt)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error loading lists: {ex.Message}";
+            Snackbar.Add(_errorMessage, Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleToggleFavorite(Data.Entities.ShoppingList list)
+    {
+        try
+        {
+            await ShoppingListService.ToggleFavoriteAsync(_householdId, list.ShoppingListId);
+            await LoadShoppingListsAsync();
+            
+            var status = list.IsFavorite ? "removed from" : "added to";
+            Snackbar.Add($"{list.Name} {status} favorites", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error updating favorite: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task HandleDelete(Data.Entities.ShoppingList list)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Archive List",
+            $"Archive {list.Name}? You can still access it later.",
+            yesText: "Archive",
+            cancelText: "Cancel");
+
+        if (confirmed == true)
+        {
+            try
+            {
+                await ShoppingListService.ArchiveShoppingListAsync(_householdId, list.ShoppingListId);
+                await LoadShoppingListsAsync();
+                Snackbar.Add($"{list.Name} archived", Severity.Success);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error archiving list: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task HandleRestore(Data.Entities.ShoppingList list)
+    {
+        try
+        {
+            await ShoppingListService.RestoreShoppingListAsync(_householdId, list.ShoppingListId);
+            await LoadShoppingListsAsync();
+            Snackbar.Add($"{list.Name} restored", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error restoring list: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task HandlePermanentDelete(Data.Entities.ShoppingList list)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Delete Permanently",
+            $"Permanently delete \"{list.Name}\"? This cannot be undone.",
+            yesText: "Delete",
+            cancelText: "Cancel");
+
+        if (confirmed == true)
+        {
+            try
+            {
+                await ShoppingListService.DeleteShoppingListAsync(_householdId, list.ShoppingListId);
+                await LoadShoppingListsAsync();
+                Snackbar.Add($"{list.Name} deleted permanently", Severity.Success);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error deleting list: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private void NavigateToList(Data.Entities.ShoppingList list)
+    {
+        // Navigate to the single list view with the specific list ID
+        Navigation.NavigateTo($"/shopping-list/{list.ShoppingListId}");
+    }
+
+    private void OnDataChanged(int householdId)
+    {
+        // Security: Only respond to changes for our household
+        if (householdId != _householdId)
+            return;
+
+        InvokeAsync(async () =>
+        {
+            await LoadShoppingListsAsync();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        Notifier.OnShoppingListChanged -= OnDataChanged;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        await Task.CompletedTask;
+    }
+}

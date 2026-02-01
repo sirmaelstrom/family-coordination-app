@@ -1,4 +1,5 @@
 @page "/shopping-list"
+@page "/shopping-list/{ListId:int}"
 @using FamilyCoordinationApp.Data
 @using FamilyCoordinationApp.Data.Entities
 @using FamilyCoordinationApp.Services
@@ -17,6 +18,7 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject DataNotifier Notifier
+@inject NavigationManager Navigation
 
 <PageTitle>Shopping List - Family Kitchen</PageTitle>
 
@@ -37,12 +39,34 @@
                            Class="list-selector">
                     @foreach (var list in _activeLists)
                     {
-                        <MudSelectItem Value="@list">@list.Name</MudSelectItem>
+                        <MudSelectItem Value="@list">
+                            <div class="d-flex align-center gap-2">
+                                @if (list.IsFavorite)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.Star" Size="Size.Small" Color="Color.Warning" />
+                                }
+                                <span>@list.Name</span>
+                            </div>
+                        </MudSelectItem>
                     }
                 </MudSelect>
             }
 
+            @if (_currentList != null)
+            {
+                <MudIconButton Icon="@(_currentList.IsFavorite ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)"
+                               Color="@(_currentList.IsFavorite ? Color.Warning : Color.Default)"
+                               OnClick="ToggleFavorite"
+                               Disabled="@_isTogglingFavorite"
+                               aria-label="@(_currentList.IsFavorite ? "Remove from favorites" : "Add to favorites")"
+                               Title="@(_currentList.IsFavorite ? "Remove from favorites" : "Add to favorites")" />
+            }
+
             <MudMenu Icon="@Icons.Material.Filled.MoreVert" AriaLabel="Shopping list menu">
+                <MudMenuItem OnClick="CreateNewList"
+                             Icon="@Icons.Material.Filled.Add">
+                    Create New List
+                </MudMenuItem>
                 <MudMenuItem OnClick="GenerateFromMealPlan"
                              Icon="@Icons.Material.Filled.AutoAwesome"
                              Disabled="@_isGenerating">
@@ -99,6 +123,7 @@
                           OnItemChecked="@HandleItemChecked"
                           OnItemEdit="@HandleItemEdit"
                           OnItemDelete="@HandleItemDelete"
+                          OnItemQuantityChanged="@HandleItemQuantityChanged"
                           OnItemsReordered="@HandleItemsReordered" />
     }
 
@@ -113,11 +138,15 @@
 </MudContainer>
 
 @code {
+    [Parameter]
+    public int? ListId { get; set; }
+
     private int _householdId;
     private Data.Entities.ShoppingList? _currentList;
     private List<Data.Entities.ShoppingList> _activeLists = new();
     private bool _isLoading = true;
     private bool _isGenerating = false;
+    private bool _isTogglingFavorite = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -148,15 +177,107 @@
 
         try
         {
-            _activeLists = await ShoppingListService.GetActiveShoppingListsAsync(_householdId);
+            var lists = await ShoppingListService.GetActiveShoppingListsAsync(_householdId);
+            
+            // Sort favorites to the top, then by creation date
+            _activeLists = lists
+                .OrderByDescending(l => l.IsFavorite)
+                .ThenByDescending(l => l.CreatedAt)
+                .ToList();
 
-            // Select most recent list if any exist
-            _currentList = _activeLists.OrderByDescending(l => l.CreatedAt).FirstOrDefault();
+            // Preserve current selection by ID, or use ListId parameter, or default to most recent
+            var currentListId = _currentList?.ShoppingListId ?? ListId;
+            if (currentListId.HasValue)
+            {
+                _currentList = _activeLists.FirstOrDefault(l => l.ShoppingListId == currentListId.Value);
+            }
+            
+            // If no list selected yet (or ID not found), select most recent
+            if (_currentList == null)
+            {
+                _currentList = _activeLists.FirstOrDefault();
+            }
         }
         finally
         {
             _isLoading = false;
             StateHasChanged();
+        }
+    }
+
+    private async Task ToggleFavorite()
+    {
+        if (_currentList == null) return;
+
+        // Optimistic UI update
+        var previousState = _currentList.IsFavorite;
+        _currentList.IsFavorite = !_currentList.IsFavorite;
+        _isTogglingFavorite = true;
+        StateHasChanged();
+
+        try
+        {
+            var updatedList = await ShoppingListService.ToggleFavoriteAsync(_householdId, _currentList.ShoppingListId);
+            
+            // Update local state with server response
+            _currentList.IsFavorite = updatedList.IsFavorite;
+            
+            // Re-sort lists (favorites to top)
+            _activeLists = _activeLists
+                .OrderByDescending(l => l.IsFavorite)
+                .ThenByDescending(l => l.CreatedAt)
+                .ToList();
+
+            var message = updatedList.IsFavorite ? "Added to favorites" : "Removed from favorites";
+            Snackbar.Add(message, Severity.Success, config =>
+            {
+                config.VisibleStateDuration = 2000;
+            });
+        }
+        catch (Exception ex)
+        {
+            // Revert optimistic update on error
+            _currentList.IsFavorite = previousState;
+            Snackbar.Add($"Error updating favorite: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isTogglingFavorite = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CreateNewList()
+    {
+        var parameters = new DialogParameters<CreateListDialog>
+        {
+            { x => x.DefaultName, $"Shopping List {DateTime.Now:MMM d}" }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<CreateListDialog>("Create New List", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled && result.Data is string name && !string.IsNullOrWhiteSpace(name))
+        {
+            try
+            {
+                var newList = await ShoppingListService.CreateShoppingListAsync(_householdId, name.Trim());
+                await LoadShoppingListsAsync();
+                _currentList = _activeLists.FirstOrDefault(l => l.ShoppingListId == newList.ShoppingListId) ?? _currentList;
+                StateHasChanged();
+                Snackbar.Add($"Created '{name}'", Severity.Success);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error creating list: {ex.Message}", Severity.Error);
+            }
         }
     }
 
@@ -269,6 +390,40 @@
         catch (Exception ex)
         {
             Snackbar.Add($"Error updating item: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task HandleItemQuantityChanged(ShoppingListItem item)
+    {
+        if (_currentList == null) return;
+
+        try
+        {
+            var (success, wasConflict, conflictMessage) = await ShoppingListService.UpdateItemWithConcurrencyAsync(item);
+
+            if (!success)
+            {
+                // Item was deleted or couldn't be updated
+                Snackbar.Add(conflictMessage ?? "Could not update item", Severity.Warning);
+                await LoadShoppingListsAsync();
+                return;
+            }
+
+            if (wasConflict && conflictMessage != null)
+            {
+                // Show subtle indication that there was a conflict
+                Snackbar.Add(conflictMessage, Severity.Info, config =>
+                {
+                    config.VisibleStateDuration = 3000;
+                });
+            }
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error updating quantity: {ex.Message}", Severity.Error);
+            await LoadShoppingListsAsync(); // Reload to revert UI
         }
     }
 

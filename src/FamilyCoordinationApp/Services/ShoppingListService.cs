@@ -68,6 +68,61 @@ public class ShoppingListService(
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<List<ShoppingList>> GetArchivedShoppingListsAsync(int householdId, bool? favoritesOnly = null, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        var query = context.ShoppingLists
+            .Where(sl => sl.HouseholdId == householdId && sl.IsArchived);
+
+        if (favoritesOnly == true)
+        {
+            query = query.Where(sl => sl.IsFavorite);
+        }
+
+        return await query
+            .OrderByDescending(sl => sl.IsFavorite)
+            .ThenByDescending(sl => sl.CreatedAt)
+            .Include(sl => sl.Items)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task RestoreShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        var shoppingList = await context.ShoppingLists
+            .FirstOrDefaultAsync(sl => sl.HouseholdId == householdId && sl.ShoppingListId == shoppingListId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Shopping list {shoppingListId} not found");
+
+        shoppingList.IsArchived = false;
+        await context.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("Restored ShoppingList {ShoppingListId} for household {HouseholdId}",
+            shoppingListId, householdId);
+    }
+
+    public async Task DeleteShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        var shoppingList = await context.ShoppingLists
+            .Include(sl => sl.Items)
+            .FirstOrDefaultAsync(sl => sl.HouseholdId == householdId && sl.ShoppingListId == shoppingListId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Shopping list {shoppingListId} not found");
+
+        // Remove all items first
+        context.ShoppingListItems.RemoveRange(shoppingList.Items);
+        
+        // Then remove the list
+        context.ShoppingLists.Remove(shoppingList);
+        
+        await context.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("Permanently deleted ShoppingList {ShoppingListId} for household {HouseholdId}",
+            shoppingListId, householdId);
+    }
+
     public async Task<ShoppingListItem> AddManualItemAsync(ShoppingListItem item, CancellationToken cancellationToken = default)
     {
         return await IdGenerationHelper.ExecuteWithRetryAsync(
@@ -285,6 +340,30 @@ public class ShoppingListService(
             itemId, item.IsChecked, shoppingListId, householdId);
 
         return item;
+    }
+
+    public async Task<ShoppingList> ToggleFavoriteAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        var shoppingList = await context.ShoppingLists
+            .FirstOrDefaultAsync(sl =>
+                sl.HouseholdId == householdId &&
+                sl.ShoppingListId == shoppingListId, cancellationToken);
+
+        if (shoppingList == null)
+        {
+            throw new InvalidOperationException($"ShoppingList {shoppingListId} not found for household {householdId}");
+        }
+
+        shoppingList.IsFavorite = !shoppingList.IsFavorite;
+
+        await context.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("Toggled ShoppingList {ShoppingListId} favorite state to {IsFavorite} for household {HouseholdId}",
+            shoppingListId, shoppingList.IsFavorite, householdId);
+
+        return shoppingList;
     }
 
     public async Task<List<string>> GetItemNameSuggestionsAsync(int householdId, string prefix, int limit = 10, CancellationToken cancellationToken = default)

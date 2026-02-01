@@ -8,6 +8,7 @@ public class ShoppingList
     public int? MealPlanId { get; set; }  // If generated from meal plan
     public DateTime CreatedAt { get; set; }
     public bool IsArchived { get; set; }
+    public bool IsFavorite { get; set; } = false;
 
     // Navigation
     public Household Household { get; set; } = default!;

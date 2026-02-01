@@ -7,9 +7,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      # Production: ZFS path on production server
-      # Development: Named volume (override file)
-      - ${POSTGRES_DATA_PATH:-postgres-data}:/var/lib/postgresql/data
+      # Direct bind mount - avoids Docker Desktop WSL2 mount path issues
+      - ${POSTGRES_DATA_PATH:-./data/postgres}:/var/lib/postgresql/data
       # Custom pg_hba.conf for Docker network access
       - ./docker/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     command: postgres -c hba_file=/etc/postgresql/pg_hba.conf
@@ -35,11 +34,10 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       DATAPROTECTION_CERT: ${DATAPROTECTION_CERT:-}
     volumes:
-      # Data protection keys persist (prevents logout on restart)
-      - ${APP_DATAPROTECTION_PATH:-app-dataprotection}:/root/.aspnet/DataProtection-Keys
-      # Uploads and logs persist to ZFS
-      - ${APP_UPLOADS_PATH:-app-uploads}:/app/wwwroot/uploads
-      - ${APP_LOGS_PATH:-app-logs}:/app/logs
+      # Direct bind mounts - avoids Docker Desktop WSL2 mount path issues
+      - ${APP_DATAPROTECTION_PATH:-./data/dataprotection}:/root/.aspnet/DataProtection-Keys
+      - ${APP_UPLOADS_PATH:-./data/uploads}:/app/wwwroot/uploads
+      - ${APP_LOGS_PATH:-./data/logs}:/app/logs
     restart: unless-stopped
     networks:
       - familyapp-network
@@ -66,28 +64,5 @@ networks:
   familyapp-network:
     driver: bridge
 
-volumes:
-  postgres-data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data/postgres
-  app-dataprotection:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data/dataprotection
-  app-uploads:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data/uploads
-  app-logs:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data/logs
+# Named volumes removed - using direct bind mounts to avoid Docker Desktop WSL2 issues
+# See: https://github.com/docker/for-win/issues/12742

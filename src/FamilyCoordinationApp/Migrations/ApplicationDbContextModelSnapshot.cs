@@ -449,6 +449,11 @@ namespace FamilyCoordinationApp.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
 
+                    b.Property<bool>("IsFavorite")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<int?>("MealPlanId")
                         .HasColumnType("integer");
 
@@ -458,6 +463,8 @@ namespace FamilyCoordinationApp.Migrations
                         .HasColumnType("character varying(200)");
 
                     b.HasKey("HouseholdId", "ShoppingListId");
+
+                    b.HasIndex("HouseholdId", "IsFavorite");
 
                     b.HasIndex("HouseholdId", "MealPlanId");
 
