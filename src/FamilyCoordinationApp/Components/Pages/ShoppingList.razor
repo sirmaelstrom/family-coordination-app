@@ -506,7 +506,16 @@
                     });
                 }
 
-                await LoadShoppingListsAsync(); // Reload to get updated item
+                // Update item in place to preserve scroll position
+                var existingItem = _currentList?.Items.FirstOrDefault(i => i.ItemId == updatedItem.ItemId);
+                if (existingItem != null)
+                {
+                    existingItem.Name = updatedItem.Name;
+                    existingItem.Quantity = updatedItem.Quantity;
+                    existingItem.Unit = updatedItem.Unit;
+                    existingItem.Category = updatedItem.Category;
+                }
+                StateHasChanged();
                 Snackbar.Add("Item updated", Severity.Success);
             }
             catch (Exception ex)
