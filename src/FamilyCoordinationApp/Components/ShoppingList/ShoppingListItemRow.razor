@@ -2,9 +2,12 @@
 @using FamilyCoordinationApp.Components.Shared
 
 <div class="shopping-list-item @GetItemClass()" @onclick="HandleClick">
-    <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
-             Class="drag-handle"
-             Size="Size.Small" />
+    @if (ShowDragHandle)
+    {
+        <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
+                 Class="drag-handle"
+                 Size="Size.Small" />
+    }
 
     <MudCheckBox T="bool" 
                  Value="@Item.IsChecked"
@@ -73,6 +76,7 @@
     [Parameter] public EventCallback<ShoppingListItem> OnEdit { get; set; }
     [Parameter] public EventCallback<ShoppingListItem> OnDelete { get; set; }
     [Parameter] public EventCallback<ShoppingListItem> OnQuantityChanged { get; set; }
+    [Parameter] public bool ShowDragHandle { get; set; } = true;
 
     private string GetItemClass()
     {

@@ -1,5 +1,6 @@
 @using FamilyCoordinationApp.Constants
 @using FamilyCoordinationApp.Data.Entities
+@inject IJSRuntime JS
 
 @if (Items == null || Items.Count == 0)
 {
@@ -7,8 +8,42 @@
         No items in shopping list. Generate from meal plan or add items manually.
     </MudAlert>
 }
+else if (_isTouchDevice)
+{
+    @* Simple list for touch devices - no drag-drop interference with scrolling *@
+    <div class="d-flex flex-column gap-0">
+        @foreach (var category in OrderedCategories)
+        {
+            <MudPaper Class="mb-4" Elevation="2">
+                <div class="category-header" @onclick="@(() => ToggleCategory(category))">
+                    <MudText Typo="Typo.h6">@category</MudText>
+                    <div class="d-flex align-center gap-2">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Text="@GetUncheckedCount(category).ToString()" />
+                        <MudIcon Icon="@GetExpandIcon(category)" Size="Size.Small" />
+                    </div>
+                </div>
+
+                @if (IsCategoryExpanded(category))
+                {
+                    <div class="category-body">
+                        @foreach (var item in GetItemsForCategory(category))
+                        {
+                            <ShoppingListItemRow Item="@item"
+                                                 OnChecked="@OnItemChecked"
+                                                 OnEdit="@OnItemEdit"
+                                                 OnDelete="@OnItemDelete"
+                                                 OnQuantityChanged="@OnItemQuantityChanged"
+                                                 ShowDragHandle="false" />
+                        }
+                    </div>
+                }
+            </MudPaper>
+        }
+    </div>
+}
 else
 {
+    @* Drag-drop enabled for desktop *@
     <MudDropContainer T="ShoppingListItem"
                       Items="@SortedItems"
                       ItemDropped="@HandleItemDropped"
@@ -42,7 +77,8 @@ else
                                  OnChecked="@OnItemChecked"
                                  OnEdit="@OnItemEdit"
                                  OnDelete="@OnItemDelete"
-                                 OnQuantityChanged="@OnItemQuantityChanged" />
+                                 OnQuantityChanged="@OnItemQuantityChanged"
+                                 ShowDragHandle="true" />
         </ItemRenderer>
     </MudDropContainer>
 }
@@ -56,11 +92,26 @@ else
     [Parameter] public EventCallback<List<ShoppingListItem>> OnItemsReordered { get; set; }
 
     private HashSet<string> _collapsedCategories = new();
+    private bool _isTouchDevice = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Detect touch device via JS - checks for coarse pointer (touch screen)
+            _isTouchDevice = await JS.InvokeAsync<bool>("eval",
+                "window.matchMedia('(pointer: coarse)').matches");
+            StateHasChanged();
+        }
+    }
 
     private List<ShoppingListItem> SortedItems => Items
         .OrderBy(i => i.IsChecked)  // Unchecked items first
         .ThenBy(i => i.SortOrder)
         .ToList();
+
+    private IEnumerable<ShoppingListItem> GetItemsForCategory(string category) =>
+        SortedItems.Where(i => i.Category == category);
 
     private IEnumerable<string> OrderedCategories => Items
         .Select(i => i.Category)
