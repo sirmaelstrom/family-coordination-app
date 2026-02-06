@@ -88,6 +88,13 @@
     text-align: center;
 }
 
+.components-reconnect-buttons {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
 #components-reconnect-modal button {
     border: 0;
     background-color: #6b9ed2;
@@ -102,6 +109,18 @@
 
     #components-reconnect-modal button:active {
         background-color: #6b9ed2;
+    }
+
+#components-reconnect-modal .components-reload-button {
+    background-color: #4caf50;
+}
+
+    #components-reconnect-modal .components-reload-button:hover {
+        background-color: #388e3c;
+    }
+
+    #components-reconnect-modal .components-reload-button:active {
+        background-color: #4caf50;
     }
 
 .components-rejoining-animation {

@@ -145,20 +145,39 @@ h1:focus {
     }
 }
 
-/* Disable drag-and-drop on touch devices to prevent scroll conflicts */
+/* Touch device improvements for shopping list */
 @media (pointer: coarse) {
+    /* Allow vertical scrolling while still supporting drag-drop via handle */
     .mud-drop-zone {
-        touch-action: pan-y !important;
+        touch-action: pan-y;
     }
-    
-    .mud-drop-zone [draggable="true"] {
-        -webkit-user-drag: none !important;
-        user-drag: none !important;
-        -webkit-touch-callout: none !important;
+
+    /* Hide drag handle on touch devices - reordering via Edit menu instead */
+    .shopping-list-item .drag-handle {
+        display: none;
     }
-    
-    /* Disable drag cursor on touch */
-    .mud-drop-zone * {
-        cursor: default !important;
+
+    /* Disable accidental drag on item content */
+    .mud-drop-zone .shopping-list-item {
+        -webkit-user-drag: none;
+        user-drag: none;
+    }
+
+    /* Improve tap targets for touch */
+    .shopping-list-item {
+        min-height: 56px;
+    }
+}
+
+/* Show drag handles on hover for mouse/trackpad users */
+@media (hover: hover) and (pointer: fine) {
+    .shopping-list-item .drag-handle {
+        opacity: 0.4;
+        transition: opacity 0.2s;
+    }
+
+    .shopping-list-item:hover .drag-handle {
+        opacity: 1;
+        cursor: grab;
     }
 }

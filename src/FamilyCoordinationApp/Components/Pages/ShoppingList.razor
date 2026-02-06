@@ -155,7 +155,7 @@
     
     // Suppress polling reload when we just made a change (avoids scroll jump)
     private DateTime _lastLocalChange = DateTime.MinValue;
-    private static readonly TimeSpan ChangeSuppressionWindow = TimeSpan.FromSeconds(6); // Slightly longer than poll interval
+    private static readonly TimeSpan ChangeSuppressionWindow = TimeSpan.FromSeconds(8); // Comfortably longer than poll interval (5s)
 
     protected override async Task OnInitializedAsync()
     {
@@ -390,12 +390,15 @@
             // Capture item in local variable for closure (avoid shared field pitfall)
             var itemToToggle = item;
 
+            // Mark local change BEFORE the DB operation to suppress polling
+            // that might detect our change mid-save
+            MarkLocalChange();
+
             // Toggle checked state
             item.IsChecked = !item.IsChecked;
             item.CheckedAt = item.IsChecked ? DateTime.UtcNow : null;
 
             var (success, wasConflict, conflictMessage) = await ShoppingListService.UpdateItemWithConcurrencyAsync(item);
-            MarkLocalChange();
 
             if (!success)
             {
@@ -426,6 +429,7 @@
                     config.OnClick = async (snackbar) =>
                     {
                         // Uncheck the item
+                        MarkLocalChange(); // Suppress polling during undo
                         itemToToggle.IsChecked = false;
                         itemToToggle.CheckedAt = null;
                         await ShoppingListService.UpdateItemWithConcurrencyAsync(itemToToggle);
@@ -447,8 +451,10 @@
 
         try
         {
-            var (success, wasConflict, conflictMessage) = await ShoppingListService.UpdateItemWithConcurrencyAsync(item);
+            // Mark local change BEFORE the DB operation
             MarkLocalChange();
+
+            var (success, wasConflict, conflictMessage) = await ShoppingListService.UpdateItemWithConcurrencyAsync(item);
 
             if (!success)
             {
