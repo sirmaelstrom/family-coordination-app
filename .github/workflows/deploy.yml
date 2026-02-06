@@ -59,7 +59,26 @@ jobs:
           git fetch origin
           git reset --hard origin/${{ github.ref_name }}
           echo "📥 Pulled commit: $(git rev-parse --short HEAD)"
-          
+
+      - name: Generate .env from Bitwarden
+        run: |
+          cd ~/familyapp
+          # Start with non-secret config from .env.local
+          cp .env.local .env
+          echo "" >> .env
+          # Append secrets from a secrets manager
+          export BWS_ACCESS_TOKEN=$(cat ~/.bws-token)
+          ~/.local/bin/bws secret list --output json | jq -r '
+            .[] | select(.key == "POSTGRES_PASSWORD_PROD") | "POSTGRES_PASSWORD=" + .value
+          ' >> .env
+          ~/.local/bin/bws secret list --output json | jq -r '
+            .[] | select(.key == "GOOGLE_CLIENT_ID") | "GOOGLE_CLIENT_ID=" + .value
+          ' >> .env
+          ~/.local/bin/bws secret list --output json | jq -r '
+            .[] | select(.key == "GOOGLE_CLIENT_SECRET") | "GOOGLE_CLIENT_SECRET=" + .value
+          ' >> .env
+          echo "🔐 Generated .env with secrets from Bitwarden"
+
       - name: Build Docker image
         run: |
           cd ~/familyapp
