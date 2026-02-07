@@ -55,7 +55,7 @@
     @if (_connectedHouseholds.Count > 0)
     {
         <div class="d-flex align-center gap-2 mb-4 flex-wrap">
-            <MudChipSet T="int?" @bind-SelectedValue="_selectedHouseholdId" SelectionMode="SelectionMode.SingleSelection" CheckMark="false">
+            <MudChipSet T="int?" SelectedValue="_selectedHouseholdId" SelectedValueChanged="OnHouseholdChipChanged" SelectionMode="SelectionMode.SingleSelection" CheckMark="false">
                 <MudChip T="int?" Value="@((int?)null)"
                          Color="@(_selectedHouseholdId == null ? Color.Primary : Color.Default)"
                          Variant="@(_selectedHouseholdId == null ? Variant.Filled : Variant.Outlined)">
@@ -551,9 +551,6 @@
     private string? _selectedConnectedHouseholdName;
     private bool _copyingRecipe;
 
-    // Track previous selection for change detection
-    private int? _previousSelectedHouseholdId;
-
     private DialogOptions _dialogOptions = new()
     {
         CloseOnEscapeKey = true,
@@ -591,14 +588,10 @@
         }
     }
 
-    protected override async Task OnParametersSetAsync()
+    private async Task OnHouseholdChipChanged(int? value)
     {
-        // Detect household chip selection changes
-        if (_selectedHouseholdId != _previousSelectedHouseholdId)
-        {
-            _previousSelectedHouseholdId = _selectedHouseholdId;
-            await OnHouseholdSelectionChanged();
-        }
+        _selectedHouseholdId = value;
+        await OnHouseholdSelectionChanged();
     }
 
     private async Task OnHouseholdSelectionChanged()
