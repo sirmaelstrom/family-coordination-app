@@ -206,6 +206,17 @@
             {
                 _currentList = _activeLists.FirstOrDefault();
             }
+
+            // Keep URL in sync so browser refresh preserves selection
+            if (_currentList != null)
+            {
+                var expectedPath = $"/shopping-list/{_currentList.ShoppingListId}";
+                var currentPath = new Uri(Navigation.Uri).AbsolutePath;
+                if (!string.Equals(currentPath, expectedPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    Navigation.NavigateTo(expectedPath, replace: true);
+                }
+            }
         }
         finally
         {
@@ -651,6 +662,10 @@
     private async Task HandleListChanged(Data.Entities.ShoppingList selectedList)
     {
         _currentList = selectedList;
+
+        // Update the URL so browser refresh preserves list selection
+        Navigation.NavigateTo($"/shopping-list/{selectedList.ShoppingListId}", replace: true);
+
         StateHasChanged();
     }
 
