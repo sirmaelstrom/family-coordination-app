@@ -64,6 +64,18 @@ public class RecipeConfiguration : IEntityTypeConfiguration<Recipe>
             .HasForeignKey(r => r.UpdatedByUserId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        // Attribution fields for cross-household recipe sharing
+        builder.Property(r => r.SharedFromHouseholdName)
+            .HasMaxLength(200);
+
+        builder.HasOne(r => r.SharedFromHousehold)
+            .WithMany()
+            .HasForeignKey(r => r.SharedFromHouseholdId)
+            .OnDelete(DeleteBehavior.SetNull)
+            .IsRequired(false);
+
+        builder.HasIndex(r => new { r.HouseholdId, r.SharedFromHouseholdId });
+
         // Configure xmin concurrency token
         builder.Property(r => r.Version)
             .IsRowVersion();

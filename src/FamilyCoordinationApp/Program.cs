@@ -72,6 +72,7 @@ builder.Services.AddScoped<IMealPlanService, MealPlanService>();
 builder.Services.AddScoped<IShoppingListService, ShoppingListService>();
 builder.Services.AddScoped<UnitConverter>();
 builder.Services.AddScoped<IShoppingListGenerator, ShoppingListGenerator>();
+builder.Services.AddScoped<IHouseholdConnectionService, HouseholdConnectionService>();
 
 // Collaboration services - singleton for cross-component communication
 builder.Services.AddSingleton<DataNotifier>();

@@ -13,11 +13,14 @@
         {
             <MudCardMedia Image="/images/recipe-placeholder.svg" Height="200" />
         }
-        <MudIconButton Icon="@(IsFavorite ? Icons.Material.Filled.Favorite : Icons.Material.Outlined.FavoriteBorder)"
-                       Color="@(IsFavorite ? Color.Error : Color.Default)"
-                       Class="favorite-button"
-                       Size="Size.Small"
-                       OnClick="HandleFavoriteClick" />
+        @if (!IsReadOnly)
+        {
+            <MudIconButton Icon="@(IsFavorite ? Icons.Material.Filled.Favorite : Icons.Material.Outlined.FavoriteBorder)"
+                           Color="@(IsFavorite ? Color.Error : Color.Default)"
+                           Class="favorite-button"
+                           Size="Size.Small"
+                           OnClick="HandleFavoriteClick" />
+        }
     </div>
 
     <MudCardContent Class="card-content">
@@ -60,6 +63,15 @@
             }
         </div>
 
+        @if (!string.IsNullOrWhiteSpace(SharedFromHouseholdName))
+        {
+            <div class="recipe-attribution">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    From @SharedFromHouseholdName
+                </MudText>
+            </div>
+        }
+
         <div class="recipe-ingredients">
             @if (Recipe.Ingredients.Any())
             {
@@ -86,6 +98,12 @@
 
     [Parameter]
     public bool IsFavorite { get; set; }
+
+    [Parameter]
+    public bool IsReadOnly { get; set; }
+
+    [Parameter]
+    public string? SharedFromHouseholdName { get; set; }
 
     [Parameter]
     public EventCallback<Recipe> OnClick { get; set; }
@@ -221,6 +239,10 @@
         align-items: center;
         gap: 8px;
         margin-bottom: 8px;
+    }
+
+    .recipe-attribution {
+        margin-bottom: 4px;
     }
 
     .recipe-ingredients {

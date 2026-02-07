@@ -1,0 +1,497 @@
+@page "/settings/connections"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using System.Security.Claims
+@using FamilyCoordinationApp.Data
+@using FamilyCoordinationApp.Data.Entities
+@using FamilyCoordinationApp.Services.Interfaces
+@using Microsoft.EntityFrameworkCore
+
+@inject IHouseholdConnectionService ConnectionService
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject ISnackbar Snackbar
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Connections - Family Kitchen</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="py-4">
+    <MudText Typo="Typo.h4" Class="mb-6">Family Connections</MudText>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="mb-4" />
+    }
+    else if (HouseholdId == 0)
+    {
+        <MudAlert Severity="Severity.Error">
+            Unable to load household information. Please try refreshing the page.
+        </MudAlert>
+    }
+    else
+    {
+        @* Section 1: Invite a Family *@
+        <MudPaper Class="pa-6 mb-6" Elevation="2">
+            <MudText Typo="Typo.h5" Class="mb-2">Share Your Recipes</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+                Share this code with your family or friends — they'll enter it in their app to start sharing recipes together.
+            </MudText>
+
+            @if (_generatingInvite)
+            {
+                <div class="d-flex justify-center py-4">
+                    <MudProgressCircular Indeterminate="true" Size="Size.Medium" />
+                </div>
+            }
+            else if (_activeInvite != null)
+            {
+                <div class="d-flex flex-column align-center gap-3">
+                    <MudText Typo="Typo.h3" Style="font-family: 'Courier New', monospace; letter-spacing: 0.4em; font-weight: 700;">
+                        @_activeInvite.InviteCode
+                    </MudText>
+
+                    <MudButton StartIcon="@Icons.Material.Filled.ContentCopy"
+                               Color="Color.Primary"
+                               Variant="Variant.Outlined"
+                               Size="Size.Small"
+                               OnClick="CopyInviteCode">
+                        Copy Code
+                    </MudButton>
+
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Expires @GetExpiryText(_activeInvite.ExpiresAt)
+                    </MudText>
+
+                    <MudButton StartIcon="@Icons.Material.Filled.Cancel"
+                               Color="Color.Error"
+                               Variant="Variant.Text"
+                               Size="Size.Small"
+                               OnClick="CancelInvite">
+                        Cancel Invite
+                    </MudButton>
+                </div>
+            }
+            else
+            {
+                <MudButton StartIcon="@Icons.Material.Filled.Share"
+                           Color="Color.Primary"
+                           Variant="Variant.Filled"
+                           OnClick="GenerateInvite">
+                    Create Invite Code
+                </MudButton>
+            }
+        </MudPaper>
+
+        @* Section 2: Enter a Code *@
+        <MudPaper Class="pa-6 mb-6" Elevation="2">
+            <MudText Typo="Typo.h5" Class="mb-2">Enter a Code</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+                Got a code from someone? Enter it below.
+            </MudText>
+
+            @if (!_showConfirmation)
+            {
+                <div class="d-flex gap-3 align-center flex-wrap">
+                    <MudTextField @bind-Value="_enteredCode"
+                                  Label="Invite Code"
+                                  Variant="Variant.Outlined"
+                                  MaxLength="6"
+                                  Style="max-width: 220px; font-family: 'Courier New', monospace; font-size: 1.25rem; letter-spacing: 0.2em;"
+                                  Immediate="true"
+                                  TextChanged="OnCodeTextChanged"
+                                  Disabled="_validatingCode" />
+
+                    <MudButton Color="Color.Primary"
+                               Variant="Variant.Filled"
+                               OnClick="ValidateCode"
+                               Disabled="@(_enteredCode?.Length != 6 || _validatingCode)">
+                        @if (_validatingCode)
+                        {
+                            <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+                        }
+                        Submit
+                    </MudButton>
+                </div>
+
+                @if (!string.IsNullOrEmpty(_codeError))
+                {
+                    <MudAlert Severity="Severity.Warning" Class="mt-3" Dense="true">
+                        @_codeError
+                    </MudAlert>
+                }
+            }
+            else
+            {
+                @* Pre-connection confirmation *@
+                <MudAlert Severity="Severity.Info" Class="mb-4">
+                    <MudText Typo="Typo.body1" Class="mb-2">
+                        Connecting with <strong>@_pendingHouseholdName</strong> lets both families browse each other's recipes.
+                        They can see your recipes but can't change them. You can disconnect anytime.
+                    </MudText>
+                </MudAlert>
+
+                <div class="d-flex gap-2">
+                    <MudButton Color="Color.Default"
+                               Variant="Variant.Outlined"
+                               OnClick="CancelConnect"
+                               Disabled="_acceptingInvite">
+                        Cancel
+                    </MudButton>
+                    <MudButton Color="Color.Primary"
+                               Variant="Variant.Filled"
+                               OnClick="AcceptConnection"
+                               Disabled="_acceptingInvite">
+                        @if (_acceptingInvite)
+                        {
+                            <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+                        }
+                        Connect
+                    </MudButton>
+                </div>
+            }
+        </MudPaper>
+
+        @* Section 3: Connected Families *@
+        <MudPaper Class="pa-6" Elevation="2">
+            <MudText Typo="Typo.h5" Class="mb-4">Your Connected Families</MudText>
+
+            @if (_connectedHouseholds.Count == 0)
+            {
+                <MudText Typo="Typo.body1" Color="Color.Secondary">
+                    You haven't connected with any families yet. Create an invite code or enter one to get started.
+                </MudText>
+            }
+            else
+            {
+                <MudList T="ConnectedHouseholdInfo" Dense="false">
+                    @foreach (var household in _connectedHouseholds)
+                    {
+                        <MudListItem T="ConnectedHouseholdInfo">
+                            <div class="d-flex justify-space-between align-center flex-wrap gap-2" style="width: 100%;">
+                                <div>
+                                    <MudText Typo="Typo.body1"><strong>@household.HouseholdName</strong></MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        Connected @household.ConnectedAt.ToLocalTime().ToString("MMM d, yyyy")
+                                    </MudText>
+                                </div>
+                                <MudButton StartIcon="@Icons.Material.Filled.LinkOff"
+                                           Color="Color.Error"
+                                           Variant="Variant.Text"
+                                           Size="Size.Small"
+                                           OnClick="@(() => ConfirmDisconnect(household))">
+                                    Stop Sharing
+                                </MudButton>
+                            </div>
+                        </MudListItem>
+                    }
+                </MudList>
+            }
+        </MudPaper>
+    }
+</MudContainer>
+
+@* Disconnect confirmation dialog *@
+<MudDialog @bind-Visible="_showDisconnectDialog" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Stop sharing with @_householdToDisconnect?.HouseholdName?</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudList T="string" Dense="true">
+            <MudListItem T="string" Icon="@Icons.Material.Filled.VisibilityOff" IconSize="Size.Small">
+                You'll no longer be able to browse their recipes
+            </MudListItem>
+            <MudListItem T="string" Icon="@Icons.Material.Filled.VisibilityOff" IconSize="Size.Small">
+                They'll no longer be able to browse yours
+            </MudListItem>
+            <MudListItem T="string" Icon="@Icons.Material.Filled.CheckCircle" IconSize="Size.Small" IconColor="Color.Success">
+                Recipes you've already copied will stay in your collection
+            </MudListItem>
+        </MudList>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CancelDisconnect" Color="Color.Default" Disabled="_disconnecting">Cancel</MudButton>
+        <MudButton OnClick="ConfirmDisconnectAction" Color="Color.Error" Variant="Variant.Filled" Disabled="_disconnecting">
+            @if (_disconnecting)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+            }
+            Stop Sharing
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private int HouseholdId;
+    private int UserId;
+    private bool _loading = true;
+
+    // Invite generation
+    private HouseholdInvite? _activeInvite;
+    private bool _generatingInvite;
+
+    // Code entry
+    private string _enteredCode = string.Empty;
+    private string? _codeError;
+    private bool _validatingCode;
+    private bool _showConfirmation;
+    private string? _pendingHouseholdName;
+    private bool _acceptingInvite;
+
+    // Connected households
+    private List<ConnectedHouseholdInfo> _connectedHouseholds = new();
+
+    // Disconnect
+    private bool _showDisconnectDialog;
+    private ConnectedHouseholdInfo? _householdToDisconnect;
+    private bool _disconnecting;
+
+    private DialogOptions _dialogOptions = new()
+    {
+        CloseOnEscapeKey = true,
+        MaxWidth = MaxWidth.Small
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUserContext();
+        if (HouseholdId > 0)
+        {
+            await LoadData();
+        }
+        _loading = false;
+    }
+
+    private async Task LoadUserContext()
+    {
+        if (AuthState == null) return;
+
+        var authState = await AuthState;
+        var email = authState.User.FindFirstValue(ClaimTypes.Email);
+
+        if (string.IsNullOrEmpty(email)) return;
+
+        await using var context = await DbFactory.CreateDbContextAsync();
+        var user = await context.Users
+            .FirstOrDefaultAsync(u => u.Email == email);
+
+        if (user != null)
+        {
+            HouseholdId = user.HouseholdId;
+            UserId = user.Id;
+        }
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            var inviteTask = ConnectionService.GetActiveInviteAsync(HouseholdId);
+            var connectionsTask = ConnectionService.GetConnectedHouseholdsAsync(HouseholdId);
+
+            await Task.WhenAll(inviteTask, connectionsTask);
+
+            _activeInvite = await inviteTask;
+            _connectedHouseholds = await connectionsTask;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading connection data: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // --- Invite Generation ---
+
+    private async Task GenerateInvite()
+    {
+        _generatingInvite = true;
+        try
+        {
+            _activeInvite = await ConnectionService.GenerateInviteAsync(HouseholdId, UserId);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error creating invite: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _generatingInvite = false;
+        }
+    }
+
+    private async Task CancelInvite()
+    {
+        try
+        {
+            await ConnectionService.InvalidateInviteAsync(HouseholdId);
+            _activeInvite = null;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error cancelling invite: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task CopyInviteCode()
+    {
+        if (_activeInvite == null) return;
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", _activeInvite.InviteCode);
+            Snackbar.Add("Code copied to clipboard", Severity.Success);
+        }
+        catch
+        {
+            Snackbar.Add("Unable to copy — please select the code manually", Severity.Warning);
+        }
+    }
+
+    private static string GetExpiryText(DateTime expiresAt)
+    {
+        var remaining = expiresAt - DateTime.UtcNow;
+        if (remaining.TotalMinutes < 1) return "in less than a minute";
+        if (remaining.TotalMinutes < 60) return $"in {(int)remaining.TotalMinutes} minutes";
+        if (remaining.TotalHours < 24) return $"in {(int)remaining.TotalHours} hours";
+        return $"on {expiresAt.ToLocalTime():MMM d, yyyy}";
+    }
+
+    // --- Code Entry ---
+
+    private void OnCodeTextChanged(string value)
+    {
+        // Auto-uppercase and strip whitespace/dashes
+        _enteredCode = new string(value
+            .ToUpperInvariant()
+            .Where(c => char.IsLetterOrDigit(c))
+            .Take(6)
+            .ToArray());
+        _codeError = null;
+    }
+
+    private async Task ValidateCode()
+    {
+        if (string.IsNullOrWhiteSpace(_enteredCode) || _enteredCode.Length != 6) return;
+
+        _validatingCode = true;
+        _codeError = null;
+
+        try
+        {
+            var (isValid, householdName, error) = await ConnectionService.ValidateInviteCodeAsync(_enteredCode, HouseholdId);
+
+            if (isValid)
+            {
+                _pendingHouseholdName = householdName;
+                _showConfirmation = true;
+            }
+            else
+            {
+                _codeError = MapValidationError(error);
+            }
+        }
+        catch (Exception ex)
+        {
+            _codeError = $"Something went wrong. Please try again. ({ex.Message})";
+        }
+        finally
+        {
+            _validatingCode = false;
+        }
+    }
+
+    private static string MapValidationError(string? error) => error?.ToLowerInvariant() switch
+    {
+        "self_connection" or "self-connection" or "self" =>
+            "This is your own invite code. Share it with another family to connect.",
+        "already_connected" or "already-connected" or "already connected" =>
+            "You're already connected with this family!",
+        "expired" =>
+            "This code has expired. Ask them to create a new one.",
+        "invalid" or "not_found" or "not found" =>
+            "We couldn't find that code. Check the code and try again.",
+        _ =>
+            error ?? "We couldn't find that code. Check the code and try again."
+    };
+
+    private void CancelConnect()
+    {
+        _showConfirmation = false;
+        _pendingHouseholdName = null;
+    }
+
+    private async Task AcceptConnection()
+    {
+        _acceptingInvite = true;
+
+        try
+        {
+            var (success, connectedName, error) = await ConnectionService.AcceptInviteAsync(
+                _enteredCode, HouseholdId, UserId);
+
+            if (success)
+            {
+                Snackbar.Add($"You're now connected with {connectedName}! Browse their recipes from your Recipes page.", Severity.Success);
+                _showConfirmation = false;
+                _pendingHouseholdName = null;
+                _enteredCode = string.Empty;
+
+                // Refresh connected households
+                _connectedHouseholds = await ConnectionService.GetConnectedHouseholdsAsync(HouseholdId);
+            }
+            else
+            {
+                _codeError = MapValidationError(error);
+                _showConfirmation = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error connecting: {ex.Message}", Severity.Error);
+            _showConfirmation = false;
+        }
+        finally
+        {
+            _acceptingInvite = false;
+        }
+    }
+
+    // --- Disconnect ---
+
+    private void ConfirmDisconnect(ConnectedHouseholdInfo household)
+    {
+        _householdToDisconnect = household;
+        _showDisconnectDialog = true;
+    }
+
+    private void CancelDisconnect()
+    {
+        _showDisconnectDialog = false;
+        _householdToDisconnect = null;
+    }
+
+    private async Task ConfirmDisconnectAction()
+    {
+        if (_householdToDisconnect == null) return;
+
+        _disconnecting = true;
+
+        try
+        {
+            await ConnectionService.DisconnectHouseholdsAsync(HouseholdId, _householdToDisconnect.HouseholdId);
+            Snackbar.Add($"Stopped sharing with {_householdToDisconnect.HouseholdName}", Severity.Success);
+
+            _connectedHouseholds = await ConnectionService.GetConnectedHouseholdsAsync(HouseholdId);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error disconnecting: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _showDisconnectDialog = false;
+            _householdToDisconnect = null;
+            _disconnecting = false;
+        }
+    }
+}

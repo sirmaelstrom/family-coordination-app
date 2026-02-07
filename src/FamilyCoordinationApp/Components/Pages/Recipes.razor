@@ -6,10 +6,12 @@
 @using FamilyCoordinationApp.Data
 @using FamilyCoordinationApp.Data.Entities
 @using FamilyCoordinationApp.Services
+@using FamilyCoordinationApp.Services.Interfaces
 @using FamilyCoordinationApp.Components.Recipe
 @using FamilyCoordinationApp.Components.Shared
 @using Microsoft.EntityFrameworkCore
 @inject IRecipeService RecipeService
+@inject IHouseholdConnectionService ConnectionService
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject ISnackbar Snackbar
 @inject NavigationManager NavigationManager
@@ -21,30 +23,60 @@
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
     <div class="d-flex justify-space-between align-center flex-wrap mb-4 gap-3">
         <MudText Typo="Typo.h4">Recipes</MudText>
-        <div class="d-flex gap-2 flex-wrap">
-            <MudHidden Breakpoint="Breakpoint.Xs">
-                <MudButton StartIcon="@Icons.Material.Filled.CloudDownload"
-                           Color="Color.Secondary"
-                           Variant="Variant.Outlined"
-                           OnClick="OpenImportDialog">
-                    Import from URL
-                </MudButton>
-            </MudHidden>
-            <MudHidden Breakpoint="Breakpoint.SmAndUp" Invert="true">
-                <MudIconButton Icon="@Icons.Material.Filled.CloudDownload"
+        @if (!_isViewingConnectedHousehold)
+        {
+            <div class="d-flex gap-2 flex-wrap">
+                <MudHidden Breakpoint="Breakpoint.Xs">
+                    <MudButton StartIcon="@Icons.Material.Filled.CloudDownload"
                                Color="Color.Secondary"
-                               OnClick="OpenImportDialog"
-                               aria-label="Import from URL" />
-            </MudHidden>
-            <MudButton StartIcon="@Icons.Material.Filled.Add"
-                       Color="Color.Primary"
-                       Variant="Variant.Filled"
-                       OnClick="HandleAddRecipe">
-                <MudHidden Breakpoint="Breakpoint.Xs">Add Recipe</MudHidden>
-                <MudHidden Breakpoint="Breakpoint.SmAndUp" Invert="true">Add</MudHidden>
-            </MudButton>
-        </div>
+                               Variant="Variant.Outlined"
+                               OnClick="OpenImportDialog">
+                        Import from URL
+                    </MudButton>
+                </MudHidden>
+                <MudHidden Breakpoint="Breakpoint.SmAndUp" Invert="true">
+                    <MudIconButton Icon="@Icons.Material.Filled.CloudDownload"
+                                   Color="Color.Secondary"
+                                   OnClick="OpenImportDialog"
+                                   aria-label="Import from URL" />
+                </MudHidden>
+                <MudButton StartIcon="@Icons.Material.Filled.Add"
+                           Color="Color.Primary"
+                           Variant="Variant.Filled"
+                           OnClick="HandleAddRecipe">
+                    <MudHidden Breakpoint="Breakpoint.Xs">Add Recipe</MudHidden>
+                    <MudHidden Breakpoint="Breakpoint.SmAndUp" Invert="true">Add</MudHidden>
+                </MudButton>
+            </div>
+        }
     </div>
+
+    @* Household selector — only when connections exist *@
+    @if (_connectedHouseholds.Count > 0)
+    {
+        <div class="d-flex align-center gap-2 mb-4 flex-wrap">
+            <MudChipSet T="int?" @bind-SelectedValue="_selectedHouseholdId" SelectionMode="SelectionMode.SingleSelection" CheckMark="false">
+                <MudChip T="int?" Value="@((int?)null)"
+                         Color="@(_selectedHouseholdId == null ? Color.Primary : Color.Default)"
+                         Variant="@(_selectedHouseholdId == null ? Variant.Filled : Variant.Outlined)">
+                    My Recipes
+                </MudChip>
+                @foreach (var household in _connectedHouseholds)
+                {
+                    <MudChip T="int?" Value="@((int?)household.HouseholdId)"
+                             Color="@(_selectedHouseholdId == household.HouseholdId ? Color.Primary : Color.Default)"
+                             Variant="@(_selectedHouseholdId == household.HouseholdId ? Variant.Filled : Variant.Outlined)">
+                        @household.HouseholdName
+                    </MudChip>
+                }
+            </MudChipSet>
+            <MudIconButton Icon="@Icons.Material.Filled.GroupAdd"
+                           Size="Size.Small"
+                           Color="Color.Primary"
+                           Href="/settings/connections"
+                           Title="Manage family connections" />
+        </div>
+    }
 
     <div class="d-flex gap-3 align-center mb-4 flex-wrap">
         <MudTextField @bind-Value="_searchTerm"
@@ -53,15 +85,18 @@
                       Adornment="Adornment.Start"
                       AdornmentIcon="@Icons.Material.Filled.Search"
                       DebounceInterval="300"
-                      OnDebounceIntervalElapsed="LoadRecipes"
+                      OnDebounceIntervalElapsed="OnSearchChanged"
                       Style="flex: 1; min-width: 200px;" />
-        <MudChip T="bool"
-                 Icon="@Icons.Material.Filled.Favorite"
-                 Color="@(_showFavoritesOnly ? Color.Error : Color.Default)"
-                 Variant="@(_showFavoritesOnly ? Variant.Filled : Variant.Outlined)"
-                 OnClick="ToggleFavoritesFilter">
-            Favorites
-        </MudChip>
+        @if (!_isViewingConnectedHousehold)
+        {
+            <MudChip T="bool"
+                     Icon="@Icons.Material.Filled.Favorite"
+                     Color="@(_showFavoritesOnly ? Color.Error : Color.Default)"
+                     Variant="@(_showFavoritesOnly ? Variant.Filled : Variant.Outlined)"
+                     OnClick="ToggleFavoritesFilter">
+                Favorites
+            </MudChip>
+        }
     </div>
 
     @if (_loading)
@@ -82,16 +117,20 @@
             }
         </MudGrid>
     }
-    else if (!FilteredRecipes.Any())
+    else if (!DisplayedRecipes.Any())
     {
         <!-- Empty state -->
         <div class="d-flex flex-column align-center justify-center" style="min-height: 400px;">
-            <MudIcon Icon="@(_showFavoritesOnly ? Icons.Material.Filled.FavoriteBorder : Icons.Material.Filled.MenuBook)"
+            <MudIcon Icon="@(_isViewingConnectedHousehold ? Icons.Material.Filled.PeopleOutline : (_showFavoritesOnly ? Icons.Material.Filled.FavoriteBorder : Icons.Material.Filled.MenuBook))"
                      Size="Size.Large"
                      Color="Color.Secondary"
                      Style="font-size: 6rem; margin-bottom: 1rem;" />
             <MudText Typo="Typo.h5" Class="mb-2">
-                @if (_showFavoritesOnly)
+                @if (_isViewingConnectedHousehold)
+                {
+                    <text>No shared recipes</text>
+                }
+                else if (_showFavoritesOnly)
                 {
                     <text>No favorites yet</text>
                 }
@@ -101,7 +140,18 @@
                 }
             </MudText>
             <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
-                @if (_showFavoritesOnly)
+                @if (_isViewingConnectedHousehold)
+                {
+                    if (string.IsNullOrWhiteSpace(_searchTerm))
+                    {
+                        <text>This family hasn't added any recipes yet</text>
+                    }
+                    else
+                    {
+                        <text>No recipes found matching "@_searchTerm"</text>
+                    }
+                }
+                else if (_showFavoritesOnly)
                 {
                     <text>Click the heart icon on recipes to add them to your favorites</text>
                 }
@@ -114,7 +164,7 @@
                     <text>No recipes found matching "@_searchTerm"</text>
                 }
             </MudText>
-            @if (_showFavoritesOnly)
+            @if (_showFavoritesOnly && !_isViewingConnectedHousehold)
             {
                 <MudButton StartIcon="@Icons.Material.Filled.Clear"
                            Color="Color.Primary"
@@ -123,7 +173,7 @@
                     Show All Recipes
                 </MudButton>
             }
-            else if (string.IsNullOrWhiteSpace(_searchTerm))
+            else if (!_isViewingConnectedHousehold && string.IsNullOrWhiteSpace(_searchTerm))
             {
                 <MudButton StartIcon="@Icons.Material.Filled.Add"
                            Color="Color.Primary"
@@ -133,7 +183,7 @@
                     Add Your First Recipe
                 </MudButton>
             }
-            else
+            else if (!string.IsNullOrWhiteSpace(_searchTerm))
             {
                 <MudButton StartIcon="@Icons.Material.Filled.Clear"
                            Color="Color.Primary"
@@ -148,12 +198,14 @@
     {
         <!-- Recipe grid -->
         <MudGrid Class="recipe-grid">
-            @foreach (var recipe in FilteredRecipes)
+            @foreach (var recipe in DisplayedRecipes)
             {
                 <MudItem xs="12" sm="6" md="4" Class="recipe-grid-item">
                     <RecipeCard Recipe="recipe"
-                                IsSelected="@(_selectedRecipe?.RecipeId == recipe.RecipeId)"
-                                IsFavorite="@(FavoriteRecipeIds.Contains(recipe.RecipeId))"
+                                IsSelected="@(_selectedRecipe?.RecipeId == recipe.RecipeId && _selectedRecipe?.HouseholdId == recipe.HouseholdId)"
+                                IsFavorite="@(!_isViewingConnectedHousehold && FavoriteRecipeIds.Contains(recipe.RecipeId))"
+                                IsReadOnly="_isViewingConnectedHousehold"
+                                SharedFromHouseholdName="@(_isViewingConnectedHousehold ? _selectedConnectedHouseholdName : null)"
                                 OnClick="HandleCardClick"
                                 OnToggleFavorite="HandleToggleFavorite" />
                 </MudItem>
@@ -216,6 +268,14 @@
                     </MudText>
                 }
             </div>
+
+            @* Connected household attribution in drawer *@
+            @if (_isViewingConnectedHousehold && !string.IsNullOrWhiteSpace(_selectedConnectedHouseholdName))
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">
+                    From @_selectedConnectedHouseholdName
+                </MudText>
+            }
 
             <!-- Meta chips -->
             @if (_selectedRecipe.PrepTimeMinutes.HasValue || _selectedRecipe.CookTimeMinutes.HasValue || _selectedRecipe.Servings.HasValue)
@@ -310,29 +370,47 @@
 
         <!-- Action buttons -->
         <div class="recipe-drawer-actions">
-            <MudButton StartIcon="@Icons.Material.Filled.Edit"
-                       Color="Color.Primary"
-                       Variant="Variant.Filled"
-                       OnClick="@(() => HandleEdit(_selectedRecipe))"
-                       FullWidth="true"
-                       Class="mb-2">
-                Edit Recipe
-            </MudButton>
-            <MudButton StartIcon="@Icons.Material.Filled.CalendarMonth"
-                       Color="Color.Secondary"
-                       Variant="Variant.Outlined"
-                       OnClick="@(() => HandleAddToMealPlan(_selectedRecipe))"
-                       FullWidth="true"
-                       Class="mb-2">
-                Add to Meal Plan
-            </MudButton>
-            <MudButton StartIcon="@Icons.Material.Filled.Delete"
-                       Color="Color.Error"
-                       Variant="Variant.Text"
-                       OnClick="@(() => HandleDeleteConfirm(_selectedRecipe))"
-                       FullWidth="true">
-                Delete Recipe
-            </MudButton>
+            @if (_isViewingConnectedHousehold)
+            {
+                <MudButton StartIcon="@Icons.Material.Filled.ContentCopy"
+                           Color="Color.Primary"
+                           Variant="Variant.Filled"
+                           OnClick="@(() => HandleCopyRecipe(_selectedRecipe))"
+                           FullWidth="true"
+                           Disabled="_copyingRecipe">
+                    @if (_copyingRecipe)
+                    {
+                        <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+                    }
+                    Copy to My Recipes
+                </MudButton>
+            }
+            else
+            {
+                <MudButton StartIcon="@Icons.Material.Filled.Edit"
+                           Color="Color.Primary"
+                           Variant="Variant.Filled"
+                           OnClick="@(() => HandleEdit(_selectedRecipe))"
+                           FullWidth="true"
+                           Class="mb-2">
+                    Edit Recipe
+                </MudButton>
+                <MudButton StartIcon="@Icons.Material.Filled.CalendarMonth"
+                           Color="Color.Secondary"
+                           Variant="Variant.Outlined"
+                           OnClick="@(() => HandleAddToMealPlan(_selectedRecipe))"
+                           FullWidth="true"
+                           Class="mb-2">
+                    Add to Meal Plan
+                </MudButton>
+                <MudButton StartIcon="@Icons.Material.Filled.Delete"
+                           Color="Color.Error"
+                           Variant="Variant.Text"
+                           OnClick="@(() => HandleDeleteConfirm(_selectedRecipe))"
+                           FullWidth="true">
+                    Delete Recipe
+                </MudButton>
+            }
         </div>
     }
 </MudDrawer>
@@ -443,16 +521,16 @@
     // Persisted state to prevent prerender flash
     [PersistentState(AllowUpdates = true)]
     public List<Recipe> RecipeList { get; set; } = new();
-    
+
     [PersistentState(AllowUpdates = true)]
     public HashSet<int> FavoriteRecipeIds { get; set; } = new();
-    
+
     [PersistentState(AllowUpdates = true)]
     public int HouseholdId { get; set; }
-    
+
     [PersistentState(AllowUpdates = true)]
     public int UserId { get; set; }
-    
+
     // Non-persisted state
     private bool _loading = true;
     private string _searchTerm = string.Empty;
@@ -465,11 +543,27 @@
     private bool _showDeleteDialog;
     private Recipe? _recipeToDelete;
 
+    // Connected household state
+    private List<ConnectedHouseholdInfo> _connectedHouseholds = new();
+    private int? _selectedHouseholdId;
+    private bool _isViewingConnectedHousehold => _selectedHouseholdId != null;
+    private List<Recipe> _connectedRecipes = new();
+    private string? _selectedConnectedHouseholdName;
+    private bool _copyingRecipe;
+
+    // Track previous selection for change detection
+    private int? _previousSelectedHouseholdId;
+
     private DialogOptions _dialogOptions = new()
     {
         CloseOnEscapeKey = true,
         MaxWidth = MaxWidth.Small
     };
+
+    private IEnumerable<Recipe> DisplayedRecipes =>
+        _isViewingConnectedHousehold
+            ? _connectedRecipes
+            : FilteredRecipes;
 
     protected override async Task OnInitializedAsync()
     {
@@ -479,6 +573,8 @@
         if (HouseholdId > 0 && RecipeList.Any())
         {
             _loading = false;
+            // Still load connected households for the selector
+            await LoadConnectedHouseholds();
             return;
         }
 
@@ -486,11 +582,87 @@
         if (HouseholdId > 0)
         {
             await LoadRecipes();
+            await LoadConnectedHouseholds();
         }
         else
         {
             Snackbar.Add("Unable to load household information", Severity.Error);
             _loading = false;
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Detect household chip selection changes
+        if (_selectedHouseholdId != _previousSelectedHouseholdId)
+        {
+            _previousSelectedHouseholdId = _selectedHouseholdId;
+            await OnHouseholdSelectionChanged();
+        }
+    }
+
+    private async Task OnHouseholdSelectionChanged()
+    {
+        _searchTerm = string.Empty;
+        _showFavoritesOnly = false;
+        CloseDrawer();
+
+        if (_isViewingConnectedHousehold)
+        {
+            _selectedConnectedHouseholdName = _connectedHouseholds
+                .FirstOrDefault(h => h.HouseholdId == _selectedHouseholdId)?.HouseholdName;
+            await LoadConnectedRecipes();
+        }
+        else
+        {
+            _selectedConnectedHouseholdName = null;
+            _connectedRecipes.Clear();
+        }
+    }
+
+    private async Task LoadConnectedHouseholds()
+    {
+        try
+        {
+            _connectedHouseholds = await ConnectionService.GetConnectedHouseholdsAsync(HouseholdId);
+        }
+        catch
+        {
+            // Non-critical — selector just won't show
+            _connectedHouseholds = new();
+        }
+    }
+
+    private async Task LoadConnectedRecipes()
+    {
+        if (_selectedHouseholdId == null) return;
+
+        try
+        {
+            _loading = true;
+            _connectedRecipes = await RecipeService.GetRecipesFromConnectedHouseholdAsync(
+                HouseholdId, _selectedHouseholdId.Value, _searchTerm);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading shared recipes: {ex.Message}", Severity.Error);
+            _connectedRecipes = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnSearchChanged()
+    {
+        if (_isViewingConnectedHousehold)
+        {
+            await LoadConnectedRecipes();
+        }
+        else
+        {
+            await LoadRecipes();
         }
     }
 
@@ -534,6 +706,8 @@
 
     private async Task HandleToggleFavorite(Recipe recipe)
     {
+        if (_isViewingConnectedHousehold) return;
+
         await RecipeService.ToggleFavoriteAsync(UserId, HouseholdId, recipe.RecipeId);
         // Toggle local state immediately for responsive UI
         if (FavoriteRecipeIds.Contains(recipe.RecipeId))
@@ -594,6 +768,30 @@
         NavigationManager.NavigateTo($"/recipes/edit/{recipe.RecipeId}");
     }
 
+    private async Task HandleCopyRecipe(Recipe recipe)
+    {
+        if (_selectedHouseholdId == null) return;
+
+        _copyingRecipe = true;
+
+        try
+        {
+            await RecipeService.CopyRecipeFromConnectedHouseholdAsync(
+                _selectedHouseholdId.Value, recipe.RecipeId, HouseholdId, UserId);
+
+            Snackbar.Add("Recipe copied! It's now in your collection.", Severity.Success);
+            // Stay on connected view per spec
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error copying recipe: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _copyingRecipe = false;
+        }
+    }
+
     private void HandleDeleteConfirm(Recipe recipe)
     {
         _recipeToDelete = recipe;
@@ -645,7 +843,14 @@
     private async Task ClearSearch()
     {
         _searchTerm = string.Empty;
-        await LoadRecipes();
+        if (_isViewingConnectedHousehold)
+        {
+            await LoadConnectedRecipes();
+        }
+        else
+        {
+            await LoadRecipes();
+        }
     }
 
     private string GetIngredientDisplay(RecipeIngredient ingredient)
@@ -698,11 +903,11 @@
 
         string fraction = fractionalPart switch
         {
-            >= 0.2m and < 0.3m => "¼",
-            >= 0.3m and < 0.4m => "⅓",
-            >= 0.45m and < 0.55m => "½",
-            >= 0.6m and < 0.7m => "⅔",
-            >= 0.7m and < 0.8m => "¾",
+            >= 0.2m and < 0.3m => "\u00bc",
+            >= 0.3m and < 0.4m => "\u2153",
+            >= 0.45m and < 0.55m => "\u00bd",
+            >= 0.6m and < 0.7m => "\u2154",
+            >= 0.7m and < 0.8m => "\u00be",
             _ => null
         };
 
@@ -732,10 +937,10 @@
     private string GetScalingLabel()
     {
         var factor = GetScalingFactor();
-        if (factor == 2) return "2×";
-        if (factor == 0.5m) return "½×";
-        if (factor == 1.5m) return "1.5×";
-        return $"{factor:0.##}×";
+        if (factor == 2) return "2\u00d7";
+        if (factor == 0.5m) return "\u00bd\u00d7";
+        if (factor == 1.5m) return "1.5\u00d7";
+        return $"{factor:0.##}\u00d7";
     }
 
     private void OnDataChanged(int householdId)
@@ -743,7 +948,7 @@
         // Security: Only respond to changes for our household
         if (householdId != HouseholdId)
             return;
-            
+
         InvokeAsync(async () =>
         {
             await LoadRecipes();

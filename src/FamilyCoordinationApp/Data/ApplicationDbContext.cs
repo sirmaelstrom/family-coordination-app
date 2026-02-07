@@ -20,6 +20,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<Feedback> Feedbacks => Set<Feedback>();
     public DbSet<HouseholdRequest> HouseholdRequests => Set<HouseholdRequest>();
     public DbSet<UserFavorite> UserFavorites => Set<UserFavorite>();
+    public DbSet<HouseholdConnection> HouseholdConnections => Set<HouseholdConnection>();
+    public DbSet<HouseholdInvite> HouseholdInvites => Set<HouseholdInvite>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

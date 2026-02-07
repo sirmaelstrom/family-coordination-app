@@ -21,12 +21,18 @@ public class Recipe
     public int? UpdatedByUserId { get; set; }
     public bool IsDeleted { get; set; }
 
+    // Attribution — set when recipe was copied from a connected household
+    public int? SharedFromHouseholdId { get; set; }
+    public string? SharedFromHouseholdName { get; set; } // Denormalized — survives disconnect
+    public int? SharedFromRecipeId { get; set; } // Reference only, no FK (source may be in different household)
+
     // Concurrency token (maps to PostgreSQL xmin)
     [Timestamp]
     public uint Version { get; set; }
 
     // Navigation
     public Household Household { get; set; } = default!;
+    public Household? SharedFromHousehold { get; set; }
     public User? CreatedBy { get; set; }
     public User? UpdatedBy { get; set; }
     public ICollection<RecipeIngredient> Ingredients { get; set; } = new List<RecipeIngredient>();
