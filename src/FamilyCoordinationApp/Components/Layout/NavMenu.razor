@@ -43,7 +43,11 @@
     <MudNavLink Href="/settings/users" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.People">
         @if (IsExpanded) { <text>Family Members</text> }
     </MudNavLink>
-    
+
+    <MudNavLink Href="/settings/connections" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.GroupAdd">
+        @if (IsExpanded) { <text>Connections</text> }
+    </MudNavLink>
+
     <MudNavLink Href="/settings/feedback" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Feedback">
         @if (IsExpanded) { <text>Feedback</text> }
     </MudNavLink>

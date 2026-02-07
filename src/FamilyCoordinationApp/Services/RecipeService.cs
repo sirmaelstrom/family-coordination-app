@@ -244,4 +244,108 @@ public class RecipeService(
             .OrderBy(r => r.Name)
             .ToListAsync(cancellationToken);
     }
+
+    // Connected household recipe browsing
+
+    public async Task<List<Recipe>> GetRecipesFromConnectedHouseholdAsync(
+        int viewingHouseholdId, int connectedHouseholdId, string? searchTerm = null, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        // PRIVACY: Do NOT include CreatedBy — connected households should not see individual user details
+        var query = context.Recipes
+            .Where(r => r.HouseholdId == connectedHouseholdId)
+            .Include(r => r.Ingredients.OrderBy(i => i.SortOrder))
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            var term = searchTerm.Trim().ToLower();
+            query = query.Where(r =>
+                r.Name.ToLower().Contains(term) ||
+                (r.Description != null && r.Description.ToLower().Contains(term)) ||
+                r.RecipeType.ToString().ToLower().Contains(term) ||
+                r.Ingredients.Any(i => i.Name.ToLower().Contains(term)));
+        }
+
+        return await query
+            .OrderBy(r => r.Name)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<Recipe> CopyRecipeFromConnectedHouseholdAsync(
+        int sourceHouseholdId, int sourceRecipeId, int targetHouseholdId, int userId, CancellationToken cancellationToken = default)
+    {
+        return await IdGenerationHelper.ExecuteWithRetryAsync(
+            async (attempt) =>
+            {
+                await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+                // Load source recipe with ingredients
+                var sourceRecipe = await context.Recipes
+                    .Where(r => r.HouseholdId == sourceHouseholdId && r.RecipeId == sourceRecipeId)
+                    .Include(r => r.Ingredients.OrderBy(i => i.SortOrder))
+                    .Include(r => r.Household)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                if (sourceRecipe == null)
+                {
+                    throw new InvalidOperationException(
+                        $"Recipe {sourceRecipeId} not found in household {sourceHouseholdId}");
+                }
+
+                // Get next recipe ID for the target household
+                var newRecipeId = await GetNextRecipeIdInternalAsync(context, targetHouseholdId, cancellationToken);
+
+                var copiedRecipe = new Recipe
+                {
+                    HouseholdId = targetHouseholdId,
+                    RecipeId = newRecipeId,
+                    Name = sourceRecipe.Name,
+                    Description = sourceRecipe.Description,
+                    Instructions = sourceRecipe.Instructions,
+                    ImagePath = sourceRecipe.ImagePath,
+                    SourceUrl = sourceRecipe.SourceUrl,
+                    Servings = sourceRecipe.Servings,
+                    PrepTimeMinutes = sourceRecipe.PrepTimeMinutes,
+                    CookTimeMinutes = sourceRecipe.CookTimeMinutes,
+                    RecipeType = sourceRecipe.RecipeType,
+                    CreatedByUserId = userId,
+                    CreatedAt = DateTime.UtcNow,
+                    SharedFromHouseholdId = sourceHouseholdId,
+                    SharedFromHouseholdName = sourceRecipe.Household.Name,
+                    SharedFromRecipeId = sourceRecipeId
+                };
+
+                // Deep copy ingredients with new IDs
+                var ingredientId = 1;
+                foreach (var sourceIngredient in sourceRecipe.Ingredients)
+                {
+                    copiedRecipe.Ingredients.Add(new RecipeIngredient
+                    {
+                        HouseholdId = targetHouseholdId,
+                        RecipeId = newRecipeId,
+                        IngredientId = ingredientId++,
+                        Name = sourceIngredient.Name,
+                        Quantity = sourceIngredient.Quantity,
+                        Unit = sourceIngredient.Unit,
+                        Category = sourceIngredient.Category,
+                        Notes = sourceIngredient.Notes,
+                        GroupName = sourceIngredient.GroupName,
+                        SortOrder = sourceIngredient.SortOrder
+                    });
+                }
+
+                context.Recipes.Add(copiedRecipe);
+                await context.SaveChangesAsync(cancellationToken);
+
+                logger.LogInformation(
+                    "Copied recipe {SourceRecipeId} from household {SourceHouseholdId} to household {TargetHouseholdId} as recipe {NewRecipeId}",
+                    sourceRecipeId, sourceHouseholdId, targetHouseholdId, newRecipeId);
+
+                return copiedRecipe;
+            },
+            logger,
+            "CopiedRecipe");
+    }
 }
