@@ -47,9 +47,14 @@ if (!string.IsNullOrEmpty(certBase64))
         Console.WriteLine($"Data Protection: Failed to load certificate: {ex.Message}");
     }
 }
+else if (builder.Environment.IsProduction())
+{
+    throw new InvalidOperationException(
+        "DATAPROTECTION_CERT is required in production. Set it to a base64-encoded PFX certificate.");
+}
 else
 {
-    Console.WriteLine("Data Protection: Keys unprotected (set DATAPROTECTION_CERT for production)");
+    Console.WriteLine("Data Protection: Keys unprotected (development only)");
 }
 
 // Database configuration - DbContextFactory for Blazor Server thread safety
@@ -218,13 +223,15 @@ if (app.Environment.IsDevelopment())
 }
 
 // Forwarded headers MUST come first (for nginx reverse proxy)
-// Clear KnownProxies/KnownNetworks to trust Docker network headers
+// Only trust proxies from Docker bridge networks and loopback (host nginx → container)
 var forwardedHeadersOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 };
 forwardedHeadersOptions.KnownProxies.Clear();
-forwardedHeadersOptions.KnownNetworks.Clear();
+forwardedHeadersOptions.KnownIPNetworks.Clear();
+forwardedHeadersOptions.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Parse("172.16.0.0"), 12)); // Docker bridge networks
+forwardedHeadersOptions.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Parse("127.0.0.0"), 8));   // Loopback
 app.UseForwardedHeaders(forwardedHeadersOptions);
 
 // Configure the HTTP request pipeline.
@@ -321,10 +328,13 @@ app.MapPost("/account/login-google", async (HttpContext context) =>
     var form = await context.Request.ReadFormAsync();
     var returnUrl = form["returnUrl"].FirstOrDefault() ?? "/";
 
-    // Prevent open redirect - only allow local URLs
-    if (!Uri.TryCreate(returnUrl, UriKind.Relative, out _) ||
+    // Prevent open redirect - only allow local paths
+    returnUrl = returnUrl.Trim();
+    if (string.IsNullOrEmpty(returnUrl) ||
+        !returnUrl.StartsWith('/') ||
         returnUrl.StartsWith("//") ||
-        returnUrl.StartsWith("/\\"))
+        returnUrl.StartsWith("/\\") ||
+        returnUrl.Contains("://"))
     {
         returnUrl = "/";
     }

@@ -68,6 +68,21 @@ jobs:
       - name: Check formatting
         run: dotnet format src/FamilyCoordinationApp/FamilyCoordinationApp.csproj --verify-no-changes --verbosity diagnostic || echo "::warning::Code formatting issues found"
         
+  secrets-scan:
+    name: Secrets Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for scanning all commits
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
   docker-build:
     name: Docker Build (Validation)
     runs-on: ubuntu-latest
