@@ -19,8 +19,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Multi-User Collaboration** - Household sharing with polling-based sync
 - [x] **Phase 6: Recipe Import** - URL scraping with automatic parsing
 - [x] **Phase 7: Mobile & UX Polish** - PWA support and touch optimization
-- [ ] **Phase 8: Collaboration Wiring Fixes** - Attribution and real-time sync gaps (GAP CLOSURE)
-- [ ] **Phase 9: UX Enhancements** - Drag-drop reordering and ingredient normalization (GAP CLOSURE)
+- [x] ~~**Phase 8: Collaboration Wiring Fixes**~~ - DEPRECATED: Minor gaps, not worth effort
+- [x] ~~**Phase 9: UX Enhancements**~~ - DEPRECATED: Minor gaps, not worth effort
 
 ## Phase Details
 
@@ -165,24 +165,8 @@ Plans:
 - [x] 07-04-PLAN.md — Sync status indicator in header
 - [x] 07-05-PLAN.md — Human verification of mobile experience
 
-### Phase 8: Collaboration Wiring Fixes
-**Goal**: Complete attribution tracking and real-time sync across all collaborative features
-**Depends on**: Phase 7
-**Gap Closure**: Closes 3 integration gaps from v1.0 audit
-**Success Criteria** (what must be TRUE):
-  1. Recipe edits track UpdatedByUserId for attribution
-  2. Meal plan changes set UpdatedAt for polling detection
-  3. MealPlan page auto-refreshes when other users make changes
-**Plans**: TBD
-
-### Phase 9: UX Enhancements
-**Goal**: Improve shopping list UX with drag-drop and smarter ingredient matching
-**Depends on**: Phase 8
-**Gap Closure**: Addresses deferred tech debt from v1.0 audit
-**Success Criteria** (what must be TRUE):
-  1. User can drag-drop to reorder shopping list items within categories
-  2. Ingredient consolidation recognizes semantic equivalents (ground beef ↔ beef mince)
-**Plans**: TBD
+### Phase 8 & 9: DEPRECATED
+Phases 8 and 9 were deprecated 2026-02-08. The identified gaps (attribution tracking, meal plan auto-refresh, drag-drop reorder, ingredient normalization) are minor and the app works well without them.
 
 ## Progress
 
@@ -198,9 +182,9 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Multi-User Collaboration | 7/7 | Complete | 2026-01-24 |
 | 6. Recipe Import | 6/6 | Complete | 2026-01-24 |
 | 7. Mobile & UX Polish | 5/5 | Complete | 2026-01-24 |
-| 8. Collaboration Wiring Fixes | 0/? | Planned | - |
-| 9. UX Enhancements | 0/? | Planned | - |
+| 8. Collaboration Wiring Fixes | - | Deprecated | 2026-02-08 |
+| 9. UX Enhancements | - | Deprecated | 2026-02-08 |
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-01-25*
+*Last updated: 2026-02-08*

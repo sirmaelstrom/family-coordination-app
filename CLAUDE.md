@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Family Coordination App — a Blazor Server application for household meal planning, recipe management, shopping lists, and multi-user collaboration. Deployed to a self-hosted Ubuntu server (homeserver) via GitHub Actions.
 
-**Status**: Production, actively used. Being replaced long-term by a SvelteKit rewrite (`family-kitchen-svelte`).
+**Status**: Production, actively used. Remains the primary focus short-term. A SvelteKit rewrite (`family-kitchen-svelte`) is planned but not yet prioritized.
 
 ## Build & Test Commands
 
@@ -113,6 +113,4 @@ Required env vars (set via `.env` on homeserver, generated from a secrets manage
 
 ## Remaining Planned Work
 
-Phases 1-7 complete. Phases 8-9 planned (see `.planning/ROADMAP.md`):
-- Phase 8: Collaboration wiring fixes (attribution tracking, meal plan auto-refresh)
-- Phase 9: UX enhancements (drag-drop reorder, ingredient normalization)
+Phases 1-7 complete. Phases 8-9 were deprecated — the gaps are minor and not worth the effort given the app works well as-is.
