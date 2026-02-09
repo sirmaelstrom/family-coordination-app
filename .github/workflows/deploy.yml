@@ -60,65 +60,10 @@ jobs:
           git reset --hard origin/${{ github.ref_name }}
           echo "📥 Pulled commit: $(git rev-parse --short HEAD)"
 
-      - name: Generate .env and secrets from Bitwarden
+      - name: Build and deploy
         run: |
           cd ~/familyapp
-          # Start with non-secret config from .env.local
-          cp .env.local .env
-          echo "" >> .env
-          # Fetch secrets from a secrets manager
-          export BWS_ACCESS_TOKEN=$(cat ~/.bws-token)
-          SECRETS_JSON=$(~/.local/bin/bws secret list --output json)
-          # Write Postgres password to Docker secrets file (not env var)
-          mkdir -p ~/familyapp/secrets
-          echo "$SECRETS_JSON" | jq -r '.[] | select(.key == "POSTGRES_PASSWORD_PROD") | .value' > ~/familyapp/secrets/postgres_password
-          chmod 600 ~/familyapp/secrets/postgres_password
-          # OAuth secrets still go to .env (not used by Docker secrets)
-          echo "$SECRETS_JSON" | jq -r '.[] | select(.key == "GOOGLE_CLIENT_ID") | "GOOGLE_CLIENT_ID=" + .value' >> .env
-          echo "$SECRETS_JSON" | jq -r '.[] | select(.key == "GOOGLE_CLIENT_SECRET") | "GOOGLE_CLIENT_SECRET=" + .value' >> .env
-          echo "🔐 Generated .env + Docker secrets from Bitwarden"
-
-      - name: Build Docker image
-        run: |
-          cd ~/familyapp
-          docker build -t familyapp:latest .
-          echo "🐳 Built image: familyapp:latest"
-          
-      - name: Deploy containers
-        run: |
-          cd ~/familyapp
-          # Force remove any stale containers that might conflict
-          docker rm -f familyapp-app familyapp-nginx familyapp-postgres 2>/dev/null || true
-          # Stop and remove existing containers (preserve volumes for data!)
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
-          # Clear any orphan networks
-          docker network prune -f 2>/dev/null || true
-          # Brief pause to let Docker daemon settle
-          sleep 2
-          # Start fresh
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate
-          echo "🚀 Containers started"
-            
-      - name: Health check
-        run: |
-          echo "⏳ Waiting for health check..."
-          for i in {1..30}; do
-            STATUS=$(docker inspect familyapp-app --format='{{.State.Health.Status}}' 2>/dev/null || echo "starting")
-            if [ "$STATUS" = "healthy" ]; then
-              echo "✅ App is healthy!"
-              exit 0
-            fi
-            echo "   Status: $STATUS ($i/30)"
-            sleep 2
-          done
-          echo "❌ Health check timeout"
-          docker logs familyapp-app --tail 50
-          exit 1
-          
-      - name: Cleanup old images
-        run: |
-          docker image prune -f --filter "until=24h"
-          echo "🧹 Cleaned up old images"
+          ./deploy.sh --build --no-pull
 
       - name: Notify Discord (Success)
         if: success()
