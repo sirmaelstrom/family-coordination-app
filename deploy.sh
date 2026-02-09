@@ -17,7 +17,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-LOG_DIR="/home/sirm/data/logs"
+LOG_DIR="$HOME/data/logs"
 LOG="$LOG_DIR/familyapp-deploy.log"
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 BWS="$HOME/.local/bin/bws"
