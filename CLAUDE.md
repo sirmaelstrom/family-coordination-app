@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Family Coordination App — a Blazor Server application for household meal planning, recipe management, shopping lists, and multi-user collaboration. Deployed to a self-hosted Ubuntu server (homeserver) via GitHub Actions.
+Family Coordination App — a Blazor Server application for household meal planning, recipe management, shopping lists, and multi-user collaboration. Deployed to a self-hosted Ubuntu server via GitHub Actions.
 
-**Status**: Production, actively used. Remains the primary focus short-term. A SvelteKit rewrite (`family-kitchen-svelte`) is planned but not yet prioritized.
+**Status**: Production, actively used. A SvelteKit rewrite (`family-kitchen-svelte`) is planned but not yet prioritized.
 
 ## Build & Test Commands
 
@@ -99,15 +99,16 @@ tests/FamilyCoordinationApp.Tests/
 
 Push to `master` triggers GitHub Actions:
 1. **CI** (`ci.yml`): Build, test, format check, Docker build validation (GitHub-hosted runners)
-2. **Deploy** (`deploy.yml`): Self-hosted runner on homeserver pulls code, builds Docker image, deploys via `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`
+2. **Deploy** (`deploy.yml`): Self-hosted runner pulls code, builds Docker image, deploys via `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`
 
-Production traffic flow: `Internet → Cloudflare → homeserver:443 (host nginx) → localhost:8085 (app container)`
+Production traffic flow: `Internet → Cloudflare → <server-hostname> (host nginx) → app container`
 
 ### Environment Configuration
 
-Required env vars (set via `.env` on homeserver, generated from a secrets manager during deploy):
+Required env vars (set via `.env` on the server, generated from a secrets manager during deploy):
 - `ConnectionStrings__DefaultConnection` — PostgreSQL connection string
-- `Authentication__Google__ClientId` / `ClientSecret` — OAuth
+- `Authentication__Google__ClientId` — Google OAuth client ID
+- `Authentication__Google__ClientSecret` — Google OAuth client secret
 - `SITE_ADMIN_EMAILS` — comma-separated admin emails
 - `DATAPROTECTION_CERT` — optional base64 PFX for key encryption
 
