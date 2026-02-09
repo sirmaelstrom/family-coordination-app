@@ -5,7 +5,9 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-familyapp}
       POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
     volumes:
       # Direct bind mount - avoids Docker Desktop WSL2 mount path issues
       - ${POSTGRES_DATA_PATH:-./data/postgres}:/var/lib/postgresql/data
@@ -27,8 +29,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    secrets:
+      - postgres_password
     environment:
-      ConnectionStrings__DefaultConnection: "Host=postgres;Database=${POSTGRES_DB:-familyapp};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};SSL Mode=Disable"
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=${POSTGRES_DB:-familyapp};Username=${POSTGRES_USER};SSL Mode=Disable"
       Authentication__Google__ClientId: ${GOOGLE_CLIENT_ID}
       Authentication__Google__ClientSecret: ${GOOGLE_CLIENT_SECRET}
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
@@ -63,6 +67,10 @@ services:
 networks:
   familyapp-network:
     driver: bridge
+
+secrets:
+  postgres_password:
+    file: ${POSTGRES_SECRET_FILE:-./secrets/postgres_password}
 
 # Named volumes removed - using direct bind mounts to avoid Docker Desktop WSL2 issues
 # See: https://github.com/docker/for-win/issues/12742

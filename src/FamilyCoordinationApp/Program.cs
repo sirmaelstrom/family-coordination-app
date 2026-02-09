@@ -58,8 +58,19 @@ else
 }
 
 // Database configuration - DbContextFactory for Blazor Server thread safety
+// Read password from Docker secret file if available, inject into connection string
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Database connection string not configured. Set ConnectionStrings__DefaultConnection environment variable.");
+
+const string dockerSecretPath = "/run/secrets/postgres_password";
+if (File.Exists(dockerSecretPath))
+{
+    var password = File.ReadAllText(dockerSecretPath).Trim();
+    connectionString = connectionString.Contains("Password=", StringComparison.OrdinalIgnoreCase)
+        ? connectionString
+        : $"{connectionString.TrimEnd(';')};Password={password}";
+    Console.WriteLine("Database: Password loaded from Docker secret");
+}
 
 builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString)

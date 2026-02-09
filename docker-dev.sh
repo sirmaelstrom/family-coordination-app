@@ -38,9 +38,6 @@ ensure_env() {
         if [ -f ".env.example" ]; then
             cp .env.example "$ENV_FILE"
             log_info "Created $ENV_FILE - update with your settings if needed"
-            log_warn "Using default password: localdevpassword123"
-            # Set a simple local dev password (no special chars that break connection strings)
-            sed -i 's/POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=localdevpassword123/' "$ENV_FILE"
         else
             log_error ".env.example not found!"
             exit 1
@@ -51,6 +48,16 @@ ensure_env() {
 # Ensure data directories exist
 ensure_data_dirs() {
     mkdir -p "$DATA_DIR/postgres" "$DATA_DIR/dataprotection" "$DATA_DIR/uploads" "$DATA_DIR/logs"
+    mkdir -p "./secrets"
+}
+
+# Ensure Docker secrets file exists for local dev
+ensure_secrets() {
+    if [ ! -f "./secrets/postgres_password" ]; then
+        echo "localdevpassword123" > "./secrets/postgres_password"
+        chmod 600 "./secrets/postgres_password"
+        log_info "Created secrets/postgres_password for local dev"
+    fi
 }
 
 # Clean data directories using Docker (avoids sudo for root-owned postgres files)
@@ -64,6 +71,7 @@ cmd_up() {
     log_info "Starting local dev environment..."
     ensure_env
     ensure_data_dirs
+    ensure_secrets
     docker compose --env-file "$ENV_FILE" up -d
     log_info "Waiting for services to be healthy..."
     sleep 5
