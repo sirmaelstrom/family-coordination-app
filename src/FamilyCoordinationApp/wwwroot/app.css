@@ -120,11 +120,7 @@ h1:focus {
         flex-shrink: 0 !important;
     }
     
-    /* Fix dropdown/select positioning on mobile */
-    .mud-popover {
-        position: fixed !important;
-    }
-    
+    /* Constrain dropdown lists on mobile to prevent overflow */
     .mud-list {
         max-height: 40vh !important;
         overflow-y: auto !important;

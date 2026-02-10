@@ -122,8 +122,7 @@
                 <MudSelect @bind-Value="_recipe.RecipeType"
                            Label="Recipe Type"
                            Variant="Variant.Outlined"
-                           Class="mt-3"
-                           AnchorOrigin="Origin.BottomCenter">
+                           Class="mt-3">
                     @foreach (var type in Enum.GetValues<RecipeType>())
                     {
                         <MudSelectItem Value="@type">@GetRecipeTypeLabel(type)</MudSelectItem>
