@@ -85,3 +85,6 @@ bin\Debug/
 
 # Local documentation (not committed)
 LOCAL-DOCS/
+
+# Beads issue tracker state
+.beads/export-state/
