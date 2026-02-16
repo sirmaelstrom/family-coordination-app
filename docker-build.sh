@@ -48,7 +48,7 @@ echo ""
 # Step 3: Build Docker image
 echo "[3/3] Building Docker image..."
 echo "Command: docker build -f $DOCKERFILE -t $IMAGE_NAME:$TAG ."
-docker build -f "$DOCKERFILE" -t "$IMAGE_NAME:$TAG" .
+sudo docker build -f "$DOCKERFILE" -t "$IMAGE_NAME:$TAG" .
 
 if [ $? -ne 0 ]; then
     echo "✗ Docker build failed"

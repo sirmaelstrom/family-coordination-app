@@ -19,7 +19,7 @@ cd "$SCRIPT_DIR"
 
 LOG_DIR="$HOME/data/logs"
 LOG="$LOG_DIR/familyapp-deploy.log"
-COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+COMPOSE="sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 BWS="$HOME/.local/bin/bws"
 BWS_TOKEN_FILE="$HOME/.bws-token"
 
@@ -114,7 +114,7 @@ log "Secrets generated (.env + secrets/postgres_password)"
 # ── Build ───────────────────────────────────────────────────────────
 if $DO_BUILD; then
   log "Building Docker image..."
-  docker build -t familyapp:latest . 2>&1 | tail -5 | tee -a "$LOG"
+  sudo docker build -t familyapp:latest . 2>&1 | tail -5 | tee -a "$LOG"
   log "Image built: familyapp:latest"
 fi
 
@@ -122,9 +122,9 @@ fi
 log "Deploying containers..."
 
 # Clean up any stale containers
-docker rm -f familyapp-app familyapp-nginx familyapp-postgres 2>/dev/null || true
+sudo docker rm -f familyapp-app familyapp-nginx familyapp-postgres 2>/dev/null || true
 $COMPOSE down --remove-orphans 2>/dev/null || true
-docker network prune -f 2>/dev/null || true
+sudo docker network prune -f 2>/dev/null || true
 sleep 2
 
 $COMPOSE up -d --force-recreate
@@ -133,14 +133,14 @@ log "Containers started"
 # ── Health check ────────────────────────────────────────────────────
 log "Waiting for health check..."
 for i in {1..30}; do
-  STATUS=$(docker inspect familyapp-app --format='{{.State.Health.Status}}' 2>/dev/null || echo "starting")
+  STATUS=$(sudo docker inspect familyapp-app --format='{{.State.Health.Status}}' 2>/dev/null || echo "starting")
   if [[ "$STATUS" == "healthy" ]]; then
     log "App is healthy!"
     break
   fi
   if [[ $i -eq 30 ]]; then
     log "Health check timeout after 60s"
-    docker logs familyapp-app --tail 30 >> "$LOG" 2>&1
+    sudo docker logs familyapp-app --tail 30 >> "$LOG" 2>&1
     die "Health check failed"
   fi
   echo "  Status: $STATUS ($i/30)"
@@ -148,5 +148,5 @@ for i in {1..30}; do
 done
 
 # ── Cleanup ─────────────────────────────────────────────────────────
-docker image prune -f --filter "until=24h" >/dev/null 2>&1
+sudo docker image prune -f --filter "until=24h" >/dev/null 2>&1
 log "=== Deploy complete ==="
