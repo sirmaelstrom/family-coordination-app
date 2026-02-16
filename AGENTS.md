@@ -1,15 +1,14 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+This project uses **GitHub Issues** for issue tracking.
 
 ## Quick Reference
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --status in_progress  # Claim work
-bd close <id>         # Complete work
-bd sync               # Sync with git
+gh issue list                           # List open issues
+gh issue view <number>                  # View issue details
+gh issue create --title "..." --body "..."  # Create issue
+gh issue close <number>                 # Close issue
 ```
 
 ## Landing the Plane (Session Completion)
@@ -18,13 +17,12 @@ bd sync               # Sync with git
 
 **MANDATORY WORKFLOW:**
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
+1. **File issues for remaining work** - Create GitHub Issues for anything that needs follow-up
 2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
+3. **Update issue status** - Close finished work via `gh issue close`
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
    git pull --rebase
-   bd sync
    git push
    git status  # MUST show "up to date with origin"
    ```
