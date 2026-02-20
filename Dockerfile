@@ -21,9 +21,6 @@ RUN echo "=== Checking publish output ===" && \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 
-# Install curl for health checks
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
-
 # Create directories for logs, uploads, and data protection keys
 RUN mkdir -p /app/logs /app/wwwroot/uploads /root/.aspnet/DataProtection-Keys
 
@@ -37,8 +34,8 @@ ENV ASPNETCORE_ENVIRONMENT=Production
 # Expose port
 EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+# Health check — uses /dev/tcp to avoid curl/wget dependency in slim images
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD bash -c '</dev/tcp/localhost/8080' || exit 1
 
 ENTRYPOINT ["dotnet", "FamilyCoordinationApp.dll"]
