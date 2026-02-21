@@ -112,6 +112,9 @@ Required env vars (set via `.env` on the server, generated from a secrets manage
 - `SITE_ADMIN_EMAILS` — comma-separated admin emails
 - `DATAPROTECTION_CERT` — optional base64 PFX for key encryption
 
+## Corrections
+<!-- Also see global corrections: D:\Development\data\memory\CORRECTIONS.md -->
+
 ## Remaining Planned Work
 
 Phases 1-7 complete. Phases 8-9 were deprecated — the gaps are minor and not worth the effort given the app works well as-is.
