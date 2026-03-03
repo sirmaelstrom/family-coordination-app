@@ -9,8 +9,7 @@ services:
     secrets:
       - postgres_password
     volumes:
-      # Direct bind mount - avoids Docker Desktop WSL2 mount path issues
-      - ${POSTGRES_DATA_PATH:-./data/postgres}:/var/lib/postgresql/data
+      - familyapp-pgdata:/var/lib/postgresql/data
       # Custom pg_hba.conf for Docker network access
       - ./docker/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     command: postgres -c hba_file=/etc/postgresql/pg_hba.conf
@@ -63,6 +62,10 @@ services:
     restart: unless-stopped
     networks:
       - familyapp-network
+
+volumes:
+  familyapp-pgdata:
+    external: true
 
 networks:
   familyapp-network:
