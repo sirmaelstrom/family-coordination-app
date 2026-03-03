@@ -1,11 +1,19 @@
-# Production override - use host nginx instead of familyapp-nginx
+# Production override for thedarktower
 services:
+  postgres:
+    # Override: bind mount from .env instead of named volume
+    # Compose merges volume lists — bind mount takes precedence over named volume
+    # for the same container path
+    volumes:
+      - ${POSTGRES_DATA_PATH}:/var/lib/postgresql/data
+      - ./docker/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+
   app:
     ports:
       - "8085:8080"
     environment:
       SITE_ADMIN_EMAILS: "${SITE_ADMIN_EMAILS:-}"
-  
+
   nginx:
     # Disable the bundled nginx - host nginx handles SSL/proxy
     profiles:

@@ -65,7 +65,6 @@ services:
 
 volumes:
   familyapp-pgdata:
-    external: true
 
 networks:
   familyapp-network:
@@ -74,6 +73,3 @@ networks:
 secrets:
   postgres_password:
     file: ${POSTGRES_SECRET_FILE:-./secrets/postgres_password}
-
-# Named volumes removed - using direct bind mounts to avoid Docker Desktop WSL2 issues
-# See: https://github.com/docker/for-win/issues/12742
