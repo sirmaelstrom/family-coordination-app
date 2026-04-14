@@ -29,4 +29,9 @@
     <ProjectReference Include="..\..\src\FamilyCoordinationApp\FamilyCoordinationApp.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Fixtures\YtDlp\*.json" CopyToOutputDirectory="Always" />
+    <Content Include="Fixtures\YtDlp\*.srv1" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+
 </Project>
