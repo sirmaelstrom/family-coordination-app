@@ -1,0 +1,22 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "{\"name\":\"Classic Spaghetti Carbonara\",\"recipeIngredient\":[\"400g spaghetti\",\"200g pancetta or guanciale\",\"4 large eggs\",\"100g Pecorino Romano cheese, grated\",\"1 tsp freshly ground black pepper\",\"Salt for pasta water\"],\"recipeInstructions\":[\"Bring a large pot of heavily salted water to a boil and cook spaghetti until al dente.\",\"Fry pancetta in a large skillet over medium heat until crispy, about 5 minutes.\",\"Whisk together eggs, grated Pecorino Romano, and black pepper in a bowl.\",\"Reserve 1 cup of pasta cooking water, then drain the spaghetti.\",\"Off heat, add hot pasta to the pancetta pan, pour egg mixture over and toss vigorously with pasta water to create a creamy sauce.\",\"Serve immediately topped with extra cheese and black pepper.\"],\"prepTime\":\"PT10M\",\"cookTime\":\"PT20M\",\"recipeYield\":\"4 servings\"}"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 150,
+    "candidatesTokenCount": 280,
+    "totalTokenCount": 430
+  },
+  "modelVersion": "gemini-2.0-flash"
+}

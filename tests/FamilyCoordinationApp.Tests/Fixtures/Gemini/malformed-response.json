@@ -1,0 +1,22 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "{\"name\":\"Pasta Dish\",\"recipeIngredient\":[\"1 cup pasta\",\"2 tbsp olive oil"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "MAX_TOKENS",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 150,
+    "candidatesTokenCount": 100,
+    "totalTokenCount": 250
+  },
+  "modelVersion": "gemini-2.0-flash"
+}
