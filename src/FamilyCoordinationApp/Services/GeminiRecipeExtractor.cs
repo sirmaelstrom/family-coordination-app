@@ -88,7 +88,8 @@ public class GeminiRecipeExtractor(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Gemini API request failed");
+            var sanitizedMessage = SanitizeUrl(ex.Message);
+            logger.LogWarning("Gemini API request failed: {Message}", sanitizedMessage);
             return null;
         }
 
