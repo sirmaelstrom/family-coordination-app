@@ -1,0 +1,40 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "{\"name\":\"Classic Chocolate Chip Cookies\",\"recipeIngredient\":[\"2 1/4 cups all-purpose flour\",\"1 tsp baking soda\",\"1 tsp salt\",\"1 cup butter, softened\",\"3/4 cup granulated sugar\",\"3/4 cup packed brown sugar\",\"2 large eggs\",\"2 tsp vanilla extract\",\"2 cups chocolate chips\"],\"recipeInstructions\":[\"Preheat oven to 375F\",\"Combine flour, baking soda, and salt in a small bowl\",\"Beat butter and sugars in a large bowl until creamy\",\"Add eggs and vanilla to butter mixture and beat well\",\"Gradually blend in the flour mixture\",\"Stir in chocolate chips\",\"Drop rounded tablespoons onto ungreased baking sheets\",\"Bake 9 to 11 minutes or until golden brown\"],\"prepTime\":\"PT15M\",\"cookTime\":\"PT11M\",\"recipeYield\":\"5 dozen cookies\"}"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP",
+      "index": 0,
+      "safetyRatings": [
+        {
+          "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+          "probability": "NEGLIGIBLE"
+        },
+        {
+          "category": "HARM_CATEGORY_HATE_SPEECH",
+          "probability": "NEGLIGIBLE"
+        },
+        {
+          "category": "HARM_CATEGORY_HARASSMENT",
+          "probability": "NEGLIGIBLE"
+        },
+        {
+          "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+          "probability": "NEGLIGIBLE"
+        }
+      ]
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 150,
+    "candidatesTokenCount": 120,
+    "totalTokenCount": 270
+  },
+  "modelVersion": "gemini-2.0-flash"
+}

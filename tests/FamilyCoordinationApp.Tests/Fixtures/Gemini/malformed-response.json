@@ -1,0 +1,23 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "{\"name\":\"Chocolate Cake\",\"recipeIngredient\":[\"2 cups flour\",\"1 cup sugar"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "MAX_TOKENS",
+      "index": 0,
+      "safetyRatings": []
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 150,
+    "candidatesTokenCount": 500,
+    "totalTokenCount": 650
+  },
+  "modelVersion": "gemini-2.0-flash"
+}

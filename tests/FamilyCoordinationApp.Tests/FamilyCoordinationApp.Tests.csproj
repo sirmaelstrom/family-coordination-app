@@ -29,4 +29,10 @@
     <ProjectReference Include="..\..\src\FamilyCoordinationApp\FamilyCoordinationApp.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Fixtures\Gemini\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>
