@@ -1,0 +1,24 @@
+{
+  "id": "xvJ8TKjWKZY",
+  "title": "Perfect Pasta Aglio e Olio",
+  "description": "Today we're making one of the greatest pasta dishes of all time: pasta aglio e olio. Just garlic, olive oil, and pasta — done right.\n\nIngredients:\n- 400g spaghetti\n- 8 cloves garlic, thinly sliced\n- 1/3 cup good olive oil\n- 1/2 tsp red pepper flakes\n- 1/4 cup fresh parsley, chopped\n- Salt and pepper to taste\n\nWatch to see how a few humble ingredients become something spectacular.",
+  "channel": "Binging with Babish",
+  "duration": 487.0,
+  "subtitles": {},
+  "automatic_captions": {
+    "en": [
+      {
+        "ext": "json3",
+        "url": "https://www.youtube.com/api/timedtext?v=xvJ8TKjWKZY&lang=en&fmt=json3"
+      },
+      {
+        "ext": "srv1",
+        "url": "https://www.youtube.com/api/timedtext?v=xvJ8TKjWKZY&lang=en&fmt=srv1"
+      },
+      {
+        "ext": "vtt",
+        "url": "https://www.youtube.com/api/timedtext?v=xvJ8TKjWKZY&lang=en&fmt=vtt"
+      }
+    ]
+  }
+}
