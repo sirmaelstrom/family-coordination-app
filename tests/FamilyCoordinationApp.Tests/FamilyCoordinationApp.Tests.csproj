@@ -29,4 +29,8 @@
     <ProjectReference Include="..\..\src\FamilyCoordinationApp\FamilyCoordinationApp.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Fixtures/**/*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="FamilyCoordinationApp.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
   <ItemGroup>

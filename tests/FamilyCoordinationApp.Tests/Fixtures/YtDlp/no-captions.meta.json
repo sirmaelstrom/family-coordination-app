@@ -1,0 +1,17 @@
+{
+  "id": "xyz789abc00",
+  "title": "Simple Pasta Recipe | No Talking, Just Cooking",
+  "description": "A simple, silent pasta recipe. Watch and cook along.",
+  "duration": 180.0,
+  "channel": "Silent Kitchen",
+  "channel_id": "UCsilentcooking12345678",
+  "uploader": "Silent Kitchen",
+  "upload_date": "20230501",
+  "view_count": 12500,
+  "like_count": 890,
+  "webpage_url": "https://www.youtube.com/watch?v=xyz789abc00",
+  "extractor": "youtube",
+  "extractor_key": "Youtube",
+  "subtitles": {},
+  "automatic_captions": {}
+}

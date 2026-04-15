@@ -1,0 +1,38 @@
+{
+  "id": "2Tt5AVwGRh0",
+  "title": "Perfect Scrambled Eggs | Basics with Babish",
+  "description": "This week on Basics with Babish, we're making scrambled eggs three ways: French, British, and American. All approaches, no wrong answers.\n\nBabish Culinary Universe on Socials:\nInstagram: @babishculinaryuniverse\nTikTok: @babishculinaryuniverse",
+  "duration": 542.0,
+  "channel": "Babish Culinary Universe",
+  "channel_id": "UCJHA_jMfCvEnv-3kRjTCQXw",
+  "uploader": "Babish Culinary Universe",
+  "upload_date": "20210315",
+  "view_count": 8542301,
+  "like_count": 187543,
+  "webpage_url": "https://www.youtube.com/watch?v=2Tt5AVwGRh0",
+  "extractor": "youtube",
+  "extractor_key": "Youtube",
+  "subtitles": {
+    "en": [
+      {
+        "ext": "srv1",
+        "url": "https://www.youtube.com/api/timedtext?v=2Tt5AVwGRh0&lang=en&fmt=srv1",
+        "name": "English"
+      },
+      {
+        "ext": "vtt",
+        "url": "https://www.youtube.com/api/timedtext?v=2Tt5AVwGRh0&lang=en&fmt=vtt",
+        "name": "English"
+      }
+    ]
+  },
+  "automatic_captions": {
+    "en": [
+      {
+        "ext": "srv1",
+        "url": "https://www.youtube.com/api/timedtext?v=2Tt5AVwGRh0&fmt=srv1&asr_langs=en",
+        "name": "English (auto-generated)"
+      }
+    ]
+  }
+}
