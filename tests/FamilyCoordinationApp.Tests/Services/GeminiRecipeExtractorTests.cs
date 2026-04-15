@@ -43,7 +43,7 @@ public class GeminiRecipeExtractorTests
     }
 
     private static string LoadFixture(string filename) =>
-        File.ReadAllText(Path.Combine("Fixtures", "Gemini", filename));
+        File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Gemini", filename));
 
     // ── Successful extraction ─────────────────────────────────────────────────
 
