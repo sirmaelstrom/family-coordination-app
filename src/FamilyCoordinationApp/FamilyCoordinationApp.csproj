@@ -10,6 +10,8 @@
     <!-- Suppress false positive Razor analyzer warning for MudCheckbox -->
     <!-- See: https://github.com/dotnet/razor/issues/... (known analyzer bug) -->
     <NoWarn>$(NoWarn);RZ10012</NoWarn>
+    <!-- Pin Version to prevent 'N/A' env var from poisoning NuGet restore -->
+    <Version>1.0.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

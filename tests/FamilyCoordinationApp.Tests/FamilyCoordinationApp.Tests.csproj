@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- Pin Version to prevent 'N/A' env var from poisoning NuGet restore -->
+    <Version>1.0.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
