@@ -6,6 +6,10 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- Explicit version prevents the worktree `version=N/A` env var from
+         propagating through MSBuild into PackageVersion, which causes NuGet
+         restore to fail with "'N/A' is not a valid version string". -->
+    <Version>1.0.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
