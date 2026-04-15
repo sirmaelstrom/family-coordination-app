@@ -6,13 +6,10 @@ namespace FamilyCoordinationApp.Services;
 /// </summary>
 public static class YouTubeUrlHelper
 {
-    private static readonly string[] YouTubeDomains =
-    [
-        "youtube.com",
-        "www.youtube.com",
-        "m.youtube.com",
-        "youtu.be",
-    ];
+    private static readonly HashSet<string> YouTubeHosts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "youtube.com", "m.youtube.com", "youtu.be"
+    };
 
     /// <summary>
     /// Returns true if the given URL points to a YouTube video or playlist.
@@ -23,6 +20,19 @@ public static class YouTubeUrlHelper
             return false;
 
         var host = uri.Host.ToLowerInvariant();
-        return Array.Exists(YouTubeDomains, d => d == host);
+        if (host.StartsWith("www."))
+            host = host[4..];
+
+        if (!YouTubeHosts.Contains(host))
+            return false;
+
+        // youtu.be short links: path IS the video ID (e.g., youtu.be/dQw4w9WgXcQ)
+        if (host == "youtu.be")
+            return uri.AbsolutePath.Length > 1; // must have a video ID after "/"
+
+        // youtube.com variants: must be a video-like path
+        return uri.AbsolutePath.StartsWith("/watch")
+            || uri.AbsolutePath.StartsWith("/shorts/")
+            || uri.AbsolutePath.StartsWith("/embed/");
     }
 }

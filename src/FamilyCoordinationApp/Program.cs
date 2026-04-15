@@ -104,6 +104,20 @@ builder.Services.AddSingleton<IUrlValidator, UrlValidator>();
 builder.Services.AddScoped<IRecipeScraperService, RecipeScraperService>();
 builder.Services.AddScoped<IRecipeImportService, RecipeImportService>();
 
+// YouTube recipe extraction services
+builder.Services.AddScoped<IYtDlpService, YtDlpService>();
+builder.Services.AddScoped<IDescriptionRecipeExtractor, DescriptionRecipeExtractor>();
+builder.Services.AddScoped<IGeminiRecipeExtractor, GeminiRecipeExtractor>();
+builder.Services.AddScoped<IYouTubeRecipeExtractor, YouTubeRecipeExtractor>();
+
+// Named HttpClient for Gemini API (API key in URL — suppress verbose logging)
+builder.Services.AddHttpClient("Gemini", client =>
+{
+    client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Logging.AddFilter("System.Net.Http.HttpClient.Gemini", LogLevel.Warning);
+
 // HttpClient for recipe scraping with Polly resilience
 builder.Services.AddHttpClient("RecipeScraper")
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
