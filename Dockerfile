@@ -27,6 +27,12 @@ RUN mkdir -p /app/logs /app/wwwroot/uploads /root/.aspnet/DataProtection-Keys
 # Copy published app
 COPY --from=build /app/publish .
 
+# Install yt-dlp standalone binary (no Python dependency)
+# Pin to a specific release for reproducible builds. Update by changing the version tag.
+ARG YTDLP_VERSION=2025.03.31
+ADD https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp_linux /usr/local/bin/yt-dlp
+RUN chmod +x /usr/local/bin/yt-dlp
+
 # Set environment variables
 ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production

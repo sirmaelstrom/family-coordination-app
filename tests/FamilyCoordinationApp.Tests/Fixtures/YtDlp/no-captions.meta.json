@@ -1,0 +1,13 @@
+{
+  "id": "noCaptionsVid1",
+  "title": "Simple Roasted Vegetables",
+  "description": "A quick recipe for roasted vegetables with olive oil and herbs.",
+  "duration": 245,
+  "channel": "QuickCookingChannel",
+  "channel_id": "UCfakeChannelId12345",
+  "channel_url": "https://www.youtube.com/channel/UCfakeChannelId12345",
+  "upload_date": "20230101",
+  "view_count": 5432,
+  "subtitles": {},
+  "automatic_captions": {}
+}

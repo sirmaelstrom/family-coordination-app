@@ -37,6 +37,8 @@
     <Content Include="Fixtures\Descriptions\*.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="Fixtures\YtDlp\*.json" CopyToOutputDirectory="Always" />
+    <Content Include="Fixtures\YtDlp\*.srv1" CopyToOutputDirectory="Always" />
   </ItemGroup>
 
 </Project>
