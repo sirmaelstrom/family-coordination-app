@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- Explicitly override any 'version' env var (e.g. "N/A") that would fail NuGet version parsing -->
+    <Version>1.0.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
