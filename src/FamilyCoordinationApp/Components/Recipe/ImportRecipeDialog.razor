@@ -18,7 +18,7 @@
             Paste a recipe URL to import. Tested and working with:
         </MudText>
         <MudText Typo="Typo.body2" Class="mb-4" Style="color: var(--mud-palette-text-secondary);">
-            ✓ AllRecipes • BBC Good Food • NYT Cooking • Serious Eats
+            ✓ AllRecipes • BBC Good Food • NYT Cooking • Serious Eats • YouTube
         </MudText>
 
         <MudTextField @bind-Value="_url"
@@ -35,7 +35,16 @@
         {
             <div class="d-flex align-center gap-3 mb-4">
                 <MudProgressCircular Indeterminate="true" Size="Size.Small" />
-                <MudText>Importing recipe...</MudText>
+                <MudText>
+                    @if (IsYouTubeImport())
+                    {
+                        @:Extracting recipe from video... This may take a moment.
+                    }
+                    else
+                    {
+                        @:Importing recipe...
+                    }
+                </MudText>
             </div>
         }
 
@@ -100,6 +109,9 @@
     private PartialRecipeData? _partialData;
     private Recipe? _existingRecipe;
     private bool _duplicateWarningShown;
+
+    private bool IsYouTubeImport() =>
+        !string.IsNullOrWhiteSpace(_url) && YouTubeUrlHelper.IsYouTubeUrl(_url);
 
     private void Cancel() => MudDialog.Cancel();
 
