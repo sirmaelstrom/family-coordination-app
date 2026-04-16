@@ -25,10 +25,16 @@ WORKDIR /app
 RUN mkdir -p /app/logs /app/wwwroot/uploads /root/.aspnet/DataProtection-Keys
 
 # Install yt-dlp standalone binary for YouTube recipe extraction.
-# Pinned for reproducibility — bump the ARG to update.
+# Pinned for reproducibility — bump the ARG to update. curl is installed
+# temporarily and removed in the same layer to keep the image slim.
 ARG YTDLP_VERSION=2025.03.31
-ADD https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp_linux /usr/local/bin/yt-dlp
-RUN chmod +x /usr/local/bin/yt-dlp
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && curl -fsSL -o /usr/local/bin/yt-dlp \
+       "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp_linux" \
+    && chmod +x /usr/local/bin/yt-dlp \
+    && apt-get purge -y --auto-remove curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy published app
 COPY --from=build /app/publish .

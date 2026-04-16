@@ -12,7 +12,7 @@ public class GeminiRecipeExtractor(
     IConfiguration configuration,
     ILogger<GeminiRecipeExtractor> logger) : IGeminiRecipeExtractor
 {
-    private const string EndpointPath = "v1beta/models/gemini-2.0-flash:generateContent";
+    private const string DefaultModel = "gemini-2.0-flash";
     private const int DescriptionContextChars = 500;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -39,8 +39,13 @@ public class GeminiRecipeExtractor(
         var prompt = BuildPrompt(transcriptText, videoTitle, videoDescription);
         var requestBody = BuildRequestBody(prompt);
 
+        var model = configuration["GEMINI_MODEL"];
+        if (string.IsNullOrWhiteSpace(model))
+            model = DefaultModel;
+
+        var endpointPath = $"v1beta/models/{model}:generateContent";
         var client = httpClientFactory.CreateClient("Gemini");
-        var requestUri = $"{EndpointPath}?key={apiKey}";
+        var requestUri = $"{endpointPath}?key={apiKey}";
 
         using var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
         {
@@ -56,12 +61,12 @@ public class GeminiRecipeExtractor(
         catch (HttpRequestException ex)
         {
             logger.LogWarning("Gemini API request failed: {Message} (endpoint: {Endpoint})",
-                ex.Message, SanitizeUrl(EndpointPath));
+                ex.Message, SanitizeUrl(endpointPath));
             return null;
         }
         catch (TaskCanceledException)
         {
-            logger.LogWarning("Gemini API request timed out (endpoint: {Endpoint})", SanitizeUrl(EndpointPath));
+            logger.LogWarning("Gemini API request timed out (endpoint: {Endpoint})", SanitizeUrl(endpointPath));
             return null;
         }
 
@@ -71,7 +76,7 @@ public class GeminiRecipeExtractor(
             {
                 logger.LogWarning(
                     "Gemini API returned {StatusCode} for endpoint {Endpoint}",
-                    (int)response.StatusCode, SanitizeUrl(EndpointPath));
+                    (int)response.StatusCode, SanitizeUrl(endpointPath));
                 return null;
             }
 
