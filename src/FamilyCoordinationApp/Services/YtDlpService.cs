@@ -80,13 +80,16 @@ public class YtDlpService(ILogger<YtDlpService> logger) : IYtDlpService
     {
         // --write-info-json writes metadata to {id}.info.json on disk.
         // --dump-json would print JSON to stdout but suppresses subtitle downloads.
+        // --sub-format uses a slash-separated preference list — if srv1 fails
+        // (YouTube periodically breaks individual format endpoints) yt-dlp falls
+        // back to srv3. Both are XML and handled by ParseSubtitle.
         return
         [
             "--write-info-json",
             "--write-sub",
             "--write-auto-sub",
             "--sub-lang", "en",
-            "--sub-format", "srv1",
+            "--sub-format", "srv1/srv3",
             "--skip-download",
             "--no-warnings",
             "-o", outputTemplate,
@@ -146,15 +149,17 @@ public class YtDlpService(ILogger<YtDlpService> logger) : IYtDlpService
 
     private string? ReadTranscript(string tempDir, string videoId)
     {
-        // yt-dlp writes subtitles as {id}.en.srv1 (or sometimes {id}.en-*.srv1)
-        var candidates = Directory.GetFiles(tempDir, $"{videoId}*.srv1");
+        // yt-dlp writes subtitles as {id}.en.{srv1|srv3} (or sometimes {id}.en-*.{srv1|srv3})
+        var candidates = Directory.GetFiles(tempDir, $"{videoId}*.srv1")
+            .Concat(Directory.GetFiles(tempDir, $"{videoId}*.srv3"))
+            .ToArray();
         if (candidates.Length == 0)
             return null;
 
         try
         {
             var xml = File.ReadAllText(candidates[0]);
-            return ParseSrv1(xml);
+            return ParseSubtitle(xml);
         }
         catch (Exception ex)
         {
@@ -181,7 +186,7 @@ public class YtDlpService(ILogger<YtDlpService> logger) : IYtDlpService
         }
     }
 
-    internal static string? ParseSrv1(string xml)
+    internal static string? ParseSubtitle(string xml)
     {
         if (string.IsNullOrWhiteSpace(xml))
             return null;
@@ -200,7 +205,10 @@ public class YtDlpService(ILogger<YtDlpService> logger) : IYtDlpService
         if (root == null)
             return null;
 
-        var texts = root.Elements("text")
+        // srv1: <transcript><text>...</text></transcript>
+        // srv3: <timedtext format="3"><body><p>...</p></body></timedtext>
+        var segmentName = root.Name.LocalName == "timedtext" ? "p" : "text";
+        var texts = root.Descendants(segmentName)
             .Select(e => StripHtml(e.Value))
             .Where(s => !string.IsNullOrWhiteSpace(s));
 

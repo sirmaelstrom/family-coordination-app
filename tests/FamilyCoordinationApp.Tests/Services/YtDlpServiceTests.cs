@@ -19,7 +19,7 @@ public class YtDlpServiceTests
         args.Should().Contain("--write-sub");
         args.Should().Contain("--write-auto-sub");
         args.Should().Contain("--skip-download");
-        args.Should().Contain("srv1");
+        args.Should().Contain("srv1/srv3");
         args.Should().Contain("https://youtu.be/abc");
     }
 
@@ -49,10 +49,10 @@ public class YtDlpServiceTests
     }
 
     [Fact]
-    public void ParseSrv1_StripsHtmlAndCollapsesWhitespace()
+    public void ParseSubtitle_Srv1_StripsHtmlAndCollapsesWhitespace()
     {
         var xml = Fixture("sample-video.en.srv1");
-        var transcript = YtDlpService.ParseSrv1(xml);
+        var transcript = YtDlpService.ParseSubtitle(xml);
 
         transcript.Should().NotBeNull();
         transcript!.Should().Contain("chocolate chip cookies");
@@ -62,9 +62,27 @@ public class YtDlpServiceTests
     }
 
     [Fact]
-    public void ParseSrv1_EmptyOrInvalid_ReturnsNull()
+    public void ParseSubtitle_Srv3_ExtractsFromPElements()
     {
-        YtDlpService.ParseSrv1("").Should().BeNull();
-        YtDlpService.ParseSrv1("<not xml").Should().BeNull();
+        var xml = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <timedtext format="3">
+          <body>
+            <p t="0" d="2000">Preheat the oven to 350.</p>
+            <p t="2000" d="3000">Mix flour and sugar together.</p>
+          </body>
+        </timedtext>
+        """;
+
+        var transcript = YtDlpService.ParseSubtitle(xml);
+
+        transcript.Should().Be("Preheat the oven to 350. Mix flour and sugar together.");
+    }
+
+    [Fact]
+    public void ParseSubtitle_EmptyOrInvalid_ReturnsNull()
+    {
+        YtDlpService.ParseSubtitle("").Should().BeNull();
+        YtDlpService.ParseSubtitle("<not xml").Should().BeNull();
     }
 }
