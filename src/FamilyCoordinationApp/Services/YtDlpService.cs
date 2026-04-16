@@ -31,10 +31,13 @@ public class YtDlpService(ILogger<YtDlpService> logger) : IYtDlpService
 
             var (exitCode, _, stderr) = await RunProcessAsync(args, timeoutCts.Token);
 
+            // yt-dlp returns non-zero when any requested artifact fails (e.g. subtitle download
+            // errors with "Did not get any data blocks" even on videos with available captions).
+            // The .info.json is usually written regardless. Fall through and check for it before
+            // giving up — the description path alone can still produce a recipe.
             if (exitCode != 0)
             {
                 logger.LogWarning("yt-dlp exited with code {ExitCode}. stderr: {Stderr}", exitCode, Truncate(stderr, 500));
-                return null;
             }
 
             var metadata = ReadMetadata(tempDir);

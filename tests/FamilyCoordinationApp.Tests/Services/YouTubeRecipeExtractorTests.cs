@@ -84,19 +84,42 @@ public class YouTubeRecipeExtractorTests
     }
 
     [Fact]
-    public async Task ExtractRecipeAsync_NoTranscriptAndNoDescriptionRecipe_ReturnsNull()
+    public async Task ExtractRecipeAsync_NoTranscriptButDescriptionPresent_FallsBackToLlmWithDescription()
     {
         var videoData = new YouTubeVideoData
         {
             VideoId = "abc",
             Title = "Cake",
-            Description = "just a description",
+            Description = "ingredients list without parseable instructions header",
             Transcript = null
         };
+        var geminiSchema = new RecipeSchema { Name = "Cake", RecipeIngredient = new[] { "flour" } };
+
         _ytDlpMock.Setup(s => s.ExtractVideoDataAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(videoData);
         _descriptionMock.Setup(d => d.ExtractFromDescription(It.IsAny<string>(), It.IsAny<string?>()))
             .Returns((RecipeSchema?)null);
+        _geminiMock.Setup(g => g.ExtractFromTranscriptAsync(
+                videoData.Description!, "Cake", videoData.Description, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(geminiSchema);
+
+        var result = await BuildSut().ExtractRecipeAsync("https://youtu.be/abc");
+
+        result.Should().BeSameAs(geminiSchema);
+    }
+
+    [Fact]
+    public async Task ExtractRecipeAsync_NoTranscriptAndNoDescription_ReturnsNull()
+    {
+        var videoData = new YouTubeVideoData
+        {
+            VideoId = "abc",
+            Title = "Cake",
+            Description = null,
+            Transcript = null
+        };
+        _ytDlpMock.Setup(s => s.ExtractVideoDataAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(videoData);
 
         var result = await BuildSut().ExtractRecipeAsync("https://youtu.be/abc");
 

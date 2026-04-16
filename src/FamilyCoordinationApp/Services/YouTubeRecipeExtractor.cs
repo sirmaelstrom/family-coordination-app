@@ -28,18 +28,29 @@ public class YouTubeRecipeExtractor(
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(videoData.Transcript))
+        // LLM fallback: prefer the transcript when we have one, but fall back to the description
+        // when subtitles failed to download. Many cooking videos put the full recipe in the
+        // description but don't use a parseable "Instructions:" header, so the heuristic misses
+        // and the LLM earns its keep.
+        var llmInputText = !string.IsNullOrWhiteSpace(videoData.Transcript)
+            ? videoData.Transcript
+            : videoData.Description;
+
+        if (!string.IsNullOrWhiteSpace(llmInputText))
         {
-            var fromTranscript = await geminiExtractor.ExtractFromTranscriptAsync(
-                videoData.Transcript,
+            var fromLlm = await geminiExtractor.ExtractFromTranscriptAsync(
+                llmInputText,
                 videoData.Title,
                 videoData.Description,
                 cancellationToken);
 
-            if (fromTranscript != null)
+            if (fromLlm != null)
             {
-                logger.LogInformation("Recipe extracted from transcript via LLM for video {VideoId}", videoData.VideoId);
-                return fromTranscript;
+                logger.LogInformation(
+                    "Recipe extracted via LLM for video {VideoId} (source={Source})",
+                    videoData.VideoId,
+                    !string.IsNullOrWhiteSpace(videoData.Transcript) ? "transcript" : "description");
+                return fromLlm;
             }
         }
 
