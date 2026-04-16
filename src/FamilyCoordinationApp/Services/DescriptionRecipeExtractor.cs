@@ -21,7 +21,7 @@ public class DescriptionRecipeExtractor(ILogger<DescriptionRecipeExtractor> logg
         "instructions", "directions", "method", "steps", "preparation"
     ];
 
-    private static readonly Regex ListItemRegex = new(@"^\s*(?:[-*•●▪]|(?:\d+[\.\)]))\s+(.+)$", RegexOptions.Compiled);
+    private static readonly Regex ListItemRegex = new(@"^\s*(?:[-*•●▪►]|(?:\d+[\.\)]))\s+(.+)$", RegexOptions.Compiled);
     private static readonly Regex QuantityRegex = new(
         @"^\s*(?:\d+(?:[\.\/]\d+)?|\d+\s+\d+/\d+|½|¼|¾|⅓|⅔|⅛|⅜|⅝|⅞)\s*\w",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -105,11 +105,11 @@ public class DescriptionRecipeExtractor(ILogger<DescriptionRecipeExtractor> logg
         var normalized = line.TrimEnd(':', '-', ' ').Trim().ToLowerInvariant();
 
         foreach (var header in IngredientHeaders)
-            if (normalized == header || normalized.StartsWith(header + ":"))
+            if (normalized == header || normalized.StartsWith(header + " ") || normalized.StartsWith(header + ":"))
                 return Section.Ingredients;
 
         foreach (var header in InstructionHeaders)
-            if (normalized == header || normalized.StartsWith(header + ":"))
+            if (normalized == header || normalized.StartsWith(header + " ") || normalized.StartsWith(header + ":"))
                 return Section.Instructions;
 
         // Short standalone header-like lines ("Equipment:", "Tools:")
