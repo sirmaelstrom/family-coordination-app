@@ -56,6 +56,7 @@ public class YtDlpService(ILogger<YtDlpService> logger) : IYtDlpService
                 Description = metadata.Description,
                 DurationSeconds = metadata.Duration,
                 Channel = metadata.Channel,
+                ThumbnailUrl = metadata.Thumbnail,
                 Transcript = transcript
             };
         }

@@ -109,6 +109,84 @@ public class YouTubeRecipeExtractorTests
     }
 
     [Fact]
+    public async Task ExtractRecipeAsync_DescriptionPath_StampsThumbnailAndDescription()
+    {
+        var videoData = new YouTubeVideoData
+        {
+            VideoId = "abc",
+            Title = "Cake",
+            Description = "Short blurb about cake",
+            ThumbnailUrl = "https://i.ytimg.com/vi/abc/maxresdefault.jpg",
+            Transcript = null
+        };
+        var schema = new RecipeSchema { Name = "Cake", RecipeIngredient = new[] { "1 cup flour" } };
+
+        _ytDlpMock.Setup(s => s.ExtractVideoDataAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(videoData);
+        _descriptionMock.Setup(d => d.ExtractFromDescription(It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns(schema);
+
+        var result = await BuildSut().ExtractRecipeAsync("https://youtu.be/abc");
+
+        result.Should().BeSameAs(schema);
+        result!.Image.Should().Be("https://i.ytimg.com/vi/abc/maxresdefault.jpg");
+        result.Description.Should().Be("Short blurb about cake");
+    }
+
+    [Fact]
+    public async Task ExtractRecipeAsync_StampDoesNotOverrideExistingValues()
+    {
+        var videoData = new YouTubeVideoData
+        {
+            VideoId = "abc",
+            Title = "Cake",
+            Description = "video description",
+            ThumbnailUrl = "https://i.ytimg.com/vi/abc/maxresdefault.jpg",
+            Transcript = null
+        };
+        var schema = new RecipeSchema
+        {
+            Name = "Cake",
+            Image = "https://existing-image.example.com/cake.jpg",
+            Description = "existing description"
+        };
+
+        _ytDlpMock.Setup(s => s.ExtractVideoDataAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(videoData);
+        _descriptionMock.Setup(d => d.ExtractFromDescription(It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns(schema);
+
+        var result = await BuildSut().ExtractRecipeAsync("https://youtu.be/abc");
+
+        result!.Image.Should().Be("https://existing-image.example.com/cake.jpg");
+        result.Description.Should().Be("existing description");
+    }
+
+    [Fact]
+    public async Task ExtractRecipeAsync_StampsLongDescriptionTruncated()
+    {
+        var longDescription = new string('a', 700);
+        var videoData = new YouTubeVideoData
+        {
+            VideoId = "abc",
+            Title = "Cake",
+            Description = longDescription,
+            Transcript = null
+        };
+        var schema = new RecipeSchema { Name = "Cake" };
+
+        _ytDlpMock.Setup(s => s.ExtractVideoDataAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(videoData);
+        _descriptionMock.Setup(d => d.ExtractFromDescription(It.IsAny<string>(), It.IsAny<string?>()))
+            .Returns(schema);
+
+        var result = await BuildSut().ExtractRecipeAsync("https://youtu.be/abc");
+
+        result!.Description.Should().HaveLength(501);
+        result.Description.Should().EndWith("…");
+    }
+
+    [Fact]
     public async Task ExtractRecipeAsync_NoTranscriptAndNoDescription_ReturnsNull()
     {
         var videoData = new YouTubeVideoData

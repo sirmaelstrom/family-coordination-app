@@ -11,6 +11,7 @@ public class YouTubeVideoData
     public string? Description { get; init; }
     public double? DurationSeconds { get; init; }
     public string? Channel { get; init; }
+    public string? ThumbnailUrl { get; init; }
 
     /// <summary>
     /// Full transcript text concatenated from subtitle segments.

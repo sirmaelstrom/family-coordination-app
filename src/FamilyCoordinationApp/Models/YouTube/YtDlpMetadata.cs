@@ -23,6 +23,9 @@ public class YtDlpMetadata
     [JsonPropertyName("channel")]
     public string? Channel { get; set; }
 
+    [JsonPropertyName("thumbnail")]
+    public string? Thumbnail { get; set; }
+
     [JsonPropertyName("subtitles")]
     public JsonElement? Subtitles { get; set; }
 
