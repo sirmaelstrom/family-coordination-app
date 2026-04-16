@@ -12,7 +12,9 @@ public class GeminiRecipeExtractor(
     IConfiguration configuration,
     ILogger<GeminiRecipeExtractor> logger) : IGeminiRecipeExtractor
 {
-    private const string DefaultModel = "gemini-2.0-flash";
+    // gemini-2.0-flash was deprecated for new API key users (returns 404 on generateContent
+    // even though it appears in ListModels). gemini-2.5-flash is the current stable flash tier.
+    private const string DefaultModel = "gemini-2.5-flash";
     private const int DescriptionContextChars = 500;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
