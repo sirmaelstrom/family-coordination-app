@@ -64,10 +64,18 @@ public class RecipeImportService(
     IRecipeScraperService scraperService,
     IIngredientParser ingredientParser,
     ICategoryInferenceService categoryInference,
+    IYouTubeRecipeExtractor youtubeExtractor,
     ILogger<RecipeImportService> logger) : IRecipeImportService
 {
     public async Task<RecipeImportResult> ImportFromUrlAsync(string url, int householdId, int userId, CancellationToken cancellationToken = default)
     {
+        // Step 0: YouTube URL detection — route to YouTube pipeline before DNS validation.
+        // yt-dlp handles the network request, so SSRF checks against YouTube domains are unnecessary.
+        if (YouTubeUrlHelper.IsYouTubeUrl(url))
+        {
+            return await ImportFromYouTubeAsync(url, householdId, userId, cancellationToken);
+        }
+
         // Step 1: Validate URL (SSRF protection)
         var (isValid, validationError) = urlValidator.ValidateUrl(url);
         if (!isValid)
@@ -123,6 +131,51 @@ public class RecipeImportService(
 
         logger.LogInformation("Successfully imported recipe '{Name}' from {Url}", recipe.Name, url);
 
+        return RecipeImportResult.Succeeded(recipe);
+    }
+
+    private async Task<RecipeImportResult> ImportFromYouTubeAsync(string url, int householdId, int userId, CancellationToken cancellationToken)
+    {
+        RecipeSchema? schema;
+        try
+        {
+            schema = await youtubeExtractor.ExtractRecipeAsync(url, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "YouTube extraction threw for {Url}", url);
+            return RecipeImportResult.Failed(
+                "Could not extract recipe from this video.",
+                RecipeImportErrorType.ParsingFailed);
+        }
+
+        if (schema == null)
+        {
+            return RecipeImportResult.Failed(
+                "Could not extract recipe from this video.",
+                RecipeImportErrorType.ParsingFailed);
+        }
+
+        var partialData = ExtractPartialData(schema);
+
+        if (string.IsNullOrWhiteSpace(schema.Name))
+        {
+            return RecipeImportResult.Failed(
+                "Could not extract recipe name from the video.",
+                RecipeImportErrorType.ValidationFailed,
+                partialData);
+        }
+
+        if (schema.RecipeIngredient == null || schema.RecipeIngredient.Length == 0)
+        {
+            return RecipeImportResult.Failed(
+                "Could not extract ingredients from the video. Please add ingredients manually.",
+                RecipeImportErrorType.ValidationFailed,
+                partialData);
+        }
+
+        var recipe = ConvertToRecipeEntity(schema, url, householdId, userId);
+        logger.LogInformation("Successfully imported recipe '{Name}' from YouTube {Url}", recipe.Name, url);
         return RecipeImportResult.Succeeded(recipe);
     }
 

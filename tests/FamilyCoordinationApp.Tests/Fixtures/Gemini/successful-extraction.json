@@ -1,0 +1,15 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "{\"name\":\"Classic Tomato Soup\",\"recipeIngredient\":[\"3 lbs ripe tomatoes\",\"1 yellow onion\",\"4 cloves garlic\",\"3 tbsp olive oil\",\"2 cups vegetable broth\",\"1/2 cup heavy cream\"],\"recipeInstructions\":[\"Preheat oven to 400F.\",\"Roast tomatoes with onion and garlic.\",\"Blend with broth until smooth.\",\"Stir in cream and reheat.\"],\"prepTime\":\"PT10M\",\"cookTime\":\"PT35M\",\"recipeYield\":\"4 servings\"}"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP"
+    }
+  ]
+}

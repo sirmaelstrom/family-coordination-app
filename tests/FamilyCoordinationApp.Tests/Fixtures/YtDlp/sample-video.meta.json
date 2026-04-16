@@ -1,0 +1,13 @@
+{
+  "id": "dQw4w9WgXcQ",
+  "title": "Perfect Chocolate Chip Cookies",
+  "description": "The best cookies ever.\n\nIngredients:\n- 2 cups flour\n- 1 cup sugar\n- 1 cup butter\n\nInstructions:\n1. Mix everything.\n2. Bake at 375F.",
+  "duration": 420.0,
+  "channel": "Test Chef",
+  "subtitles": {},
+  "automatic_captions": {
+    "en": [
+      {"ext": "srv1", "url": "https://example.com/sub.srv1"}
+    ]
+  }
+}

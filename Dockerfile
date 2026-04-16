@@ -24,6 +24,12 @@ WORKDIR /app
 # Create directories for logs, uploads, and data protection keys
 RUN mkdir -p /app/logs /app/wwwroot/uploads /root/.aspnet/DataProtection-Keys
 
+# Install yt-dlp standalone binary for YouTube recipe extraction.
+# Pinned for reproducibility — bump the ARG to update.
+ARG YTDLP_VERSION=2025.03.31
+ADD https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp_linux /usr/local/bin/yt-dlp
+RUN chmod +x /usr/local/bin/yt-dlp
+
 # Copy published app
 COPY --from=build /app/publish .
 
