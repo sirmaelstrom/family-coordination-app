@@ -37,6 +37,7 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       DATAPROTECTION_CERT: ${DATAPROTECTION_CERT:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
     volumes:
       # Direct bind mounts - avoids Docker Desktop WSL2 mount path issues
       - ${APP_DATAPROTECTION_PATH:-./data/dataprotection}:/root/.aspnet/DataProtection-Keys
