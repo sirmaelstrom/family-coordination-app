@@ -29,28 +29,18 @@ public class YtDlpService(ILogger<YtDlpService> logger) : IYtDlpService
             var outputTemplate = Path.Combine(tempDir, "%(id)s");
             var args = BuildArguments(youtubeUrl, outputTemplate);
 
-            var (exitCode, stdout, stderr) = await RunProcessAsync(args, timeoutCts.Token);
+            var (exitCode, _, stderr) = await RunProcessAsync(args, timeoutCts.Token);
 
-            if (exitCode != 0 || string.IsNullOrWhiteSpace(stdout))
+            if (exitCode != 0)
             {
                 logger.LogWarning("yt-dlp exited with code {ExitCode}. stderr: {Stderr}", exitCode, Truncate(stderr, 500));
                 return null;
             }
 
-            YtDlpMetadata? metadata;
-            try
-            {
-                metadata = JsonSerializer.Deserialize<YtDlpMetadata>(stdout);
-            }
-            catch (JsonException ex)
-            {
-                logger.LogWarning(ex, "Failed to deserialize yt-dlp JSON output");
-                return null;
-            }
-
+            var metadata = ReadMetadata(tempDir);
             if (metadata?.Id == null)
             {
-                logger.LogWarning("yt-dlp output missing video id");
+                logger.LogWarning("yt-dlp output missing video id — no .info.json found in {TempDir}", tempDir);
                 return null;
             }
 
@@ -84,9 +74,11 @@ public class YtDlpService(ILogger<YtDlpService> logger) : IYtDlpService
 
     internal static string[] BuildArguments(string url, string outputTemplate)
     {
+        // --write-info-json writes metadata to {id}.info.json on disk.
+        // --dump-json would print JSON to stdout but suppresses subtitle downloads.
         return
         [
-            "--dump-json",
+            "--write-info-json",
             "--write-sub",
             "--write-auto-sub",
             "--sub-lang", "en",
@@ -163,6 +155,24 @@ public class YtDlpService(ILogger<YtDlpService> logger) : IYtDlpService
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to parse subtitle file {File}", candidates[0]);
+            return null;
+        }
+    }
+
+    private YtDlpMetadata? ReadMetadata(string tempDir)
+    {
+        var candidates = Directory.GetFiles(tempDir, "*.info.json");
+        if (candidates.Length == 0)
+            return null;
+
+        try
+        {
+            var json = File.ReadAllText(candidates[0]);
+            return JsonSerializer.Deserialize<YtDlpMetadata>(json);
+        }
+        catch (JsonException ex)
+        {
+            logger.LogWarning(ex, "Failed to deserialize yt-dlp metadata from {File}", candidates[0]);
             return null;
         }
     }

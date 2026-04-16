@@ -15,7 +15,7 @@ public class YtDlpServiceTests
     {
         var args = YtDlpService.BuildArguments("https://youtu.be/abc", "/tmp/abc/%(id)s");
 
-        args.Should().Contain("--dump-json");
+        args.Should().Contain("--write-info-json");
         args.Should().Contain("--write-sub");
         args.Should().Contain("--write-auto-sub");
         args.Should().Contain("--skip-download");
