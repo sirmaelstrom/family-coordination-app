@@ -13,6 +13,15 @@
 
 set -euo pipefail
 
+# ── Concurrency lock ────────────────────────────────────────────────
+# Prevent overlapping deploys (CI rapid-fire commits cause race conditions)
+LOCK_FILE="/tmp/familyapp-deploy.lock"
+exec 200>"$LOCK_FILE"
+if ! flock -n 200; then
+  echo "Another deploy is already running — waiting up to 120s..."
+  flock -w 120 200 || { echo "ERROR: Timed out waiting for deploy lock"; exit 1; }
+fi
+
 # ── Config ──────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -102,6 +111,7 @@ echo "" >> .env
 echo "GOOGLE_CLIENT_ID=$(get_secret GOOGLE_CLIENT_ID)" >> .env
 echo "GOOGLE_CLIENT_SECRET=$(get_secret GOOGLE_CLIENT_SECRET)" >> .env
 echo "DATAPROTECTION_CERT=$(get_secret DATAPROTECTION_CERT)" >> .env
+echo "GEMINI_API_KEY=$(get_secret GEMINI_API_KEY)" >> .env
 chmod 600 .env
 
 # Write Postgres password as Docker secret file
