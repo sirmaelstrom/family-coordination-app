@@ -38,6 +38,7 @@ services:
       DATAPROTECTION_CERT: ${DATAPROTECTION_CERT:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
+      SHOPPING_LIST_USE_ISLAND: ${SHOPPING_LIST_USE_ISLAND:-false}
     volumes:
       # Direct bind mounts - avoids Docker Desktop WSL2 mount path issues
       - ${APP_DATAPROTECTION_PATH:-./data/dataprotection}:/root/.aspnet/DataProtection-Keys

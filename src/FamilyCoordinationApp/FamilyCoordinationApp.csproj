@@ -16,6 +16,24 @@
     <InternalsVisibleTo Include="FamilyCoordinationApp.Tests" />
   </ItemGroup>
 
+  <!--
+    Copy the built shopping-list island into wwwroot before build.
+    Run `npm run build` in frontend/shopping-list/ first (or let the
+    Docker build do it via the node-build stage). If dist/ doesn't exist,
+    the target is skipped silently and the island endpoint 404s — caller
+    falls back to the Blazor page via SHOPPING_LIST_USE_ISLAND toggle.
+  -->
+  <Target Name="CopyShoppingListIsland"
+          BeforeTargets="AssignTargetPaths"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\shopping-list\dist')">
+    <ItemGroup>
+      <_IslandFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\shopping-list\dist\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_IslandFiles)"
+          DestinationFiles="@(_IslandFiles->'$(MSBuildThisFileDirectory)wwwroot\islands\shopping-list\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.4.0" />
     <PackageReference Include="blazor-dragdrop" Version="2.6.1" />

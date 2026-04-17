@@ -10,4 +10,6 @@
 **/.env*
 !.env.example
 **/node_modules
+frontend/shopping-list/dist
+src/FamilyCoordinationApp/wwwroot/islands
 **/.idea

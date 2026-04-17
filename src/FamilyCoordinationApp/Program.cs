@@ -4,6 +4,7 @@ using System.Security.Cryptography.X509Certificates;
 using FamilyCoordinationApp.Authorization;
 using FamilyCoordinationApp.Components;
 using FamilyCoordinationApp.Data;
+using FamilyCoordinationApp.Endpoints;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Interfaces;
 using Microsoft.AspNetCore.Authentication;
@@ -343,6 +344,8 @@ app.UseAuthorization();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+app.MapShoppingListEndpoints();
 
 // Health check endpoint for Docker
 app.MapGet("/health", () => Results.Ok("healthy"));

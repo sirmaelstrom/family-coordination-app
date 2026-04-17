@@ -17,6 +17,7 @@ PUBLISH_DIR="./publish-output"
 DOCKERFILE="Dockerfile.runtime-only"
 IMAGE_NAME="familyapp"
 TAG="${1:-latest}"
+ISLAND_DIR="./frontend/shopping-list"
 
 echo "======================================"
 echo "Family Coordination App - Docker Build"
@@ -24,7 +25,7 @@ echo "======================================"
 echo ""
 
 # Step 1: Clean previous publish output
-echo "[1/3] Cleaning previous publish output..."
+echo "[1/4] Cleaning previous publish output..."
 if [ -d "$PUBLISH_DIR" ]; then
     rm -rf "$PUBLISH_DIR"
     echo "✓ Cleaned $PUBLISH_DIR"
@@ -33,8 +34,28 @@ else
 fi
 echo ""
 
-# Step 2: Publish locally
-echo "[2/3] Publishing application locally..."
+# Step 2: Build Svelte shopping-list island.
+# The MSBuild target CopyShoppingListIsland picks up the dist output during
+# `dotnet publish` and copies it into wwwroot/islands/shopping-list/, which
+# then lands in the publish output and gets baked into the runtime image.
+echo "[2/4] Building shopping-list island..."
+if [ -d "$ISLAND_DIR" ]; then
+    pushd "$ISLAND_DIR" > /dev/null
+    if [ -f package-lock.json ]; then
+        npm ci
+    else
+        npm install --no-audit --no-fund
+    fi
+    npm run build
+    popd > /dev/null
+    echo "✓ Island built"
+else
+    echo "⚠ $ISLAND_DIR not found — skipping island build"
+fi
+echo ""
+
+# Step 3: Publish locally
+echo "[3/4] Publishing application locally..."
 echo "Command: dotnet publish $PROJECT_PATH -c Release -o $PUBLISH_DIR"
 dotnet publish "$PROJECT_PATH" -c Release -o "$PUBLISH_DIR"
 
@@ -45,8 +66,8 @@ fi
 echo "✓ Published to $PUBLISH_DIR"
 echo ""
 
-# Step 3: Build Docker image
-echo "[3/3] Building Docker image..."
+# Step 4: Build Docker image
+echo "[4/4] Building Docker image..."
 echo "Command: docker build -f $DOCKERFILE -t $IMAGE_NAME:$TAG ."
 sudo docker build -f "$DOCKERFILE" -t "$IMAGE_NAME:$TAG" .
 

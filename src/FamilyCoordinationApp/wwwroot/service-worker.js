@@ -1,24 +1,28 @@
 // Service Worker for Family Coordination App
-// Simple caching strategy for PWA support
-// CACHE_VERSION is replaced at build time by the deploy script
-
-const CACHE_VERSION = '__BUILD_TIMESTAMP__';
+// Simple caching strategy for PWA support.
+// CACHE_VERSION was historically replaced at build time by a deploy script, but
+// the placeholder leaked to prod as a literal string, which broke addAll when
+// any listed asset 404'd and left the cache name frozen. We now derive a
+// stable-per-deploy version from the SW script URL (ETag-like) and pre-cache
+// only assets we KNOW exist, so install never fails.
+const CACHE_VERSION = (() => {
+  try {
+    const u = new URL(self.location.href);
+    return u.searchParams.get('v') || u.pathname;
+  } catch {
+    return 'v1';
+  }
+})();
 const CACHE_NAME = `family-app-${CACHE_VERSION}`;
-const STATIC_ASSETS = [
-  '/',
-  '/manifest.json',
-  '/favicon.png',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png'
-];
+const STATIC_ASSETS = ['/', '/manifest.json'];
 
-// Install: Cache static assets
+// Install: Cache static assets. Individual failures must not abort install.
 self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(STATIC_ASSETS))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    await Promise.allSettled(STATIC_ASSETS.map(a => cache.add(a)));
+    await self.skipWaiting();
+  })());
 });
 
 // Activate: Clean up old caches
