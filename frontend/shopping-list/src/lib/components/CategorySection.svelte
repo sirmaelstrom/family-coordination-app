@@ -67,6 +67,7 @@
           flipDurationMs: 150,
           dropTargetStyle: {},
           dragDisabled: false,
+          delayTouchStart: 250,
         }}
         onconsider={handleConsider}
         onfinalize={handleFinalize}

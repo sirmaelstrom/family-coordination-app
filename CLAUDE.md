@@ -115,6 +115,10 @@ Required env vars (set via `.env` on the server, generated from a secrets manage
 ## Corrections
 <!-- Also see global corrections: D:\Development\data\memory\CORRECTIONS.md -->
 
+- [2026-04-16 UTC] PREPEND `sudo` to docker commands on thedarktower over SSH. Reason: docker socket not in user group.
+
+<!-- /reflect completed 2026-04-16 UTC -->
+
 ## Remaining Planned Work
 
 Phases 1-7 complete. Phases 8-9 were deprecated — the gaps are minor and not worth the effort given the app works well as-is.
