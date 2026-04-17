@@ -646,7 +646,7 @@
 
   .sl-fab {
     position: fixed;
-    bottom: 24px;
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
     right: 24px;
     width: 56px;
     height: 56px;
@@ -661,7 +661,13 @@
     transition:
       background-color 0.15s,
       transform 0.1s;
-    z-index: 10;
+    z-index: 1050;
+  }
+  /* Mobile: clear the MainLayout bottom nav + safe-area inset. */
+  @media (max-width: 960px) {
+    .sl-fab {
+      bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+    }
   }
   .sl-fab:hover:not(:disabled) {
     background: var(--color-primary-hover);
