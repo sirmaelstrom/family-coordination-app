@@ -148,9 +148,25 @@
     color: var(--color-text-disabled);
     cursor: grab;
     -webkit-tap-highlight-color: transparent;
+    /* Touch drag initiates only from the handle. `touch-action: none` tells
+       the browser not to interpret touches here as scroll/zoom so
+       svelte-dnd-action gets the full gesture. Body/buttons use pan-y or
+       manipulation, which means touching them can scroll or tap but never
+       starts a drag. This replaces the delayTouchStart long-press hack and
+       gives a clean spatial separation: grip the handle to drag, tap
+       anywhere else for normal interactions. */
+    touch-action: none;
   }
   .sl-drag-handle:active {
     cursor: grabbing;
+  }
+  @media (pointer: coarse) {
+    /* Bigger grab target on touch; the 24×32 hit-zone was fiddly on Android. */
+    .sl-drag-handle {
+      width: 32px;
+      height: 44px;
+      color: var(--color-text-muted);
+    }
   }
 
   .sl-checkbox {
@@ -169,6 +185,7 @@
       background-color 0.15s,
       border-color 0.15s;
     -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
   }
   .sl-item-row.checked .sl-checkbox {
     background: var(--color-primary);
@@ -194,6 +211,7 @@
     cursor: pointer;
     transition: background-color 0.15s;
     -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
   }
   .sl-qty-btn:hover:not(:disabled) {
     background: var(--color-action-hover);
@@ -229,6 +247,9 @@
     flex-direction: column;
     gap: 2px;
     -webkit-tap-highlight-color: transparent;
+    /* pan-y allows vertical scroll through the row, `manipulation` allows
+       the click. Neither can start a drag — only the handle can. */
+    touch-action: pan-y;
   }
   .sl-name {
     font-size: 1rem;
@@ -270,6 +291,7 @@
     cursor: pointer;
     transition: background-color 0.15s;
     -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
   }
   .sl-icon-btn:hover {
     background: var(--color-action-hover);
