@@ -12,13 +12,14 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject IJSRuntime JS
+@inject IWebHostEnvironment HostEnv
 
 @if (_useIsland && _shell is not null)
 {
     <PageTitle>Shopping List - Family Kitchen</PageTitle>
 
     <HeadContent>
-        <link rel="stylesheet" href="/islands/shopping-list/index.css" />
+        <link rel="stylesheet" href="/islands/shopping-list/index.css?v=@IslandVersion" />
     </HeadContent>
 
     <div id="shopping-list-root"
@@ -68,8 +69,27 @@ else
         // on the same circuit reuses the module, but mountRoot is idempotent
         // and re-mounts against the fresh <div id="shopping-list-root">.
         _islandModule = await JS.InvokeAsync<IJSObjectReference>(
-            "import", "/islands/shopping-list/index.js");
+            "import", $"/islands/shopping-list/index.js?v={IslandVersion}");
         await JS.InvokeVoidAsync("ShoppingListIsland.mount", "shopping-list-root");
+    }
+
+    // Cache-bust the island URLs per deploy. The published bundle's mtime is
+    // set by the Docker build, so it changes on every image build even when
+    // the file contents are byte-identical. Computed once per process.
+    private static string? _islandVersion;
+    private string IslandVersion => _islandVersion ??= ComputeIslandVersion();
+
+    private string ComputeIslandVersion()
+    {
+        try
+        {
+            var path = Path.Combine(HostEnv.WebRootPath, "islands", "shopping-list", "index.js");
+            return new DateTimeOffset(File.GetLastWriteTimeUtc(path)).ToUnixTimeSeconds().ToString();
+        }
+        catch
+        {
+            return "0";
+        }
     }
 
     private bool IsIslandEnabled()
