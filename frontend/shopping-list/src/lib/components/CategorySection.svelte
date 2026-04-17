@@ -67,6 +67,12 @@
           flipDurationMs: 150,
           dropTargetStyle: {},
           dragDisabled: false,
+          // Touch devices: require a 500ms long-press before drag engages.
+          // The library defaults to 80ms, which is indistinguishable from
+          // the start of a vertical scroll — users reported accidental
+          // drags when trying to scroll the list. Desktop mouse drag is
+          // unaffected (delay only applies to touch).
+          delayTouchStart: 500,
         }}
         onconsider={handleConsider}
         onfinalize={handleFinalize}
