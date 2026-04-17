@@ -23,9 +23,9 @@
 <div class="sl-item-row" class:checked={item.isChecked} class:pending>
   {#if draggable}
     <span class="sl-drag-handle" aria-label="Drag to reorder" title="Drag to reorder">
-      <svg viewBox="0 0 24 24" width="18" height="18">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
         <path
-          d="M9 4h2v2H9zM13 4h2v2h-2zM9 11h2v2H9zM13 11h2v2h-2zM9 18h2v2H9zM13 18h2v2h-2z"
+          d="M8 6h2v2H8zM14 6h2v2h-2zM8 11h2v2H8zM14 11h2v2h-2zM8 16h2v2H8zM14 16h2v2h-2z"
           fill="currentColor"
         />
       </svg>
@@ -127,6 +127,12 @@
     border-bottom: 1px solid var(--color-line);
     transition: background-color 0.15s;
     background: var(--color-surface);
+    /* Prevent browser long-press selecting row text / showing the
+       context menu on iOS. The drag handle has its own touch-action
+       so drag still initiates cleanly. */
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
   }
   .sl-item-row:last-child {
     border-bottom: none;
@@ -143,29 +149,35 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 32px;
-    color: var(--color-text-disabled);
+    width: 32px;
+    height: 40px;
+    margin-right: -4px;
+    color: var(--color-text-muted);
+    border-radius: var(--radius-sm);
     cursor: grab;
     -webkit-tap-highlight-color: transparent;
-    /* Touch drag initiates only from the handle. `touch-action: none` tells
-       the browser not to interpret touches here as scroll/zoom so
-       svelte-dnd-action gets the full gesture. Body/buttons use pan-y or
-       manipulation, which means touching them can scroll or tap but never
-       starts a drag. This replaces the delayTouchStart long-press hack and
-       gives a clean spatial separation: grip the handle to drag, tap
-       anywhere else for normal interactions. */
+    /* Touch drag initiates only from the handle. `touch-action: none` hands
+       the full gesture to svelte-dnd-action; body/buttons use pan-y or
+       manipulation so touches there scroll or tap but never start a drag.
+       Spatial separation replaces the earlier delayTouchStart hack. */
     touch-action: none;
+  }
+  .sl-drag-handle:hover {
+    color: var(--color-text);
+    background: var(--color-action-hover);
   }
   .sl-drag-handle:active {
     cursor: grabbing;
+    background: var(--color-action-hover);
   }
   @media (pointer: coarse) {
-    /* Bigger grab target on touch; the 24×32 hit-zone was fiddly on Android. */
+    /* Bigger grab target on touch; 44px is Apple's minimum recommended
+       touch target. Darker color + solid bg so the affordance reads. */
     .sl-drag-handle {
-      width: 32px;
-      height: 44px;
-      color: var(--color-text-muted);
+      width: 40px;
+      height: 48px;
+      color: var(--color-text);
+      background: var(--color-action-hover);
     }
   }
 
