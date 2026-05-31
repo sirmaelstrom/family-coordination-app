@@ -104,6 +104,12 @@ export interface UpdateChoreRequest {
   effortTier: EffortTier;
   ownerUserId?: number | null;
   version: number;
+  /** council C4 — must round-trip so edit-photo works end-to-end. */
+  photoPath?: string | null;
+}
+
+export interface SeedStarterResponse {
+  seeded: boolean;
 }
 
 /** targetUserId null ⇒ return-to-pile. */
@@ -218,6 +224,14 @@ export async function uploadChorePhoto(
     method: 'POST',
     body: form,
   });
+}
+
+/**
+ * Seed the household with starter chores (WP-06 backfill endpoint).
+ * Idempotent — a second call returns `{ seeded: false }` (no-op).
+ */
+export async function seedStarter(): Promise<SeedStarterResponse> {
+  return request<SeedStarterResponse>(`${CHORES_BASE}/seed-starter`, { method: 'POST' });
 }
 
 /** Persist the caller's roaming default lens (WP-12). null/blank clears to default. */

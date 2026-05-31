@@ -11,6 +11,7 @@
   import MineView from './lib/components/MineView.svelte';
   import EquityBoard from './lib/components/EquityBoard.svelte';
   import QuickAddSheet, { type QuickAddValue } from './lib/components/QuickAddSheet.svelte';
+  import EditChoreSheet from './lib/components/EditChoreSheet.svelte';
   import HandOffPicker from './lib/components/HandOffPicker.svelte';
   import Toasts from './lib/components/Toasts.svelte';
 
@@ -40,11 +41,13 @@
 
   let liveness: LivenessHandle | null = null;
 
-  // ── Quick-add + hand-off dialog state ─────────────────────────────────────
+  // ── Quick-add + hand-off + edit dialog state ──────────────────────────────
   let quickAddOpen = $state(false);
   let quickAddSubmitting = $state(false);
   let handOffOpen = $state(false);
   let handOffChore = $state<ChoreDto | null>(null);
+  let editOpen = $state(false);
+  let editChore = $state<ChoreDto | null>(null);
 
   async function loadBoard() {
     try {
@@ -84,6 +87,17 @@
     handOffOpen = false;
     handOffChore = null;
     if (chore) store.handOff(chore.id, targetUserId);
+  }
+
+  /** Open the edit sheet for a chore. */
+  function handleEdit(chore: ChoreDto) {
+    editChore = chore;
+    editOpen = true;
+  }
+
+  /** Seed the starter set (shown only when the board is empty). */
+  async function handleSeedStarter() {
+    await store.seedStarter();
   }
 
   // ── Quick-add (create → optional two-step photo upload, council C2) ───────
@@ -194,6 +208,7 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+        onEdit={handleEdit}
       />
     {:else if store.lens === 'rooms'}
       <RoomsDashboard
@@ -204,6 +219,7 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+        onEdit={handleEdit}
       />
     {:else if store.lens === 'up-for-grabs'}
       <UpForGrabsLane
@@ -214,6 +230,7 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+        onEdit={handleEdit}
       />
     {:else if store.lens === 'mine'}
       <MineView
@@ -225,6 +242,7 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+        onEdit={handleEdit}
       />
     {:else if store.lens === 'equity'}
       <!--
@@ -244,6 +262,19 @@
     {/if}
   {:else if !store.loading}
     <div class="ch-empty">No chore board data.</div>
+  {/if}
+
+  <!--
+    Empty-board prompt: shown only when the board has loaded but has zero chores.
+    Idempotent server-side — a second tap is a safe no-op.
+  -->
+  {#if store.board && store.board.chores.length === 0}
+    <div class="ch-seed-prompt">
+      <p class="ch-seed-text">No chores yet. Want to start with a suggested set?</p>
+      <button type="button" class="ch-seed-btn" onclick={handleSeedStarter}>
+        Load starter chores
+      </button>
+    </div>
   {/if}
 </div>
 
@@ -280,6 +311,17 @@
   onSelect={handleHandOffSelect}
 />
 
+<EditChoreSheet
+  open={editOpen}
+  chore={editChore}
+  members={store.board?.members ?? []}
+  rooms={store.board?.rooms ?? []}
+  onClose={() => {
+    editOpen = false;
+    editChore = null;
+  }}
+/>
+
 <Toasts />
 
 <style>
@@ -313,6 +355,35 @@
     padding: 48px 16px;
     text-align: center;
     color: var(--color-text-muted);
+  }
+  .ch-seed-prompt {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 32px 16px;
+    text-align: center;
+  }
+  .ch-seed-text {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: 0.9375rem;
+  }
+  .ch-seed-btn {
+    font: inherit;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    padding: 10px 24px;
+    border: 1px solid var(--color-primary);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-primary);
+    cursor: pointer;
+    min-height: 44px;
+    transition: background-color 0.15s;
+  }
+  .ch-seed-btn:hover {
+    background: var(--color-action-hover);
   }
   .ch-inline-error {
     display: flex;

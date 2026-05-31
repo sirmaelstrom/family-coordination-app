@@ -21,9 +21,10 @@
     onDrop: (chore: ChoreDto) => void;
     onComplete: (chore: ChoreDto) => void;
     onHandOff: (chore: ChoreDto) => void;
+    onEdit: (chore: ChoreDto) => void;
   }
 
-  let { chores, currentUserId, isPending, onClaim, onDrop, onComplete, onHandOff }: Props =
+  let { chores, currentUserId, isPending, onClaim, onDrop, onComplete, onHandOff, onEdit }: Props =
     $props();
 </script>
 
@@ -44,6 +45,7 @@
           {onDrop}
           {onComplete}
           {onHandOff}
+          {onEdit}
         />
       {/each}
     </div>

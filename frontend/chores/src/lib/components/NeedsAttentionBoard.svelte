@@ -26,6 +26,7 @@
     onDrop: (chore: ChoreDto) => void;
     onComplete: (chore: ChoreDto) => void;
     onHandOff: (chore: ChoreDto) => void;
+    onEdit: (chore: ChoreDto) => void;
   }
 
   let {
@@ -39,6 +40,7 @@
     onDrop,
     onComplete,
     onHandOff,
+    onEdit,
   }: Props = $props();
 
   const FILTERS: { id: AttentionFilter; label: string }[] = [
@@ -82,6 +84,7 @@
               {onDrop}
               {onComplete}
               {onHandOff}
+              {onEdit}
             />
           {/each}
         </div>
