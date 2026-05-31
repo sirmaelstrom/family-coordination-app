@@ -26,9 +26,10 @@
     onDrop: (chore: ChoreDto) => void;
     onComplete: (chore: ChoreDto) => void;
     onHandOff: (chore: ChoreDto) => void;
+    onEdit: (chore: ChoreDto) => void;
   }
 
-  let { chores, loads, currentUserId, isPending, onClaim, onDrop, onComplete, onHandOff }: Props =
+  let { chores, loads, currentUserId, isPending, onClaim, onDrop, onComplete, onHandOff, onEdit }: Props =
     $props();
 
   // Deterministic per-user avatar accent (hash userId → palette). Purely
@@ -101,6 +102,7 @@
             {onDrop}
             {onComplete}
             {onHandOff}
+            {onEdit}
           />
         {/each}
       </div>

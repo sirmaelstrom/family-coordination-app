@@ -98,12 +98,20 @@ public static class ChoreLens
     public const string UpForGrabs = "up-for-grabs";
     public const string Mine = "mine";
 
+    /// <summary>
+    /// The household equity-distribution lens (v1.1 WP-06, council M16). Canonical id mirrored by the
+    /// island <c>types.ts</c>/<c>CHORE_LENSES</c> (WP-09). Including it in <see cref="All"/> lets a user
+    /// default their board onto Equity via <c>PATCH /api/chores/me/default-view</c>.
+    /// </summary>
+    public const string Equity = "equity";
+
     /// <summary>All valid lens ids, for allowlist validation.</summary>
     public static readonly IReadOnlyList<string> All = new[]
     {
         NeedsAttention,
         Rooms,
         UpForGrabs,
-        Mine
+        Mine,
+        Equity
     };
 }

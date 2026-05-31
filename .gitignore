@@ -10,7 +10,10 @@ secrets/
 postgres-data/
 app-uploads/
 app-logs/
-data/
+# root-anchored so it matches ONLY the runtime bind-mount dir, NOT src/.../Data/.
+# An unanchored `data/` matches `Data/` case-insensitively on Windows and silently
+# strands new entity/config source files (bit us on chores v1.1 — CI red, local green).
+/data/
 
 # SSL certs (except example)
 nginx/certs/*.pem

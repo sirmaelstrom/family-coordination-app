@@ -29,6 +29,8 @@
     onDrop?: (chore: ChoreDto) => void;
     onComplete?: (chore: ChoreDto) => void;
     onHandOff?: (chore: ChoreDto) => void;
+    /** Open the edit sheet for this chore. */
+    onEdit?: (chore: ChoreDto) => void;
   }
 
   let {
@@ -39,6 +41,7 @@
     onDrop,
     onComplete,
     onHandOff,
+    onEdit,
   }: Props = $props();
 
   // ── Named effort tiers (P3 — never the raw points number as primary) ─────
@@ -248,6 +251,24 @@
             Done
           </button>
         {/if}
+        {#if onEdit}
+          <button
+            type="button"
+            class="ch-btn ch-btn-icon"
+            data-action="edit"
+            onclick={() => onEdit?.(chore)}
+            disabled={pending}
+            title="Edit this chore"
+            aria-label="Edit {chore.name}"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path
+                d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+        {/if}
       </div>
     </div>
   </div>
@@ -453,5 +474,17 @@
   .ch-btn:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+  }
+  .ch-btn-icon {
+    background: transparent;
+    color: var(--color-text-muted);
+    border-color: var(--color-line-strong);
+    padding: 6px 8px;
+    display: grid;
+    place-items: center;
+  }
+  .ch-btn-icon:hover:not(:disabled) {
+    background: var(--color-action-hover);
+    color: var(--color-text);
   }
 </style>

@@ -1,9 +1,13 @@
 import type {
   ChoreBoardDto,
   ChoreDto,
+  ChoreEquityDto,
+  EquityWindow,
   RoomDto,
   EffortTier,
   RecurrenceMode,
+  DigestSettingsView,
+  DigestSettingsUpdate,
 } from './types';
 
 const CHORES_BASE = '/api/chores';
@@ -102,6 +106,12 @@ export interface UpdateChoreRequest {
   effortTier: EffortTier;
   ownerUserId?: number | null;
   version: number;
+  /** council C4 — must round-trip so edit-photo works end-to-end. */
+  photoPath?: string | null;
+}
+
+export interface SeedStarterResponse {
+  seeded: boolean;
 }
 
 /** targetUserId null ⇒ return-to-pile. */
@@ -138,6 +148,16 @@ export interface RoomUpsertRequest {
 
 export async function getBoard(): Promise<ChoreBoardDto> {
   return request<ChoreBoardDto>(`${CHORES_BASE}/board`);
+}
+
+// ─── Equity read (separate cached payload — the ONLY non-board fetcher, M11) ──
+// The four v1.0 lenses group the one board payload client-side; the Equity lens
+// is the sole lens with its own endpoint. credentials:include like getBoard.
+
+export async function getEquity(
+  window: EquityWindow = 'week',
+): Promise<ChoreEquityDto> {
+  return request<ChoreEquityDto>(`${CHORES_BASE}/equity?window=${window}`);
 }
 
 // ─── Chore mutations (WP-11 wires these to optimistic UI + 409 retry) ───────
@@ -208,11 +228,50 @@ export async function uploadChorePhoto(
   });
 }
 
+/**
+ * Seed the household with starter chores (WP-06 backfill endpoint).
+ * Idempotent — a second call returns `{ seeded: false }` (no-op).
+ */
+export async function seedStarter(): Promise<SeedStarterResponse> {
+  return request<SeedStarterResponse>(`${CHORES_BASE}/seed-starter`, { method: 'POST' });
+}
+
 /** Persist the caller's roaming default lens (WP-12). null/blank clears to default. */
 export async function setDefaultView(view: string | null): Promise<DefaultViewResponse> {
   return request<DefaultViewResponse>(`${CHORES_BASE}/me/default-view`, {
     method: 'PATCH',
     ...jsonBody({ view }),
+  });
+}
+
+// ─── Digest settings (WP-11) ─────────────────────────────────────────────────
+//
+// ⚠ MN7 (write-only webhook): GET never returns the webhook URL — only
+// hasWebhook + a masked hint. The PUT body carries the URL only when
+// webhookAction is 'set'. Never log or render the URL client-side.
+
+/**
+ * Fetch the household's digest settings (safe view — no webhook URL).
+ * Returns enabled state, cadence, day, hour, hasWebhook + hint, lastSentAt.
+ */
+export async function getDigestSettings(): Promise<DigestSettingsView> {
+  return request<DigestSettingsView>(`${CHORES_BASE}/digest-settings`);
+}
+
+/**
+ * Persist digest settings. The tri-state `webhookAction` controls the secret:
+ *   'keep'  → leave the stored URL unchanged (omit webhookUrl)
+ *   'set'   → encrypt + store webhookUrl (include webhookUrl in body)
+ *   'clear' → remove the stored URL (omit webhookUrl)
+ * Returns the refreshed DigestSettingsView (no URL in response).
+ * ⚠ Do NOT log `body.webhookUrl`; do NOT put it in a query string.
+ */
+export async function updateDigestSettings(
+  body: DigestSettingsUpdate,
+): Promise<DigestSettingsView> {
+  return request<DigestSettingsView>(`${CHORES_BASE}/digest-settings`, {
+    method: 'PUT',
+    ...jsonBody(body),
   });
 }
 

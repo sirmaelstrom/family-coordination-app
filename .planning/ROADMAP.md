@@ -21,6 +21,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: Mobile & UX Polish** - PWA support and touch optimization
 - [x] ~~**Phase 8: Collaboration Wiring Fixes**~~ - DEPRECATED: Minor gaps, not worth effort
 - [x] ~~**Phase 9: UX Enhancements**~~ - DEPRECATED: Minor gaps, not worth effort
+- [x] **Phase 10: Chore & Task Management** - Shared chore board: claim/hand-off/complete state machine, recurrence, effort tiers, rooms (chores v1.0)
+- [x] **Phase 11: Chores v1.1 — Equity View & Weekly Discord Digest** - Household effort-distribution lens + cron-triggered weekly digest, edit-chore dialog, starter backfill
+- [ ] **Phase 12: Chores v1.2 — Finish the Surface** - PLANNED: close the Phase-10 UI seams + chore-board polish (see details)
 
 ## Phase Details
 
@@ -168,10 +171,36 @@ Plans:
 ### Phase 8 & 9: DEPRECATED
 Phases 8 and 9 were deprecated 2026-02-08. The identified gaps (attribution tracking, meal plan auto-refresh, drag-drop reorder, ingredient normalization) are minor and the app works well without them.
 
+### Phase 10: Chore & Task Management
+**Goal**: A shared household chore board with a claim / hand-off / complete state machine, recurrence, effort tiers, and rooms (chores v1.0)
+**Status**: Delivered — merged via PR #11 (`feat/phase10-chore-task-management`, merge `eda3363`)
+**Notes**: Optimistic concurrency (Postgres `xmin`), multi-tenant composite keys, Svelte island board behind the `CHORES_USE_ISLAND` flag. Detailed planning artifacts were not committed to `.planning/phases/` (live in branch history).
+
+### Phase 11: Chores v1.1 — Equity View & Weekly Discord Digest
+**Goal**: Surface household load fairly, and deliver it on a weekly cadence
+**Depends on**: Phase 10
+**Status**: Delivered — this branch. Planning artifacts: `.planning/phases/11-chores-v1.1-equity-digest/`
+**Delivered**:
+  - Equity distribution lens (effort-weighted, equal-share reference, week/all windows)
+  - Weekly Discord digest: external-cron trigger → `POST /api/chores/digest/run` (shared-secret header token, idempotent, concurrency-safe atomic claim), webhook encrypted at rest, neutral framing, **no @mentions**
+  - Edit-chore dialog, "Load starter chores" backfill, digest-settings UI
+  - Go-live fix: digest trigger token mapped into the app container (`docker-compose.yml`) so the feature isn't dead-on-arrival in prod
+
+### Phase 12: Chores v1.2 — Finish the Surface (PLANNED)
+**Goal**: Close the Phase-10 UI seams + chore-board polish surfaced during the v1.1 review (2026-05-31)
+**Depends on**: Phase 11
+**Candidate scope** (grounded against the code, with size estimates):
+  - **Room-create UI** (MEDIUM) — backend `POST /api/rooms` + `RoomService.CreateRoomAsync` exist; no "Add Room" UI in the island
+  - **Chore photo display** (LARGE) — upload/store/DTO done (`Chore.PhotoPath`); never rendered (no `<img>` in `ChoreCard.svelte` / room header) — effectively write-only today
+  - **Home-page chore card** (LARGE) — `Home.razor` surfaces meals + shopping but zero chore info; `/api/chores/equity` can feed due / overdue / falling-behind counts + a link to `/chores`
+  - **Equity up-for-grabs visual** (SMALL→MEDIUM) — `UpForGrabsCount` already in the equity DTO but rendered only as text; promote to a visual "waiting" element (a full proportional bar needs a new `UnassignedEffortPoints` field)
+  - **Chore icons** (SMALL) — rooms have an `Icon` field + UI; chores have none (parity gap)
+**Note**: distinct from the deprecated Phases 8 & 9 (recipe/meal/shopping polish); this is the chores track.
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 (8 & 9 deprecated), then the Chores track: 10 → 11 → 12
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -184,7 +213,10 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. Mobile & UX Polish | 5/5 | Complete | 2026-01-24 |
 | 8. Collaboration Wiring Fixes | - | Deprecated | 2026-02-08 |
 | 9. UX Enhancements | - | Deprecated | 2026-02-08 |
+| 10. Chore & Task Management | - | Complete | 2026-05 (PR #11) |
+| 11. Chores v1.1 (Equity & Digest) | 11 WPs | Complete | 2026-05-31 |
+| 12. Chores v1.2 (Finish the Surface) | - | Planned | - |
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-02-08*
+*Last updated: 2026-05-31 (reconciled to add the Chores track: Phases 10–12)*

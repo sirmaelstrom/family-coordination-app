@@ -9,8 +9,11 @@
   import RoomsDashboard from './lib/components/RoomsDashboard.svelte';
   import UpForGrabsLane from './lib/components/UpForGrabsLane.svelte';
   import MineView from './lib/components/MineView.svelte';
+  import EquityBoard from './lib/components/EquityBoard.svelte';
   import QuickAddSheet, { type QuickAddValue } from './lib/components/QuickAddSheet.svelte';
+  import EditChoreSheet from './lib/components/EditChoreSheet.svelte';
   import HandOffPicker from './lib/components/HandOffPicker.svelte';
+  import DigestSettings from './lib/components/DigestSettings.svelte';
   import Toasts from './lib/components/Toasts.svelte';
 
   // ───────────────────────────────────────────────────────────────────────
@@ -39,11 +42,14 @@
 
   let liveness: LivenessHandle | null = null;
 
-  // ── Quick-add + hand-off dialog state ─────────────────────────────────────
+  // ── Quick-add + hand-off + edit + digest-settings dialog state ───────────
   let quickAddOpen = $state(false);
   let quickAddSubmitting = $state(false);
   let handOffOpen = $state(false);
   let handOffChore = $state<ChoreDto | null>(null);
+  let editOpen = $state(false);
+  let editChore = $state<ChoreDto | null>(null);
+  let digestSettingsOpen = $state(false);
 
   async function loadBoard() {
     try {
@@ -83,6 +89,17 @@
     handOffOpen = false;
     handOffChore = null;
     if (chore) store.handOff(chore.id, targetUserId);
+  }
+
+  /** Open the edit sheet for a chore. */
+  function handleEdit(chore: ChoreDto) {
+    editChore = chore;
+    editOpen = true;
+  }
+
+  /** Seed the starter set (shown only when the board is empty). */
+  async function handleSeedStarter() {
+    await store.seedStarter();
   }
 
   // ── Quick-add (create → optional two-step photo upload, council C2) ───────
@@ -131,12 +148,43 @@
       liveness = null;
     };
   });
+
+  // ── Equity fetch-on-open (the ONLY non-board fetcher — M11) ───────────────
+  // Load the equity payload when the Equity lens is open and the cache is stale
+  // (`!equityLoaded`). Reading `equityWindow` makes the effect re-run on a window
+  // switch (which the store also marks stale via setEquityWindow). The four v1.0
+  // lenses never trigger a fetch — they group the one board payload. A user who
+  // defaulted onto Equity lands here on mount (the store opens onto their default
+  // lens) and loads it the same way. The store guards re-entrancy + window races.
+  $effect(() => {
+    // Track the window so a switch re-runs this effect.
+    const _window = store.equityWindow;
+    void _window;
+    if (store.lens === 'equity' && !store.equityLoaded && !store.equityLoading) {
+      store.loadEquity();
+    }
+  });
 </script>
 
 <div class="ch-container">
   <header class="ch-header">
     <h1 class="ch-title">Chores</h1>
-    <span class="ch-user">{ctx.userName}</span>
+    <div class="ch-header-end">
+      <span class="ch-user">{ctx.userName}</span>
+      <button
+        type="button"
+        class="ch-settings-btn"
+        aria-label="Digest settings"
+        onclick={() => (digestSettingsOpen = true)}
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path
+            d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.02 7.02 0 0 0-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54a7.02 7.02 0 0 0-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.47.47 0 0 0 .12.61l2.03 1.58c-.05.3-.08.62-.08.94s.03.64.07.94L2.75 14.52a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.36 1.04.67 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54a7.02 7.02 0 0 0 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.47.47 0 0 0-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"
+            fill="currentColor"
+          />
+        </svg>
+      </button>
+    </div>
   </header>
 
   <div class="ch-toolbar">
@@ -177,6 +225,7 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+        onEdit={handleEdit}
       />
     {:else if store.lens === 'rooms'}
       <RoomsDashboard
@@ -187,6 +236,7 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+        onEdit={handleEdit}
       />
     {:else if store.lens === 'up-for-grabs'}
       <UpForGrabsLane
@@ -197,6 +247,7 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+        onEdit={handleEdit}
       />
     {:else if store.lens === 'mine'}
       <MineView
@@ -208,10 +259,39 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+        onEdit={handleEdit}
+      />
+    {:else if store.lens === 'equity'}
+      <!--
+        Equity lens — the one lens with its own (separately cached) payload
+        (store.equity via GET /api/chores/equity). The $effect above fetches it
+        on open + on window change; completions/refetches invalidate it. NEUTRAL
+        distribution, server values only (M12/MN9).
+      -->
+      <EquityBoard
+        equity={store.equity}
+        window={store.equityWindow}
+        loading={store.equityLoading}
+        error={store.equityError}
+        onWindow={(w) => store.setEquityWindow(w)}
+        onRetry={() => store.loadEquity()}
       />
     {/if}
   {:else if !store.loading}
     <div class="ch-empty">No chore board data.</div>
+  {/if}
+
+  <!--
+    Empty-board prompt: shown only when the board has loaded but has zero chores.
+    Idempotent server-side — a second tap is a safe no-op.
+  -->
+  {#if store.board && store.board.chores.length === 0}
+    <div class="ch-seed-prompt">
+      <p class="ch-seed-text">No chores yet. Want to start with a suggested set?</p>
+      <button type="button" class="ch-seed-btn" onclick={handleSeedStarter}>
+        Load starter chores
+      </button>
+    </div>
   {/if}
 </div>
 
@@ -248,6 +328,22 @@
   onSelect={handleHandOffSelect}
 />
 
+<EditChoreSheet
+  open={editOpen}
+  chore={editChore}
+  members={store.board?.members ?? []}
+  rooms={store.board?.rooms ?? []}
+  onClose={() => {
+    editOpen = false;
+    editChore = null;
+  }}
+/>
+
+<DigestSettings
+  open={digestSettingsOpen}
+  onClose={() => (digestSettingsOpen = false)}
+/>
+
 <Toasts />
 
 <style>
@@ -258,7 +354,7 @@
   }
   .ch-header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 12px;
     margin-bottom: 16px;
@@ -269,9 +365,31 @@
     font-weight: 400;
     color: var(--color-text);
   }
+  .ch-header-end {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
   .ch-user {
     color: var(--color-text-muted);
     font-size: 0.875rem;
+  }
+  .ch-settings-btn {
+    display: grid;
+    place-items: center;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-muted);
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    padding: 0;
+    transition: color 0.15s, background-color 0.15s;
+  }
+  .ch-settings-btn:hover {
+    color: var(--color-text);
+    background: var(--color-action-hover);
   }
   .ch-toolbar {
     margin-bottom: 24px;
@@ -281,6 +399,35 @@
     padding: 48px 16px;
     text-align: center;
     color: var(--color-text-muted);
+  }
+  .ch-seed-prompt {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 32px 16px;
+    text-align: center;
+  }
+  .ch-seed-text {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: 0.9375rem;
+  }
+  .ch-seed-btn {
+    font: inherit;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    padding: 10px 24px;
+    border: 1px solid var(--color-primary);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-primary);
+    cursor: pointer;
+    min-height: 44px;
+    transition: background-color 0.15s;
+  }
+  .ch-seed-btn:hover {
+    background: var(--color-action-hover);
   }
   .ch-inline-error {
     display: flex;

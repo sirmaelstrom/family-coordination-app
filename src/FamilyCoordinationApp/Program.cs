@@ -6,6 +6,7 @@ using FamilyCoordinationApp.Components;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Endpoints;
 using FamilyCoordinationApp.Services;
+using FamilyCoordinationApp.Services.Digest;
 using FamilyCoordinationApp.Services.Interfaces;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -102,6 +103,15 @@ builder.Services.AddSingleton<ChoreStatusCalculator>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(ResolveChoresTimeZone(builder.Configuration));
 
+// Chores v1.1 (WP-06): equity distribution + weekly Discord digest. The equity calculator and the digest
+// builder are pure/stateless singletons (mirroring ChoreStatusCalculator); the settings service (webhook
+// encryption) + run orchestration + sender are scoped. TimeProvider.System is already registered above.
+builder.Services.AddSingleton<ChoreEquityCalculator>();
+builder.Services.AddSingleton<DigestBuilder>();
+builder.Services.AddScoped<IDigestSettingsService, DigestSettingsService>();
+builder.Services.AddScoped<IDigestService, DigestService>();
+builder.Services.AddScoped<IDigestSender, DiscordWebhookDigestSender>();
+
 // Chore/Room HTTP endpoints serialize enum DTOs (colorTier/dueState/assignmentKind/rollup status) as
 // camelCase strings so responses match the island TS unions + the WP-05 board.json fixture (council M5/M11).
 // Additive to the Minimal-API JSON options only — Blazor Server component rendering is unaffected.
@@ -154,6 +164,21 @@ builder.Services.AddHttpClient("RecipeScraper")
         options.CircuitBreaker.FailureRatio = 0.5;
         options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
         options.CircuitBreaker.BreakDuration = TimeSpan.FromSeconds(30);
+    });
+
+// Named HttpClient for the Discord webhook digest sender (Chores v1.1 WP-06, M14). Mirrors the
+// RecipeScraper resilience profile; consumed by DiscordWebhookDigestSender via IHttpClientFactory.
+builder.Services.AddHttpClient("DiscordWebhook")
+    .AddStandardResilienceHandler(o =>
+    {
+        o.Retry.MaxRetryAttempts = 3;
+        o.Retry.BackoffType = DelayBackoffType.Exponential;
+        o.Retry.UseJitter = true;
+        o.AttemptTimeout.Timeout = TimeSpan.FromSeconds(10);
+        o.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(30);
+        o.CircuitBreaker.FailureRatio = 0.5;
+        o.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60); // must be >= 2 * AttemptTimeout
+        o.CircuitBreaker.BreakDuration = TimeSpan.FromSeconds(30);
     });
 
 // Authentication

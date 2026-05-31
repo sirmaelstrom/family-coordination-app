@@ -325,6 +325,51 @@ namespace FamilyCoordinationApp.Migrations
                     b.ToTable("Households", (string)null);
                 });
 
+            modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.HouseholdChoreDigestSettings", b =>
+                {
+                    b.Property<int>("HouseholdId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Cadence")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Weekly");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Enabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<DateTime?>("LastSentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("SendDayOfWeek")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<int>("SendHourLocal")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(18);
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("WebhookUrlProtected")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.HasKey("HouseholdId");
+
+                    b.ToTable("ChoreDigestSettings", (string)null);
+                });
+
             modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.HouseholdConnection", b =>
                 {
                     b.Property<int>("HouseholdId1")
@@ -1075,6 +1120,17 @@ namespace FamilyCoordinationApp.Migrations
                     b.Navigation("Household");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.HouseholdChoreDigestSettings", b =>
+                {
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.Household", "Household")
+                        .WithMany()
+                        .HasForeignKey("HouseholdId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Household");
                 });
 
             modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.HouseholdConnection", b =>

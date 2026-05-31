@@ -22,9 +22,10 @@
     onDrop: (chore: ChoreDto) => void;
     onComplete: (chore: ChoreDto) => void;
     onHandOff: (chore: ChoreDto) => void;
+    onEdit: (chore: ChoreDto) => void;
   }
 
-  let { groups, currentUserId, isPending, onClaim, onDrop, onComplete, onHandOff }: Props =
+  let { groups, currentUserId, isPending, onClaim, onDrop, onComplete, onHandOff, onEdit }: Props =
     $props();
 
   // The drilled-into room (by roomId; null = the General group; undefined = the
@@ -93,6 +94,7 @@
             {onDrop}
             {onComplete}
             {onHandOff}
+            {onEdit}
           />
         {/each}
       </div>
