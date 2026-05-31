@@ -54,6 +54,10 @@
   let newPhotoFile = $state<File | null>(null);
   let localError = $state<string | null>(null);
   let submitting = $state(false);
+  // Delete is a two-tap confirm (irreversible). The store's optimistic remove() handles
+  // rollback + reconcile + error toast; we just close the sheet after firing it.
+  let confirmingDelete = $state(false);
+  let deleting = $state(false);
 
   // ── Inline "new room" (v1.2 quick win) ─────────────────────────────────────
   // Create a room without leaving the sheet (the full room manager is deferred —
@@ -148,6 +152,8 @@
     existingPhotoPath = c.photoPath;
     newPhotoFile = null;
     localError = null;
+    confirmingDelete = false;
+    deleting = false;
 
     // Map recurrenceMode → cadence (D4-B; no monthly-on-day).
     // Note: ChoreDto does not carry intervalDays or daysOfWeek — those are
@@ -276,6 +282,18 @@
       onClose();
     } finally {
       submitting = false;
+    }
+  }
+
+  async function handleDelete() {
+    if (!chore || deleting) return;
+    deleting = true;
+    try {
+      // Optimistic removal + rollback/reconcile + error toast all live in the store.
+      await boardStore.remove(chore.id);
+      onClose();
+    } finally {
+      deleting = false;
     }
   }
 </script>
@@ -517,12 +535,35 @@
     </div>
 
     <footer class="ch-sheet-actions">
-      <button type="button" class="ch-btn-ghost" onclick={onClose} disabled={submitting}>
-        Cancel
-      </button>
-      <button type="submit" class="ch-btn-primary" disabled={submitting || !name.trim()}>
-        {submitting ? 'Saving…' : 'Save changes'}
-      </button>
+      {#if confirmingDelete}
+        <span class="ch-delete-confirm-text" role="alert">Delete this chore? This can't be undone.</span>
+        <button
+          type="button"
+          class="ch-btn-ghost"
+          onclick={() => (confirmingDelete = false)}
+          disabled={deleting}
+        >
+          Keep it
+        </button>
+        <button type="button" class="ch-btn-danger" onclick={handleDelete} disabled={deleting}>
+          {deleting ? 'Deleting…' : 'Delete'}
+        </button>
+      {:else}
+        <button
+          type="button"
+          class="ch-btn-danger-ghost ch-delete-trigger"
+          onclick={() => (confirmingDelete = true)}
+          disabled={submitting}
+        >
+          Delete
+        </button>
+        <button type="button" class="ch-btn-ghost" onclick={onClose} disabled={submitting}>
+          Cancel
+        </button>
+        <button type="submit" class="ch-btn-primary" disabled={submitting || !name.trim()}>
+          {submitting ? 'Saving…' : 'Save changes'}
+        </button>
+      {/if}
     </footer>
   </form>
 </dialog>
@@ -795,5 +836,49 @@
   .ch-btn-ghost:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  /* Destructive delete (irreversible — two-tap confirm). */
+  .ch-btn-danger,
+  .ch-btn-danger-ghost {
+    font: inherit;
+    padding: 10px 20px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    min-height: 44px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+  .ch-btn-danger {
+    background: var(--color-error);
+    color: #fff;
+    border: none;
+    box-shadow: var(--shadow-1);
+  }
+  .ch-btn-danger:hover:not(:disabled) {
+    filter: brightness(0.92);
+  }
+  .ch-btn-danger-ghost {
+    background: transparent;
+    color: var(--color-error);
+    border: 1px solid var(--color-error);
+  }
+  .ch-btn-danger-ghost:hover:not(:disabled) {
+    background: var(--color-action-hover);
+  }
+  .ch-btn-danger:disabled,
+  .ch-btn-danger-ghost:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  /* Delete sits left; Cancel/Save stay right. */
+  .ch-delete-trigger {
+    margin-right: auto;
+  }
+  .ch-delete-confirm-text {
+    margin-right: auto;
+    align-self: center;
+    font-size: 0.875rem;
+    color: var(--color-text);
   }
 </style>
