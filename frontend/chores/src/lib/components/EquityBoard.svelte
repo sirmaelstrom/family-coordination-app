@@ -126,9 +126,23 @@
         Even split: {pct(equity.equalSharePct)}% each
       </p>
 
-      <p class="ch-equity-context">
-        Falling behind: {equity.fallingBehindCount} · Up for grabs: {equity.upForGrabsCount}
-      </p>
+      <!-- Outstanding work — discrete entries, distinct from the completed-effort
+           bars above. "Up for grabs" = active chores nobody owns (AssignmentKind.None
+           or a stale claim); "Falling behind" = active chores past due. These are
+           household-level CHORE counts (never a per-person blame label, M12/MN8), and
+           come straight off the equity payload (no board cross-reference). -->
+      <div class="ch-equity-outstanding" aria-label="Outstanding work">
+        <div class="ch-equity-stat" aria-label="{equity.upForGrabsCount} up for grabs">
+          <span class="ch-equity-stat-icon" aria-hidden="true">🙋</span>
+          <span class="ch-equity-stat-count">{equity.upForGrabsCount}</span>
+          <span class="ch-equity-stat-label">up for grabs</span>
+        </div>
+        <div class="ch-equity-stat" aria-label="{equity.fallingBehindCount} falling behind">
+          <span class="ch-equity-stat-icon" aria-hidden="true">⏳</span>
+          <span class="ch-equity-stat-count">{equity.fallingBehindCount}</span>
+          <span class="ch-equity-stat-label">falling behind</span>
+        </div>
+      </div>
     </section>
   {:else}
     <div class="ch-equity-state">
@@ -305,8 +319,34 @@
     border-left: 2px dashed var(--color-text-muted);
   }
 
-  .ch-equity-context {
-    margin: 0;
+  /* ── Outstanding work: up-for-grabs / falling-behind ───────────────────── */
+  /* Discrete entries with a dashed edge (= unclaimed / outstanding) so they read
+     distinctly from the solid completed-effort member bars above. */
+  .ch-equity-outstanding {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .ch-equity-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px;
+    background: var(--color-surface);
+    border: 1px dashed var(--color-line-strong);
+    border-radius: var(--radius-sm);
+  }
+  .ch-equity-stat-icon {
+    font-size: 0.9375rem;
+    line-height: 1;
+  }
+  .ch-equity-stat-count {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .ch-equity-stat-label {
     font-size: 0.8125rem;
     color: var(--color-text-muted);
   }
