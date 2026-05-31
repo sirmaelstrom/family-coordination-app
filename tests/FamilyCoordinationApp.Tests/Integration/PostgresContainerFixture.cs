@@ -1,3 +1,4 @@
+using Npgsql;
 using Testcontainers.PostgreSql;
 
 namespace FamilyCoordinationApp.Tests.Integration;
@@ -24,8 +25,37 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
         .WithPassword("family_test_pw")
         .Build();
 
-    /// <summary>The Npgsql connection string for the running throwaway database.</summary>
+    /// <summary>
+    /// The Npgsql connection string for the running throwaway database (the default <c>family_test</c> DB).
+    /// </summary>
     public string ConnectionString => _container.GetConnectionString();
+
+    /// <summary>
+    /// Create a brand-new, uniquely-named database on the shared container and return its connection string.
+    /// <para>Each integration test class that materializes a schema (an HTTP <see cref="ChoresWebAppFactory"/>
+    /// via <c>MigrateAsync</c>, or the service-level test via <c>EnsureCreated</c>) MUST run against its own DB:
+    /// the container is shared across the collection, but a single database cannot be shared by both a
+    /// <c>MigrateAsync</c>-based harness (which expects <c>__EFMigrationsHistory</c> to drive table creation) and
+    /// an <c>EnsureCreated</c>-based one (which creates tables without history) — they collide with
+    /// <c>42P07 relation already exists</c>. Isolating per database keeps each class's schema lifecycle
+    /// independent while still using the one container (fast).</para>
+    /// </summary>
+    public async Task<string> CreateDatabaseConnectionStringAsync()
+    {
+        var dbName = $"it_{Guid.NewGuid():N}";
+
+        await using (var admin = new NpgsqlConnection(ConnectionString))
+        {
+            await admin.OpenAsync();
+            await using var cmd = admin.CreateCommand();
+            // dbName is a server-generated GUID identifier (no user input) — safe to interpolate.
+            cmd.CommandText = $"CREATE DATABASE \"{dbName}\";";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        var builder = new NpgsqlConnectionStringBuilder(ConnectionString) { Database = dbName };
+        return builder.ConnectionString;
+    }
 
     public async Task InitializeAsync() => await _container.StartAsync();
 

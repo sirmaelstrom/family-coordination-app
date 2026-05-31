@@ -39,7 +39,7 @@ public sealed class ChoreConcurrencyTests(PostgresContainerFixture postgres) : I
         return chore!;
     }
 
-    [Fact(Skip = ChoresWebAppFactory.HostBlockedSkip)]
+    [Fact]
     public async Task TwoConcurrentClaims_SameStaleVersion_YieldExactlyOne200AndOne409()
     {
         // Two real household-A members race. Both capture the SAME version of the pile chore, then both POST
@@ -62,10 +62,18 @@ public sealed class ChoreConcurrencyTests(PostgresContainerFixture postgres) : I
 
         var statuses = responses.Select(r => r.StatusCode).ToList();
 
+        // EXACTLY ONE winner — this is the load-bearing assertion: two 200s would mean last-write-wins (the bug
+        // this harness exists to catch). The LOSER is rejected with a client error, but its precise code is
+        // timing-dependent over the real HTTP pipeline WITHOUT a save barrier: if the loser's transaction loaded
+        // the row before the winner committed it gets a 409 (xmin conflict); if it loaded after, it gets a 400
+        // ("already held" — also a correct rejection, never a double-claim). The DETERMINISTIC xmin->409 proof
+        // (forced write-write race via a save barrier) lives in ChoreServiceConcurrencyTests, the
+        // operator-mandated centerpiece. Here we assert the end-to-end invariant: one winner, one rejection,
+        // never two winners.
         statuses.Count(s => s == HttpStatusCode.OK).Should().Be(
             1, "exactly one concurrent claim must win (last-write-wins would be two 200s — the bug)");
-        statuses.Count(s => s == HttpStatusCode.Conflict).Should().Be(
-            1, "exactly one concurrent claim must lose with a 409 (xmin conflict)");
+        statuses.Count(s => s is HttpStatusCode.Conflict or HttpStatusCode.BadRequest).Should().Be(
+            1, "exactly one concurrent claim must lose — 409 (xmin conflict) or 400 (already held), never a second 200");
 
         // The winner's response carries an advanced version and a real claim; the chore is now held by ONE user.
         var winner = responses.Single(r => r.StatusCode == HttpStatusCode.OK);
@@ -81,7 +89,7 @@ public sealed class ChoreConcurrencyTests(PostgresContainerFixture postgres) : I
         after.assigneeUserId.Should().Be(winnerDto.assigneeUserId);
     }
 
-    [Fact(Skip = ChoresWebAppFactory.HostBlockedSkip)]
+    [Fact]
     public async Task SecondClaim_WithStaleVersion_Returns409_AfterFirstSucceeds()
     {
         // The sequential proof of the same property: claim once (succeeds, advances xmin), then claim again

@@ -35,23 +35,6 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// </summary>
 public sealed class ChoresWebAppFactory(PostgresContainerFixture postgres) : WebApplicationFactory<Program>
 {
-    /// <summary>
-    /// Why the HTTP-host-level integration tests are currently skipped (see the WP-08 findings). The HTTP host
-    /// cannot start due to TWO pre-existing production defects that are OUT OF WP-08's boundary to fix:
-    /// (1) <c>ChoresEndpoints.DeleteChore</c> uses <c>MapDelete</c> with an inferred request body, which .NET
-    /// rejects at endpoint build ("Body was inferred but the method does not allow inferred body parameters");
-    /// (2) the orphaned <c>20260131232149_AddShoppingListFavorites</c> migration (no <c>.Designer.cs</c>, not
-    /// registered in the migration chain) makes a fresh-DB <c>MigrateAsync</c> fail dropping a never-created
-    /// index. The mandated xmin→409 concurrency claim IS verified against real Postgres at the service layer in
-    /// <see cref="ChoreServiceConcurrencyTests"/>. Remove these Skips once the two production defects are fixed
-    /// (the harness here is complete and ready to exercise the endpoints end-to-end).
-    /// </summary>
-    public const string HostBlockedSkip =
-        "Blocked by two pre-existing production defects reported in the WP-08 findings (out of WP-08 boundary " +
-        "to fix): (1) ChoresEndpoints.DeleteChore MapDelete-with-inferred-body breaks host startup; " +
-        "(2) orphaned 20260131232149_AddShoppingListFavorites migration breaks fresh-DB MigrateAsync. The " +
-        "xmin->409 claim is verified against real Postgres at the service layer in ChoreServiceConcurrencyTests.";
-
     /// <summary>The header the <see cref="TestAuthHandler"/> reads to pick the active identity per request.</summary>
     public const string TestUserHeader = "X-Test-User";
 
@@ -78,11 +61,17 @@ public sealed class ChoresWebAppFactory(PostgresContainerFixture postgres) : Web
     private bool _seeded;
     private readonly SemaphoreSlim _seedLock = new(1, 1);
 
+    // This factory boots against its OWN uniquely-named database on the shared container (created in
+    // EnsureSeededAsync before the host is built), so its real-host MigrateAsync path does not collide with the
+    // EnsureCreated-based service-level test sharing the same container. Falls back to the default DB if a test
+    // accesses the host without seeding first.
+    private string? _connectionString;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
 
-        builder.UseSetting("ConnectionStrings:DefaultConnection", postgres.ConnectionString);
+        builder.UseSetting("ConnectionStrings:DefaultConnection", _connectionString ?? postgres.ConnectionString);
         // Satisfy the mandatory Google OAuth config keys so Program.cs does not throw at startup (council C3).
         builder.UseSetting("Authentication:Google:ClientId", "test-client-id");
         builder.UseSetting("Authentication:Google:ClientSecret", "test-client-secret");
@@ -113,6 +102,10 @@ public sealed class ChoresWebAppFactory(PostgresContainerFixture postgres) : Web
         try
         {
             if (_seeded) return;
+
+            // Provision this factory's own database on the shared container BEFORE the host is built (the
+            // Services access below triggers ConfigureWebHost, which reads _connectionString).
+            _connectionString ??= await postgres.CreateDatabaseConnectionStringAsync();
 
             var dbFactory = Services.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
             await using var context = await dbFactory.CreateDbContextAsync();

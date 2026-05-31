@@ -18,17 +18,15 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// against the Testcontainers Postgres, so the live save path (<c>SaveWithConcurrencyAsync</c> setting the
 /// client token as the xmin <c>OriginalValue</c>, then the DB's <c>WHERE xmin = ...</c> matching zero rows on
 /// the loser) is what is under test — not a mock and not the HTTP layer.</para>
-/// <para><b>Why service-level rather than through the HTTP endpoints:</b> the HTTP host currently fails to
-/// start due to two pre-existing production defects reported separately (see the WP-08 findings:
-/// (1) <c>ChoresEndpoints.DeleteChore</c> uses <c>MapDelete</c> with an inferred request body, which .NET
-/// rejects at endpoint build; (2) the orphaned <c>20260131232149_AddShoppingListFavorites</c> migration
-/// breaks a fresh-DB <c>MigrateAsync</c>). Neither defect touches the concurrency mechanism, so this test
-/// verifies the mandated primary risk directly against real Postgres without depending on the broken host.
-/// The HTTP-level harness (<see cref="ChoresWebAppFactory"/> + the HTTP tests) is in place and will exercise
-/// the same path end-to-end once those production defects are fixed.</para>
-/// <para>The schema is materialized with <c>EnsureCreatedAsync</c> (full current model, including the
-/// <c>xmin</c> rowversion mapping) to sidestep the broken migration chain — the concurrency behavior under
-/// test is identical.</para>
+/// <para><b>Why service-level in addition to the HTTP endpoints:</b> this forces a DETERMINISTIC write-write
+/// race with a save barrier (both writers reach <c>SaveChanges</c> after both loaded the unclaimed row at the
+/// same xmin version), so the loser is GUARANTEED to be an xmin conflict rather than the "already held"
+/// validation guard. The HTTP-level race in <see cref="ChoreConcurrencyTests"/> exercises the same path end to
+/// end but, lacking a barrier, the loser may legitimately be either a 409 (xmin) or a 400 (already held)
+/// depending on timing — so the strict "exactly one xmin conflict" proof lives here.</para>
+/// <para>The schema is materialized with <c>EnsureCreatedAsync</c> on this test's OWN database (full current
+/// model, including the <c>xmin</c> rowversion mapping) — fast and isolated from the MigrateAsync-based HTTP
+/// harness sharing the container; the concurrency behavior under test is identical.</para>
 /// </summary>
 [Collection(IntegrationCollection.Name)]
 [Trait("kind", "integration")]
@@ -44,15 +42,18 @@ public sealed class ChoreServiceConcurrencyTests(PostgresContainerFixture postgr
     private PostgresDbContextFactory _dbFactory = default!;
     private ChoreService _service = default!;
 
+    private string _connectionString = default!;
+
     public async Task InitializeAsync()
     {
-        _dbFactory = new PostgresDbContextFactory(postgres.ConnectionString);
+        // Own database on the shared container so this EnsureCreated-based schema does not collide with the
+        // MigrateAsync-based HTTP harness (which expects __EFMigrationsHistory) — they cannot share one DB.
+        _connectionString = await postgres.CreateDatabaseConnectionStringAsync();
+        _dbFactory = new PostgresDbContextFactory(_connectionString);
 
         await using (var ctx = _dbFactory.CreateDbContext())
         {
-            // Fresh schema per run from the current model (real Postgres, real xmin column). Drop first so the
-            // suite is idempotent across reruns against the shared container.
-            await ctx.Database.EnsureDeletedAsync();
+            // Fresh schema per run from the current model (real Postgres, real xmin column).
             await ctx.Database.EnsureCreatedAsync();
 
             ctx.Households.Add(new Household { Id = HouseholdId, Name = "Race House", CreatedAt = Now });
@@ -108,7 +109,7 @@ public sealed class ChoreServiceConcurrencyTests(PostgresContainerFixture postgr
         version.Should().NotBe(0u, "real Postgres assigns a non-zero xmin to a committed row");
 
         var barrier = new SaveBarrier(participants: 2);
-        var gatedFactory = new GatedPostgresDbContextFactory(postgres.ConnectionString, barrier);
+        var gatedFactory = new GatedPostgresDbContextFactory(_connectionString, barrier);
         var racingService = new ChoreService(
             gatedFactory,
             new ChoreStatusCalculator(),

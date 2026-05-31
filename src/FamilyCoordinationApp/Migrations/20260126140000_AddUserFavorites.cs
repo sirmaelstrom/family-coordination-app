@@ -11,42 +11,29 @@ public partial class AddUserFavorites : Migration
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.CreateTable(
-            name: "UserFavorites",
-            columns: table => new
-            {
-                UserId = table.Column<int>(type: "integer", nullable: false),
-                HouseholdId = table.Column<int>(type: "integer", nullable: false),
-                RecipeId = table.Column<int>(type: "integer", nullable: false),
-                CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
-            },
-            constraints: table =>
-            {
-                table.PrimaryKey("PK_UserFavorites", x => new { x.UserId, x.HouseholdId, x.RecipeId });
-                table.ForeignKey(
-                    name: "FK_UserFavorites_Recipes_HouseholdId_RecipeId",
-                    columns: x => new { x.HouseholdId, x.RecipeId },
-                    principalTable: "Recipes",
-                    principalColumns: new[] { "HouseholdId", "RecipeId" },
-                    onDelete: ReferentialAction.Cascade);
-                table.ForeignKey(
-                    name: "FK_UserFavorites_Users_UserId",
-                    column: x => x.UserId,
-                    principalTable: "Users",
-                    principalColumn: "Id",
-                    onDelete: ReferentialAction.Cascade);
-            });
+        // Idempotent raw SQL. This migration originally shipped without a .Designer.cs,
+        // so EF never discovered it. With its Designer now restored it is discoverable;
+        // the IF NOT EXISTS guards keep re-application safe on any DB where the table
+        // was already created out-of-band. Mirrors the DDL the CreateTable/CreateIndex
+        // builder calls emitted (composite PK, two cascade FKs, the HouseholdId/RecipeId
+        // index).
+        migrationBuilder.Sql(@"
+            CREATE TABLE IF NOT EXISTS ""UserFavorites"" (
+                ""UserId"" integer NOT NULL,
+                ""HouseholdId"" integer NOT NULL,
+                ""RecipeId"" integer NOT NULL,
+                ""CreatedAt"" timestamp with time zone NOT NULL,
+                CONSTRAINT ""PK_UserFavorites"" PRIMARY KEY (""UserId"", ""HouseholdId"", ""RecipeId""),
+                CONSTRAINT ""FK_UserFavorites_Recipes_HouseholdId_RecipeId"" FOREIGN KEY (""HouseholdId"", ""RecipeId"") REFERENCES ""Recipes"" (""HouseholdId"", ""RecipeId"") ON DELETE CASCADE,
+                CONSTRAINT ""FK_UserFavorites_Users_UserId"" FOREIGN KEY (""UserId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE
+            );");
 
-        migrationBuilder.CreateIndex(
-            name: "IX_UserFavorites_HouseholdId_RecipeId",
-            table: "UserFavorites",
-            columns: new[] { "HouseholdId", "RecipeId" });
+        migrationBuilder.Sql("CREATE INDEX IF NOT EXISTS \"IX_UserFavorites_HouseholdId_RecipeId\" ON \"UserFavorites\" (\"HouseholdId\", \"RecipeId\");");
     }
 
     /// <inheritdoc />
     protected override void Down(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.DropTable(
-            name: "UserFavorites");
+        migrationBuilder.Sql("DROP TABLE IF EXISTS \"UserFavorites\";");
     }
 }
