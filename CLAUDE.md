@@ -115,7 +115,7 @@ Required env vars (set via `.env` on the server, generated from a secrets manage
 ## Corrections
 <!-- Also see global corrections: D:\Development\data\memory\CORRECTIONS.md -->
 
-- [2026-04-16 UTC] PREPEND `sudo` to docker commands on thedarktower over SSH. Reason: docker socket not in user group.
+- [2026-04-16 UTC] PREPEND `sudo` to docker commands on the production host over SSH. Reason: docker socket not in user group.
 
 <!-- /reflect completed 2026-04-16 UTC -->
 

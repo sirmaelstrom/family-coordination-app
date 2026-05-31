@@ -230,7 +230,7 @@ docker-compose up
 
 - **Docker Compose:** Full stack (PostgreSQL + app + nginx) works well
 - **Hot Reload:** Requires rebuild - `docker compose build app && docker compose up -d`
-- **Database Access:** `docker exec familyapp-postgres psql -U familyapp -d familyapp`
+- **Database Access:** `docker exec familyapp-postgres psql -U <db-user> -d <db-name>`
 - **Logs:** `docker logs familyapp-app --follow` or `--since 2m`
 - **Browser Console:** Essential for debugging Blazor interactive issues
 

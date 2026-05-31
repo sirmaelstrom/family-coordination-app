@@ -1,4 +1,4 @@
-# Production override for thedarktower
+# Production override for the self-hosted production host
 services:
   postgres:
     # Override: bind mount from .env instead of named volume
