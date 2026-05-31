@@ -4,6 +4,7 @@
   import { showPhoto } from '../lightbox.svelte';
   import ChoreCard from './ChoreCard.svelte';
   import RoomEditSheet from './RoomEditSheet.svelte';
+  import RoomManagerSheet from './RoomManagerSheet.svelte';
 
   // ───────────────────────────────────────────────────────────────────────
   // Rooms lens (S7) — a rollup dashboard (D9): one card per room (incl. the
@@ -69,6 +70,13 @@
   }
 
   let canEditOpenRoom = $derived((openGroup?.rollup.roomId ?? null) !== null);
+
+  // ── Manage rooms (v1.2 room manager: reorder / delete / add) ───────────────
+  // A list surface over the real rooms; per-room rename / icon / photo is
+  // delegated to the existing RoomEditSheet (no duplication). Shown only when
+  // there's at least one real room to manage (General is virtual).
+  let manageOpen = $state(false);
+  let hasRealRooms = $derived(groups.some((g) => g.rollup.roomId !== null));
 </script>
 
 {#if openGroup}
@@ -176,6 +184,22 @@
   </div>
 {:else}
   <!-- Dashboard: one rollup card per room. -->
+  {#if hasRealRooms}
+    <div class="ch-rooms-managebar">
+      <button type="button" class="ch-rooms-manage" onclick={() => (manageOpen = true)}>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <path
+            d="M3 6h18M3 12h18M3 18h18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          />
+        </svg>
+        Manage rooms
+      </button>
+    </div>
+  {/if}
   {#if groups.length > 0}
     <div class="ch-rooms-grid">
       {#each groups as group (group.rollup.roomId ?? 'general')}
@@ -242,6 +266,18 @@
   }}
 />
 
+<!--
+  Manage-rooms list (reorder / delete / add). Per-room rename / icon / photo is
+  delegated to the RoomEditSheet above — opening it stacks on top of the manager,
+  which stays open so several rooms can be managed in one pass.
+-->
+<RoomManagerSheet
+  open={manageOpen}
+  {groups}
+  onEditRoom={(room) => openEditRoom(room)}
+  onClose={() => (manageOpen = false)}
+/>
+
 <style>
   /* ── Status accent (server-computed rollup status; never derived here) ──── */
   .ch-status-clean {
@@ -255,6 +291,39 @@
   }
 
   /* ── Dashboard grid ─────────────────────────────────────────────────────── */
+  /* Manage-rooms entry — sits above the grid, mirrors the drill-in Edit button. */
+  .ch-rooms-managebar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 12px;
+  }
+  .ch-rooms-manage {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border: 1px solid var(--color-line-strong);
+    background: transparent;
+    color: var(--color-text-muted);
+    padding: 6px 12px;
+    min-height: 36px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      background-color 0.15s,
+      color 0.15s;
+  }
+  .ch-rooms-manage:hover {
+    background: var(--color-action-hover);
+    color: var(--color-text);
+  }
+  .ch-rooms-manage:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
   .ch-rooms-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
