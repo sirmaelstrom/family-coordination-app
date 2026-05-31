@@ -23,7 +23,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] ~~**Phase 9: UX Enhancements**~~ - DEPRECATED: Minor gaps, not worth effort
 - [x] **Phase 10: Chore & Task Management** - Shared chore board: claim/hand-off/complete state machine, recurrence, effort tiers, rooms (chores v1.0)
 - [x] **Phase 11: Chores v1.1 — Equity View & Weekly Discord Digest** - Household effort-distribution lens + cron-triggered weekly digest, edit-chore dialog, starter backfill
-- [ ] **Phase 12: Chores v1.2 — Finish the Surface** - PLANNED: close the Phase-10 UI seams + chore-board polish (see details)
+- [x] **Phase 12: Chores v1.2 — Finish the Surface** - COMPLETE (2026-05-31): icons, home card, photo display/capture, room manager
+- [ ] **Phase 13: Chores v1.3 — Multi-room chores** - PLANNED (from prod feedback #6): one chore belonging to multiple rooms (M:N) — needs a spec
 
 ## Phase Details
 
@@ -191,13 +192,25 @@ Phases 8 and 9 were deprecated 2026-02-08. The identified gaps (attribution trac
 **Depends on**: Phase 11
 **Candidate scope** (grounded against the code, with size estimates):
   - ~~**Room-create UI** (MEDIUM)~~ — DONE (v1.2): inline "+ New room" in the chore add/edit sheets (creates via `POST /api/rooms` + selects, with an icon picker)
-  - **Room manager** (MEDIUM) — full CRUD surface (rename / icon / delete / reorder — all backed by the existing room API) so rooms can be edited after creation; placement TBD (top-level Settings page vs. a "Manage rooms" view in the chores island). Deferred from the v1.2 quick-wins pass (2026-05-31). NOTE: room-photo *capture* UI lives here too.
+  - ~~**Room manager** (MEDIUM)~~ — DONE (v1.2, PR #21): in-island "Manage rooms" surface — reorder (svelte-dnd-action), delete (chores→General confirm), thin Add; per-room rename/icon/photo delegated to `RoomEditSheet`.
   - ~~**Chore icons** (MEDIUM)~~ — DONE (v1.2, PR #14): optional emoji `Chore.Icon` (parity with `Room.Icon`), full vertical slice through the M9 board-contract lockstep (`board.json` + `ChoreBoardDtoContractTests` + island `types.ts`); both sheets reuse `IconPicker`; renders leading the name on `ChoreCard`. Migration `AddChoreIcon` (additive, `""` default).
   - ~~**Home-page chore card** (LARGE)~~ — DONE (v1.2, PR #15): `Home.razor` injects `IChoreBoardService`; household-level overdue / due-today / up-for-grabs counts (collective, non-punitive framing) + a Chores Quick Action linking `/chores`.
-  - **Chore + room photo display** (LARGE) — **carved into a dedicated UX/UI design-exploration thread** (2026-05-31): `handoff-2026-05-31-135640-chores-v1.2-photo-display-ux.md`. Backend done (`Chore.PhotoPath` / `Room.PhotoPath`, served same-origin at `/uploads/{hh}/{guid}.ext`); never rendered. Scope = chores **and** rooms; operator leans tap-to-enlarge; **design 1–2 options before building**. Room-photo *capture* is part of the Room Manager.
+  - ~~**Chore + room photo display** (LARGE)~~ — DONE (v1.2, PRs #18–20): tap-to-enlarge lightbox, chore-card thumbnails, room cover images (dashboard + drill hero), and room-photo capture (`RoomEditSheet`).
   - ~~**Equity up-for-grabs visual** (SMALL→MEDIUM)~~ — DONE (v1.2): `upForGrabsCount` / `fallingBehindCount` promoted from a text line to discrete dashed "outstanding work" entries in `EquityBoard.svelte` (a full proportional bar would still need an `UnassignedEffortPoints` field — deferred)
   - ~~**Room-create UI** (MEDIUM)~~ — DONE (v1.2): inline "+ New room" in the chore add/edit sheets
-**Note**: distinct from the deprecated Phases 8 & 9 (recipe/meal/shopping polish); this is the chores track. v1.2 shipped (2026-05-31): equity up-for-grabs + inline room-create (PR #13), chore icons (PR #14), home-page chore card (PR #15). **Remaining Phase 12:** photo display (design-exploration handoff) + room manager (deferred).
+**Note**: distinct from the deprecated Phases 8 & 9 (recipe/meal/shopping polish); this is the chores track. v1.2 **COMPLETE** (2026-05-31): equity up-for-grabs + inline room-create (#13), chore icons (#14), home-page chore card (#15), photo display + capture (#18–20), room manager (#21). The chores surface is now functionally complete; next chores horizon = v1.3 multi-room chores (below) and/or the SvelteKit rewrite (unprioritized).
+
+### Phase 13: Chores v1.3 — Multi-room chores (PLANNED)
+**Goal**: Let a single chore belong to more than one room (e.g. "make all the beds", "dust all the rooms downstairs").
+**Depends on**: Phase 12
+**Source**: Production feedback #6 (in-app Feedback table, 2026-05-31).
+**Why it's a phase, not a quick win**: `Chore.RoomId` is a single nullable FK today. Multi-room means a **many-to-many** `Chore ↔ Room` (join table + migration) that ripples through:
+  - the board **rollup** logic (a chore now counts toward N rooms' due/total counts),
+  - the island `roomGroups` grouping invariant (a chore would appear in multiple room groups — today it's in exactly one),
+  - the **board DTO** (single `roomId` → a `roomIds` array; the M9 lockstep: DTO + `board.json` + `ChoreBoardDtoContractTests` + island `types.ts`),
+  - the chore add/edit sheets (single room picker → multi-select),
+  - the room-manager **delete→General** reassignment (a chore loses one room but may keep others).
+**Recommendation**: `/spec` before building — it's a data-model + board-contract change with broad blast radius, not a surface tweak. Brushes the room model shipped in v1.2.
 
 ## Progress
 
@@ -217,8 +230,9 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 (8 & 9 de
 | 9. UX Enhancements | - | Deprecated | 2026-02-08 |
 | 10. Chore & Task Management | - | Complete | 2026-05 (PR #11) |
 | 11. Chores v1.1 (Equity & Digest) | 11 WPs | Complete | 2026-05-31 |
-| 12. Chores v1.2 (Finish the Surface) | 5/6 items | In progress | PRs #13–15 (2026-05-31); photo + room-manager remain |
+| 12. Chores v1.2 (Finish the Surface) | 6/6 items | Complete | PRs #13–15, #18–21 (2026-05-31) |
+| 13. Chores v1.3 (Multi-room chores) | - | Planned | from prod feedback #6 — needs a spec |
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-05-31 (v1.2: chore icons + home-page chore card shipped; photo display carved into a design-exploration thread)*
+*Last updated: 2026-05-31 (v1.2 COMPLETE — photo display/capture + room manager shipped; added Phase 13 multi-room chores from prod feedback #6)*
