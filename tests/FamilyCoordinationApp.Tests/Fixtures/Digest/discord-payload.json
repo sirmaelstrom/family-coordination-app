@@ -1,0 +1,29 @@
+{
+  "content": "",
+  "embeds": [
+    {
+      "title": "The Heath house knocked out 4 chores (12 pts) this week 💪",
+      "color": 5793266,
+      "fields": [
+        {
+          "name": "📊 This week's effort",
+          "value": "**Alice** — 5 pts (41.7%)\n**Bob** — 4 pts (33.3%)\n**Carol** — 3 pts (25.0%)",
+          "inline": false
+        },
+        {
+          "name": "⏰ Needs attention",
+          "value": "• Dishes\n• Vacuum",
+          "inline": false
+        },
+        {
+          "name": "🙋 Up for grabs",
+          "value": "3 chores open for anyone",
+          "inline": false
+        }
+      ]
+    }
+  ],
+  "allowed_mentions": {
+    "parse": []
+  }
+}
