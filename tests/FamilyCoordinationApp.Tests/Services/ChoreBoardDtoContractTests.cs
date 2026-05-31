@@ -52,6 +52,7 @@ public class ChoreBoardDtoContractTests
                 RecurrenceMode: "Flexible",
                 IntervalDays: 3,
                 DaysOfWeek: null,
+                AnchorDate: null,
                 DueState: DueState.Overdue,
                 ColorTier: ColorTier.Overdue,
                 NextDueAt: new DateTime(2026, 5, 28, 5, 0, 0, DateTimeKind.Utc),
@@ -76,6 +77,7 @@ public class ChoreBoardDtoContractTests
                 RecurrenceMode: "Fixed",
                 IntervalDays: null,
                 DaysOfWeek: ChoreDaysOfWeek.Monday | ChoreDaysOfWeek.Thursday,
+                AnchorDate: null,
                 DueState: DueState.DueToday,
                 ColorTier: ColorTier.Due,
                 NextDueAt: new DateTime(2026, 5, 30, 5, 0, 0, DateTimeKind.Utc),
@@ -100,6 +102,7 @@ public class ChoreBoardDtoContractTests
                 RecurrenceMode: "Fixed",
                 IntervalDays: null,
                 DaysOfWeek: ChoreDaysOfWeek.Saturday,
+                AnchorDate: null,
                 DueState: DueState.Scheduled,
                 ColorTier: ColorTier.Fresh,
                 NextDueAt: new DateTime(2026, 6, 2, 5, 0, 0, DateTimeKind.Utc),
@@ -124,6 +127,7 @@ public class ChoreBoardDtoContractTests
                 RecurrenceMode: "OneOff",
                 IntervalDays: null,
                 DaysOfWeek: null,
+                AnchorDate: new DateOnly(2026, 6, 10),
                 DueState: DueState.NotDue,
                 ColorTier: ColorTier.Mid,
                 NextDueAt: null,
@@ -223,7 +227,7 @@ public class ChoreBoardDtoContractTests
 
         var firstChore = root["chores"]!.AsArray()[0]!.AsObject();
         firstChore.Select(kvp => kvp.Key).Should().BeEquivalentTo(
-            "id", "name", "icon", "description", "roomId", "recurrenceMode", "intervalDays", "daysOfWeek",
+            "id", "name", "icon", "description", "roomId", "recurrenceMode", "intervalDays", "daysOfWeek", "anchorDate",
             "dueState", "colorTier", "nextDueAt",
             "isClaimStale", "effortTier", "effortPoints", "ownerUserId", "assigneeUserId", "assignmentKind",
             "claimedAt", "lastCompletedAt", "photoPath", "version");

@@ -105,6 +105,7 @@ public class ChoreBoardService(
         chore.RecurrenceMode.ToString(),
         chore.IntervalDays,
         chore.DaysOfWeek,
+        chore.AnchorDate,
         dueness.DueState,
         dueness.ColorTier,
         dueness.NextDueAt,
