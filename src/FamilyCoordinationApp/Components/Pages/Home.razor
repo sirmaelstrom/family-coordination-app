@@ -9,6 +9,7 @@
 @inject IHttpContextAccessor HttpContextAccessor
 @inject IMealPlanService MealPlanService
 @inject IShoppingListService ShoppingListService
+@inject IChoreBoardService ChoreBoardService
 
 <PageTitle>Home - Family Kitchen</PageTitle>
 
@@ -126,6 +127,84 @@
             </MudCard>
         </MudItem>
 
+        <!-- Chores Card -->
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="2" Class="dashboard-card">
+                <MudCardHeader>
+                    <CardHeaderAvatar>
+                        <MudAvatar Color="Color.Tertiary" Variant="Variant.Outlined">
+                            <MudIcon Icon="@Icons.Material.Filled.CleaningServices" />
+                        </MudAvatar>
+                    </CardHeaderAvatar>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Chores</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            @if (_choreActiveTotal == 0)
+                            {
+                                @:No chores yet
+                            }
+                            else if (ChoreAttention > 0)
+                            {
+                                @:@ChoreAttention need attention
+                            }
+                            else
+                            {
+                                @:All caught up
+                            }
+                        </MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudIconButton Icon="@Icons.Material.Filled.ArrowForward" Href="/chores" />
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent Class="pt-0">
+                    @if (_choreActiveTotal == 0)
+                    {
+                        <MudText Color="Color.Secondary" Class="text-center py-4">
+                            No chores set up yet
+                        </MudText>
+                        <div class="text-center">
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/chores">
+                                Set up the chore board
+                            </MudButton>
+                        </div>
+                    }
+                    else if (ChoreAttention == 0 && _choreUpForGrabs == 0)
+                    {
+                        <MudText Color="Color.Secondary" Class="text-center py-4">
+                            All caught up — nothing needs attention 🎉
+                        </MudText>
+                    }
+                    else
+                    {
+                        <div class="chore-stats py-2">
+                            @if (_choreOverdue > 0)
+                            {
+                                <div class="d-flex align-center gap-2 py-1">
+                                    <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Size="Size.Small" Color="Color.Error" />
+                                    <MudText><b>@_choreOverdue</b> overdue</MudText>
+                                </div>
+                            }
+                            @if (_choreDueToday > 0)
+                            {
+                                <div class="d-flex align-center gap-2 py-1">
+                                    <MudIcon Icon="@Icons.Material.Filled.Today" Size="Size.Small" Color="Color.Warning" />
+                                    <MudText><b>@_choreDueToday</b> due today</MudText>
+                                </div>
+                            }
+                            @if (_choreUpForGrabs > 0)
+                            {
+                                <div class="d-flex align-center gap-2 py-1">
+                                    <MudIcon Icon="@Icons.Material.Filled.PanTool" Size="Size.Small" Color="Color.Secondary" />
+                                    <MudText><b>@_choreUpForGrabs</b> up for grabs</MudText>
+                                </div>
+                            }
+                        </div>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
         <!-- Quick Actions -->
         <MudItem xs="12">
             <MudText Typo="Typo.h6" Class="mb-3">Quick Actions</MudText>
@@ -151,8 +230,8 @@
                     </MudButton>
                 </MudItem>
                 <MudItem xs="6" sm="3">
-                    <MudButton Variant="Variant.Outlined" 
-                               Color="Color.Primary" 
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Primary"
                                FullWidth="true"
                                Href="/meal-plan"
                                StartIcon="@Icons.Material.Filled.CalendarMonth"
@@ -161,8 +240,18 @@
                     </MudButton>
                 </MudItem>
                 <MudItem xs="6" sm="3">
-                    <MudButton Variant="Variant.Outlined" 
-                               Color="Color.Primary" 
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Primary"
+                               FullWidth="true"
+                               Href="/chores"
+                               StartIcon="@Icons.Material.Filled.CleaningServices"
+                               Class="quick-action-btn">
+                        Chores
+                    </MudButton>
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Primary"
                                FullWidth="true"
                                Href="/settings/users"
                                StartIcon="@Icons.Material.Filled.PersonAdd"
@@ -210,6 +299,13 @@
     private int _shoppingListCount;
     private int _shoppingListChecked;
     private double _shoppingListProgress;
+    private int _choreActiveTotal;
+    private int _choreOverdue;
+    private int _choreDueToday;
+    private int _choreUpForGrabs;
+
+    // Chores needing a look = overdue + due today (names chores, not people — collective framing).
+    private int ChoreAttention => _choreOverdue + _choreDueToday;
 
     protected override async Task OnInitializedAsync()
     {
@@ -234,6 +330,7 @@
                 
                 await LoadTodaysMeals(context);
                 await LoadShoppingListStats();
+                await LoadChoreStats(user.Id);
             }
         }
     }
@@ -269,6 +366,18 @@
             var total = _shoppingListCount + _shoppingListChecked;
             _shoppingListProgress = total > 0 ? (_shoppingListChecked * 100.0 / total) : 0;
         }
+    }
+
+    private async Task LoadChoreStats(int userId)
+    {
+        // Household-level, collective framing (never a per-person leaderboard). The board's
+        // SERVER-computed dueState + assignment drive the counts — no client-side date math (M5).
+        var board = await ChoreBoardService.GetBoardAsync(_householdId, userId);
+        _choreActiveTotal = board.Chores.Count;
+        _choreOverdue = board.Chores.Count(c => c.DueState == DueState.Overdue);
+        _choreDueToday = board.Chores.Count(c => c.DueState == DueState.DueToday);
+        // Up for grabs = unassigned pile OR a self-claim gone stale (mirrors ChoreAttention.IsUpForGrabs).
+        _choreUpForGrabs = board.Chores.Count(c => c.AssignmentKind == AssignmentKind.None || c.IsClaimStale);
     }
 
     private static string GetMealTypeIcon(MealType mealType) => mealType switch
