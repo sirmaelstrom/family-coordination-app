@@ -39,6 +39,10 @@ export interface ChoreDto {
   description: string | null;
   roomId: number | null;
   recurrenceMode: RecurrenceMode;
+  /** Recurrence sub-value echoed for edit pre-fill (Flexible "every N days"); null otherwise. */
+  intervalDays: number | null;
+  /** camelCase CSV of weekday flags (e.g. "monday, thursday") for Fixed chores; null otherwise. */
+  daysOfWeek: string | null;
   /** Server-computed — NEVER recompute dueness client-side (M5/M6). */
   dueState: DueState;
   /** Server-computed — NEVER recompute the decay tier client-side (M5/M6). */
