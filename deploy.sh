@@ -159,11 +159,25 @@ else
 fi
 
 # (3) Refuse to start on an uninitialized data dir (would trigger a fresh initdb).
-if sudo test -e "$DB_DATA_PATH" && ! sudo test -f "$DB_DATA_PATH/PG_VERSION"; then
-  [[ "${ALLOW_FRESH_DB:-0}" == "1" ]] || die "POSTGRES_DATA_PATH ($DB_DATA_PATH) exists but is not an initialized cluster (no PG_VERSION). Postgres would create a FRESH empty DB. Refusing. If this is a brand-new install, re-run with ALLOW_FRESH_DB=1."
-  log "WARNING: data dir uninitialized but ALLOW_FRESH_DB=1 set — a fresh DB will be created."
+# The host data dir is root-owned, so we can't `sudo test` it: in non-interactive runs (the CI
+# self-hosted deploy, or `ssh host ./deploy.sh`) sudo has no TTY to read a password, and only the
+# specific `sudo docker …` invocations this script uses are NOPASSWD — `sudo test` is NOT, so it
+# fails and the old guard silently "passed". Instead probe the STILL-RUNNING old postgres (same
+# bind mount the new container reuses) via `sudo docker exec` (passwordless, mirrors the backup
+# above) and check PGDATA/PG_VERSION inside it.
+if sudo docker ps --format '{{.Names}}' | grep -qx 'familyapp-postgres'; then
+  if sudo docker exec familyapp-postgres sh -c 'test -f "$PGDATA/PG_VERSION"'; then
+    log "DB safety check passed (live cluster initialized; data dir: $DB_DATA_PATH)"
+  else
+    [[ "${ALLOW_FRESH_DB:-0}" == "1" ]] || die "POSTGRES_DATA_PATH ($DB_DATA_PATH) is mounted but has no PG_VERSION — postgres would create a FRESH empty DB and orphan production data. Refusing. If this is a brand-new install, re-run with ALLOW_FRESH_DB=1."
+    log "WARNING: data dir uninitialized but ALLOW_FRESH_DB=1 set — a fresh DB will be created."
+  fi
+else
+  # No running familyapp-postgres to probe (first deploy on this host, or after `down`); the
+  # pre-deploy backup was skipped for the same reason. Treat as a fresh install — postgres will
+  # initdb a new cluster on first start (matches the original "path doesn't exist yet" behavior).
+  log "DB safety check: no running familyapp-postgres to probe — assuming fresh install (postgres will initdb)."
 fi
-log "DB safety check passed (data dir: $DB_DATA_PATH)"
 
 # ── Deploy ──────────────────────────────────────────────────────────
 log "Deploying containers..."
