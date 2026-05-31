@@ -34,6 +34,25 @@
           SkipUnchangedFiles="true" />
   </Target>
 
+  <!--
+    Copy the built chores island into wwwroot before build.
+    Run `npm run build` in frontend/chores/ first (or let the Docker build do
+    it via the chores-node-build stage). If dist/ doesn't exist, the target is
+    skipped silently and the island endpoint 404s — Chores.razor renders the
+    "not enabled" placeholder via the CHORES_USE_ISLAND toggle. Parallel to
+    CopyShoppingListIsland (MN7 — added, not modifying the existing target).
+  -->
+  <Target Name="CopyChoresIsland"
+          BeforeTargets="AssignTargetPaths"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\chores\dist')">
+    <ItemGroup>
+      <_ChoresIslandFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\chores\dist\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ChoresIslandFiles)"
+          DestinationFiles="@(_ChoresIslandFiles->'$(MSBuildThisFileDirectory)wwwroot\islands\chores\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.4.0" />
     <PackageReference Include="blazor-dragdrop" Version="2.6.1" />

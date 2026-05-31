@@ -1,0 +1,261 @@
+import type {
+  ChoreBoardDto,
+  ChoreDto,
+  RoomDto,
+  EffortTier,
+  RecurrenceMode,
+} from './types';
+
+const CHORES_BASE = '/api/chores';
+const ROOMS_BASE = '/api/rooms';
+
+/**
+ * Thrown on any non-2xx response. `status` lets callers distinguish the
+ * retryable concurrency conflict (409) from every other rejection.
+ *
+ * ⚠ WP-08 finding: the app re-executes empty-body API 404s through a Blazor
+ * `/not-found` page, so a server-side "not found" can arrive on the wire as an
+ * empty **400**, not 404. Therefore treat ANY 4xx as a non-retryable rejection
+ * EXCEPT 409, which is the genuine xmin concurrency conflict (WP-11 refetches
+ * the board and retries the mutation on 409 only).
+ */
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+
+  /** The retryable optimistic-concurrency conflict (refetch board + retry). */
+  get isConflict(): boolean {
+    return this.status === 409;
+  }
+
+  /**
+   * A non-retryable client rejection: validation / illegal transition / not
+   * found (which may surface as an empty 400 per the WP-08 re-execution
+   * behavior). Everything 4xx that is NOT 409.
+   */
+  get isClientRejection(): boolean {
+    return this.status >= 400 && this.status < 500 && this.status !== 409;
+  }
+}
+
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    // Same-origin cookie auth — the host page is already authenticated.
+    credentials: 'include',
+    headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
+    ...init,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new ApiError(res.status, text || res.statusText);
+  }
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+function jsonBody(body: unknown): RequestInit {
+  return {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  };
+}
+
+// ─── Mutation request/response shapes (typed now for WP-11) ─────────────────
+
+/** Concurrency token echoed on every chore mutation (xmin from ChoreDto.version). */
+export interface VersionRequest {
+  version: number;
+}
+
+export interface CreateChoreRequest {
+  name: string;
+  description?: string | null;
+  roomId?: number | null;
+  recurrenceMode: RecurrenceMode;
+  intervalDays?: number | null;
+  /** ISO date "YYYY-MM-DD" (DateOnly server-side). */
+  anchorDate?: string | null;
+  /** camelCase [Flags] enum string, e.g. "monday, thursday"; null when not Fixed-weekly. */
+  daysOfWeek?: string | null;
+  dayOfMonth?: number | null;
+  effortTier: EffortTier;
+  ownerUserId?: number | null;
+  assigneeUserId?: number | null;
+  photoPath?: string | null;
+}
+
+/** No assignee — assignment never moves via edit. Carries the version. */
+export interface UpdateChoreRequest {
+  name: string;
+  description?: string | null;
+  roomId?: number | null;
+  recurrenceMode: RecurrenceMode;
+  intervalDays?: number | null;
+  anchorDate?: string | null;
+  daysOfWeek?: string | null;
+  dayOfMonth?: number | null;
+  effortTier: EffortTier;
+  ownerUserId?: number | null;
+  version: number;
+}
+
+/** targetUserId null ⇒ return-to-pile. */
+export interface HandOffRequest {
+  targetUserId?: number | null;
+  version: number;
+}
+
+export interface CompleteRequest {
+  note?: string | null;
+  photoPath?: string | null;
+  version: number;
+}
+
+export interface PhotoUploadResponse {
+  photoPath: string;
+}
+
+export interface DefaultViewResponse {
+  view: string | null;
+}
+
+export interface ReorderRoomsRequest {
+  orderedRoomIds: number[];
+}
+
+export interface RoomUpsertRequest {
+  name: string;
+  icon?: string | null;
+  photoPath?: string | null;
+}
+
+// ─── Board read (the ONE payload all lenses group client-side, M11) ─────────
+
+export async function getBoard(): Promise<ChoreBoardDto> {
+  return request<ChoreBoardDto>(`${CHORES_BASE}/board`);
+}
+
+// ─── Chore mutations (WP-11 wires these to optimistic UI + 409 retry) ───────
+
+export async function createChore(body: CreateChoreRequest): Promise<ChoreDto> {
+  return request<ChoreDto>(`${CHORES_BASE}/`, { method: 'POST', ...jsonBody(body) });
+}
+
+export async function updateChore(
+  choreId: number,
+  body: UpdateChoreRequest,
+): Promise<ChoreDto> {
+  return request<ChoreDto>(`${CHORES_BASE}/${choreId}`, { method: 'PUT', ...jsonBody(body) });
+}
+
+export async function deleteChore(choreId: number, version: number): Promise<void> {
+  await request<void>(`${CHORES_BASE}/${choreId}`, {
+    method: 'DELETE',
+    ...jsonBody({ version } satisfies VersionRequest),
+  });
+}
+
+export async function claimChore(choreId: number, version: number): Promise<ChoreDto> {
+  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/claim`, {
+    method: 'POST',
+    ...jsonBody({ version } satisfies VersionRequest),
+  });
+}
+
+export async function dropChore(choreId: number, version: number): Promise<ChoreDto> {
+  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/drop`, {
+    method: 'POST',
+    ...jsonBody({ version } satisfies VersionRequest),
+  });
+}
+
+export async function handOffChore(
+  choreId: number,
+  body: HandOffRequest,
+): Promise<ChoreDto> {
+  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/handoff`, {
+    method: 'POST',
+    ...jsonBody(body),
+  });
+}
+
+export async function completeChore(
+  choreId: number,
+  body: CompleteRequest,
+): Promise<ChoreDto> {
+  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/complete`, {
+    method: 'POST',
+    ...jsonBody(body),
+  });
+}
+
+/** Upload a chore photo (multipart field name `file`) → { photoPath } to pass in create/complete. */
+export async function uploadChorePhoto(
+  choreId: number,
+  file: File,
+): Promise<PhotoUploadResponse> {
+  const form = new FormData();
+  form.append('file', file);
+  // No Content-Type header — the browser sets the multipart boundary.
+  return request<PhotoUploadResponse>(`${CHORES_BASE}/${choreId}/photo`, {
+    method: 'POST',
+    body: form,
+  });
+}
+
+/** Persist the caller's roaming default lens (WP-12). null/blank clears to default. */
+export async function setDefaultView(view: string | null): Promise<DefaultViewResponse> {
+  return request<DefaultViewResponse>(`${CHORES_BASE}/me/default-view`, {
+    method: 'PATCH',
+    ...jsonBody({ view }),
+  });
+}
+
+// ─── Room admin (/api/rooms) ────────────────────────────────────────────────
+
+export async function listRooms(): Promise<RoomDto[]> {
+  return request<RoomDto[]>(`${ROOMS_BASE}/`);
+}
+
+export async function getRoom(roomId: number): Promise<RoomDto> {
+  return request<RoomDto>(`${ROOMS_BASE}/${roomId}`);
+}
+
+export async function createRoom(body: RoomUpsertRequest): Promise<RoomDto> {
+  return request<RoomDto>(`${ROOMS_BASE}/`, { method: 'POST', ...jsonBody(body) });
+}
+
+export async function updateRoom(
+  roomId: number,
+  body: RoomUpsertRequest,
+): Promise<RoomDto> {
+  return request<RoomDto>(`${ROOMS_BASE}/${roomId}`, { method: 'PUT', ...jsonBody(body) });
+}
+
+export async function deleteRoom(roomId: number): Promise<void> {
+  await request<void>(`${ROOMS_BASE}/${roomId}`, { method: 'DELETE' });
+}
+
+export async function reorderRooms(orderedRoomIds: number[]): Promise<void> {
+  await request<void>(`${ROOMS_BASE}/reorder`, {
+    method: 'POST',
+    ...jsonBody({ orderedRoomIds } satisfies ReorderRoomsRequest),
+  });
+}
+
+export async function uploadRoomPhoto(
+  roomId: number,
+  file: File,
+): Promise<PhotoUploadResponse> {
+  const form = new FormData();
+  form.append('file', file);
+  return request<PhotoUploadResponse>(`${ROOMS_BASE}/${roomId}/photo`, {
+    method: 'POST',
+    body: form,
+  });
+}
