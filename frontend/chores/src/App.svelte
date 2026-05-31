@@ -15,6 +15,7 @@
   import HandOffPicker from './lib/components/HandOffPicker.svelte';
   import DigestSettings from './lib/components/DigestSettings.svelte';
   import Toasts from './lib/components/Toasts.svelte';
+  import PhotoLightbox from './lib/components/PhotoLightbox.svelte';
 
   // ───────────────────────────────────────────────────────────────────────
   // Root of the chores island. Fetches the ONE board payload into the shared
@@ -345,6 +346,9 @@
 />
 
 <Toasts />
+
+<!-- Single shared tap-to-enlarge overlay; opened via showPhoto() from any surface. -->
+<PhotoLightbox />
 
 <style>
   .ch-container {

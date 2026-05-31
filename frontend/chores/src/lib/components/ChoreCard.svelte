@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ChoreDto, ColorTier, DueState, EffortTier, RecurrenceMode } from '../types';
   import { memberFor } from '../state.svelte';
+  import { showPhoto } from '../lightbox.svelte';
   import MemberAvatar from './MemberAvatar.svelte';
 
   // ───────────────────────────────────────────────────────────────────────
@@ -119,6 +120,32 @@
   aria-busy={pending}
 >
   <div class="ch-card-accent" aria-hidden="true"></div>
+
+  {#if chore.photoPath}
+    <!--
+      Leading photo thumbnail (v1.2). Same-origin served URL (/uploads/…), so
+      `src` works directly. Tap → shared lightbox. Fixed 56px square keeps row
+      height steady regardless of photo orientation; the icon emoji still leads
+      the name. No-photo chores render no thumbnail (unchanged from before).
+    -->
+    <button
+      type="button"
+      class="ch-card-thumb-btn"
+      data-action="photo"
+      onclick={() => showPhoto(chore.photoPath, chore.name)}
+      aria-label="View photo for {chore.name}"
+      title="View photo"
+    >
+      <img
+        class="ch-card-thumb"
+        src={chore.photoPath}
+        alt=""
+        width="56"
+        height="56"
+        loading="lazy"
+      />
+    </button>
+  {/if}
 
   <div class="ch-card-main">
     <div class="ch-card-top">
@@ -322,6 +349,36 @@
     flex-shrink: 0;
     width: 6px;
     background: var(--accent);
+  }
+
+  /* ── Leading photo thumbnail (v1.2) — tap to enlarge ───────────────────── */
+  .ch-card-thumb-btn {
+    flex-shrink: 0;
+    align-self: flex-start;
+    margin: 12px 0 12px 12px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    cursor: zoom-in;
+    line-height: 0;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .ch-card-thumb {
+    display: block;
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: var(--color-action-hover);
+  }
+  .ch-card-thumb-btn:hover .ch-card-thumb {
+    filter: brightness(1.04);
+  }
+  .ch-card-thumb-btn:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
   }
 
   .ch-card-main {

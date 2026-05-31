@@ -1,7 +1,9 @@
 <script lang="ts">
   import type { RoomGroup } from '../state.svelte';
-  import type { ChoreDto, RoomRollupStatus } from '../types';
+  import type { ChoreDto, RoomRollupDto, RoomRollupStatus } from '../types';
+  import { showPhoto } from '../lightbox.svelte';
   import ChoreCard from './ChoreCard.svelte';
+  import RoomEditSheet from './RoomEditSheet.svelte';
 
   // ───────────────────────────────────────────────────────────────────────
   // Rooms lens (S7) — a rollup dashboard (D9): one card per room (incl. the
@@ -54,34 +56,101 @@
     attention: 'Needs a look',
     needsWork: 'Needs work',
   };
+
+  // ── Room edit (v1.2 minimal room manager) ─────────────────────────────────
+  // Editing is only offered for real rooms (roomId !== null) — never the virtual
+  // General group. RoomEditSheet handles updateRoom + photo upload + board reload.
+  let editOpen = $state(false);
+  let editRoom = $state<RoomRollupDto | null>(null);
+
+  function openEditRoom(rollup: RoomRollupDto): void {
+    editRoom = rollup;
+    editOpen = true;
+  }
+
+  let canEditOpenRoom = $derived((openGroup?.rollup.roomId ?? null) !== null);
 </script>
 
 {#if openGroup}
   <!-- Drill-in: a single room's chore list. -->
   <div class="ch-rooms-drill">
-    <button type="button" class="ch-rooms-back" onclick={backToGrid}>
-      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-        <path d="M15 18l-6-6 6-6" fill="none" stroke="currentColor" stroke-width="2" />
-      </svg>
-      All rooms
-    </button>
+    <div class="ch-rooms-drill-bar">
+      <button type="button" class="ch-rooms-back" onclick={backToGrid}>
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path d="M15 18l-6-6 6-6" fill="none" stroke="currentColor" stroke-width="2" />
+        </svg>
+        All rooms
+      </button>
+      {#if canEditOpenRoom}
+        <button type="button" class="ch-rooms-edit" onclick={() => openEditRoom(openGroup.rollup)}>
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path
+              d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+              fill="currentColor"
+            />
+          </svg>
+          Edit room
+        </button>
+      {/if}
+    </div>
 
-    <header class="ch-room-head">
-      <span class="ch-room-icon" aria-hidden="true">{openGroup.rollup.icon}</span>
-      <div class="ch-room-head-text">
-        <h2 class="ch-room-name">{openGroup.rollup.name}</h2>
-        <span class="ch-room-sub">
-          {openGroup.rollup.choreCount}
-          {openGroup.rollup.choreCount === 1 ? 'chore' : 'chores'}
-          {#if openGroup.rollup.dueCount > 0}
-            · {openGroup.rollup.dueCount} need attention
-          {/if}
+    {#if openGroup.rollup.photoPath}
+      <!--
+        Photo'd room → hero band. The emoji still leads the name (operator's
+        hybrid) so identity is anchored even with a cover. Tap the photo to
+        enlarge (shared lightbox); the overlay text is non-interactive.
+      -->
+      <header class="ch-room-hero">
+        <button
+          type="button"
+          class="ch-room-hero-zoom"
+          onclick={() => showPhoto(openGroup.rollup.photoPath, openGroup.rollup.name)}
+          aria-label="View photo for {openGroup.rollup.name}"
+        >
+          <img
+            class="ch-room-hero-img"
+            src={openGroup.rollup.photoPath}
+            alt=""
+            loading="lazy"
+          />
+        </button>
+        <div class="ch-room-hero-overlay" aria-hidden="true">
+          <div class="ch-room-hero-text">
+            <h2 class="ch-room-hero-name">
+              <span class="ch-room-hero-emoji">{openGroup.rollup.icon}</span>
+              {openGroup.rollup.name}
+            </h2>
+            <span class="ch-room-hero-sub">
+              {openGroup.rollup.choreCount}
+              {openGroup.rollup.choreCount === 1 ? 'chore' : 'chores'}
+              {#if openGroup.rollup.dueCount > 0}
+                · {openGroup.rollup.dueCount} need attention
+              {/if}
+            </span>
+          </div>
+          <span class="ch-room-status ch-status-{openGroup.rollup.status}">
+            {STATUS_LABEL[openGroup.rollup.status]}
+          </span>
+        </div>
+      </header>
+    {:else}
+      <header class="ch-room-head">
+        <span class="ch-room-icon" aria-hidden="true">{openGroup.rollup.icon}</span>
+        <div class="ch-room-head-text">
+          <h2 class="ch-room-name">{openGroup.rollup.name}</h2>
+          <span class="ch-room-sub">
+            {openGroup.rollup.choreCount}
+            {openGroup.rollup.choreCount === 1 ? 'chore' : 'chores'}
+            {#if openGroup.rollup.dueCount > 0}
+              · {openGroup.rollup.dueCount} need attention
+            {/if}
+          </span>
+        </div>
+        <span class="ch-room-status ch-status-{openGroup.rollup.status}">
+          {STATUS_LABEL[openGroup.rollup.status]}
         </span>
-      </div>
-      <span class="ch-room-status ch-status-{openGroup.rollup.status}">
-        {STATUS_LABEL[openGroup.rollup.status]}
-      </span>
-    </header>
+      </header>
+    {/if}
 
     {#if openGroup.chores.length > 0}
       <div class="ch-room-cards">
@@ -117,35 +186,42 @@
           aria-label="{group.rollup.name}: {STATUS_LABEL[group.rollup.status]}, {group.rollup
             .choreCount} chores"
         >
-          <span class="ch-room-card-accent" aria-hidden="true"></span>
-          <span class="ch-room-card-body">
-            <span class="ch-room-card-top">
-              <span class="ch-room-card-icon" aria-hidden="true">{group.rollup.icon}</span>
-              <span class="ch-room-card-name">{group.rollup.name}</span>
-            </span>
-            <span class="ch-room-card-meta">
-              <span class="ch-room-status-pill ch-status-{group.rollup.status}">
-                {STATUS_LABEL[group.rollup.status]}
+          {#if group.rollup.photoPath}
+            <!-- Cover image (v1.2). Part of the drill-in button — tapping it opens
+                 the room. The emoji still leads the name below. -->
+            <img class="ch-room-cover" src={group.rollup.photoPath} alt="" loading="lazy" />
+          {/if}
+          <span class="ch-room-card-row">
+            <span class="ch-room-card-accent" aria-hidden="true"></span>
+            <span class="ch-room-card-body">
+              <span class="ch-room-card-top">
+                <span class="ch-room-card-icon" aria-hidden="true">{group.rollup.icon}</span>
+                <span class="ch-room-card-name">{group.rollup.name}</span>
               </span>
-              <span class="ch-room-card-counts">
-                {#if group.rollup.dueCount > 0}
-                  {group.rollup.dueCount} due · {group.rollup.choreCount} total
-                {:else}
-                  {group.rollup.choreCount}
-                  {group.rollup.choreCount === 1 ? 'chore' : 'chores'}
-                {/if}
+              <span class="ch-room-card-meta">
+                <span class="ch-room-status-pill ch-status-{group.rollup.status}">
+                  {STATUS_LABEL[group.rollup.status]}
+                </span>
+                <span class="ch-room-card-counts">
+                  {#if group.rollup.dueCount > 0}
+                    {group.rollup.dueCount} due · {group.rollup.choreCount} total
+                  {:else}
+                    {group.rollup.choreCount}
+                    {group.rollup.choreCount === 1 ? 'chore' : 'chores'}
+                  {/if}
+                </span>
               </span>
             </span>
+            <svg
+              class="ch-room-card-chevron"
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              aria-hidden="true"
+            >
+              <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" />
+            </svg>
           </span>
-          <svg
-            class="ch-room-card-chevron"
-            viewBox="0 0 24 24"
-            width="20"
-            height="20"
-            aria-hidden="true"
-          >
-            <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" />
-          </svg>
         </button>
       {/each}
     </div>
@@ -156,6 +232,15 @@
     </div>
   {/if}
 {/if}
+
+<RoomEditSheet
+  open={editOpen}
+  room={editRoom}
+  onClose={() => {
+    editOpen = false;
+    editRoom = null;
+  }}
+/>
 
 <style>
   /* ── Status accent (server-computed rollup status; never derived here) ──── */
@@ -177,8 +262,8 @@
   }
   .ch-room-card {
     display: flex;
+    flex-direction: column;
     align-items: stretch;
-    gap: 0;
     text-align: left;
     font: inherit;
     border: 1px solid var(--color-line);
@@ -192,6 +277,21 @@
       box-shadow 0.15s,
       transform 0.1s;
     -webkit-tap-highlight-color: transparent;
+  }
+  /* The accent | body | chevron row; sits below the optional cover image. */
+  .ch-room-card-row {
+    display: flex;
+    align-items: stretch;
+    flex: 1;
+    min-width: 0;
+  }
+  /* Cover image (v1.2) — full-width strip across the top of a photo'd room. */
+  .ch-room-cover {
+    width: 100%;
+    height: 84px;
+    object-fit: cover;
+    display: block;
+    background: var(--color-action-hover);
   }
   .ch-room-card:hover {
     box-shadow: var(--shadow-2);
@@ -305,6 +405,99 @@
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
     border-radius: var(--radius-sm);
+  }
+  /* Drill-in bar: back (left) + Edit room (right, real rooms only). */
+  .ch-rooms-drill-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .ch-rooms-edit {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border: 1px solid var(--color-line-strong);
+    background: transparent;
+    color: var(--color-text-muted);
+    padding: 6px 12px;
+    min-height: 36px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      background-color 0.15s,
+      color 0.15s;
+  }
+  .ch-rooms-edit:hover {
+    background: var(--color-action-hover);
+    color: var(--color-text);
+  }
+  .ch-rooms-edit:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  /* ── Drill-in hero (photo'd room) — emoji-led title overlaid, tap to zoom ── */
+  .ch-room-hero {
+    position: relative;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .ch-room-hero-zoom {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: zoom-in;
+    line-height: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .ch-room-hero-img {
+    display: block;
+    width: 100%;
+    height: 140px;
+    object-fit: cover;
+    background: var(--color-action-hover);
+  }
+  .ch-room-hero-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.62), rgba(0, 0, 0, 0) 70%);
+    pointer-events: none; /* clicks fall through to the zoom button */
+  }
+  .ch-room-hero-text {
+    min-width: 0;
+  }
+  .ch-room-hero-name {
+    margin: 0;
+    font-size: 1.375rem;
+    font-weight: 600;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  }
+  .ch-room-hero-emoji {
+    margin-right: 4px;
+  }
+  .ch-room-hero-sub {
+    font-size: 0.8125rem;
+    color: rgba(255, 255, 255, 0.92);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  }
+  /* Clean/attention pills need a backing to read on a photo; needsWork stays solid. */
+  .ch-room-hero-overlay .ch-room-status:not(.ch-status-needsWork) {
+    background: rgba(0, 0, 0, 0.4);
+    border-color: rgba(255, 255, 255, 0.5);
+    color: #fff;
   }
   .ch-room-head {
     display: flex;
