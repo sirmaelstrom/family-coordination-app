@@ -112,7 +112,7 @@ public static class ChoresEndpoints
 
     private static async Task<IResult> DeleteChore(
         int choreId,
-        VersionRequest req,
+        [FromBody] VersionRequest req,
         ClaimsPrincipal principal,
         IChoreService svc,
         IDbContextFactory<ApplicationDbContext> dbFactory,
