@@ -1,0 +1,136 @@
+{
+  "chores": [
+    {
+      "id": 1,
+      "name": "Mop the floor",
+      "description": "Use the good mop",
+      "roomId": 10,
+      "recurrenceMode": "Flexible",
+      "dueState": "overdue",
+      "colorTier": "overdue",
+      "nextDueAt": "2026-05-28T05:00:00Z",
+      "isClaimStale": true,
+      "effortTier": "Standard",
+      "effortPoints": 2,
+      "ownerUserId": 100,
+      "assigneeUserId": 101,
+      "assignmentKind": "claimed",
+      "claimedAt": "2026-05-25T05:00:00Z",
+      "lastCompletedAt": "2026-05-20T05:00:00Z",
+      "photoPath": "/uploads/1/abc.jpg",
+      "version": 7
+    },
+    {
+      "id": 2,
+      "name": "Take out trash",
+      "description": null,
+      "roomId": 10,
+      "recurrenceMode": "Fixed",
+      "dueState": "dueToday",
+      "colorTier": "due",
+      "nextDueAt": "2026-05-30T05:00:00Z",
+      "isClaimStale": false,
+      "effortTier": "Quick",
+      "effortPoints": 1,
+      "ownerUserId": null,
+      "assigneeUserId": 100,
+      "assignmentKind": "assigned",
+      "claimedAt": "2026-05-30T04:00:00Z",
+      "lastCompletedAt": null,
+      "photoPath": null,
+      "version": 3
+    },
+    {
+      "id": 3,
+      "name": "Water the plants",
+      "description": "Living room \u002B balcony",
+      "roomId": null,
+      "recurrenceMode": "Fixed",
+      "dueState": "scheduled",
+      "colorTier": "fresh",
+      "nextDueAt": "2026-06-02T05:00:00Z",
+      "isClaimStale": false,
+      "effortTier": "BigJob",
+      "effortPoints": 3,
+      "ownerUserId": 100,
+      "assigneeUserId": null,
+      "assignmentKind": "none",
+      "claimedAt": null,
+      "lastCompletedAt": "2026-05-15T05:00:00Z",
+      "photoPath": null,
+      "version": 1
+    },
+    {
+      "id": 4,
+      "name": "Fix the squeaky door",
+      "description": null,
+      "roomId": null,
+      "recurrenceMode": "OneOff",
+      "dueState": "notDue",
+      "colorTier": "mid",
+      "nextDueAt": null,
+      "isClaimStale": false,
+      "effortTier": "Quick",
+      "effortPoints": 1,
+      "ownerUserId": null,
+      "assigneeUserId": 101,
+      "assignmentKind": "claimed",
+      "claimedAt": "2026-05-30T03:00:00Z",
+      "lastCompletedAt": null,
+      "photoPath": null,
+      "version": 2
+    }
+  ],
+  "rooms": [
+    {
+      "roomId": 10,
+      "name": "Kitchen",
+      "icon": "\uD83C\uDF73",
+      "photoPath": "/uploads/1/kitchen.jpg",
+      "sortOrder": 1,
+      "choreCount": 2,
+      "dueCount": 2,
+      "status": "attention"
+    },
+    {
+      "roomId": 11,
+      "name": "Bathroom",
+      "icon": "\uD83D\uDEC1",
+      "photoPath": null,
+      "sortOrder": 2,
+      "choreCount": 0,
+      "dueCount": 0,
+      "status": "clean"
+    },
+    {
+      "roomId": null,
+      "name": "General",
+      "icon": "\uD83C\uDFE0",
+      "photoPath": null,
+      "sortOrder": 2147483647,
+      "choreCount": 2,
+      "dueCount": 0,
+      "status": "clean"
+    }
+  ],
+  "members": [
+    {
+      "userId": 100,
+      "displayName": "Alice",
+      "initials": "AL",
+      "pictureUrl": "https://example.com/alice.png"
+    },
+    {
+      "userId": 101,
+      "displayName": "Bob",
+      "initials": "BO",
+      "pictureUrl": null
+    }
+  ],
+  "needsAttentionChoreIds": [
+    1,
+    2,
+    3
+  ],
+  "userDefaultView": "rooms"
+}
