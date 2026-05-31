@@ -122,7 +122,9 @@
 
   <div class="ch-card-main">
     <div class="ch-card-top">
-      <h3 class="ch-card-name">{chore.name}</h3>
+      <h3 class="ch-card-name">
+        {#if chore.icon}<span class="ch-card-icon" aria-hidden="true">{chore.icon}</span>{/if}{chore.name}
+      </h3>
       <span class="ch-pill ch-pill-{tier}" title="Due state: {dueLabel}">{dueLabel}</span>
     </div>
 
@@ -344,6 +346,10 @@
     line-height: 1.3;
     color: var(--color-text);
     overflow-wrap: anywhere;
+  }
+  /* Optional chore icon leads the name (parity with room cards). */
+  .ch-card-icon {
+    margin-right: 6px;
   }
 
   /* ── Dueness pill — tinted by the same colorTier accent ────────────────── */

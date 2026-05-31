@@ -34,6 +34,8 @@ export type RoomRollupStatus = 'clean' | 'attention' | 'needsWork';
 export interface ChoreDto {
   id: number;
   name: string;
+  /** Optional emoji/short-code icon (parity with room icons); "" = none. */
+  icon: string;
   description: string | null;
   roomId: number | null;
   recurrenceMode: RecurrenceMode;

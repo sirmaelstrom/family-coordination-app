@@ -49,6 +49,8 @@
   type Cadence = 'once' | 'everyN' | 'days';
 
   let name = $state('');
+  /** Optional emoji icon; '' = none. Reuses the shared <IconPicker>. */
+  let choreIcon = $state<string>('');
   let cadence = $state<Cadence>('once');
   let intervalDays = $state('3'); // string for input coercion; parsed at submit
   let selectedDays = $state(new Set<string>());
@@ -144,6 +146,7 @@
 
   function reset() {
     name = '';
+    choreIcon = '';
     cadence = 'once';
     intervalDays = '3';
     selectedDays = new Set<string>();
@@ -235,6 +238,7 @@
       daysOfWeek: recurrence.daysOfWeek,
       dayOfMonth: null,
       effortTier: effort,
+      icon: choreIcon,
       ownerUserId: null,
       assigneeUserId,
       // Photo is NEVER in the create JSON (council C2) — the parent uploads it
@@ -264,6 +268,22 @@
           placeholder="e.g. Wipe down the counters"
         />
       </label>
+
+      <fieldset class="ch-field">
+        <legend class="ch-field-label">Icon (optional)</legend>
+        <div class="ch-icon-row">
+          <button
+            type="button"
+            class="ch-chip"
+            class:active={choreIcon === ''}
+            aria-pressed={choreIcon === ''}
+            onclick={() => (choreIcon = '')}
+          >
+            No icon
+          </button>
+          <IconPicker value={choreIcon || null} onSelect={(i) => (choreIcon = i)} label="Chore icon" />
+        </div>
+      </fieldset>
 
       <fieldset class="ch-field">
         <legend class="ch-field-label">How often?</legend>
@@ -624,6 +644,13 @@
   .ch-chip-row {
     display: flex;
     gap: 8px;
+    flex-wrap: wrap;
+  }
+  /* Icon field: the "No icon" chip sits inline with the emoji palette. */
+  .ch-icon-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
     flex-wrap: wrap;
   }
   .ch-chip {

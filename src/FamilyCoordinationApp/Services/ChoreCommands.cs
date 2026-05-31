@@ -9,6 +9,7 @@ namespace FamilyCoordinationApp.Services;
 /// </summary>
 /// <param name="Name">Required, non-empty after trim.</param>
 /// <param name="EffortTier">Named effort tier (P3) — drives the default <c>EffortPoints</c> snapshot.</param>
+/// <param name="Icon">Optional emoji/short-code icon (parity with Room.Icon); empty string = none.</param>
 public record CreateChoreCommand(
     string Name,
     string? Description,
@@ -21,7 +22,8 @@ public record CreateChoreCommand(
     EffortTier EffortTier,
     int? OwnerUserId,
     int? AssigneeUserId,
-    string? PhotoPath);
+    string? PhotoPath,
+    string Icon = "");
 
 /// <summary>
 /// Command to update a chore's editable fields (council M11) — the same editable subset as
@@ -39,4 +41,5 @@ public record UpdateChoreCommand(
     int? DayOfMonth,
     EffortTier EffortTier,
     int? OwnerUserId,
-    string? PhotoPath);
+    string? PhotoPath,
+    string Icon = "");

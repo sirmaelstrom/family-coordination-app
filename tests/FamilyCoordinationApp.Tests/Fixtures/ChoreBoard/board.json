@@ -3,6 +3,7 @@
     {
       "id": 1,
       "name": "Mop the floor",
+      "icon": "🧹",
       "description": "Use the good mop",
       "roomId": 10,
       "recurrenceMode": "Flexible",
@@ -23,6 +24,7 @@
     {
       "id": 2,
       "name": "Take out trash",
+      "icon": "",
       "description": null,
       "roomId": 10,
       "recurrenceMode": "Fixed",
@@ -43,6 +45,7 @@
     {
       "id": 3,
       "name": "Water the plants",
+      "icon": "🪴",
       "description": "Living room \u002B balcony",
       "roomId": null,
       "recurrenceMode": "Fixed",
@@ -63,6 +66,7 @@
     {
       "id": 4,
       "name": "Fix the squeaky door",
+      "icon": "",
       "description": null,
       "roomId": null,
       "recurrenceMode": "OneOff",

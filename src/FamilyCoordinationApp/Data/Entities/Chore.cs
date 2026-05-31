@@ -10,6 +10,9 @@ public class Chore
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
 
+    // Optional emoji/short-code icon (parity with Room.Icon). Empty string = no icon.
+    public string Icon { get; set; } = string.Empty;
+
     // Optional room association (nullable FK -> Room).
     public int? RoomId { get; set; }
 
