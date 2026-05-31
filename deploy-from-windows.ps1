@@ -1,4 +1,9 @@
-# deploy-from-windows.ps1 — Deploy family-coordination-app to darktower from Windows
+# deploy-from-windows.ps1 — Deploy family-coordination-app to the production host from Windows.
+#
+# Configure the target via environment variables (keeps host details out of the repo):
+#   $env:FAMILYAPP_DEPLOY_HOST = "your-ssh-host"   # an SSH Host alias from ~/.ssh/config, or user@host
+#   $env:FAMILYAPP_REMOTE_PATH = "~/familyapp"     # optional; defaults to ~/familyapp
+#
 # Usage:
 #   .\deploy-from-windows.ps1              — Regenerate secrets + recreate containers
 #   .\deploy-from-windows.ps1 --build      — Rebuild Docker image + deploy
@@ -14,20 +19,25 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$DarktowerHost = "thedarktower"
-$RemotePath = "~/familyapp"
+
+$DeployHost = $env:FAMILYAPP_DEPLOY_HOST
+if (-not $DeployHost) {
+    Write-Error "Set `$env:FAMILYAPP_DEPLOY_HOST to your SSH host (an alias in ~/.ssh/config, or user@host)."
+    exit 1
+}
+$RemotePath = if ($env:FAMILYAPP_REMOTE_PATH) { $env:FAMILYAPP_REMOTE_PATH } else { "~/familyapp" }
 
 Write-Host "=== Family Coordination App — Remote Deploy ===" -ForegroundColor Cyan
 
 if ($Status) {
-    Write-Host "Checking container status on darktower..."
-    ssh $DarktowerHost "docker ps --filter name=familyapp --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
+    Write-Host "Checking container status on the deploy host..."
+    ssh $DeployHost "docker ps --filter name=familyapp --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
     exit 0
 }
 
 if ($Down) {
-    Write-Host "Stopping containers on darktower..."
-    ssh $DarktowerHost "cd $RemotePath && ./deploy.sh down"
+    Write-Host "Stopping containers on the deploy host..."
+    ssh $DeployHost "cd $RemotePath && ./deploy.sh down"
     exit 0
 }
 
@@ -38,10 +48,10 @@ if ($Restart) { $flags += "--restart" }
 $flagStr = ($flags -join " ")
 if ($flagStr) {
     Write-Host "Running: deploy.sh $flagStr"
-    ssh $DarktowerHost "cd $RemotePath && ./deploy.sh $flagStr"
+    ssh $DeployHost "cd $RemotePath && ./deploy.sh $flagStr"
 } else {
     Write-Host "Running: deploy.sh (full deploy)"
-    ssh $DarktowerHost "cd $RemotePath && ./deploy.sh"
+    ssh $DeployHost "cd $RemotePath && ./deploy.sh"
 }
 
 Write-Host ""
