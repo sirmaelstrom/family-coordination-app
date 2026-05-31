@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Spec Review Gate — Chores v1.1 — Household Equity View + Weekly Discord Digest</title>
+  <style>
+    /* Dark theme. System fonts only. */
+    :root {
+      --fg: #e6edf3;
+      --muted: #8b949e;
+      --border: #30363d;
+      --bg: #0d1117;
+      --tile-bg: #161b22;
+      --tile-bg-2: #1c2128;
+      --code-bg: #1f2933;
+      --accent: #2563eb;
+      --decision: #60a5fa;
+      --assumption: #fbbf24;
+      --approve: #4ade80;
+      --revise: #fbbf24;
+      --reject: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: var(--fg);
+      background: var(--bg);
+      margin: 0 auto;
+      padding: 1.5rem;
+      line-height: 1.55;
+      max-width: 1100px;
+    }
+    header.page-header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1rem;
+      margin-bottom: 1rem;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 1rem;
+      align-items: start;
+    }
+    header.page-header h1 { margin: 0 0 .25rem; font-size: 1.5rem; }
+    .meta { color: var(--muted); font-size: .9rem; margin: 0; }
+    .meta code { background: var(--code-bg); color: var(--fg); padding: .1rem .3rem; border-radius: 3px; font-size: .85em; }
+    .stage-chip {
+      display: inline-block;
+      padding: .1rem .4rem;
+      background: #21262d;
+      color: var(--muted);
+      border-radius: 3px;
+      font-size: .7rem;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+    .level-chip {
+      display: inline-block;
+      padding: .15rem .5rem;
+      border-radius: 3px;
+      font-size: .75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .level-chip.full { background: #1e3a8a; color: #bfdbfe; }
+    .level-chip.light { background: #78350f; color: #fde68a; }
+    .level-chip.none { background: #21262d; color: var(--muted); }
+    .summary-tile {
+      background: var(--tile-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: .75rem 1rem;
+      min-width: 240px;
+    }
+    .summary-tile h3 { margin: 0 0 .35rem; font-size: .85rem; text-transform: uppercase; color: var(--muted); letter-spacing: .03em; }
+    .summary-tile .counters {
+      display: flex;
+      gap: 1rem;
+      margin-top: .25rem;
+    }
+    .summary-tile .counters dt { color: var(--muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .03em; }
+    .summary-tile .counters dd { margin: 0; font-weight: 600; font-size: 1.1rem; }
+    .summary-block {
+      background: var(--tile-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      margin: .5rem 0 1.5rem;
+    }
+    .summary-block h2 { margin: 0 0 .5rem; font-size: 1.1rem; }
+    .summary-block dl { display: grid; grid-template-columns: max-content 1fr; gap: .5rem 1rem; margin: 0; }
+    .summary-block dt { color: var(--muted); font-weight: 600; }
+    .summary-block dd { margin: 0; }
+    .summary-block ul { margin: .15rem 0; padding-left: 1.25rem; }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      margin: .5rem 0 1rem;
+      flex-wrap: wrap;
+    }
+    .toolbar a.jump-link {
+      color: var(--accent);
+      font-size: .85rem;
+    }
+    .approve-all-btn {
+      padding: .35rem .75rem;
+      background: var(--approve);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: .85rem;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .approve-all-btn:hover { background: #15803d; }
+
+    h2.items-heading { margin: 0 0 .5rem; font-size: 1.15rem; border-bottom: 1px solid var(--border); padding-bottom: .25rem; }
+
+    .item-list { display: flex; flex-direction: column; gap: .85rem; margin-bottom: 1.5rem; }
+    .item-card {
+      background: var(--tile-bg);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--border);
+      border-radius: 5px;
+      padding: .75rem 1rem;
+    }
+    .item-card.item-decision { border-left-color: var(--decision); }
+    .item-card.item-assumption { border-left-color: var(--assumption); }
+    .item-card.state-approve { background: rgba(74, 222, 128, 0.08); border-color: var(--approve); }
+    .item-card.state-revise { background: rgba(251, 191, 36, 0.08); border-color: var(--revise); }
+    .item-card.state-reject { background: rgba(248, 113, 113, 0.08); border-color: var(--reject); }
+    .item-card.needs-attention { box-shadow: 0 0 0 2px var(--reject); }
+
+    .item-head {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      flex-wrap: wrap;
+      margin-bottom: .35rem;
+    }
+    .item-head .id-chip {
+      background: #21262d;
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: .1rem .45rem;
+      border-radius: 3px;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      font-size: .8rem;
+    }
+    .item-head .kind-badge {
+      padding: .1rem .5rem;
+      border-radius: 3px;
+      font-size: .7rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      font-weight: 700;
+    }
+    .item-head .kind-badge.kind-DECISION { background: #1e3a8a; color: #bfdbfe; }
+    .item-head .kind-badge.kind-ASSUMPTION { background: #78350f; color: #fde68a; }
+    .item-head .title { font-weight: 600; font-size: 1rem; }
+
+    .item-context {
+      margin: .35rem 0 .5rem;
+      font-size: .9rem;
+      color: var(--fg);
+    }
+    .item-context p { margin: .25rem 0; }
+    .item-context code { background: var(--code-bg); color: var(--fg); padding: .05rem .3rem; border-radius: 3px; font-size: .85em; }
+
+    .triage-row {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin: .35rem 0 .5rem;
+    }
+    .triage-row label {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      font-size: .9rem;
+      cursor: pointer;
+    }
+    .triage-row label.approve input:checked ~ span { color: var(--approve); font-weight: 600; }
+    .triage-row label.revise input:checked ~ span { color: var(--revise); font-weight: 600; }
+    .triage-row label.reject input:checked ~ span { color: var(--reject); font-weight: 600; }
+
+    textarea.item-note {
+      width: 100%;
+      min-height: 2.25rem;
+      padding: .35rem .5rem;
+      background: var(--tile-bg-2);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: .9rem;
+      resize: vertical;
+    }
+    textarea.item-note:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+    .feedback-block {
+      background: var(--tile-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .feedback-block h3 { margin: 0 0 .35rem; font-size: 1rem; }
+    .feedback-block textarea {
+      width: 100%;
+      min-height: 4rem;
+      padding: .5rem;
+      background: var(--tile-bg-2);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: .9rem;
+      resize: vertical;
+    }
+    .feedback-block textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+    .compile-bar {
+      display: flex;
+      gap: .5rem;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: .75rem 1rem;
+      background: var(--tile-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      position: sticky;
+      bottom: 1rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+    .compile-bar .compile-btn {
+      padding: .5rem 1rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: .95rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .compile-bar .compile-btn:hover { background: #1d4ed8; }
+    .compile-bar .live-counts {
+      color: var(--muted);
+      font-size: .85rem;
+      margin-left: auto;
+    }
+    .compile-bar .live-counts strong { color: var(--fg); }
+
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background: #21262d;
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: .55rem 1rem;
+      border-radius: 4px;
+      font-size: .9rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,.4);
+      max-width: 22rem;
+    }
+    .toast.toast-error { background: var(--reject); color: #1a0808; border-color: var(--reject); }
+    .toast[hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <div>
+      <h1>Spec review gate: Chores v1.1 — Household Equity View + Weekly Discord Digest</h1>
+      <p class="meta">Slug: <code>chores-v1.1-equity-digest</code> &middot; 2026-05-31T08:35:52.7430585Z</p>
+      <p class="meta">Spec dir: <code>D:/Development/data/outputs/workshops/chores-v1.1-equity-digest</code></p>
+      <p class="meta">Review level: <span class="level-chip full">full</span> <span class="meta">— 11 WPs, new domain (Discord integration, digest engine, secret encryption), real integration seams (cron→endpoint→builder→sender), and the one deliberate reversal of a v1.0 must-not (MN1).</span></p>
+    </div>
+    <div class="summary-tile">
+      <h3>Items</h3>
+      <dl class="counters">
+        <div><dt>Total</dt><dd>8</dd></div>
+        <div><dt>Decision</dt><dd>4</dd></div>
+        <div><dt>Assumption</dt><dd>4</dd></div>
+      </dl>
+    </div>
+  </header>
+
+  <section class="summary-block">
+    <h2>Summary</h2>
+    <dl>
+      <dt>Problem</dt><dd><p>v1.0 chore board shipped dark with equity substrate (EffortPoints + ChoreCompletion log) and no consumer. v1.1 turns it into a <strong>first-class equity/household-load view</strong> plus a <strong>weekly Discord digest</strong> (equity&#39;s delivery surface), plus go-live table stakes (edit-chore dialog, backfill). Built dark, shipped as one drop, flag flipped at the end. Hard constraint: the digest stays a <strong>collective channel broadcast — never an @-mention nag</strong> (v1.0 escalate-to-visibility framing).</p></dd>
+      <dt>Key decisions</dt><dd><ul><li>E1: Equity is a SEPARATE endpoint + DTO + fixture (board contract untouched, M9).</li><li>E2: Pure TZ-aware ChoreEquityCalculator mirroring ChoreStatusCalculator; effort-weighted from EffortPointsSnapshot.</li><li>E3: Equity windows = week + all-time; last-week trend deferred.</li><li>E4: Equity is a 5th lens in the ViewSwitcher (first-class, not a panel in Mine).</li><li>E5: Neutral proportional shares + an equal-share reference; NO thresholds/ranking/&#39;behind&#39; labels.</li><li>E6: New HouseholdChoreDigestSettings entity (PK HouseholdId), NOT a column on Household.</li><li>E7: Webhook URL encrypted at rest via existing DataProtection; never logged/returned.</li><li>E8: Digest fires via EXTERNAL CRON → authenticated endpoint, NOT a BackgroundService (reverses v1.0 MN1).</li><li>E9: Run endpoint auth = shared-secret token header (X-Digest-Trigger-Token), fixed-time compare, refuses if unconfigured.</li><li>E10: &#39;Due&#39; = TZ day-of-week + send-hour match AND not-sent-this-window (cron can fire hourly safely).</li><li>E14/E15: Edit-chore dialog drives the existing PUT; backfill reuses the idempotent seed.</li><li>E16: Dev-ONLY seed enrichment (multi-member + cross-member completions) so equity renders a real distribution locally.</li></ul></dd>
+      <dt>Verification</dt><dd><p>Pure calculators/builder unit-tested with frozen now+tz fixtures; equity DTO pinned by its own <code>equity.json</code> contract fixture; the <strong>digest seam</strong> (idempotency, multi-tenant isolation, failure isolation, token auth, encryption-over-the-wire, backfill idempotency, migration-applies-clean) integration-tested on <strong>real Postgres + the booted host</strong> via the v1.0 Testcontainers/WebApplicationFactory harness with a <strong>fake sender</strong> (zero live Discord). Island = build + svelte-check.</p></dd>
+      <dt>Constraints</dt><dd><ul><li>MN1 stays for code (no BackgroundService) — firing is cron→endpoint; E3 escalation: if cron proves infeasible, STOP for sign-off rather than adding a hosted service.</li><li>MN7/E7: never log/return/display the webhook plaintext; no plaintext-storage fallback.</li><li>M11/MN8: collective broadcast only — no @mentions/targeted nudges; allowed_mentions suppresses pings.</li><li>MN5: digest config is its own entity — no new column on Household/User/Chore.</li><li>E8(op)/HOLD: build + test + local commits only — no push, no PR, no prod flag flip until operator review.</li></ul></dd>
+    </dl>
+  </section>
+
+  <div class="toolbar">
+    <button type="button" class="approve-all-btn" id="approve-all">Approve all + copy</button>
+    <a href="#" class="jump-link" id="jump-first">Jump to first unanswered</a>
+  </div>
+
+  <h2 class="items-heading">Flagged items</h2>
+  <div class="item-list">
+    <article class="item-card item-decision" id="card-E8" data-item-id="E8">
+  <header class="item-head">
+    <span class="id-chip">E8</span>
+    <span class="kind-badge kind-DECISION">DECISION</span>
+    <span class="stage-chip">decisions</span>
+    <span class="title">Digest fires via external cron → endpoint, NOT a BackgroundService (reverses v1.0 MN1)</span>
+  </header>
+  <div class="item-context"><p>This is the single place v1.1 deliberately reverses a v1.0 must-not (MN1: no BackgroundService/IHostedService). The chosen mechanism keeps MN1&#39;s spirit — the app stays request-driven, the schedule lives in a darktower cron that curls <code>POST /api/chores/digest/run</code> with a shared-secret token. It forecloses nothing (a future BackgroundService could call the same RunDueAsync). <strong>This is the ratification gate you asked for.</strong> If you&#39;d rather have an in-process hosted service, only the trigger changes; the builder/sender/orchestration are identical.</p></div>
+  <div class="triage-row">
+    <label class="approve"><input type="radio" name="decision-E8" value="approve" checked><span>✅ Approve</span></label>
+    <label class="revise"><input type="radio" name="decision-E8" value="revise"><span>✏️ Revise</span></label>
+    <label class="reject"><input type="radio" name="decision-E8" value="reject"><span>❌ Reject</span></label>
+  </div>
+  <textarea class="item-note" id="note-E8" placeholder="Optional approval comment / required revision text / optional reject reason"></textarea>
+</article>
+<article class="item-card item-decision" id="card-E3" data-item-id="E3">
+  <header class="item-head">
+    <span class="id-chip">E3</span>
+    <span class="kind-badge kind-DECISION">DECISION</span>
+    <span class="stage-chip">decisions</span>
+    <span class="title">Equity windows = week + all-time; last-week trend deferred</span>
+  </header>
+  <div class="item-context"><p>The endpoint ships <code>window ∈ {week, all}</code>. <code>week</code> is the digest window + lens default; <code>all</code> is near-free (no lower bound). A last-week comparison/trend (would add a second window + delta UI) is deferred — not load-bearing for &#39;is the load shared.&#39; Flag if you want the trend in v1.1.</p></div>
+  <div class="triage-row">
+    <label class="approve"><input type="radio" name="decision-E3" value="approve" checked><span>✅ Approve</span></label>
+    <label class="revise"><input type="radio" name="decision-E3" value="revise"><span>✏️ Revise</span></label>
+    <label class="reject"><input type="radio" name="decision-E3" value="reject"><span>❌ Reject</span></label>
+  </div>
+  <textarea class="item-note" id="note-E3" placeholder="Optional approval comment / required revision text / optional reject reason"></textarea>
+</article>
+<article class="item-card item-decision" id="card-E4" data-item-id="E4">
+  <header class="item-head">
+    <span class="id-chip">E4</span>
+    <span class="kind-badge kind-DECISION">DECISION</span>
+    <span class="stage-chip">decisions</span>
+    <span class="title">Equity is a 5th lens (not a panel buried in Mine)</span>
+  </header>
+  <div class="item-context"><p>Your north-star was &#39;first-class, not a token strip.&#39; A 5th lens in the ViewSwitcher (needs-attention|rooms|up-for-grabs|mine|equity) is the honest expression; a user can even open onto it. The WP-12 held-count strip in Mine is superseded.</p></div>
+  <div class="triage-row">
+    <label class="approve"><input type="radio" name="decision-E4" value="approve" checked><span>✅ Approve</span></label>
+    <label class="revise"><input type="radio" name="decision-E4" value="revise"><span>✏️ Revise</span></label>
+    <label class="reject"><input type="radio" name="decision-E4" value="reject"><span>❌ Reject</span></label>
+  </div>
+  <textarea class="item-note" id="note-E4" placeholder="Optional approval comment / required revision text / optional reject reason"></textarea>
+</article>
+<article class="item-card item-decision" id="card-E5" data-item-id="E5">
+  <header class="item-head">
+    <span class="id-chip">E5</span>
+    <span class="kind-badge kind-DECISION">DECISION</span>
+    <span class="stage-chip">decisions</span>
+    <span class="title">Equity = neutral shares + equal-share reference; no thresholds, no ranking, no &#39;behind&#39; labels</span>
+  </header>
+  <div class="item-context"><p>Reconciles &#39;rich/visualized/actionable&#39; with the non-punitive guardrail: per-member data is shown richly (proportional bars + a neutral equal-share line) but framed as a distribution, never a leaderboard. Built dark against synthetic data ⇒ no fairness threshold is validated (recorded gap GAP-3); tune post-launch. Confirm the equal-share reference line is acceptable (it&#39;s descriptive, not a judgment) — or drop even that.</p></div>
+  <div class="triage-row">
+    <label class="approve"><input type="radio" name="decision-E5" value="approve" checked><span>✅ Approve</span></label>
+    <label class="revise"><input type="radio" name="decision-E5" value="revise"><span>✏️ Revise</span></label>
+    <label class="reject"><input type="radio" name="decision-E5" value="reject"><span>❌ Reject</span></label>
+  </div>
+  <textarea class="item-note" id="note-E5" placeholder="Optional approval comment / required revision text / optional reject reason"></textarea>
+</article>
+<article class="item-card item-assumption" id="card-OQ1" data-item-id="OQ1">
+  <header class="item-head">
+    <span class="id-chip">OQ1</span>
+    <span class="kind-badge kind-ASSUMPTION">ASSUMPTION</span>
+    <span class="stage-chip">decisions</span>
+    <span class="title">Default cadence = weekly, Sunday 18:00 local (per-household tunable)</span>
+  </header>
+  <div class="item-context"><p>Weekly is locked; the default send window is a named constant (Sunday 18:00 in the app timezone), overridable per household via the settings surface. Pick a different default if Sunday evening isn&#39;t right for the family.</p></div>
+  <div class="triage-row">
+    <label class="approve"><input type="radio" name="decision-OQ1" value="approve" checked><span>✅ Approve</span></label>
+    <label class="revise"><input type="radio" name="decision-OQ1" value="revise"><span>✏️ Revise</span></label>
+    <label class="reject"><input type="radio" name="decision-OQ1" value="reject"><span>❌ Reject</span></label>
+  </div>
+  <textarea class="item-note" id="note-OQ1" placeholder="Optional approval comment / required revision text / optional reject reason"></textarea>
+</article>
+<article class="item-card item-assumption" id="card-A7" data-item-id="A7">
+  <header class="item-head">
+    <span class="id-chip">A7</span>
+    <span class="kind-badge kind-ASSUMPTION">ASSUMPTION</span>
+    <span class="stage-chip">decisions</span>
+    <span class="title">Run endpoint auth = shared-secret token in a header (not cookie, not query string)</span>
+  </header>
+  <div class="item-context"><p>Cron has no user session, so <code>POST /api/chores/digest/run</code> sits outside cookie auth and validates <code>CHORES_DIGEST_TRIGGER_TOKEN</code> from the <code>X-Digest-Trigger-Token</code> header with a fixed-time compare; it refuses to run (503) if the token is unconfigured. Query-string tokens are rejected (they leak to logs).</p></div>
+  <div class="triage-row">
+    <label class="approve"><input type="radio" name="decision-A7" value="approve" checked><span>✅ Approve</span></label>
+    <label class="revise"><input type="radio" name="decision-A7" value="revise"><span>✏️ Revise</span></label>
+    <label class="reject"><input type="radio" name="decision-A7" value="reject"><span>❌ Reject</span></label>
+  </div>
+  <textarea class="item-note" id="note-A7" placeholder="Optional approval comment / required revision text / optional reject reason"></textarea>
+</article>
+<article class="item-card item-assumption" id="card-A2" data-item-id="A2">
+  <header class="item-head">
+    <span class="id-chip">A2</span>
+    <span class="kind-badge kind-ASSUMPTION">ASSUMPTION</span>
+    <span class="stage-chip">decisions</span>
+    <span class="title">Webhook encrypted via the existing Data Protection (a new use of an already-registered capability)</span>
+  </header>
+  <div class="item-context"><p>AddDataProtection is configured and DATAPROTECTION_CERT is prod-required, but nothing currently encrypts a stored value (only cookies). v1.1 stores <code>protector.Protect(webhookUrl)</code> ciphertext; decrypts only at send time. No new package/infra. If Data Protection can&#39;t be used cleanly, the build STOPS rather than storing plaintext (E7).</p></div>
+  <div class="triage-row">
+    <label class="approve"><input type="radio" name="decision-A2" value="approve" checked><span>✅ Approve</span></label>
+    <label class="revise"><input type="radio" name="decision-A2" value="revise"><span>✏️ Revise</span></label>
+    <label class="reject"><input type="radio" name="decision-A2" value="reject"><span>❌ Reject</span></label>
+  </div>
+  <textarea class="item-note" id="note-A2" placeholder="Optional approval comment / required revision text / optional reject reason"></textarea>
+</article>
+<article class="item-card item-assumption" id="card-GAP" data-item-id="GAP">
+  <header class="item-head">
+    <span class="id-chip">GAP</span>
+    <span class="kind-badge kind-ASSUMPTION">ASSUMPTION</span>
+    <span class="stage-chip">verification</span>
+    <span class="title">Manual-owed: live Discord send + island UI click-through; equity thresholds tuned post-launch</span>
+  </header>
+  <div class="item-context"><p>GAP-1: the literal discord.com POST is verified only by payload-shape assertions against a stub — a 2-minute manual check (paste a test webhook → hit the run endpoint) closes it. GAP-2: the Equity lens / edit dialog / settings surface are build+svelte-check verified, not browser-automated (OAuth, no harness). GAP-3: fairness thresholds unvalidated while dark (descriptive-only mitigates). GAP-5: single app timezone (per-household TZ deferred).</p></div>
+  <div class="triage-row">
+    <label class="approve"><input type="radio" name="decision-GAP" value="approve" checked><span>✅ Approve</span></label>
+    <label class="revise"><input type="radio" name="decision-GAP" value="revise"><span>✏️ Revise</span></label>
+    <label class="reject"><input type="radio" name="decision-GAP" value="reject"><span>❌ Reject</span></label>
+  </div>
+  <textarea class="item-note" id="note-GAP" placeholder="Optional approval comment / required revision text / optional reject reason"></textarea>
+</article>
+  </div>
+
+  <section class="feedback-block">
+    <h3>General feedback (optional)</h3>
+    <textarea id="general-feedback" placeholder="Anything else for the agent — tone, missing concerns, scope changes…"></textarea>
+  </section>
+
+  <div class="compile-bar">
+    <button type="button" class="compile-btn" id="compile-btn"
+      data-compile-template="Spec review decisions for {spec_title} (slug: `{spec_slug}`, review_level: {review_level}):
+
+{decisions_blob}
+
+General feedback: {general_feedback}
+Counts: {approved_count} approved, {revised_count} revised, {rejected_count} rejected.
+
+Proceed to Phase 5 (Revision if any items were revised or rejected) then Phase 6 (Decomposition and Work Packages). Spec dir: {spec_dir}.">Compile decisions and copy</button>
+    <span class="live-counts" id="live-counts">
+      <strong id="lc-approve">0</strong> approve · <strong id="lc-revise">0</strong> revise · <strong id="lc-reject">0</strong> reject · <strong id="lc-pending">0</strong> pending
+    </span>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script>
+    var ITEMS = [{"id":"E8","kind":"DECISION"},{"id":"E3","kind":"DECISION"},{"id":"E4","kind":"DECISION"},{"id":"E5","kind":"DECISION"},{"id":"OQ1","kind":"ASSUMPTION"},{"id":"A7","kind":"ASSUMPTION"},{"id":"A2","kind":"ASSUMPTION"},{"id":"GAP","kind":"ASSUMPTION"}];
+    var META = {"spec_slug":"chores-v1.1-equity-digest","spec_title":"Chores v1.1 — Household Equity View + Weekly Discord Digest","spec_dir":"D:/Development/data/outputs/workshops/chores-v1.1-equity-digest","review_level":"full","review_gate_path":"D:/Development/data/outputs/workshops/chores-v1.1-equity-digest/review-gate.md"};
+
+    function showToast(msg, kind) {
+      var t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.toggle('toast-error', kind === 'error');
+      t.hidden = false;
+      setTimeout(function () { t.hidden = true; }, 2200);
+    }
+
+    function cardEl(id) { return document.getElementById('card-' + id); }
+    function selectedAction(id) {
+      var card = cardEl(id);
+      if (!card) return null;
+      var sel = card.querySelector('input[name="decision-' + id + '"]:checked');
+      return sel ? sel.value : null;
+    }
+    function noteText(id) {
+      var ta = document.getElementById('note-' + id);
+      return ta ? ta.value.trim() : '';
+    }
+    function setState(card, state) {
+      card.classList.remove('state-approve', 'state-revise', 'state-reject');
+      if (state) card.classList.add('state-' + state);
+    }
+
+    function refreshCounts() {
+      var counts = { approve: 0, revise: 0, reject: 0, pending: 0 };
+      ITEMS.forEach(function (it) {
+        var a = selectedAction(it.id);
+        if (a) counts[a]++; else counts.pending++;
+      });
+      document.getElementById('lc-approve').textContent = counts.approve;
+      document.getElementById('lc-revise').textContent = counts.revise;
+      document.getElementById('lc-reject').textContent = counts.reject;
+      document.getElementById('lc-pending').textContent = counts.pending;
+      return counts;
+    }
+
+    function compileDecisions() {
+      var lines = [];
+      var firstIncomplete = null;
+      var counts = { approve: 0, revise: 0, reject: 0 };
+      for (var i = 0; i < ITEMS.length; i++) {
+        var it = ITEMS[i];
+        var action = selectedAction(it.id);
+        var note = noteText(it.id);
+        var card = cardEl(it.id);
+        card.classList.remove('needs-attention');
+        if (!action) {
+          if (!firstIncomplete) firstIncomplete = it.id;
+          continue;
+        }
+        if ((action === 'revise' || action === 'reject') && !note) {
+          if (!firstIncomplete) firstIncomplete = it.id;
+          card.classList.add('needs-attention');
+          continue;
+        }
+        counts[action]++;
+        var suffix = note ? ' — ' + note : '';
+        lines.push(it.id + ' (' + it.kind + '): ' + action + suffix);
+      }
+      if (firstIncomplete) {
+        var card = cardEl(firstIncomplete);
+        if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+        showToast('Item ' + firstIncomplete + ' is incomplete (no decision, or revise/reject without a note).', 'error');
+        return null;
+      }
+      return { lines: lines, counts: counts };
+    }
+
+    function buildResponse(compiled, template) {
+      var fb = (document.getElementById('general-feedback').value || '').trim();
+      var subs = {
+        '{spec_slug}': META.spec_slug,
+        '{spec_title}': META.spec_title,
+        '{spec_dir}': META.spec_dir,
+        '{review_level}': META.review_level,
+        '{review_gate_path}': META.review_gate_path,
+        '{decisions_blob}': compiled.lines.join('\n'),
+        '{general_feedback}': fb || 'none',
+        '{approved_count}': String(compiled.counts.approve),
+        '{revised_count}': String(compiled.counts.revise),
+        '{rejected_count}': String(compiled.counts.reject),
+      };
+      var out = template;
+      Object.keys(subs).forEach(function (tok) {
+        out = out.split(tok).join(subs[tok]);
+      });
+      return out;
+    }
+
+    async function copyAndToast(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast('Copied compiled response — paste into chat.');
+      } catch (e) {
+        showToast('Clipboard write failed: ' + e.message, 'error');
+      }
+    }
+
+    document.addEventListener('change', function (e) {
+      if (e.target.matches('input[type="radio"][name^="decision-"]')) {
+        var id = e.target.name.replace(/^decision-/, '');
+        var card = cardEl(id);
+        if (card) {
+          setState(card, e.target.value);
+          card.classList.remove('needs-attention');
+        }
+        refreshCounts();
+      }
+    });
+
+    document.getElementById('compile-btn').addEventListener('click', function () {
+      var template = this.getAttribute('data-compile-template') || '';
+      var compiled = compileDecisions();
+      if (!compiled) return;
+      var text = buildResponse(compiled, template);
+      copyAndToast(text);
+    });
+
+    document.getElementById('approve-all').addEventListener('click', function () {
+      ITEMS.forEach(function (it) {
+        var radio = document.querySelector('input[name="decision-' + it.id + '"][value="approve"]');
+        if (radio) { radio.checked = true; }
+        var card = cardEl(it.id);
+        if (card) { setState(card, 'approve'); card.classList.remove('needs-attention'); }
+      });
+      refreshCounts();
+      var template = document.getElementById('compile-btn').getAttribute('data-compile-template') || '';
+      var compiled = compileDecisions();
+      if (compiled) copyAndToast(buildResponse(compiled, template));
+    });
+
+    document.getElementById('jump-first').addEventListener('click', function (e) {
+      e.preventDefault();
+      for (var i = 0; i < ITEMS.length; i++) {
+        var it = ITEMS[i];
+        if (!selectedAction(it.id)) {
+          var card = cardEl(it.id);
+          if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+      }
+      showToast('All items have a decision.');
+    });
+
+    // Initial state: apply default_action to any pre-checked radio (already set in HTML)
+    // and compute counts.
+    ITEMS.forEach(function (it) {
+      var a = selectedAction(it.id);
+      var card = cardEl(it.id);
+      if (a && card) setState(card, a);
+    });
+    refreshCounts();
+  </script>
+</body>
+</html>
