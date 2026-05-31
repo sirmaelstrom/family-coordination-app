@@ -1,0 +1,457 @@
+<script lang="ts">
+  import type { ChoreDto, ColorTier, DueState, EffortTier, RecurrenceMode } from '../types';
+  import { memberFor } from '../state.svelte';
+  import MemberAvatar from './MemberAvatar.svelte';
+
+  // ───────────────────────────────────────────────────────────────────────
+  // The shared chore card — used across every lens.
+  //
+  // ⚠ M5/M6: this card renders SERVER-computed state. `colorTier`/`dueState`
+  // come straight off the DTO and drive the visual; we NEVER recompute dueness
+  // or decay client-side and NEVER construct a Date from a bare 'YYYY-MM-DD'.
+  // The only Date use is locale formatting of a full ISO-8601 UTC timestamp for
+  // DISPLAY (nextDueAt / lastCompletedAt), which is safe.
+  //
+  // The claim / drop / hand-off / Done affordances are wired here (WP-11). Each
+  // calls a handler prop; the parent runs the optimistic store mutation + 409
+  // reconciliation. The card disables its controls while a mutation is in flight
+  // (`pending`) to prevent double-submit. The action elements keep their
+  // data-action tags for a clear seam.
+  // ───────────────────────────────────────────────────────────────────────
+
+  interface Props {
+    chore: ChoreDto;
+    /** The viewing user's id, to label "you" on owner/assignee. */
+    currentUserId: number;
+    /** True while a mutation for this chore is in flight (disables controls). */
+    pending?: boolean;
+    onClaim?: (chore: ChoreDto) => void;
+    onDrop?: (chore: ChoreDto) => void;
+    onComplete?: (chore: ChoreDto) => void;
+    onHandOff?: (chore: ChoreDto) => void;
+  }
+
+  let {
+    chore,
+    currentUserId,
+    pending = false,
+    onClaim,
+    onDrop,
+    onComplete,
+    onHandOff,
+  }: Props = $props();
+
+  // ── Named effort tiers (P3 — never the raw points number as primary) ─────
+  const EFFORT_LABEL: Record<EffortTier, string> = {
+    Quick: 'Quick',
+    Standard: 'Standard',
+    BigJob: 'Big job',
+  };
+
+  // ── Dueness pill copy (server `dueState`) ────────────────────────────────
+  const DUE_LABEL: Record<DueState, string> = {
+    overdue: 'Overdue',
+    dueToday: 'Due today',
+    scheduled: 'Scheduled',
+    notDue: 'On track',
+  };
+
+  let effortLabel = $derived(EFFORT_LABEL[chore.effortTier]);
+  let dueLabel = $derived(DUE_LABEL[chore.dueState]);
+
+  // colorTier (fresh|mid|due|overdue) is the decay accent — server-computed.
+  let tier = $derived<ColorTier>(chore.colorTier);
+
+  let owner = $derived(memberFor(chore.ownerUserId));
+  let assignee = $derived(memberFor(chore.assigneeUserId));
+
+  let isUnclaimed = $derived(chore.assignmentKind === 'none' || chore.isClaimStale);
+  let isClaimed = $derived(chore.assignmentKind === 'claimed' && !chore.isClaimStale);
+  let isAssigned = $derived(chore.assignmentKind === 'assigned');
+
+  // ── Who can do what (drives the action buttons) ──────────────────────────
+  // The viewing user "holds" the chore when they're the active (non-stale)
+  // assignee. Drop is Claimed-only (a deliberate Assigned chore can't be
+  // dropped — WP-04). Hand-off is available to the active holder. Done is
+  // available on any non-pile chore (any member may complete — WP-04 M8).
+  let heldByMe = $derived(
+    chore.assigneeUserId === currentUserId &&
+      (isClaimed || isAssigned),
+  );
+  let canDrop = $derived(heldByMe && isClaimed);
+  let canHandOff = $derived(heldByMe);
+
+  // ── Recurrence hint (human, derived from the plain-string union) ─────────
+  const RECURRENCE_HINT: Record<RecurrenceMode, string> = {
+    OneOff: 'One-off',
+    Fixed: 'Scheduled',
+    Flexible: 'Recurring',
+  };
+  let recurrenceHint = $derived(RECURRENCE_HINT[chore.recurrenceMode]);
+
+  // ── Display-only date formatting (safe: full ISO-8601 UTC strings) ───────
+  // NEVER `new Date('YYYY-MM-DD')`. nextDueAt / lastCompletedAt are full
+  // ISO-8601 timestamps with a Z suffix, so `new Date(iso)` is locale-safe.
+  function formatDay(iso: string | null): string | null {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  let nextDueLabel = $derived(formatDay(chore.nextDueAt));
+  let lastDoneLabel = $derived(formatDay(chore.lastCompletedAt));
+
+  function nameOf(userId: number | null, displayName: string | null): string {
+    if (userId != null && userId === currentUserId) return 'You';
+    return displayName ?? 'Someone';
+  }
+</script>
+
+<article
+  class="ch-card ch-tier-{tier}"
+  class:ch-card-stale={chore.isClaimStale}
+  class:ch-card-pending={pending}
+  aria-label={chore.name}
+  aria-busy={pending}
+>
+  <div class="ch-card-accent" aria-hidden="true"></div>
+
+  <div class="ch-card-main">
+    <div class="ch-card-top">
+      <h3 class="ch-card-name">{chore.name}</h3>
+      <span class="ch-pill ch-pill-{tier}" title="Due state: {dueLabel}">{dueLabel}</span>
+    </div>
+
+    {#if chore.description}
+      <p class="ch-card-desc">{chore.description}</p>
+    {/if}
+
+    <div class="ch-card-meta">
+      <span class="ch-tag ch-tag-effort" title="Effort: {effortLabel}">
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z" fill="currentColor" />
+        </svg>
+        {effortLabel}
+      </span>
+
+      <span class="ch-tag ch-tag-recurrence" title="{recurrenceHint}">
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <path d="M12 6V3L8 7l4 4V8a4 4 0 1 1-4 4H6a6 6 0 1 0 6-6z" fill="currentColor" />
+        </svg>
+        {recurrenceHint}
+      </span>
+
+      {#if nextDueLabel}
+        <span class="ch-tag ch-tag-due" title="Next due {nextDueLabel}">
+          Next: {nextDueLabel}
+        </span>
+      {:else if lastDoneLabel}
+        <span class="ch-tag ch-tag-done" title="Last done {lastDoneLabel}">
+          Done {lastDoneLabel}
+        </span>
+      {/if}
+    </div>
+
+    <div class="ch-card-foot">
+      <div class="ch-people">
+        {#if owner}
+          <span class="ch-minder" title="Minder: {nameOf(chore.ownerUserId, owner.displayName)}">
+            <MemberAvatar
+              name={owner.displayName}
+              initials={owner.initials}
+              pictureUrl={owner.pictureUrl}
+              size={22}
+              relation="Minded by"
+            />
+            <span class="ch-minder-label">Minder</span>
+          </span>
+        {/if}
+
+        {#if isClaimed && assignee}
+          <span class="ch-claim ch-claim-claimed">
+            <MemberAvatar
+              name={assignee.displayName}
+              initials={assignee.initials}
+              pictureUrl={assignee.pictureUrl}
+              size={22}
+              relation="Claimed by"
+            />
+            <span class="ch-claim-label">{nameOf(chore.assigneeUserId, assignee.displayName)}</span>
+          </span>
+        {:else if isAssigned && assignee}
+          <span class="ch-claim ch-claim-assigned">
+            <MemberAvatar
+              name={assignee.displayName}
+              initials={assignee.initials}
+              pictureUrl={assignee.pictureUrl}
+              size={22}
+              relation="Assigned to"
+            />
+            <span class="ch-claim-label">{nameOf(chore.assigneeUserId, assignee.displayName)}</span>
+          </span>
+        {:else}
+          <span class="ch-claim ch-claim-open">Up for grabs</span>
+        {/if}
+      </div>
+
+      <!--
+        Action affordances (WP-11). Optimistic — the parent runs the store
+        mutation + 409 reconcile. Controls disable while a mutation is in flight
+        (`pending`) to prevent double-submit.
+      -->
+      <div class="ch-actions">
+        {#if isUnclaimed}
+          <button
+            type="button"
+            class="ch-btn ch-btn-primary"
+            data-action="claim"
+            onclick={() => onClaim?.(chore)}
+            disabled={pending}
+            title="Claim this chore"
+          >
+            Claim
+          </button>
+        {:else}
+          {#if canHandOff}
+            <button
+              type="button"
+              class="ch-btn ch-btn-ghost"
+              data-action="handoff"
+              onclick={() => onHandOff?.(chore)}
+              disabled={pending}
+              title="Hand off or release this chore"
+            >
+              Hand off
+            </button>
+          {/if}
+          {#if canDrop}
+            <button
+              type="button"
+              class="ch-btn ch-btn-ghost"
+              data-action="drop"
+              onclick={() => onDrop?.(chore)}
+              disabled={pending}
+              title="Put this chore back in the pile"
+            >
+              Drop
+            </button>
+          {/if}
+          <button
+            type="button"
+            class="ch-btn ch-btn-primary"
+            data-action="complete"
+            onclick={() => onComplete?.(chore)}
+            disabled={pending}
+            title="Mark this chore done"
+          >
+            Done
+          </button>
+        {/if}
+      </div>
+    </div>
+  </div>
+</article>
+
+<style>
+  /*
+   * Decay accent is driven entirely by the server `colorTier`
+   * (fresh|mid|due|overdue). We map each tier to a token-based accent color
+   * via a per-tier `--accent` custom property; the card never derives the tier.
+   */
+  .ch-card {
+    --accent: var(--color-line-strong);
+    position: relative;
+    display: flex;
+    background: var(--color-surface);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-1);
+    overflow: hidden;
+    transition: box-shadow 0.15s;
+  }
+  .ch-card:hover {
+    box-shadow: var(--shadow-2);
+  }
+  .ch-card-stale {
+    /* A stale claim reads as effectively up-for-grabs (WP-04/05 UX). */
+    opacity: 0.92;
+  }
+  .ch-card-pending {
+    /* A mutation is in flight — dim the card while we await the server. */
+    opacity: 0.6;
+  }
+
+  /* ── colorTier → accent (the ONLY place the tier maps to a color) ──────── */
+  .ch-tier-fresh {
+    --accent: var(--color-success);
+  }
+  .ch-tier-mid {
+    --accent: var(--color-info);
+  }
+  .ch-tier-due {
+    --accent: var(--color-warning);
+  }
+  .ch-tier-overdue {
+    --accent: var(--color-error);
+  }
+
+  .ch-card-accent {
+    flex-shrink: 0;
+    width: 6px;
+    background: var(--accent);
+  }
+
+  .ch-card-main {
+    flex: 1;
+    min-width: 0;
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .ch-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .ch-card-name {
+    margin: 0;
+    font-size: 1.0625rem;
+    font-weight: 500;
+    line-height: 1.3;
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+  }
+
+  /* ── Dueness pill — tinted by the same colorTier accent ────────────────── */
+  .ch-pill {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 10px;
+    border-radius: 11px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: #fff;
+    background: var(--accent);
+  }
+  /* Fresh/mid pills sit quieter — outline rather than solid. */
+  .ch-pill-fresh,
+  .ch-pill-mid {
+    color: var(--accent);
+    background: transparent;
+    border: 1px solid var(--accent);
+  }
+
+  .ch-card-desc {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+    line-height: 1.4;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .ch-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .ch-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+    background: var(--color-action-hover);
+    white-space: nowrap;
+  }
+  .ch-tag svg {
+    flex-shrink: 0;
+  }
+
+  .ch-card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 2px;
+  }
+  .ch-people {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  .ch-minder,
+  .ch-claim {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+  }
+  .ch-minder-label {
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .ch-claim-label {
+    font-weight: 500;
+    color: var(--color-text);
+  }
+  .ch-claim-open {
+    font-style: italic;
+  }
+
+  .ch-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .ch-btn {
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    padding: 6px 14px;
+    min-height: 34px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .ch-btn-primary {
+    background: var(--color-primary);
+    color: #fff;
+  }
+  .ch-btn-primary:hover:not(:disabled) {
+    background: var(--color-primary-hover);
+  }
+  .ch-btn-ghost {
+    background: transparent;
+    color: var(--color-primary);
+    border-color: var(--color-line-strong);
+  }
+  .ch-btn-ghost:hover:not(:disabled) {
+    background: var(--color-action-hover);
+  }
+  .ch-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+</style>

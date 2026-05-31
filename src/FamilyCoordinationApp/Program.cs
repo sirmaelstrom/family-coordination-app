@@ -91,6 +91,24 @@ builder.Services.AddScoped<UnitConverter>();
 builder.Services.AddScoped<IShoppingListGenerator, ShoppingListGenerator>();
 builder.Services.AddScoped<IHouseholdConnectionService, HouseholdConnectionService>();
 
+// Chores (Phase 10): room CRUD, chore writes/state-machine, and the board read model. Date math is
+// timezone-aware: the calculator is a stateless singleton; the household timezone (default America/Chicago,
+// env-overridable via CHORES_TIMEZONE, D14) and TimeProvider.System are injected singletons consumed by the
+// board service + the endpoint projection. Enum DTOs serialize as camelCase strings (see ConfigureHttpJsonOptions below).
+builder.Services.AddScoped<IRoomService, RoomService>();
+builder.Services.AddScoped<IChoreService, ChoreService>();
+builder.Services.AddScoped<IChoreBoardService, ChoreBoardService>();
+builder.Services.AddSingleton<ChoreStatusCalculator>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton(ResolveChoresTimeZone(builder.Configuration));
+
+// Chore/Room HTTP endpoints serialize enum DTOs (colorTier/dueState/assignmentKind/rollup status) as
+// camelCase strings so responses match the island TS unions + the WP-05 board.json fixture (council M5/M11).
+// Additive to the Minimal-API JSON options only — Blazor Server component rendering is unaffected.
+builder.Services.ConfigureHttpJsonOptions(o =>
+    o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter(
+        System.Text.Json.JsonNamingPolicy.CamelCase)));
+
 // Collaboration services - singleton for cross-component communication
 builder.Services.AddSingleton<DataNotifier>();
 builder.Services.AddSingleton<PresenceService>();
@@ -346,6 +364,8 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.MapShoppingListEndpoints();
+app.MapChoresEndpoints();
+app.MapRoomsEndpoints();
 
 // Health check endpoint for Docker
 app.MapGet("/health", () => Results.Ok("healthy"));
@@ -383,3 +403,38 @@ app.MapGet("/account/logout", async (HttpContext context) =>
 });
 
 app.Run();
+
+// Resolve the household timezone for chore day-boundary math (D14). Default America/Chicago; overridable via
+// the CHORES_TIMEZONE config/env value (IANA id, with a Windows-id fallback so it resolves on either OS).
+// Falls back to the default on an unrecognized id rather than crashing startup.
+static TimeZoneInfo ResolveChoresTimeZone(IConfiguration configuration)
+{
+    const string defaultId = "America/Chicago";
+    const string windowsFallbackId = "Central Standard Time";
+
+    var configured = configuration["CHORES_TIMEZONE"];
+    var requested = string.IsNullOrWhiteSpace(configured) ? defaultId : configured.Trim();
+
+    if (TryFindTimeZone(requested, out var tz)) return tz;
+    if (requested != defaultId && TryFindTimeZone(defaultId, out var def)) return def;
+    if (TryFindTimeZone(windowsFallbackId, out var win)) return win;
+    return TimeZoneInfo.Utc;
+
+    static bool TryFindTimeZone(string id, out TimeZoneInfo tz)
+    {
+        try
+        {
+            tz = TimeZoneInfo.FindSystemTimeZoneById(id);
+            return true;
+        }
+        catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            tz = TimeZoneInfo.Utc;
+            return false;
+        }
+    }
+}
+
+// Expose the top-level-program entry type so the test project's WebApplicationFactory<Program> can reference
+// it (WP-08 integration harness). This is the standard, robust workaround and is inert at runtime.
+public partial class Program { }

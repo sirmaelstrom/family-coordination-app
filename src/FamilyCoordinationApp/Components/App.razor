@@ -38,6 +38,24 @@
     <Routes @rendermode="InteractiveServer" />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script>
+        // Ensure a Svelte island's stylesheet <link> is present in <head>.
+        // Blazor enhanced navigation does NOT apply a page's <HeadContent>, so the
+        // island CSS link is dropped on in-app navigation (only full document loads
+        // include it). Island pages call this from OnAfterRenderAsync — which runs in
+        // both nav modes — to (re)inject it. Idempotent: a matching href is a no-op,
+        // so it never duplicates the <HeadContent> link present on full loads.
+        window.ensureIslandStylesheet = function (href) {
+            var links = document.querySelectorAll('link[rel="stylesheet"]');
+            for (var i = 0; i < links.length; i++) {
+                if (links[i].getAttribute('href') === href) return;
+            }
+            var l = document.createElement('link');
+            l.rel = 'stylesheet';
+            l.href = href;
+            document.head.appendChild(l);
+        };
+    </script>
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
     <script>
         if (typeof MobileDragDrop !== 'undefined') {

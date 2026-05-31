@@ -22,6 +22,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<UserFavorite> UserFavorites => Set<UserFavorite>();
     public DbSet<HouseholdConnection> HouseholdConnections => Set<HouseholdConnection>();
     public DbSet<HouseholdInvite> HouseholdInvites => Set<HouseholdInvite>();
+    public DbSet<Room> Rooms => Set<Room>();
+    public DbSet<Chore> Chores => Set<Chore>();
+    public DbSet<ChoreCompletion> ChoreCompletions => Set<ChoreCompletion>();
+    public DbSet<ChoreEvent> ChoreEvents => Set<ChoreEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

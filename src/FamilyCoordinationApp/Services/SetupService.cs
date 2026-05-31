@@ -79,6 +79,10 @@ public class SetupService(
         await SeedData.SeedDefaultCategoriesAsync(dbFactory, household.Id);
         logger.LogInformation("Seeded default categories for household {HouseholdId}", household.Id);
 
+        // Seed the curated chore/room library (idempotent; OQ3 — seed at household creation).
+        await SeedData.SeedChoresAndRoomsAsync(dbFactory, household.Id);
+        logger.LogInformation("Seeded default chores and rooms for household {HouseholdId}", household.Id);
+
         return (household, user);
     }
 

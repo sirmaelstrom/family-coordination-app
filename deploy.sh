@@ -128,6 +128,43 @@ if $DO_BUILD; then
   log "Image built: familyapp:latest"
 fi
 
+# ── DB safety guard + pre-deploy backup ─────────────────────────────
+# Guards the "silent fresh empty DB" failure mode. The deploy below tears down
+# and force-recreates postgres; prod's data lives in the bind mount
+# ${POSTGRES_DATA_PATH}. If that path is ever unset/empty/uninitialized,
+# postgres runs initdb and starts a BRAND-NEW cluster with NO error — orphaning
+# production data. We (1) require the var, (2) snapshot the live DB before any
+# teardown, and (3) refuse to start on an uninitialized data dir. The data dir
+# is root-owned, so existence checks use `sudo test`. (See DEPLOY-SAFETY.md.)
+DB_DATA_PATH=$(grep -E '^[[:space:]]*POSTGRES_DATA_PATH=' .env | tail -n1 | cut -d= -f2- | tr -d '"' | xargs || true)
+[[ -n "$DB_DATA_PATH" ]] || die "POSTGRES_DATA_PATH is unset in .env — refusing to deploy (postgres would create a FRESH empty DB and orphan production data). Set it in .env.local."
+
+# (2) Back up the currently-running DB before recreating containers.
+BACKUP_DIR="$HOME/data/db-backups"
+mkdir -p "$BACKUP_DIR"
+if sudo docker ps --format '{{.Names}}' | grep -qx 'familyapp-postgres'; then
+  STAMP=$(date +%Y%m%d-%H%M%S)
+  BACKUP_FILE="$BACKUP_DIR/familyapp-$STAMP.sql.gz"
+  log "Backing up live database before deploy → $BACKUP_FILE"
+  if sudo docker exec familyapp-postgres sh -c 'PGPASSWORD=$(cat /run/secrets/postgres_password) pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' 2>>"$LOG" | gzip > "$BACKUP_FILE" && [[ -s "$BACKUP_FILE" ]]; then
+    log "Backup OK ($(du -h "$BACKUP_FILE" | cut -f1)); pruning backups older than 14 days"
+    find "$BACKUP_DIR" -name 'familyapp-*.sql.gz' -mtime +14 -delete 2>/dev/null || true
+  else
+    rm -f "$BACKUP_FILE"
+    [[ "${ALLOW_NO_BACKUP:-0}" == "1" ]] || die "Pre-deploy DB backup FAILED — aborting to protect data. Re-run with ALLOW_NO_BACKUP=1 to override."
+    log "WARNING: backup failed but ALLOW_NO_BACKUP=1 set — continuing without a fresh backup."
+  fi
+else
+  log "No running familyapp-postgres found — skipping pre-deploy backup (first deploy on this host?)."
+fi
+
+# (3) Refuse to start on an uninitialized data dir (would trigger a fresh initdb).
+if sudo test -e "$DB_DATA_PATH" && ! sudo test -f "$DB_DATA_PATH/PG_VERSION"; then
+  [[ "${ALLOW_FRESH_DB:-0}" == "1" ]] || die "POSTGRES_DATA_PATH ($DB_DATA_PATH) exists but is not an initialized cluster (no PG_VERSION). Postgres would create a FRESH empty DB. Refusing. If this is a brand-new install, re-run with ALLOW_FRESH_DB=1."
+  log "WARNING: data dir uninitialized but ALLOW_FRESH_DB=1 set — a fresh DB will be created."
+fi
+log "DB safety check passed (data dir: $DB_DATA_PATH)"
+
 # ── Deploy ──────────────────────────────────────────────────────────
 log "Deploying containers..."
 

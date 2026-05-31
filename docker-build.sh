@@ -17,7 +17,6 @@ PUBLISH_DIR="./publish-output"
 DOCKERFILE="Dockerfile.runtime-only"
 IMAGE_NAME="familyapp"
 TAG="${1:-latest}"
-ISLAND_DIR="./frontend/shopping-list"
 
 echo "======================================"
 echo "Family Coordination App - Docker Build"
@@ -34,24 +33,33 @@ else
 fi
 echo ""
 
-# Step 2: Build Svelte shopping-list island.
-# The MSBuild target CopyShoppingListIsland picks up the dist output during
-# `dotnet publish` and copies it into wwwroot/islands/shopping-list/, which
-# then lands in the publish output and gets baked into the runtime image.
-echo "[2/4] Building shopping-list island..."
-if [ -d "$ISLAND_DIR" ]; then
-    pushd "$ISLAND_DIR" > /dev/null
-    if [ -f package-lock.json ]; then
-        npm ci
+# Step 2: Build the Svelte islands.
+# The MSBuild targets CopyShoppingListIsland / CopyChoresIsland pick up each
+# island's dist output during `dotnet publish` and copy it into
+# wwwroot/islands/<name>/, which then lands in the publish output and gets
+# baked into the runtime image. Every island MUST be built here, or its
+# Copy target is skipped silently and the island endpoint 404s.
+echo "[2/4] Building Svelte islands..."
+build_island() {
+    local dir="$1"
+    local name="$2"
+    if [ -d "$dir" ]; then
+        echo "  → $name"
+        pushd "$dir" > /dev/null
+        if [ -f package-lock.json ]; then
+            npm ci
+        else
+            npm install --no-audit --no-fund
+        fi
+        npm run build
+        popd > /dev/null
+        echo "  ✓ $name built"
     else
-        npm install --no-audit --no-fund
+        echo "  ⚠ $dir not found — skipping $name island"
     fi
-    npm run build
-    popd > /dev/null
-    echo "✓ Island built"
-else
-    echo "⚠ $ISLAND_DIR not found — skipping island build"
-fi
+}
+build_island "./frontend/shopping-list" "shopping-list"
+build_island "./frontend/chores" "chores"
 echo ""
 
 # Step 3: Publish locally

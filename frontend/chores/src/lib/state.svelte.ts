@@ -1,0 +1,634 @@
+// ─────────────────────────────────────────────────────────────────────────
+// Board store — the SINGLE source of truth for the chores island.
+//
+// One `ChoreBoardDto` is fetched (App.svelte) and held here. Every lens is a
+// CLIENT-SIDE grouping of that one payload (M11) — switching lenses never
+// refetches. The derived groupings below (Needs-attention sections, Rooms,
+// Up-for-grabs, Mine) all read the same `board` and recompute reactively.
+//
+// ⚠ Svelte 5 rune rule (global CORRECTION): never `export` a reassigned
+// `$state`/`$derived` from a module. We wrap the mutable state in a class
+// instance and export the instance — the runes live as `$state`/`$derived`
+// fields on the object, which is the supported pattern.
+//
+// ⚠ M5/M6: this store NEVER recomputes dueness/decay. `colorTier`/`dueState`
+// are taken straight from the server DTO. No `new Date('YYYY-MM-DD')` anywhere.
+// ─────────────────────────────────────────────────────────────────────────
+
+import type {
+  ChoreBoardDto,
+  ChoreDto,
+  RoomRollupDto,
+  MemberDto,
+  ChoreLensId,
+  DueState,
+} from './types';
+import { CHORE_LENSES } from './types';
+import {
+  ApiError,
+  claimChore,
+  dropChore,
+  completeChore,
+  handOffChore,
+  createChore,
+  deleteChore,
+  setDefaultView,
+  type CreateChoreRequest,
+  type CompleteRequest,
+} from './api';
+import { showToast } from './toasts.svelte';
+
+/** One sectioned bucket of the Needs-attention lens. */
+export interface NeedsAttentionSection {
+  id: 'falling-behind' | 'due-now' | 'coming-up';
+  title: string;
+  chores: ChoreDto[];
+}
+
+/** A room with its rollup metadata + the chores that belong to it. */
+export interface RoomGroup {
+  rollup: RoomRollupDto;
+  chores: ChoreDto[];
+}
+
+/**
+ * Per-member current-load summary for the Mine lens's household load strip
+ * (the v1.1 equity seed — display-only over the already-loaded board, no
+ * schema change, no points engine). We surface the count a member is actively
+ * holding (claimed or assigned, excluding stale claims) — NOT a points total.
+ *
+ * ⚠ M5/M6: we deliberately do NOT compute a "completed today" count here — the
+ * board DTO's `lastCompletedAt` carries no actor and "today" would require
+ * client-side timezone day-boundary math, which is forbidden. The held count is
+ * a pure assignment-state grouping of the payload (no date logic).
+ */
+export interface MemberLoad {
+  member: MemberDto;
+  /** Chores this member is actively holding (claimed/assigned, non-stale). */
+  heldCount: number;
+}
+
+/**
+ * The in-board filter applied within the Needs-attention lens
+ * (Everything / Up-for-grabs / Mine chips — S2 of the UX recommendation).
+ */
+export type AttentionFilter = 'everything' | 'up-for-grabs' | 'mine';
+
+/**
+ * Rank a chore for "dirtiest-first" ordering WITHIN a section. We order by the
+ * server-computed `dueState` (overdue first), then by `nextDueAt` soonest, then
+ * by id for stability. We do NOT recompute dueness — we only sort on the
+ * server's verdict (M5).
+ */
+const DUE_STATE_RANK: Record<DueState, number> = {
+  overdue: 0,
+  dueToday: 1,
+  scheduled: 2,
+  notDue: 3,
+};
+
+function sortDirtiestFirst(a: ChoreDto, b: ChoreDto): number {
+  const r = DUE_STATE_RANK[a.dueState] - DUE_STATE_RANK[b.dueState];
+  if (r !== 0) return r;
+  // Soonest next-due first; nulls sort last. Compare ISO strings lexically —
+  // ISO-8601 UTC strings are lexically ordered, so this is safe WITHOUT parsing
+  // them into Date objects (M5 — never construct dates for logic).
+  const an = a.nextDueAt;
+  const bn = b.nextDueAt;
+  if (an !== bn) {
+    if (an == null) return 1;
+    if (bn == null) return -1;
+    return an < bn ? -1 : 1;
+  }
+  return a.id - b.id;
+}
+
+class BoardStore {
+  /** The one fetched payload. null until the first load resolves. */
+  board = $state<ChoreBoardDto | null>(null);
+  loading = $state(true);
+  /** Human-readable error message; null when healthy. */
+  error = $state<string | null>(null);
+
+  /** The active lens (ViewSwitcher). Defaults to Needs-attention. */
+  lens = $state<ChoreLensId>('needs-attention');
+  /** The in-Needs-attention filter chip selection. */
+  attentionFilter = $state<AttentionFilter>('everything');
+
+  /** This household member's userId — set once on init from the shell context. */
+  currentUserId = $state(0);
+
+  /**
+   * The persisted roaming default lens (per-user, server-stored on
+   * `User.ChoresDefaultView`). Mirrors `board.userDefaultView` (null ⇒
+   * Needs-attention). Kept as a local field so the "set as default" affordance
+   * reflects success immediately without a board refetch.
+   */
+  defaultView = $state<ChoreLensId | null>(null);
+  /** True while a `setDefaultView` PATCH is in flight (disables the control). */
+  savingDefaultView = $state(false);
+  /** Guards `initLensFromDefault` so the landing lens is set only on first load. */
+  private defaultViewInitialized = false;
+
+  /**
+   * Chore ids with an in-flight mutation. Drives per-card disabled state +
+   * double-submit prevention (M-in-flight). A `Set` swapped by reference so the
+   * `$state` reactivity fires.
+   */
+  pendingChoreIds = $state(new Set<number>());
+
+  /**
+   * The board refetch hook, wired by App.svelte (`store.setRefresh(loadBoard)`).
+   * The mutation layer calls it to reconcile after a 409 (xmin conflict — M7/M12)
+   * or any other 4xx rejection, so the user sees the true server state. Liveness
+   * shares the SAME loader, so a post-mutation refetch reuses it.
+   */
+  private refresh: (() => Promise<void>) | null = null;
+
+  // ── Lookups off the single payload ─────────────────────────────────────
+
+  /** userId → member, for owner/assignee avatar rendering. */
+  membersById = $derived.by(() => {
+    const map = new Map<number, MemberDto>();
+    for (const m of this.board?.members ?? []) map.set(m.userId, m);
+    return map;
+  });
+
+  /** All board chores (empty when unloaded). */
+  chores = $derived<ChoreDto[]>(this.board?.chores ?? []);
+
+  /** id → chore, used to resolve `needsAttentionChoreIds` into chores. */
+  choresById = $derived.by(() => {
+    const map = new Map<number, ChoreDto>();
+    for (const c of this.chores) map.set(c.id, c);
+    return map;
+  });
+
+  // ── Needs-attention lens (WP-10 default) ────────────────────────────────
+  //
+  // Inclusion + base order come from the SERVER's `needsAttentionChoreIds`
+  // (overdue → dueToday → pile, dirtiest-first — computed server-side, M11/M5).
+  // We then split into the three display sections by the server `dueState` /
+  // assignment, and apply the active filter chip.
+
+  /** The needs-attention chores, in server order, after the active filter chip. */
+  needsAttentionChores = $derived.by(() => {
+    const board = this.board;
+    if (!board) return [] as ChoreDto[];
+    const byId = this.choresById;
+    const ordered: ChoreDto[] = [];
+    for (const id of board.needsAttentionChoreIds) {
+      const c = byId.get(id);
+      if (c) ordered.push(c);
+    }
+    return ordered.filter((c) => this.passesAttentionFilter(c));
+  });
+
+  /** Needs-attention split into Falling behind → Due now → Coming up. */
+  needsAttentionSections = $derived.by<NeedsAttentionSection[]>(() => {
+    const chores = this.needsAttentionChores;
+    const fallingBehind: ChoreDto[] = [];
+    const dueNow: ChoreDto[] = [];
+    const comingUp: ChoreDto[] = [];
+    for (const c of chores) {
+      if (c.dueState === 'overdue') fallingBehind.push(c);
+      else if (c.dueState === 'dueToday') dueNow.push(c);
+      else comingUp.push(c); // scheduled / notDue pile chores
+    }
+    // Server order is already dirtiest-first; keep it (do NOT re-sort and risk
+    // diverging from the server verdict).
+    const sections: NeedsAttentionSection[] = [
+      { id: 'falling-behind', title: 'Falling behind', chores: fallingBehind },
+      { id: 'due-now', title: 'Due now', chores: dueNow },
+      { id: 'coming-up', title: 'Coming up', chores: comingUp },
+    ];
+    return sections.filter((s) => s.chores.length > 0);
+  });
+
+  // ── Rooms lens (grouping seam — full UI is WP-12) ────────────────────────
+  //
+  // Buckets the one payload by roomId against the server rollups, including the
+  // virtual General group (roomId === null). WP-12 builds the rooms-drill UI;
+  // this derived grouping is the seam it will consume.
+
+  roomGroups = $derived.by<RoomGroup[]>(() => {
+    const board = this.board;
+    if (!board) return [];
+    const byRoom = new Map<number | null, ChoreDto[]>();
+    for (const c of this.chores) {
+      const key = c.roomId ?? null;
+      if (!byRoom.has(key)) byRoom.set(key, []);
+      byRoom.get(key)!.push(c);
+    }
+    // Server provides the rollups (incl. General) pre-sorted by sortOrder.
+    return [...board.rooms]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((rollup) => ({
+        rollup,
+        chores: (byRoom.get(rollup.roomId ?? null) ?? []).slice().sort(sortDirtiestFirst),
+      }));
+  });
+
+  // ── Up-for-grabs lens (grouping seam — full UI is WP-12) ─────────────────
+  //
+  // Unclaimed pile chores PLUS stale claims (isClaimStale — pile-eligible per
+  // WP-04/05 stale-claim UX). Dirtiest-first. WP-12 builds the lane UI.
+
+  upForGrabsChores = $derived.by<ChoreDto[]>(() =>
+    this.chores
+      .filter((c) => c.assignmentKind === 'none' || c.isClaimStale)
+      .slice()
+      .sort(sortDirtiestFirst),
+  );
+
+  // ── Mine lens (grouping seam — full UI is WP-12) ─────────────────────────
+  //
+  // Chores owned by OR actively claimed/assigned to the current user (excluding
+  // stale claims, which are effectively back in the pile). Dirtiest-first.
+
+  mineChores = $derived.by<ChoreDto[]>(() => {
+    const uid = this.currentUserId;
+    return this.chores
+      .filter((c) => {
+        const heldByMe =
+          c.assigneeUserId === uid && c.assignmentKind !== 'none' && !c.isClaimStale;
+        const ownedByMe = c.ownerUserId === uid;
+        return heldByMe || ownedByMe;
+      })
+      .slice()
+      .sort(sortDirtiestFirst);
+  });
+
+  // ── Household load strip (Mine lens — the v1.1 equity SEED) ───────────────
+  //
+  // Per-member count of actively-held chores (claimed/assigned, non-stale),
+  // grouped off the one payload (M11). Display-only — NOT a points/equity
+  // engine, NOT a "completed today" tally (no actor in the DTO + would need
+  // client tz day math — M5). Ordered current-user first, then by load desc.
+
+  memberLoads = $derived.by<MemberLoad[]>(() => {
+    const board = this.board;
+    if (!board) return [];
+    const held = new Map<number, number>();
+    for (const c of this.chores) {
+      if (c.assigneeUserId != null && c.assignmentKind !== 'none' && !c.isClaimStale) {
+        held.set(c.assigneeUserId, (held.get(c.assigneeUserId) ?? 0) + 1);
+      }
+    }
+    const uid = this.currentUserId;
+    return board.members
+      .map((member) => ({ member, heldCount: held.get(member.userId) ?? 0 }))
+      .sort((a, b) => {
+        // Current user first, then heavier load first, then name for stability.
+        if (a.member.userId === uid && b.member.userId !== uid) return -1;
+        if (b.member.userId === uid && a.member.userId !== uid) return 1;
+        if (a.heldCount !== b.heldCount) return b.heldCount - a.heldCount;
+        return a.member.displayName.localeCompare(b.member.displayName);
+      });
+  });
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  private passesAttentionFilter(c: ChoreDto): boolean {
+    switch (this.attentionFilter) {
+      case 'up-for-grabs':
+        return c.assignmentKind === 'none' || c.isClaimStale;
+      case 'mine':
+        return (
+          (c.assigneeUserId === this.currentUserId &&
+            c.assignmentKind !== 'none' &&
+            !c.isClaimStale) ||
+          c.ownerUserId === this.currentUserId
+        );
+      case 'everything':
+      default:
+        return true;
+    }
+  }
+
+  setBoard(next: ChoreBoardDto): void {
+    this.board = next;
+    this.error = null;
+    // Keep the local default mirror in sync with the authoritative payload, and
+    // (on the FIRST load only) land on the user's roaming default lens.
+    this.defaultView = coerceLens(next.userDefaultView);
+    this.initLensFromDefault();
+  }
+
+  setLens(next: ChoreLensId): void {
+    this.lens = next;
+  }
+
+  setAttentionFilter(next: AttentionFilter): void {
+    this.attentionFilter = next;
+  }
+
+  // ── Roaming per-user default view (S10/D18) ───────────────────────────────
+  //
+  // The default lens is PER-USER and SERVER-PERSISTED (User.ChoresDefaultView),
+  // so it roams across devices — NOT localStorage (D18). It arrives on the board
+  // payload as `userDefaultView` (null ⇒ Needs-attention); no separate GET. The
+  // PATCH allowlist validates against the SAME canonical lens ids (ChoreLens.All).
+
+  /**
+   * On the FIRST board load, open the lens the user pinned as their default
+   * (null ⇒ Needs-attention). Runs once — later refetches (liveness, post-
+   * mutation reconcile) must NOT yank the user off whatever lens they switched
+   * to in-session.
+   */
+  private initLensFromDefault(): void {
+    if (this.defaultViewInitialized) return;
+    this.defaultViewInitialized = true;
+    this.lens = this.defaultView ?? 'needs-attention';
+  }
+
+  /** Is the given lens the user's current persisted default? */
+  isDefaultView(lens: ChoreLensId): boolean {
+    return (this.defaultView ?? 'needs-attention') === lens;
+  }
+
+  /**
+   * Pin a lens as the user's roaming default (persists via PATCH
+   * /api/chores/me/default-view). The lens switch itself is local + instant
+   * (M11 — no refetch); this only writes the preference. On an ApiError we keep
+   * the local lens but surface a NON-BLOCKING toast — the switch still works,
+   * only the persistence failed.
+   */
+  async saveDefaultView(lens: ChoreLensId): Promise<void> {
+    if (this.savingDefaultView) return;
+    // Already the default — no-op (the control renders as "current default").
+    if (this.isDefaultView(lens)) return;
+    this.savingDefaultView = true;
+    const previous = this.defaultView;
+    // Optimistic: reflect the new default at once.
+    this.defaultView = lens;
+    if (this.board) this.board.userDefaultView = lens;
+    try {
+      const result = await setDefaultView(lens);
+      // Server echoes the persisted value; reconcile to it.
+      const confirmed = coerceLens(result.view);
+      this.defaultView = confirmed;
+      if (this.board) this.board.userDefaultView = result.view;
+      showToast({ message: 'This is now your default view.', kind: 'success' });
+    } catch (e) {
+      // Roll back the optimistic default; the lens stays switched (local only).
+      this.defaultView = previous;
+      if (this.board) this.board.userDefaultView = previous;
+      const msg =
+        e instanceof ApiError
+          ? "Couldn't save your default view — it'll stay this session only."
+          : "Couldn't save your default view right now.";
+      showToast({ message: msg, kind: 'info' });
+    } finally {
+      this.savingDefaultView = false;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Mutation layer (WP-11) — optimistic updates + xmin-409 reconciliation.
+  //
+  // MODEL (every action follows this shape via `runOptimistic`):
+  //   1. OPTIMISTIC: immediately patch the matching chore in `board.chores` to
+  //      the expected post-action state (e.g. claim → assigneeUserId=me,
+  //      assignmentKind='claimed', claimedAt=now ISO). The card re-renders at
+  //      once. We do NOT recompute dueness/decay (M5/M6) — `colorTier`/`dueState`
+  //      stay as the server last reported until the authoritative response lands.
+  //   2. SUCCESS: the server returns the updated `ChoreDto` (with the NEW xmin
+  //      `version`). Replace the chore with it — the next mutation then carries a
+  //      fresh version (avoids a self-inflicted 409). The authoritative
+  //      tier/dueness come from THIS DTO, never a client recompute.
+  //   3. 409 (ApiError.isConflict — the retryable xmin conflict): someone else
+  //      changed the chore. Roll back the optimistic patch and REFETCH the board
+  //      so the user sees the true state (e.g. claimed by someone else). We do
+  //      NOT silently retry — that could clobber the other user's claim (MN8
+  //      spirit). A brief "someone got there first — refreshed" notice explains it.
+  //   4. OTHER 4xx (ApiError.isClientRejection — non-retryable: validation, an
+  //      illegal transition, or the WP-08 empty-400-that-is-really-404): roll
+  //      back, refetch to resync, surface a non-alarming toast. Not a crash.
+  //   5. NETWORK / 5xx: roll back + error toast; the action can be retried.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /** Wire the board refetch (App.svelte's loader). Used for 409/4xx reconcile. */
+  setRefresh(refresh: () => Promise<void>): void {
+    this.refresh = refresh;
+  }
+
+  /** Is a mutation in flight for this chore? (disable its controls). */
+  isPending(choreId: number): boolean {
+    return this.pendingChoreIds.has(choreId);
+  }
+
+  private markPending(choreId: number, on: boolean): void {
+    const next = new Set(this.pendingChoreIds);
+    if (on) next.add(choreId);
+    else next.delete(choreId);
+    this.pendingChoreIds = next;
+  }
+
+  /** Find a chore by id in the current board (null if the board is unloaded). */
+  private choreById(choreId: number): ChoreDto | null {
+    return this.board?.chores.find((c) => c.id === choreId) ?? null;
+  }
+
+  /** Replace the chore in `board.chores` with the authoritative server DTO. */
+  private applyChore(updated: ChoreDto): void {
+    const board = this.board;
+    if (!board) return;
+    const idx = board.chores.findIndex((c) => c.id === updated.id);
+    if (idx >= 0) {
+      board.chores[idx] = updated;
+    }
+  }
+
+  private async reconcile(): Promise<void> {
+    if (this.refresh) await this.refresh();
+  }
+
+  /**
+   * Core optimistic runner. Snapshots the chore, applies an optimistic patch,
+   * fires the request, then commits the returned DTO or rolls back + reconciles
+   * per the 409 / 4xx / network model documented above.
+   *
+   * @param choreId   the target chore
+   * @param patch     fields to optimistically merge onto the chore
+   * @param call      the API call (returns the authoritative ChoreDto)
+   * @param conflictMessage  the "someone got there first" notice for a 409
+   */
+  private async runOptimistic(
+    choreId: number,
+    patch: Partial<ChoreDto>,
+    call: (chore: ChoreDto) => Promise<ChoreDto>,
+    conflictMessage: string,
+  ): Promise<void> {
+    // Double-submit guard: ignore if a mutation is already in flight.
+    if (this.pendingChoreIds.has(choreId)) return;
+    const chore = this.choreById(choreId);
+    if (!chore) return;
+
+    // Snapshot the fields we touch so we can roll back precisely.
+    const snapshot: ChoreDto = { ...chore };
+    Object.assign(chore, patch);
+    this.markPending(choreId, true);
+
+    try {
+      const updated = await call(snapshot);
+      this.applyChore(updated);
+    } catch (e) {
+      // Roll back the optimistic patch first, regardless of failure mode.
+      const current = this.choreById(choreId);
+      if (current) Object.assign(current, snapshot);
+
+      if (e instanceof ApiError && e.isConflict) {
+        // 409 — xmin concurrency conflict (M7/M12). Refetch + non-alarming notice.
+        await this.reconcile();
+        showToast({ message: conflictMessage, kind: 'info' });
+      } else if (e instanceof ApiError && e.isClientRejection) {
+        // Other 4xx (incl. the empty-400-from-404 WP-08 quirk). Resync + notice.
+        await this.reconcile();
+        showToast({
+          message: "That didn't go through — the board has been refreshed.",
+          kind: 'info',
+        });
+      } else {
+        // Network / 5xx — leave the board as-is (rolled back), allow retry.
+        showToast({
+          message: 'Something went wrong. Please try again.',
+          kind: 'error',
+        });
+      }
+    } finally {
+      this.markPending(choreId, false);
+    }
+  }
+
+  /** Claim an unclaimed (or stale-claimed) pile chore for the current user. */
+  async claim(choreId: number): Promise<void> {
+    const me = this.currentUserId;
+    await this.runOptimistic(
+      choreId,
+      {
+        assigneeUserId: me,
+        assignmentKind: 'claimed',
+        claimedAt: new Date().toISOString(),
+        isClaimStale: false,
+      },
+      (c) => claimChore(c.id, c.version),
+      'Someone got there first — board refreshed.',
+    );
+  }
+
+  /** Drop a chore the current user holds (returns it to the pile). */
+  async drop(choreId: number): Promise<void> {
+    await this.runOptimistic(
+      choreId,
+      { assigneeUserId: null, assignmentKind: 'none', claimedAt: null, isClaimStale: false },
+      (c) => dropChore(c.id, c.version),
+      'That chore changed — board refreshed.',
+    );
+  }
+
+  /** Mark a chore done (optionally with a note / already-uploaded photo path). */
+  async complete(choreId: number, extra?: { note?: string | null; photoPath?: string | null }): Promise<void> {
+    await this.runOptimistic(
+      choreId,
+      // Optimistically reflect "just completed" by stamping lastCompletedAt.
+      // We do NOT recompute dueness/colorTier — the authoritative post-completion
+      // tier (e.g. recurring chore's next dueness) comes from the returned DTO.
+      { lastCompletedAt: new Date().toISOString() },
+      (c) =>
+        completeChore(c.id, {
+          note: extra?.note ?? null,
+          photoPath: extra?.photoPath ?? null,
+          version: c.version,
+        } satisfies CompleteRequest),
+      'That chore changed — board refreshed.',
+    );
+  }
+
+  /**
+   * Hand a chore off to another member, or back to the pile (targetUserId null).
+   */
+  async handOff(choreId: number, targetUserId: number | null): Promise<void> {
+    const toPile = targetUserId == null;
+    await this.runOptimistic(
+      choreId,
+      toPile
+        ? { assigneeUserId: null, assignmentKind: 'none', claimedAt: null, isClaimStale: false }
+        : {
+            assigneeUserId: targetUserId,
+            assignmentKind: 'claimed',
+            claimedAt: new Date().toISOString(),
+            isClaimStale: false,
+          },
+      (c) => handOffChore(c.id, { targetUserId, version: c.version }),
+      'That chore changed — board refreshed.',
+    );
+  }
+
+  /**
+   * Create a chore (quick-add). NOT optimistic — a new chore has no id/version
+   * to reconcile against and the server-computed dueness/rollups are needed, so
+   * we POST then refetch the whole board to render the new card authoritatively.
+   * Returns the created chore so the caller can chain a photo upload if needed.
+   * Throws on failure so the dialog can keep itself open + surface the error.
+   */
+  async create(body: CreateChoreRequest): Promise<ChoreDto> {
+    const created = await createChore(body);
+    await this.reconcile();
+    return created;
+  }
+
+  /** Delete a chore (optimistic removal + rollback/refetch on failure). */
+  async remove(choreId: number): Promise<void> {
+    if (this.pendingChoreIds.has(choreId)) return;
+    const board = this.board;
+    if (!board) return;
+    const idx = board.chores.findIndex((c) => c.id === choreId);
+    if (idx < 0) return;
+    const removed = board.chores[idx];
+
+    board.chores = board.chores.filter((c) => c.id !== choreId);
+    this.markPending(choreId, true);
+    try {
+      await deleteChore(choreId, removed.version);
+    } catch (e) {
+      // Restore the removed chore, then reconcile / surface.
+      await this.reconcile();
+      if (e instanceof ApiError && (e.isConflict || e.isClientRejection)) {
+        showToast({ message: 'That chore changed — board refreshed.', kind: 'info' });
+      } else {
+        // Network/5xx: the refetch may not have restored it; put it back.
+        if (this.board && !this.board.chores.some((c) => c.id === choreId)) {
+          this.board.chores = [...this.board.chores, removed];
+        }
+        showToast({ message: 'Something went wrong. Please try again.', kind: 'error' });
+      }
+    } finally {
+      this.markPending(choreId, false);
+    }
+  }
+}
+
+/**
+ * The single shared store instance. Components import this and read its
+ * `$state`/`$derived` fields reactively. We export the INSTANCE (not the runes
+ * themselves) so the CORRECTIONS rune-export rule is respected.
+ */
+export const boardStore = new BoardStore();
+
+/** Resolve a member for avatar display; null when unknown/unassigned. */
+export function memberFor(userId: number | null | undefined): MemberDto | null {
+  if (userId == null) return null;
+  return boardStore.membersById.get(userId) ?? null;
+}
+
+/**
+ * Coerce a persisted `userDefaultView` string to a canonical `ChoreLensId`.
+ * null/blank/unknown ⇒ null (⇒ Needs-attention default). The server allowlist
+ * is authoritative (ChoreLens.All), but we re-validate defensively so an
+ * unexpected value never selects a non-existent lens.
+ */
+function coerceLens(view: string | null): ChoreLensId | null {
+  if (!view) return null;
+  return (CHORE_LENSES as readonly string[]).includes(view) ? (view as ChoreLensId) : null;
+}

@@ -66,6 +66,185 @@ namespace FamilyCoordinationApp.Migrations
                     b.ToTable("Categories");
                 });
 
+            modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.Chore", b =>
+                {
+                    b.Property<int>("HouseholdId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ChoreId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("ChoreId"));
+
+                    b.Property<DateOnly?>("AnchorDate")
+                        .HasColumnType("date");
+
+                    b.Property<int?>("AssigneeUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AssignmentKind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("None");
+
+                    b.Property<DateTime?>("ClaimedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("DayOfMonth")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("DaysOfWeek")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int>("EffortPoints")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1);
+
+                    b.Property<string>("EffortTier")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("EnteredByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("IntervalDays")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("LastCompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("OwnerUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("PhotoPath")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("RecurrenceMode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int?>("RoomId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("HouseholdId", "ChoreId");
+
+                    b.HasIndex("AssigneeUserId");
+
+                    b.HasIndex("EnteredByUserId");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("HouseholdId", "RoomId");
+
+                    b.ToTable("Chores", (string)null);
+                });
+
+            modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.ChoreCompletion", b =>
+                {
+                    b.Property<int>("HouseholdId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ChoreId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CompletionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("CompletionId"));
+
+                    b.Property<DateTime>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CompletedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("EffortPointsSnapshot")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("PhotoPath")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("HouseholdId", "ChoreId", "CompletionId");
+
+                    b.HasIndex("CompletedByUserId");
+
+                    b.ToTable("ChoreCompletions", (string)null);
+                });
+
+            modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.ChoreEvent", b =>
+                {
+                    b.Property<int>("HouseholdId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ChoreId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("EventId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("EventId"));
+
+                    b.Property<int>("ActorUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("TargetUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("HouseholdId", "ChoreId", "EventId");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("TargetUserId");
+
+                    b.ToTable("ChoreEvents", (string)null);
+                });
+
             modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.Feedback", b =>
                 {
                     b.Property<int>("Id")
@@ -539,6 +718,44 @@ namespace FamilyCoordinationApp.Migrations
                     b.ToTable("RecipeIngredients", (string)null);
                 });
 
+            modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.Room", b =>
+                {
+                    b.Property<int>("HouseholdId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RoomId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("RoomId"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Icon")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("PhotoPath")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("SortOrder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.HasKey("HouseholdId", "RoomId");
+
+                    b.ToTable("Rooms", (string)null);
+                });
+
             modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.ShoppingList", b =>
                 {
                     b.Property<int>("HouseholdId")
@@ -677,6 +894,9 @@ namespace FamilyCoordinationApp.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("ChoresDefaultView")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -754,6 +974,90 @@ namespace FamilyCoordinationApp.Migrations
                         .IsRequired();
 
                     b.Navigation("Household");
+                });
+
+            modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.Chore", b =>
+                {
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.User", "Assignee")
+                        .WithMany()
+                        .HasForeignKey("AssigneeUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.User", "EnteredBy")
+                        .WithMany()
+                        .HasForeignKey("EnteredByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.Household", "Household")
+                        .WithMany()
+                        .HasForeignKey("HouseholdId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.User", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.Room", "Room")
+                        .WithMany()
+                        .HasForeignKey("HouseholdId", "RoomId");
+
+                    b.Navigation("Assignee");
+
+                    b.Navigation("EnteredBy");
+
+                    b.Navigation("Household");
+
+                    b.Navigation("Owner");
+
+                    b.Navigation("Room");
+                });
+
+            modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.ChoreCompletion", b =>
+                {
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.User", "CompletedBy")
+                        .WithMany()
+                        .HasForeignKey("CompletedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.Chore", "Chore")
+                        .WithMany("Completions")
+                        .HasForeignKey("HouseholdId", "ChoreId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Chore");
+
+                    b.Navigation("CompletedBy");
+                });
+
+            modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.ChoreEvent", b =>
+                {
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.User", "Actor")
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.User", "Target")
+                        .WithMany()
+                        .HasForeignKey("TargetUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.Chore", "Chore")
+                        .WithMany("Events")
+                        .HasForeignKey("HouseholdId", "ChoreId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Actor");
+
+                    b.Navigation("Chore");
+
+                    b.Navigation("Target");
                 });
 
             modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.Feedback", b =>
@@ -937,6 +1241,17 @@ namespace FamilyCoordinationApp.Migrations
                     b.Navigation("Recipe");
                 });
 
+            modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.Room", b =>
+                {
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.Household", "Household")
+                        .WithMany()
+                        .HasForeignKey("HouseholdId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Household");
+                });
+
             modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.ShoppingList", b =>
                 {
                     b.HasOne("FamilyCoordinationApp.Data.Entities.Household", "Household")
@@ -1008,6 +1323,13 @@ namespace FamilyCoordinationApp.Migrations
                     b.Navigation("Recipe");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.Chore", b =>
+                {
+                    b.Navigation("Completions");
+
+                    b.Navigation("Events");
                 });
 
             modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.Household", b =>

@@ -1,0 +1,106 @@
+using FamilyCoordinationApp.Data.Entities;
+
+namespace FamilyCoordinationApp.Services.Dtos;
+
+/// <summary>
+/// The single board DTO every island lens groups client-side (D17/D18/M11). There is ONE board shape —
+/// needs-attention / rooms / up-for-grabs / mine are client-side groupings of this same payload, not
+/// separate endpoints. Serialized camelCase with enums as strings (council M5 — a global
+/// <c>JsonStringEnumConverter(JsonNamingPolicy.CamelCase)</c> is registered in WP-06's Program.cs). The
+/// checked-in <c>board.json</c> contract fixture pins this exact shape; the island's <c>api.ts</c>
+/// interface mirrors it (M9 consumer audit — a field rename breaks the fixture test in lockstep).
+/// </summary>
+public sealed record ChoreBoardDto(
+    IReadOnlyList<ChoreDto> Chores,
+    IReadOnlyList<RoomRollupDto> Rooms,
+    IReadOnlyList<MemberDto> Members,
+    IReadOnlyList<int> NeedsAttentionChoreIds,
+    string? UserDefaultView);
+
+/// <summary>
+/// A single chore with its <b>computed</b> dueness/freshness state (WP-02). The island renders
+/// <see cref="DueState"/> / <see cref="ColorTier"/> directly and does no date math of its own (M5/M6).
+/// <see cref="IsClaimStale"/> is computed on read but NOT materialized — a stale claim still displays as
+/// Claimed until the next write auto-releases it; the island may treat a stale-Claimed chore as
+/// pile-eligible visually (D7/MN1).
+/// </summary>
+public sealed record ChoreDto(
+    int Id,
+    string Name,
+    string? Description,
+    int? RoomId,
+    string RecurrenceMode,
+    DueState DueState,
+    ColorTier ColorTier,
+    DateTime? NextDueAt,
+    bool IsClaimStale,
+    string EffortTier,
+    int EffortPoints,
+    int? OwnerUserId,
+    int? AssigneeUserId,
+    AssignmentKind AssignmentKind,
+    DateTime? ClaimedAt,
+    DateTime? LastCompletedAt,
+    string? PhotoPath,
+    uint Version);
+
+/// <summary>
+/// Per-room dirtiness rollup. The <see cref="Status"/> bucket is derived from the count of chores in the
+/// room whose computed dueness is due-or-overdue (NOT from stored <c>ChoreStatus</c>), bucketed by the
+/// named thresholds in <see cref="ChoreRollup"/> (P4): 0 ⇒ clean, 1–2 ⇒ attention, 3+ ⇒ needs-work.
+/// The virtual <b>General</b> group (roomless chores) is represented with <see cref="RoomId"/> == null and
+/// is NOT backed by a real <c>Room</c> row (D9).
+/// </summary>
+public sealed record RoomRollupDto(
+    int? RoomId,
+    string Name,
+    string Icon,
+    string? PhotoPath,
+    int SortOrder,
+    int ChoreCount,
+    int DueCount,
+    RoomRollupStatus Status);
+
+/// <summary>
+/// A household member, for rendering minder/assignee tags + avatars on the board (WP-10/12).
+/// </summary>
+public sealed record MemberDto(
+    int UserId,
+    string DisplayName,
+    string Initials,
+    string? PictureUrl);
+
+/// <summary>
+/// Dirtiness bucket for a room rollup. Serialized camelCase: <c>clean|attention|needsWork</c>.
+/// </summary>
+public enum RoomRollupStatus
+{
+    Clean,
+    Attention,
+    NeedsWork
+}
+
+/// <summary>
+/// Named rollup thresholds (P4) — the bucket boundaries for <see cref="RoomRollupStatus"/>, derived from
+/// the count of due-or-overdue chores in a room (D9). 0 ⇒ Clean; 1..<see cref="NeedsWorkThreshold"/>-1 ⇒
+/// Attention; &gt;= <see cref="NeedsWorkThreshold"/> ⇒ NeedsWork.
+/// </summary>
+public static class ChoreRollup
+{
+    /// <summary>The virtual roomless group's display name (D9 — not a real <c>Room</c> row).</summary>
+    public const string GeneralGroupName = "General";
+
+    /// <summary>Default icon for the virtual General group.</summary>
+    public const string GeneralGroupIcon = "🏠";
+
+    /// <summary>At or above this many due-or-overdue chores, a room is <see cref="RoomRollupStatus.NeedsWork"/>.</summary>
+    public const int NeedsWorkThreshold = 3;
+
+    /// <summary>Bucket a due-or-overdue count into a rollup status (0 clean / 1-2 attention / 3+ needs-work).</summary>
+    public static RoomRollupStatus BucketFor(int dueCount) => dueCount switch
+    {
+        <= 0 => RoomRollupStatus.Clean,
+        < NeedsWorkThreshold => RoomRollupStatus.Attention,
+        _ => RoomRollupStatus.NeedsWork
+    };
+}

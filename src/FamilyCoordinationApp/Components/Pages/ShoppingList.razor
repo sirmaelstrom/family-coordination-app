@@ -64,6 +64,11 @@ else
     {
         if (!firstRender || !_useIsland || _shell is null) return;
 
+        // Blazor enhanced navigation does not apply this page's <HeadContent>, so the island
+        // stylesheet is missing on in-app navigation. (Re)inject it here (idempotent) — OnAfterRender
+        // runs for both full loads and enhanced nav, so the island is styled either way.
+        await JS.InvokeVoidAsync("ensureIslandStylesheet", $"/islands/shopping-list/index.css?v={IslandVersion}");
+
         // Load the Svelte bundle as an ES module, then call its exposed mounter.
         // `_framework` interop handles caching — the second visit to this page
         // on the same circuit reuses the module, but mountRoot is idempotent
