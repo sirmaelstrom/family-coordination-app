@@ -1,0 +1,37 @@
+{
+  "window": "week",
+  "totalPoints": 12,
+  "totalCompletions": 4,
+  "equalSharePct": 33.3,
+  "fallingBehindCount": 2,
+  "upForGrabsCount": 3,
+  "members": [
+    {
+      "userId": 1,
+      "displayName": "Alice",
+      "initials": "AL",
+      "pictureUrl": "https://example.com/alice.png",
+      "points": 5,
+      "completions": 2,
+      "sharePct": 41.7
+    },
+    {
+      "userId": 2,
+      "displayName": "Bob",
+      "initials": "BO",
+      "pictureUrl": null,
+      "points": 4,
+      "completions": 1,
+      "sharePct": 33.3
+    },
+    {
+      "userId": 3,
+      "displayName": "Carol",
+      "initials": "CA",
+      "pictureUrl": null,
+      "points": 3,
+      "completions": 1,
+      "sharePct": 25
+    }
+  ]
+}
