@@ -155,7 +155,22 @@
     }
   }
 
-  /** Derive the cadence + anchorDate from the ChoreDto when pre-filling. */
+  /**
+   * Parse the DTO's camelCase weekday CSV (e.g. "monday, thursday") back into the
+   * weekday flag Set the buttons bind to. Tolerant of spacing/casing so it matches
+   * the WEEKDAYS flags regardless of how the server enum serializes.
+   */
+  function parseDaysOfWeek(csv: string | null): Set<string> {
+    if (!csv) return new Set<string>();
+    return new Set(
+      csv
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean),
+    );
+  }
+
+  /** Derive the cadence + sub-values from the ChoreDto when pre-filling. */
   function choreToFormState(c: ChoreDto): void {
     name = c.name;
     description = c.description ?? '';
@@ -169,11 +184,9 @@
     confirmingDelete = false;
     deleting = false;
 
-    // Map recurrenceMode → cadence (D4-B; no monthly-on-day).
-    // Note: ChoreDto does not carry intervalDays or daysOfWeek — those are
-    // write-only request fields. We can pre-fill the cadence type from
-    // recurrenceMode, but the sub-values (N days / weekday selection) must be
-    // entered fresh by the user each edit.
+    // Map recurrenceMode → cadence (D4-B; no monthly-on-day). The DTO now echoes
+    // intervalDays + daysOfWeek (camelCase CSV) so we pre-fill the sub-values too —
+    // fixes editing a fixed-weekly / every-N chore losing the existing selection.
     switch (c.recurrenceMode) {
       case 'OneOff':
         cadence = 'once';
@@ -182,13 +195,13 @@
         break;
       case 'Flexible':
         cadence = 'everyN';
-        intervalDays = '3';
+        intervalDays = c.intervalDays != null ? String(c.intervalDays) : '3';
         selectedDays = new Set<string>();
         break;
       case 'Fixed':
         cadence = 'days';
         intervalDays = '3';
-        selectedDays = new Set<string>();
+        selectedDays = parseDaysOfWeek(c.daysOfWeek);
         break;
     }
   }

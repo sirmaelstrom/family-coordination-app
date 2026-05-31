@@ -23,6 +23,10 @@ public sealed record ChoreBoardDto(
 /// <see cref="IsClaimStale"/> is computed on read but NOT materialized — a stale claim still displays as
 /// Claimed until the next write auto-releases it; the island may treat a stale-Claimed chore as
 /// pile-eligible visually (D7/MN1).
+/// <para><see cref="IntervalDays"/> and <see cref="DaysOfWeek"/> echo the recurrence sub-values so the edit
+/// sheet can pre-fill them (without them, editing a fixed-weekly / every-N chore lost the existing selection).
+/// <see cref="DaysOfWeek"/> serializes as a camelCase CSV (e.g. <c>"monday, thursday"</c>) — the same shape the
+/// write request accepts.</para>
 /// </summary>
 public sealed record ChoreDto(
     int Id,
@@ -31,6 +35,8 @@ public sealed record ChoreDto(
     string? Description,
     int? RoomId,
     string RecurrenceMode,
+    int? IntervalDays,
+    ChoreDaysOfWeek? DaysOfWeek,
     DueState DueState,
     ColorTier ColorTier,
     DateTime? NextDueAt,

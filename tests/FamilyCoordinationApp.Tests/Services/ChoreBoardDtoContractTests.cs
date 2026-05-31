@@ -50,6 +50,8 @@ public class ChoreBoardDtoContractTests
                 Description: "Use the good mop",
                 RoomId: 10,
                 RecurrenceMode: "Flexible",
+                IntervalDays: 3,
+                DaysOfWeek: null,
                 DueState: DueState.Overdue,
                 ColorTier: ColorTier.Overdue,
                 NextDueAt: new DateTime(2026, 5, 28, 5, 0, 0, DateTimeKind.Utc),
@@ -72,6 +74,8 @@ public class ChoreBoardDtoContractTests
                 Description: null,
                 RoomId: 10,
                 RecurrenceMode: "Fixed",
+                IntervalDays: null,
+                DaysOfWeek: ChoreDaysOfWeek.Monday | ChoreDaysOfWeek.Thursday,
                 DueState: DueState.DueToday,
                 ColorTier: ColorTier.Due,
                 NextDueAt: new DateTime(2026, 5, 30, 5, 0, 0, DateTimeKind.Utc),
@@ -94,6 +98,8 @@ public class ChoreBoardDtoContractTests
                 Description: "Living room + balcony",
                 RoomId: null,
                 RecurrenceMode: "Fixed",
+                IntervalDays: null,
+                DaysOfWeek: ChoreDaysOfWeek.Saturday,
                 DueState: DueState.Scheduled,
                 ColorTier: ColorTier.Fresh,
                 NextDueAt: new DateTime(2026, 6, 2, 5, 0, 0, DateTimeKind.Utc),
@@ -116,6 +122,8 @@ public class ChoreBoardDtoContractTests
                 Description: null,
                 RoomId: null,
                 RecurrenceMode: "OneOff",
+                IntervalDays: null,
+                DaysOfWeek: null,
                 DueState: DueState.NotDue,
                 ColorTier: ColorTier.Mid,
                 NextDueAt: null,
@@ -215,7 +223,8 @@ public class ChoreBoardDtoContractTests
 
         var firstChore = root["chores"]!.AsArray()[0]!.AsObject();
         firstChore.Select(kvp => kvp.Key).Should().BeEquivalentTo(
-            "id", "name", "icon", "description", "roomId", "recurrenceMode", "dueState", "colorTier", "nextDueAt",
+            "id", "name", "icon", "description", "roomId", "recurrenceMode", "intervalDays", "daysOfWeek",
+            "dueState", "colorTier", "nextDueAt",
             "isClaimStale", "effortTier", "effortPoints", "ownerUserId", "assigneeUserId", "assignmentKind",
             "claimedAt", "lastCompletedAt", "photoPath", "version");
 

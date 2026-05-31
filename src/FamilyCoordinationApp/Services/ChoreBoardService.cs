@@ -103,6 +103,8 @@ public class ChoreBoardService(
         chore.Description,
         chore.RoomId,
         chore.RecurrenceMode.ToString(),
+        chore.IntervalDays,
+        chore.DaysOfWeek,
         dueness.DueState,
         dueness.ColorTier,
         dueness.NextDueAt,
