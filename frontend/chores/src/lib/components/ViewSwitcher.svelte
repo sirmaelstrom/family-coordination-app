@@ -36,6 +36,7 @@
     rooms: 'Rooms',
     'up-for-grabs': 'Up for grabs',
     mine: 'Mine',
+    equity: 'Equity',
   };
 
   let isActiveDefault = $derived(active === defaultLens);

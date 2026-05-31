@@ -105,14 +105,52 @@ export type ChoreLensId =
   | 'needs-attention'
   | 'rooms'
   | 'up-for-grabs'
-  | 'mine';
+  | 'mine'
+  | 'equity';
 
 export const CHORE_LENSES: readonly ChoreLensId[] = [
   'needs-attention',
   'rooms',
   'up-for-grabs',
   'mine',
+  'equity',
 ] as const;
+
+// ─── Equity lens DTO (FROZEN — mirrors WP-02 ChoreEquityDto EXACTLY) ─────────
+// Source of truth: tests/FamilyCoordinationApp.Tests/Fixtures/ChoreEquity/equity.json
+// (M7 lockstep tripwire: a shape change updates THIS interface AND that fixture).
+// Served at GET /api/chores/equity?window=week|all. JSON keys are camelCase.
+//
+// ⚠ `window` is a PLAIN string on the DTO ('week'|'all'). `sharePct` /
+//   `equalSharePct` are PERCENT values in 0..100 (e.g. 41.7) — render them
+//   DIRECTLY as a percent (no client `* 100`). All values are server-computed;
+//   render only — NO client date math (MN9), no leaderboard/ranking framing (M12).
+
+/** The equity reporting window. Plain string on the DTO. */
+export type EquityWindow = 'week' | 'all';
+
+/** Per-member share of the household's completion load over the window. */
+export interface MemberShareDto {
+  userId: number;
+  displayName: string;
+  initials: string;
+  pictureUrl: string | null;
+  points: number;
+  completions: number;
+  /** PERCENT 0..100 (e.g. 41.7). Render directly — no client `* 100`. */
+  sharePct: number;
+}
+
+export interface ChoreEquityDto {
+  window: EquityWindow;
+  totalPoints: number;
+  totalCompletions: number;
+  /** PERCENT 0..100 — the neutral equal-share reference line. */
+  equalSharePct: number;
+  fallingBehindCount: number;
+  upForGrabsCount: number;
+  members: MemberShareDto[];
+}
 
 // ─── Shell context (read from the #chores-root data-attributes) ─────────────
 

@@ -18,6 +18,8 @@
 import type {
   ChoreBoardDto,
   ChoreDto,
+  ChoreEquityDto,
+  EquityWindow,
   RoomRollupDto,
   MemberDto,
   ChoreLensId,
@@ -33,6 +35,7 @@ import {
   createChore,
   deleteChore,
   setDefaultView,
+  getEquity,
   type CreateChoreRequest,
   type CompleteRequest,
 } from './api';
@@ -136,6 +139,29 @@ class BoardStore {
    * `$state` reactivity fires.
    */
   pendingChoreIds = $state(new Set<number>());
+
+  // ── Equity lens (the one non-board fetcher — M11) ─────────────────────────
+  //
+  // The Equity lens reads a SEPARATE cached payload (GET /api/chores/equity),
+  // not the board. It is the only lens that fetches; the four v1.0 lenses group
+  // the one board payload. The cached payload goes STALE when completions/chores
+  // change, so any such action invalidates it (`equityLoaded = false`) and — if
+  // the equity lens is currently open — reloads it immediately. App.svelte's
+  // $effect performs the fetch-on-open (and on window change). All values are
+  // server-computed; NO client date math (MN9).
+
+  /** The cached equity payload. null until first loaded (or after invalidation+reload). */
+  equity = $state<ChoreEquityDto | null>(null);
+  /** The reporting window. Switching it triggers a reload via the App effect. */
+  equityWindow = $state<EquityWindow>('week');
+  /** True while a `loadEquity()` fetch is in flight. */
+  equityLoading = $state(false);
+  /** Human-readable equity error; null when healthy. */
+  equityError = $state<string | null>(null);
+  /** True once a fetch for the CURRENT window has resolved successfully. The
+   *  App effect loads when `lens === 'equity' && !equityLoaded`; invalidation
+   *  flips this back to false so the next view (or the active lens) reloads. */
+  equityLoaded = $state(false);
 
   /**
    * The board refetch hook, wired by App.svelte (`store.setRefresh(loadBoard)`).
@@ -313,6 +339,10 @@ class BoardStore {
     // (on the FIRST load only) land on the user's roaming default lens.
     this.defaultView = coerceLens(next.userDefaultView);
     this.initLensFromDefault();
+    // The board refetch path (loadBoard / setRefresh / liveness) may have
+    // included a completion from another user, so the cached equity payload is
+    // potentially stale. Invalidate (and reload if the equity lens is active).
+    this.invalidateEquity();
   }
 
   setLens(next: ChoreLensId): void {
@@ -321,6 +351,59 @@ class BoardStore {
 
   setAttentionFilter(next: AttentionFilter): void {
     this.attentionFilter = next;
+  }
+
+  // ── Equity lens fetch + invalidation ──────────────────────────────────────
+
+  /** Switch the reporting window. The window change drops the cache so the App
+   *  effect reloads for the new window (it watches `equityWindow`). */
+  setEquityWindow(next: EquityWindow): void {
+    if (this.equityWindow === next) return;
+    this.equityWindow = next;
+    this.equityLoaded = false;
+  }
+
+  /**
+   * Fetch the equity payload for the CURRENT window. Called by App.svelte's
+   * $effect when the equity lens is open and the cache is stale (fetch-once per
+   * window). Sets `equityLoaded` on success so the effect doesn't refetch on
+   * every reactive tick.
+   */
+  async loadEquity(): Promise<void> {
+    if (this.equityLoading) return;
+    this.equityLoading = true;
+    this.equityError = null;
+    const window = this.equityWindow;
+    try {
+      const result = await getEquity(window);
+      // Guard against a window switch landing mid-flight — only commit if the
+      // requested window is still the active one.
+      if (this.equityWindow === window) {
+        this.equity = result;
+        this.equityLoaded = true;
+      }
+    } catch (e) {
+      this.equityError =
+        e instanceof ApiError
+          ? `Couldn't load the equity view (HTTP ${e.status}).`
+          : "Couldn't load the equity view right now.";
+    } finally {
+      this.equityLoading = false;
+    }
+  }
+
+  /**
+   * Invalidate the cached equity payload — it's a separate cached read that goes
+   * stale whenever completions/chores change (council MAJOR). Drops the cache and,
+   * if the equity lens is currently open, reloads it immediately so the user
+   * never sees a stale distribution. Called after `complete(...)` succeeds and
+   * on every board refetch (`setBoard`). WP-10's `seedStarter()` calls this too.
+   */
+  invalidateEquity(): void {
+    this.equityLoaded = false;
+    if (this.lens === 'equity') {
+      void this.loadEquity();
+    }
   }
 
   // ── Roaming per-user default view (S10/D18) ───────────────────────────────
@@ -543,6 +626,11 @@ class BoardStore {
         } satisfies CompleteRequest),
       'That chore changed — board refreshed.',
     );
+    // A completion shifts the distribution — invalidate the cached equity so it
+    // reloads when next viewed (or now, if the equity lens is active). The happy
+    // path doesn't refetch the board, so this is the only equity hook for it; a
+    // 409/4xx already reconciled via setBoard (which also invalidates).
+    this.invalidateEquity();
   }
 
   /**

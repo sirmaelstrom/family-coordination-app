@@ -1,6 +1,8 @@
 import type {
   ChoreBoardDto,
   ChoreDto,
+  ChoreEquityDto,
+  EquityWindow,
   RoomDto,
   EffortTier,
   RecurrenceMode,
@@ -138,6 +140,16 @@ export interface RoomUpsertRequest {
 
 export async function getBoard(): Promise<ChoreBoardDto> {
   return request<ChoreBoardDto>(`${CHORES_BASE}/board`);
+}
+
+// ─── Equity read (separate cached payload — the ONLY non-board fetcher, M11) ──
+// The four v1.0 lenses group the one board payload client-side; the Equity lens
+// is the sole lens with its own endpoint. credentials:include like getBoard.
+
+export async function getEquity(
+  window: EquityWindow = 'week',
+): Promise<ChoreEquityDto> {
+  return request<ChoreEquityDto>(`${CHORES_BASE}/equity?window=${window}`);
 }
 
 // ─── Chore mutations (WP-11 wires these to optimistic UI + 409 retry) ───────

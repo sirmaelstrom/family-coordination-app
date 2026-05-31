@@ -9,6 +9,7 @@
   import RoomsDashboard from './lib/components/RoomsDashboard.svelte';
   import UpForGrabsLane from './lib/components/UpForGrabsLane.svelte';
   import MineView from './lib/components/MineView.svelte';
+  import EquityBoard from './lib/components/EquityBoard.svelte';
   import QuickAddSheet, { type QuickAddValue } from './lib/components/QuickAddSheet.svelte';
   import HandOffPicker from './lib/components/HandOffPicker.svelte';
   import Toasts from './lib/components/Toasts.svelte';
@@ -131,6 +132,22 @@
       liveness = null;
     };
   });
+
+  // ── Equity fetch-on-open (the ONLY non-board fetcher — M11) ───────────────
+  // Load the equity payload when the Equity lens is open and the cache is stale
+  // (`!equityLoaded`). Reading `equityWindow` makes the effect re-run on a window
+  // switch (which the store also marks stale via setEquityWindow). The four v1.0
+  // lenses never trigger a fetch — they group the one board payload. A user who
+  // defaulted onto Equity lands here on mount (the store opens onto their default
+  // lens) and loads it the same way. The store guards re-entrancy + window races.
+  $effect(() => {
+    // Track the window so a switch re-runs this effect.
+    const _window = store.equityWindow;
+    void _window;
+    if (store.lens === 'equity' && !store.equityLoaded && !store.equityLoading) {
+      store.loadEquity();
+    }
+  });
 </script>
 
 <div class="ch-container">
@@ -208,6 +225,21 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+      />
+    {:else if store.lens === 'equity'}
+      <!--
+        Equity lens — the one lens with its own (separately cached) payload
+        (store.equity via GET /api/chores/equity). The $effect above fetches it
+        on open + on window change; completions/refetches invalidate it. NEUTRAL
+        distribution, server values only (M12/MN9).
+      -->
+      <EquityBoard
+        equity={store.equity}
+        window={store.equityWindow}
+        loading={store.equityLoading}
+        error={store.equityError}
+        onWindow={(w) => store.setEquityWindow(w)}
+        onRetry={() => store.loadEquity()}
       />
     {/if}
   {:else if !store.loading}
