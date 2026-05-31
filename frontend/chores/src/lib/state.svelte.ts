@@ -499,6 +499,17 @@ class BoardStore {
     this.refresh = refresh;
   }
 
+  /**
+   * Public board refetch for the room-admin surface (RoomEditSheet + the inline
+   * new-room photo). A room create/edit/photo change is not a chore mutation, so
+   * it has no optimistic path — after it succeeds we refetch the ONE board
+   * payload so the updated rollup (name / icon / photoPath cover) renders
+   * authoritatively. Shares the same loader as liveness + 409 reconcile.
+   */
+  async reloadBoard(): Promise<void> {
+    await this.reconcile();
+  }
+
   /** Is a mutation in flight for this chore? (disable its controls). */
   isPending(choreId: number): boolean {
     return this.pendingChoreIds.has(choreId);

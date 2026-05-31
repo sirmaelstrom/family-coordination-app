@@ -23,7 +23,8 @@
   // ───────────────────────────────────────────────────────────────────────
   import type { EffortTier, RecurrenceMode, MemberDto, RoomRollupDto } from '../types';
   import type { CreateChoreRequest } from '../api';
-  import { createRoom } from '../api';
+  import { createRoom, uploadRoomPhoto } from '../api';
+  import { showToast } from '../toasts.svelte';
   import IconPicker from './IconPicker.svelte';
 
   /** What the parent needs to create the chore + (optionally) attach a photo. */
@@ -70,6 +71,7 @@
   let showNewRoom = $state(false);
   let newRoomName = $state('');
   let newRoomIcon = $state<string>('🧹');
+  let newRoomPhotoFile = $state<File | null>(null);
   let newRoomError = $state<string | null>(null);
   let creatingRoom = $state(false);
 
@@ -121,13 +123,25 @@
     creatingRoom = true;
     try {
       const created = await createRoom({ name: trimmed, icon: newRoomIcon });
+      // Optional cover photo: upload after create (we now have the room id), then
+      // carry the returned path on the local rollup. A failed upload still keeps
+      // the room — only the photo is skipped (a later board reload reconciles).
+      let createdPhotoPath = created.photoPath;
+      if (newRoomPhotoFile) {
+        try {
+          const up = await uploadRoomPhoto(created.id, newRoomPhotoFile);
+          createdPhotoPath = up.photoPath;
+        } catch {
+          showToast({ message: "Room added, but the photo didn't upload.", kind: 'info' });
+        }
+      }
       createdRooms = [
         ...createdRooms,
         {
           roomId: created.id,
           name: created.name,
           icon: created.icon,
-          photoPath: created.photoPath,
+          photoPath: createdPhotoPath,
           sortOrder: created.sortOrder,
           choreCount: 0,
           dueCount: 0,
@@ -136,6 +150,7 @@
       ];
       roomId = created.id;
       newRoomName = '';
+      newRoomPhotoFile = null;
       showNewRoom = false;
     } catch {
       newRoomError = "Couldn't create the room — try again.";
@@ -158,6 +173,7 @@
     // Reset the inline new-room form UI (keep createdRooms — a later board reload dedups them).
     showNewRoom = false;
     newRoomName = '';
+    newRoomPhotoFile = null;
     newRoomError = null;
     creatingRoom = false;
   }
@@ -418,6 +434,7 @@
                 onclick={() => {
                   showNewRoom = false;
                   newRoomName = '';
+                  newRoomPhotoFile = null;
                   newRoomError = null;
                 }}
                 disabled={creatingRoom}
@@ -425,6 +442,20 @@
                 Cancel
               </button>
             </div>
+            <label class="ch-newroom-photo">
+              <span class="ch-hint">Cover photo (optional)</span>
+              <input
+                type="file"
+                accept="image/*"
+                onchange={(e) => {
+                  const input = e.currentTarget as HTMLInputElement;
+                  newRoomPhotoFile = input.files && input.files.length > 0 ? input.files[0] : null;
+                }}
+              />
+              {#if newRoomPhotoFile}
+                <span class="ch-hint">{newRoomPhotoFile.name}</span>
+              {/if}
+            </label>
             {#if newRoomError}
               <p class="ch-sheet-error" role="alert">{newRoomError}</p>
             {/if}
@@ -704,6 +735,11 @@
   }
   .ch-newroom-add {
     min-height: 44px;
+  }
+  .ch-newroom-photo {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
   }
 
   .ch-hint {
