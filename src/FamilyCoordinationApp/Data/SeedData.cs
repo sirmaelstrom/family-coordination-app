@@ -9,10 +9,6 @@ public static class SeedData
     {
         using var context = dbFactory.CreateDbContext();
 
-        // Only seed if no recipes exist
-        if (await context.Recipes.AnyAsync())
-            return;
-
         var household = await context.Households.FirstOrDefaultAsync();
         if (household == null)
             return;
@@ -21,11 +17,21 @@ public static class SeedData
         if (user == null)
             return;
 
+        // Seed the curated chore/room library (idempotent — no-op if rooms/chores already exist).
+        // Runs UNCONDITIONALLY so that an existing dev DB that already has recipes still gets chores
+        // and the equity enrichment (recipe-guard footgun fix, P1 from review).
+        await SeedChoresAndRoomsAsync(dbFactory, household.Id);
+
+        // Enrich dev household with multiple members + cross-member completions for the equity lens.
+        // Idempotent; dev-only (MN11).
+        await SeedDevEquityDataAsync(dbFactory, household.Id);
+
+        // Only seed recipes if none exist yet (recipe seed is NOT idempotent row-by-row).
+        if (await context.Recipes.AnyAsync())
+            return;
+
         // Seed default categories
         await SeedDefaultCategoriesAsync(dbFactory, household.Id);
-
-        // Seed the curated chore/room library (idempotent — no-op if rooms/chores already exist).
-        await SeedChoresAndRoomsAsync(dbFactory, household.Id);
 
         // Sample recipes with realistic ingredients
         var sampleRecipes = GetSampleRecipes();
@@ -308,6 +314,133 @@ public static class SeedData
 
         context.Chores.AddRange(chores);
 
+        await context.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// DEV-ONLY (MN11). Ensures the dev household has multiple members (Natalie, Tristan, Samantha
+    /// alongside the existing seed user) and inserts backdated <see cref="ChoreCompletion"/> rows
+    /// spread across those members with varied <see cref="EffortTier"/>s so the equity lens renders
+    /// a non-trivial per-member distribution (Justin heavy, Natalie medium, Tristan + Samantha light).
+    ///
+    /// Idempotency guard: no-op if the household already has &gt;1 member AND cross-member completions
+    /// exist (so repeated dev startups never duplicate). Must NOT be called from
+    /// <c>SetupService.CreateHouseholdAsync</c> — a fresh prod household legitimately has one member.
+    /// Completions are written directly via the context (M13); never through
+    /// <c>ChoreService.CompleteAsync</c>.
+    /// </summary>
+    public static async Task SeedDevEquityDataAsync(IDbContextFactory<ApplicationDbContext> dbFactory, int householdId)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync();
+
+        // Idempotency guard: skip if the household already has multiple members AND cross-member
+        // completions exist (i.e. completions from more than one user).
+        var memberCount = await context.Users.CountAsync(u => u.HouseholdId == householdId);
+        if (memberCount > 1)
+        {
+            var completionAuthorCount = await context.ChoreCompletions
+                .Where(cc => cc.HouseholdId == householdId)
+                .Select(cc => cc.CompletedByUserId)
+                .Distinct()
+                .CountAsync();
+
+            if (completionAuthorCount > 1)
+                return;
+        }
+
+        // Resolve the existing seed user (the household's first/lowest-Id user — "Justin").
+        var seedUserId = await context.Users
+            .Where(u => u.HouseholdId == householdId)
+            .OrderBy(u => u.Id)
+            .Select(u => (int?)u.Id)
+            .FirstOrDefaultAsync();
+
+        if (seedUserId is not { } justinId) return;
+
+        var now = DateTime.UtcNow;
+
+        // ---- Ensure additional members exist (insert only if absent by email). ----
+        // Using email uniqueness to detect presence — mirrors how SetupService creates users.
+        async Task<int> EnsureUserAsync(string email, string displayName, string initials)
+        {
+            var existing = await context.Users
+                .Where(u => u.HouseholdId == householdId && u.Email == email)
+                .Select(u => (int?)u.Id)
+                .FirstOrDefaultAsync();
+
+            if (existing.HasValue) return existing.Value;
+
+            var u = new User
+            {
+                HouseholdId = householdId,
+                Email = email,
+                DisplayName = displayName,
+                Initials = initials,
+                IsWhitelisted = true,
+                CreatedAt = now.AddDays(-30)
+            };
+            context.Users.Add(u);
+            await context.SaveChangesAsync();
+            return u.Id;
+        }
+
+        var natalieId = await EnsureUserAsync("natalie@dev.local", "Natalie", "N");
+        var tristanId = await EnsureUserAsync("tristan@dev.local", "Tristan", "T");
+        var samanthaId = await EnsureUserAsync("samantha@dev.local", "Samantha", "S");
+
+        // ---- Resolve chores to attach completions to. ----
+        // We need at least some chores; if none exist yet (race: called before SeedChoresAndRoomsAsync
+        // has committed) there is nothing to attach — bail gracefully.
+        var choreIds = await context.Chores
+            .Where(c => c.HouseholdId == householdId)
+            .OrderBy(c => c.ChoreId)
+            .Select(c => c.ChoreId)
+            .ToListAsync();
+
+        if (choreIds.Count == 0) return;
+
+        // ---- Determine next CompletionId to avoid PK collisions. ----
+        var maxCompletionId = await context.ChoreCompletions
+            .Where(cc => cc.HouseholdId == householdId)
+            .Select(cc => (int?)cc.CompletionId)
+            .MaxAsync() ?? 0;
+
+        var completionId = maxCompletionId;
+
+        ChoreCompletion MakeCompletion(int choreId, int userId, double daysAgo, EffortTier effort) =>
+            new ChoreCompletion
+            {
+                HouseholdId = householdId,
+                ChoreId = choreId,
+                CompletionId = ++completionId,
+                CompletedByUserId = userId,
+                CompletedAt = now.AddDays(-daysAgo),
+                EffortPointsSnapshot = ChoreEffort.PointsFor(effort),
+                Note = "Dev equity seed"
+            };
+
+        // ---- Spread: Justin heavy (6 pts), Natalie medium (4 pts), Tristan light (2), Samantha light (1). ----
+        // All completions are within the last 6 days for the equity window.
+        // Chore indices are accessed with modulo to be robust to whatever chores exist.
+        var completions = new List<ChoreCompletion>
+        {
+            // Justin (existing seed user) — BigJob + Standard + Quick = 3+2+1 = 6 pts
+            MakeCompletion(choreIds[0 % choreIds.Count], justinId, 5.5, EffortTier.BigJob),
+            MakeCompletion(choreIds[1 % choreIds.Count], justinId, 3.0, EffortTier.Standard),
+            MakeCompletion(choreIds[2 % choreIds.Count], justinId, 1.0, EffortTier.Quick),
+
+            // Natalie — Standard + Standard = 2+2 = 4 pts
+            MakeCompletion(choreIds[3 % choreIds.Count], natalieId, 4.5, EffortTier.Standard),
+            MakeCompletion(choreIds[4 % choreIds.Count], natalieId, 2.0, EffortTier.Standard),
+
+            // Tristan — Standard = 2 pts
+            MakeCompletion(choreIds[5 % choreIds.Count], tristanId, 3.5, EffortTier.Standard),
+
+            // Samantha — Quick = 1 pt
+            MakeCompletion(choreIds[6 % choreIds.Count], samanthaId, 1.5, EffortTier.Quick)
+        };
+
+        context.ChoreCompletions.AddRange(completions);
         await context.SaveChangesAsync();
     }
 
