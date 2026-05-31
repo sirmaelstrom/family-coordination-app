@@ -20,8 +20,9 @@
   import type { EffortTier, RecurrenceMode, MemberDto, RoomRollupDto, ChoreDto } from '../types';
   import type { UpdateChoreRequest } from '../api';
   import { boardStore } from '../state.svelte';
-  import { uploadChorePhoto } from '../api';
+  import { uploadChorePhoto, createRoom } from '../api';
   import { showToast } from '../toasts.svelte';
+  import IconPicker from './IconPicker.svelte';
 
   interface Props {
     open: boolean;
@@ -52,6 +53,17 @@
   let localError = $state<string | null>(null);
   let submitting = $state(false);
 
+  // ── Inline "new room" (v1.2 quick win) ─────────────────────────────────────
+  // Create a room without leaving the sheet (the full room manager is deferred —
+  // see ROADMAP Phase 12). Created rooms are merged into the picker chips below
+  // and selected immediately; a later board reload carries them in `rooms`.
+  let createdRooms = $state<RoomRollupDto[]>([]);
+  let showNewRoom = $state(false);
+  let newRoomName = $state('');
+  let newRoomIcon = $state<string>('🧹');
+  let newRoomError = $state<string | null>(null);
+  let creatingRoom = $state(false);
+
   let dialogEl: HTMLDialogElement | null = $state(null);
   let nameInput: HTMLInputElement | null = $state(null);
 
@@ -79,7 +91,49 @@
     { flag: 'saturday', short: 'Sat' },
   ];
 
-  let roomChips = $derived([...rooms].sort((a, b) => a.sortOrder - b.sortOrder));
+  // Picker chips = board rooms + any just-created rooms, deduped by id (the board
+  // copy wins once a reload carries real counts). General (roomId null) renders
+  // separately, so it's excluded here.
+  let roomChips = $derived.by(() => {
+    const byId = new Map<number, RoomRollupDto>();
+    for (const r of createdRooms) if (r.roomId !== null) byId.set(r.roomId, r);
+    for (const r of rooms) if (r.roomId !== null) byId.set(r.roomId, r);
+    return [...byId.values()].sort((a, b) => a.sortOrder - b.sortOrder);
+  });
+
+  async function addNewRoom(): Promise<void> {
+    const trimmed = newRoomName.trim();
+    if (!trimmed) {
+      newRoomError = 'Give the room a name.';
+      return;
+    }
+    if (creatingRoom) return;
+    newRoomError = null;
+    creatingRoom = true;
+    try {
+      const created = await createRoom({ name: trimmed, icon: newRoomIcon });
+      createdRooms = [
+        ...createdRooms,
+        {
+          roomId: created.id,
+          name: created.name,
+          icon: created.icon,
+          photoPath: created.photoPath,
+          sortOrder: created.sortOrder,
+          choreCount: 0,
+          dueCount: 0,
+          status: 'clean',
+        },
+      ];
+      roomId = created.id;
+      newRoomName = '';
+      showNewRoom = false;
+    } catch {
+      newRoomError = "Couldn't create the room — try again.";
+    } finally {
+      creatingRoom = false;
+    }
+  }
 
   /** Derive the cadence + anchorDate from the ChoreDto when pre-filling. */
   function choreToFormState(c: ChoreDto): void {
@@ -339,7 +393,63 @@
               </button>
             {/if}
           {/each}
+          {#if !showNewRoom}
+            <button
+              type="button"
+              class="ch-chip ch-chip-add"
+              onclick={() => {
+                showNewRoom = true;
+                newRoomError = null;
+              }}
+            >
+              ＋ New room
+            </button>
+          {/if}
         </div>
+
+        {#if showNewRoom}
+          <div class="ch-newroom">
+            <IconPicker value={newRoomIcon} onSelect={(i) => (newRoomIcon = i)} label="New room icon" />
+            <div class="ch-newroom-row">
+              <input
+                type="text"
+                bind:value={newRoomName}
+                autocomplete="off"
+                placeholder="Room name (e.g. Garage)"
+                aria-label="New room name"
+                onkeydown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addNewRoom();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                class="ch-btn-primary ch-newroom-add"
+                onclick={addNewRoom}
+                disabled={creatingRoom || !newRoomName.trim()}
+              >
+                {creatingRoom ? 'Adding…' : 'Add'}
+              </button>
+              <button
+                type="button"
+                class="ch-btn-ghost"
+                onclick={() => {
+                  showNewRoom = false;
+                  newRoomName = '';
+                  newRoomError = null;
+                }}
+                disabled={creatingRoom}
+              >
+                Cancel
+              </button>
+            </div>
+            {#if newRoomError}
+              <p class="ch-sheet-error" role="alert">{newRoomError}</p>
+            {/if}
+          </div>
+        {/if}
       </fieldset>
 
       <fieldset class="ch-field">
@@ -581,6 +691,33 @@
   .ch-chip:hover:not(.active) {
     background: var(--color-action-hover);
     color: var(--color-text);
+  }
+
+  /* Inline "new room" (v1.2) */
+  .ch-chip-add {
+    border-style: dashed;
+  }
+  .ch-newroom {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 10px;
+    padding: 12px;
+    border: 1px dashed var(--color-line-strong);
+    border-radius: var(--radius-sm);
+  }
+  .ch-newroom-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .ch-newroom-row input[type='text'] {
+    flex: 1;
+    min-width: 140px;
+  }
+  .ch-newroom-add {
+    min-height: 44px;
   }
 
   .ch-hint {

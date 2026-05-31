@@ -190,7 +190,8 @@ Phases 8 and 9 were deprecated 2026-02-08. The identified gaps (attribution trac
 **Goal**: Close the Phase-10 UI seams + chore-board polish surfaced during the v1.1 review (2026-05-31)
 **Depends on**: Phase 11
 **Candidate scope** (grounded against the code, with size estimates):
-  - **Room-create UI** (MEDIUM) — backend `POST /api/rooms` + `RoomService.CreateRoomAsync` exist; no "Add Room" UI in the island
+  - ~~**Room-create UI** (MEDIUM)~~ — DONE (v1.2): inline "+ New room" in the chore add/edit sheets (creates via `POST /api/rooms` + selects, with an icon picker)
+  - **Room manager** (MEDIUM) — full CRUD surface (rename / icon / delete / reorder — all backed by the existing room API) so rooms can be edited after creation; placement TBD (top-level Settings page vs. a "Manage rooms" view in the chores island). Deferred from the v1.2 quick-wins pass (2026-05-31)
   - **Chore photo display** (LARGE) — upload/store/DTO done (`Chore.PhotoPath`); never rendered (no `<img>` in `ChoreCard.svelte` / room header) — effectively write-only today
   - **Home-page chore card** (LARGE) — `Home.razor` surfaces meals + shopping but zero chore info; `/api/chores/equity` can feed due / overdue / falling-behind counts + a link to `/chores`
   - **Equity up-for-grabs visual** (SMALL→MEDIUM) — `UpForGrabsCount` already in the equity DTO but rendered only as text; promote to a visual "waiting" element (a full proportional bar needs a new `UnassignedEffortPoints` field)
