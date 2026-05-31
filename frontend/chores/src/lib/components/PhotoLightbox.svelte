@@ -41,6 +41,16 @@
 </dialog>
 
 <style>
+  /*
+   * ⚠ Only style `display` on the OPEN dialog. Setting `display` on the bare
+   * `.ch-lightbox` would override the UA `dialog:not([open]) { display: none }`
+   * rule (author > UA), leaving a transparent full-viewport layer on top that
+   * swallows every click when the lightbox is closed. Gate it to [open].
+   */
+  .ch-lightbox[open] {
+    display: grid;
+    place-items: center;
+  }
   .ch-lightbox {
     border: none;
     margin: 0;
@@ -51,8 +61,6 @@
     height: 100dvh;
     max-height: 100dvh;
     background: transparent;
-    display: grid;
-    place-items: center;
     overflow: hidden;
   }
   .ch-lightbox::backdrop {
