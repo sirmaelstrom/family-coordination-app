@@ -63,6 +63,11 @@ else
     {
         if (!firstRender || !_useIsland || _shell is null) return;
 
+        // Blazor enhanced navigation does not apply this page's <HeadContent>, so the island
+        // stylesheet is missing on in-app navigation. (Re)inject it here (idempotent) — OnAfterRender
+        // runs for both full loads and enhanced nav, so the island is styled either way.
+        await JS.InvokeVoidAsync("ensureIslandStylesheet", $"/islands/chores/index.css?v={IslandVersion}");
+
         // Load the Svelte bundle as an ES module, then call its exposed mounter (WP-09 ships the bundle).
         _islandModule = await JS.InvokeAsync<IJSObjectReference>(
             "import", $"/islands/chores/index.js?v={IslandVersion}");
