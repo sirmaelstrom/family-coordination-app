@@ -191,12 +191,13 @@ Phases 8 and 9 were deprecated 2026-02-08. The identified gaps (attribution trac
 **Depends on**: Phase 11
 **Candidate scope** (grounded against the code, with size estimates):
   - ~~**Room-create UI** (MEDIUM)~~ — DONE (v1.2): inline "+ New room" in the chore add/edit sheets (creates via `POST /api/rooms` + selects, with an icon picker)
-  - **Room manager** (MEDIUM) — full CRUD surface (rename / icon / delete / reorder — all backed by the existing room API) so rooms can be edited after creation; placement TBD (top-level Settings page vs. a "Manage rooms" view in the chores island). Deferred from the v1.2 quick-wins pass (2026-05-31)
-  - **Chore photo display** (LARGE) — upload/store/DTO done (`Chore.PhotoPath`); never rendered (no `<img>` in `ChoreCard.svelte` / room header) — effectively write-only today
-  - **Home-page chore card** (LARGE) — `Home.razor` surfaces meals + shopping but zero chore info; `/api/chores/equity` can feed due / overdue / falling-behind counts + a link to `/chores`
+  - **Room manager** (MEDIUM) — full CRUD surface (rename / icon / delete / reorder — all backed by the existing room API) so rooms can be edited after creation; placement TBD (top-level Settings page vs. a "Manage rooms" view in the chores island). Deferred from the v1.2 quick-wins pass (2026-05-31). NOTE: room-photo *capture* UI lives here too.
+  - ~~**Chore icons** (MEDIUM)~~ — DONE (v1.2, PR #14): optional emoji `Chore.Icon` (parity with `Room.Icon`), full vertical slice through the M9 board-contract lockstep (`board.json` + `ChoreBoardDtoContractTests` + island `types.ts`); both sheets reuse `IconPicker`; renders leading the name on `ChoreCard`. Migration `AddChoreIcon` (additive, `""` default).
+  - ~~**Home-page chore card** (LARGE)~~ — DONE (v1.2, PR #15): `Home.razor` injects `IChoreBoardService`; household-level overdue / due-today / up-for-grabs counts (collective, non-punitive framing) + a Chores Quick Action linking `/chores`.
+  - **Chore + room photo display** (LARGE) — **carved into a dedicated UX/UI design-exploration thread** (2026-05-31): `handoff-2026-05-31-135640-chores-v1.2-photo-display-ux.md`. Backend done (`Chore.PhotoPath` / `Room.PhotoPath`, served same-origin at `/uploads/{hh}/{guid}.ext`); never rendered. Scope = chores **and** rooms; operator leans tap-to-enlarge; **design 1–2 options before building**. Room-photo *capture* is part of the Room Manager.
   - ~~**Equity up-for-grabs visual** (SMALL→MEDIUM)~~ — DONE (v1.2): `upForGrabsCount` / `fallingBehindCount` promoted from a text line to discrete dashed "outstanding work" entries in `EquityBoard.svelte` (a full proportional bar would still need an `UnassignedEffortPoints` field — deferred)
-  - **Chore icons** (MEDIUM) — chores have no `Icon` field; rooms do (parity gap). NOT a quick win: adding it to the board `ChoreDto` triggers the M9 contract lockstep (`board.json` fixture + `ChoreBoardDtoContractTests` + island `types.ts`) on top of the entity/migration/command/service/projection/endpoint changes. **Folded into the v1.2 handoff** alongside photo display (both render on `ChoreCard.svelte` — one coherent card pass). Reuse the `IconPicker` shipped in the quick-wins pass.
-**Note**: distinct from the deprecated Phases 8 & 9 (recipe/meal/shopping polish); this is the chores track. The v1.2 quick-wins (equity up-for-grabs + inline room-create) shipped 2026-05-31; the LARGE/feature items (photo display, home-page chore card, chore icons, room manager) are the remaining Phase 12 work.
+  - ~~**Room-create UI** (MEDIUM)~~ — DONE (v1.2): inline "+ New room" in the chore add/edit sheets
+**Note**: distinct from the deprecated Phases 8 & 9 (recipe/meal/shopping polish); this is the chores track. v1.2 shipped (2026-05-31): equity up-for-grabs + inline room-create (PR #13), chore icons (PR #14), home-page chore card (PR #15). **Remaining Phase 12:** photo display (design-exploration handoff) + room manager (deferred).
 
 ## Progress
 
@@ -216,8 +217,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 (8 & 9 de
 | 9. UX Enhancements | - | Deprecated | 2026-02-08 |
 | 10. Chore & Task Management | - | Complete | 2026-05 (PR #11) |
 | 11. Chores v1.1 (Equity & Digest) | 11 WPs | Complete | 2026-05-31 |
-| 12. Chores v1.2 (Finish the Surface) | - | Planned | - |
+| 12. Chores v1.2 (Finish the Surface) | 5/6 items | In progress | PRs #13–15 (2026-05-31); photo + room-manager remain |
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-05-31 (reconciled to add the Chores track: Phases 10–12)*
+*Last updated: 2026-05-31 (v1.2: chore icons + home-page chore card shipped; photo display carved into a design-exploration thread)*
