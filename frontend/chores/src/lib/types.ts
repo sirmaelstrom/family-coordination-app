@@ -152,6 +152,66 @@ export interface ChoreEquityDto {
   members: MemberShareDto[];
 }
 
+// ─── Digest settings (WP-11 — mirrors WP-06 frozen contract EXACTLY) ─────────
+//
+// Wire casing: camelCase enum strings via JsonStringEnumConverter(CamelCase).
+// The GET never returns the webhook URL (MN7) — only a hasWebhook flag + hint.
+// The PUT tri-state webhookAction drives whether the secret is kept/replaced/cleared.
+
+/** camelCase — enum via JsonStringEnumConverter(CamelCase). Only 'weekly' for now; union-extensible. */
+export type DigestCadence = 'weekly';
+
+/** camelCase — enum via JsonStringEnumConverter(CamelCase). */
+export type DigestDay =
+  | 'sunday'
+  | 'monday'
+  | 'tuesday'
+  | 'wednesday'
+  | 'thursday'
+  | 'friday'
+  | 'saturday';
+
+/**
+ * Tri-state webhook action for PUT /api/chores/digest-settings.
+ * 'keep' = leave stored URL unchanged (default when input untouched).
+ * 'set'  = replace with the provided webhookUrl.
+ * 'clear' = remove the stored URL.
+ */
+export type WebhookAction = 'keep' | 'set' | 'clear';
+
+/**
+ * Safe view returned by GET /api/chores/digest-settings.
+ * ⚠ The webhook URL is NEVER in this response (MN7) — only hasWebhook + a
+ * masked hint. Do NOT fetch or render the stored URL anywhere client-side.
+ */
+export interface DigestSettingsView {
+  enabled: boolean;
+  cadence: DigestCadence;
+  sendDayOfWeek: DigestDay;
+  sendHourLocal: number;
+  /** True when a webhook URL is stored (encrypted at rest). */
+  hasWebhook: boolean;
+  /** A masked hint (e.g. "…xyz") to help the user identify the stored URL; null when no webhook. */
+  webhookHint: string | null;
+  /** ISO-8601 UTC timestamp of the last sent digest; null when never sent. */
+  lastSentAt: string | null;
+}
+
+/**
+ * PUT body for /api/chores/digest-settings.
+ * webhookAction controls the tri-state: 'keep' (default), 'set' (+ webhookUrl), 'clear'.
+ * ⚠ Never log webhookUrl client-side; never put it in a query string (MN7).
+ */
+export interface DigestSettingsUpdate {
+  enabled: boolean;
+  cadence: DigestCadence;
+  sendDayOfWeek: DigestDay;
+  sendHourLocal: number;
+  webhookAction: WebhookAction;
+  /** Required when webhookAction is 'set'. Not sent otherwise. */
+  webhookUrl?: string;
+}
+
 // ─── Shell context (read from the #chores-root data-attributes) ─────────────
 
 export interface ShellContext {

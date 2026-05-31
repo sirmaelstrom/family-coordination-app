@@ -6,6 +6,8 @@ import type {
   RoomDto,
   EffortTier,
   RecurrenceMode,
+  DigestSettingsView,
+  DigestSettingsUpdate,
 } from './types';
 
 const CHORES_BASE = '/api/chores';
@@ -239,6 +241,37 @@ export async function setDefaultView(view: string | null): Promise<DefaultViewRe
   return request<DefaultViewResponse>(`${CHORES_BASE}/me/default-view`, {
     method: 'PATCH',
     ...jsonBody({ view }),
+  });
+}
+
+// ─── Digest settings (WP-11) ─────────────────────────────────────────────────
+//
+// ⚠ MN7 (write-only webhook): GET never returns the webhook URL — only
+// hasWebhook + a masked hint. The PUT body carries the URL only when
+// webhookAction is 'set'. Never log or render the URL client-side.
+
+/**
+ * Fetch the household's digest settings (safe view — no webhook URL).
+ * Returns enabled state, cadence, day, hour, hasWebhook + hint, lastSentAt.
+ */
+export async function getDigestSettings(): Promise<DigestSettingsView> {
+  return request<DigestSettingsView>(`${CHORES_BASE}/digest-settings`);
+}
+
+/**
+ * Persist digest settings. The tri-state `webhookAction` controls the secret:
+ *   'keep'  → leave the stored URL unchanged (omit webhookUrl)
+ *   'set'   → encrypt + store webhookUrl (include webhookUrl in body)
+ *   'clear' → remove the stored URL (omit webhookUrl)
+ * Returns the refreshed DigestSettingsView (no URL in response).
+ * ⚠ Do NOT log `body.webhookUrl`; do NOT put it in a query string.
+ */
+export async function updateDigestSettings(
+  body: DigestSettingsUpdate,
+): Promise<DigestSettingsView> {
+  return request<DigestSettingsView>(`${CHORES_BASE}/digest-settings`, {
+    method: 'PUT',
+    ...jsonBody(body),
   });
 }
 
