@@ -434,3 +434,7 @@ static TimeZoneInfo ResolveChoresTimeZone(IConfiguration configuration)
         }
     }
 }
+
+// Expose the top-level-program entry type so the test project's WebApplicationFactory<Program> can reference
+// it (WP-08 integration harness). This is the standard, robust workaround and is inert at runtime.
+public partial class Program { }

@@ -11,15 +11,25 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="FluentAssertions" Version="8.2.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.2" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.2" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.2" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.2" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="Bogus" Version="35.6.5" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.12.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
+
+  <!--
+    Integration tests (tests/.../Integration/, [Trait("kind","integration")]) require Docker: they boot a
+    real PostgreSQL via Testcontainers + WebApplicationFactory of Program to verify the xmin to 409 optimistic
+    concurrency path and endpoint auth/tenant isolation (the seams the InMemory provider cannot exercise).
+    The fast unit suite excludes them with the filter "kind!=integration" (no Docker needed).
+    Run the integration tests alone with the filter "kind=integration" (Docker must be running).
+  -->
 
   <ItemGroup>
     <Using Include="Xunit" />
