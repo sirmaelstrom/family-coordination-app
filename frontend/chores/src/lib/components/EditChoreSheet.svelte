@@ -14,8 +14,8 @@
   //    unchanged. No file in the JSON body (same two-step as QuickAdd C2).
   //
   // ⚠ MN9: no `new Date('YYYY-MM-DD')` anywhere. intervalDays is a plain
-  //   positive integer; daysOfWeek is a weekday CSV. anchorDate is sent
-  //   through unchanged from the DTO (we don't recompute it).
+  //   positive integer; daysOfWeek is a weekday CSV; anchorDate (one-off due
+  //   date) is the date input's "YYYY-MM-DD" string passed straight through.
   // ───────────────────────────────────────────────────────────────────────
   import type { EffortTier, RecurrenceMode, MemberDto, RoomRollupDto, ChoreDto } from '../types';
   import type { UpdateChoreRequest } from '../api';
@@ -47,6 +47,8 @@
   let cadence = $state<Cadence>('once');
   let intervalDays = $state('3');
   let selectedDays = $state(new Set<string>());
+  /** "YYYY-MM-DD" for the "Just once" due date; '' = none. Passed straight as anchorDate. */
+  let dueDate = $state('');
   let effort = $state<EffortTier>('Standard');
   let roomId = $state<number | null>(null);
   let ownerUserId = $state<number | null>(null);
@@ -183,10 +185,14 @@
     localError = null;
     confirmingDelete = false;
     deleting = false;
+    // One-off due date (anchorDate "YYYY-MM-DD"). Pre-filled unconditionally so it
+    // survives toggling cadence away from and back to "Just once" within an edit.
+    dueDate = c.anchorDate ?? '';
 
     // Map recurrenceMode → cadence (D4-B; no monthly-on-day). The DTO now echoes
-    // intervalDays + daysOfWeek (camelCase CSV) so we pre-fill the sub-values too —
-    // fixes editing a fixed-weekly / every-N chore losing the existing selection.
+    // intervalDays + daysOfWeek (camelCase CSV) + anchorDate so we pre-fill the
+    // sub-values too — fixes editing a fixed-weekly / every-N / dated one-off chore
+    // losing the existing selection.
     switch (c.recurrenceMode) {
       case 'OneOff':
         cadence = 'once';
@@ -293,9 +299,10 @@
         roomId,
         recurrenceMode: recurrence.mode,
         intervalDays: recurrence.intervalDays,
-        // anchorDate: pass null — no client date math (MN9). The server manages
-        // anchor dates for recurrence; we don't re-derive them here.
-        anchorDate: null,
+        // One-off due date: pass the date input's "YYYY-MM-DD" straight through as
+        // anchorDate (no Date construction — MN9). Recurring cadences send null; the
+        // server manages their anchor dates.
+        anchorDate: cadence === 'once' ? dueDate || null : null,
         daysOfWeek: recurrence.daysOfWeek,
         dayOfMonth: null,
         effortTier: effort,
@@ -386,7 +393,12 @@
           {/each}
         </div>
 
-        {#if cadence === 'everyN'}
+        {#if cadence === 'once'}
+          <label class="ch-subfield">
+            <span class="ch-subfield-label">Due date (optional)</span>
+            <input type="date" bind:value={dueDate} aria-label="Due date" />
+          </label>
+        {:else if cadence === 'everyN'}
           <label class="ch-subfield">
             <span class="ch-subfield-label">Every</span>
             <input
@@ -684,6 +696,15 @@
     font: inherit;
     color: var(--color-text-muted);
     font-size: 0.875rem;
+  }
+  input[type='date'] {
+    font: inherit;
+    color: inherit;
+    padding: 10px 12px;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    min-height: 44px;
   }
 
   .ch-segmented {

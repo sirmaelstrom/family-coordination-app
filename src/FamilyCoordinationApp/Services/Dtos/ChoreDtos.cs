@@ -23,10 +23,11 @@ public sealed record ChoreBoardDto(
 /// <see cref="IsClaimStale"/> is computed on read but NOT materialized — a stale claim still displays as
 /// Claimed until the next write auto-releases it; the island may treat a stale-Claimed chore as
 /// pile-eligible visually (D7/MN1).
-/// <para><see cref="IntervalDays"/> and <see cref="DaysOfWeek"/> echo the recurrence sub-values so the edit
-/// sheet can pre-fill them (without them, editing a fixed-weekly / every-N chore lost the existing selection).
-/// <see cref="DaysOfWeek"/> serializes as a camelCase CSV (e.g. <c>"monday, thursday"</c>) — the same shape the
-/// write request accepts.</para>
+/// <para><see cref="IntervalDays"/>, <see cref="DaysOfWeek"/>, and <see cref="AnchorDate"/> (a one-off's due
+/// date) echo the recurrence sub-values so the edit sheet can pre-fill them (without them, editing a
+/// fixed-weekly / every-N / dated one-off chore lost the existing selection). <see cref="DaysOfWeek"/>
+/// serializes as a camelCase CSV (e.g. <c>"monday, thursday"</c>); <see cref="AnchorDate"/> as an ISO date
+/// (<c>"2026-06-10"</c>) — the same shapes the write request accepts.</para>
 /// </summary>
 public sealed record ChoreDto(
     int Id,
@@ -37,6 +38,7 @@ public sealed record ChoreDto(
     string RecurrenceMode,
     int? IntervalDays,
     ChoreDaysOfWeek? DaysOfWeek,
+    DateOnly? AnchorDate,
     DueState DueState,
     ColorTier ColorTier,
     DateTime? NextDueAt,

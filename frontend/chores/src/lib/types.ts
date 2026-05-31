@@ -43,6 +43,8 @@ export interface ChoreDto {
   intervalDays: number | null;
   /** camelCase CSV of weekday flags (e.g. "monday, thursday") for Fixed chores; null otherwise. */
   daysOfWeek: string | null;
+  /** ISO date "YYYY-MM-DD" — a one-off chore's due date (maps to anchorDate); null otherwise. */
+  anchorDate: string | null;
   /** Server-computed — NEVER recompute dueness client-side (M5/M6). */
   dueState: DueState;
   /** Server-computed — NEVER recompute the decay tier client-side (M5/M6). */

@@ -18,8 +18,10 @@
   //                        chosen File up; it NEVER puts a file in the JSON body.
   //
   // ⚠ M5/M6: no `new Date('YYYY-MM-DD')` anywhere. The "Every N days" cadence is
-  // a plain positive integer; "Specific day(s)" is a weekday flag set. We send no
-  // anchorDate from here — the server derives dueness from cadence + completion.
+  // a plain positive integer; "Specific day(s)" is a weekday flag set. "Just once"
+  // takes an optional due date — the native date input yields a "YYYY-MM-DD" string
+  // we pass straight through as anchorDate (no Date construction). Recurring cadences
+  // send no anchorDate (the server derives their dueness from cadence + completion).
   // ───────────────────────────────────────────────────────────────────────
   import type { EffortTier, RecurrenceMode, MemberDto, RoomRollupDto } from '../types';
   import type { CreateChoreRequest } from '../api';
@@ -55,6 +57,8 @@
   let cadence = $state<Cadence>('once');
   let intervalDays = $state('3'); // string for input coercion; parsed at submit
   let selectedDays = $state(new Set<string>());
+  /** "YYYY-MM-DD" for the "Just once" due date; '' = none. Passed straight as anchorDate. */
+  let dueDate = $state('');
   let effort = $state<EffortTier>('Standard');
   /** null ⇒ General (roomless). */
   let roomId = $state<number | null>(null);
@@ -165,6 +169,7 @@
     cadence = 'once';
     intervalDays = '3';
     selectedDays = new Set<string>();
+    dueDate = '';
     effort = 'Standard';
     roomId = null;
     assigneeUserId = null;
@@ -250,7 +255,7 @@
       roomId,
       recurrenceMode: recurrence.mode,
       intervalDays: recurrence.intervalDays,
-      anchorDate: null,
+      anchorDate: cadence === 'once' ? dueDate || null : null,
       daysOfWeek: recurrence.daysOfWeek,
       dayOfMonth: null,
       effortTier: effort,
@@ -317,7 +322,12 @@
           {/each}
         </div>
 
-        {#if cadence === 'everyN'}
+        {#if cadence === 'once'}
+          <label class="ch-subfield">
+            <span class="ch-subfield-label">Due date (optional)</span>
+            <input type="date" bind:value={dueDate} aria-label="Due date" />
+          </label>
+        {:else if cadence === 'everyN'}
           <label class="ch-subfield">
             <span class="ch-subfield-label">Every</span>
             <input
@@ -591,6 +601,15 @@
     font: inherit;
     color: var(--color-text-muted);
     font-size: 0.875rem;
+  }
+  input[type='date'] {
+    font: inherit;
+    color: inherit;
+    padding: 10px 12px;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    min-height: 44px;
   }
 
   .ch-segmented {
