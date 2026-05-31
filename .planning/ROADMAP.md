@@ -194,9 +194,9 @@ Phases 8 and 9 were deprecated 2026-02-08. The identified gaps (attribution trac
   - **Room manager** (MEDIUM) — full CRUD surface (rename / icon / delete / reorder — all backed by the existing room API) so rooms can be edited after creation; placement TBD (top-level Settings page vs. a "Manage rooms" view in the chores island). Deferred from the v1.2 quick-wins pass (2026-05-31)
   - **Chore photo display** (LARGE) — upload/store/DTO done (`Chore.PhotoPath`); never rendered (no `<img>` in `ChoreCard.svelte` / room header) — effectively write-only today
   - **Home-page chore card** (LARGE) — `Home.razor` surfaces meals + shopping but zero chore info; `/api/chores/equity` can feed due / overdue / falling-behind counts + a link to `/chores`
-  - **Equity up-for-grabs visual** (SMALL→MEDIUM) — `UpForGrabsCount` already in the equity DTO but rendered only as text; promote to a visual "waiting" element (a full proportional bar needs a new `UnassignedEffortPoints` field)
-  - **Chore icons** (SMALL) — rooms have an `Icon` field + UI; chores have none (parity gap)
-**Note**: distinct from the deprecated Phases 8 & 9 (recipe/meal/shopping polish); this is the chores track.
+  - ~~**Equity up-for-grabs visual** (SMALL→MEDIUM)~~ — DONE (v1.2): `upForGrabsCount` / `fallingBehindCount` promoted from a text line to discrete dashed "outstanding work" entries in `EquityBoard.svelte` (a full proportional bar would still need an `UnassignedEffortPoints` field — deferred)
+  - **Chore icons** (MEDIUM) — chores have no `Icon` field; rooms do (parity gap). NOT a quick win: adding it to the board `ChoreDto` triggers the M9 contract lockstep (`board.json` fixture + `ChoreBoardDtoContractTests` + island `types.ts`) on top of the entity/migration/command/service/projection/endpoint changes. **Folded into the v1.2 handoff** alongside photo display (both render on `ChoreCard.svelte` — one coherent card pass). Reuse the `IconPicker` shipped in the quick-wins pass.
+**Note**: distinct from the deprecated Phases 8 & 9 (recipe/meal/shopping polish); this is the chores track. The v1.2 quick-wins (equity up-for-grabs + inline room-create) shipped 2026-05-31; the LARGE/feature items (photo display, home-page chore card, chore icons, room manager) are the remaining Phase 12 work.
 
 ## Progress
 
