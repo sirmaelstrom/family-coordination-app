@@ -99,6 +99,7 @@ public class ChoreBoardService(
     private static ChoreDto ToDto(Chore chore, ChoreDuenessResult dueness, bool isClaimStale) => new(
         chore.ChoreId,
         chore.Name,
+        chore.Icon,
         chore.Description,
         chore.RoomId,
         chore.RecurrenceMode.ToString(),

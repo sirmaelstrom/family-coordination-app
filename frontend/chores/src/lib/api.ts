@@ -91,6 +91,8 @@ export interface CreateChoreRequest {
   ownerUserId?: number | null;
   assigneeUserId?: number | null;
   photoPath?: string | null;
+  /** Optional emoji/short-code icon; "" or omitted = none. */
+  icon?: string;
 }
 
 /** No assignee — assignment never moves via edit. Carries the version. */
@@ -108,6 +110,8 @@ export interface UpdateChoreRequest {
   version: number;
   /** council C4 — must round-trip so edit-photo works end-to-end. */
   photoPath?: string | null;
+  /** Optional emoji/short-code icon; "" or omitted = none. */
+  icon?: string;
 }
 
 export interface SeedStarterResponse {

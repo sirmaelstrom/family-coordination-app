@@ -82,7 +82,8 @@ public class ChoreServiceTests : IDisposable
         EffortTier: EffortTier.Standard,
         OwnerUserId: null,
         AssigneeUserId: assignee,
-        PhotoPath: null);
+        PhotoPath: null,
+        Icon: "🧹");
 
     private async Task<Chore> ReloadAsync(int choreId)
     {
@@ -101,6 +102,7 @@ public class ChoreServiceTests : IDisposable
         chore.HouseholdId.Should().Be(HouseholdId);
         chore.Name.Should().Be("Dishes");
         chore.Description.Should().Be("rinse first");        // trimmed
+        chore.Icon.Should().Be("🧹");
         chore.Status.Should().Be(ChoreStatus.Active);
         chore.EnteredByUserId.Should().Be(Alice);
         chore.EffortPoints.Should().Be(ChoreEffort.PointsFor(EffortTier.Standard));
@@ -238,7 +240,8 @@ public class ChoreServiceTests : IDisposable
             DayOfMonth: null,
             EffortTier: EffortTier.BigJob,
             OwnerUserId: Alice,
-            PhotoPath: null);
+            PhotoPath: null,
+            Icon: "🚿");
 
         var updated = await _service.UpdateChoreAsync(HouseholdId, created.ChoreId, updateCmd, current.Version);
 
@@ -247,6 +250,7 @@ public class ChoreServiceTests : IDisposable
         updated.EffortTier.Should().Be(EffortTier.BigJob);
         updated.EffortPoints.Should().Be(ChoreEffort.PointsFor(EffortTier.BigJob));
         updated.OwnerUserId.Should().Be(Alice);
+        updated.Icon.Should().Be("🚿");                       // icon is editable (unlike the assignment trio)
 
         // Assignment triple untouched by an edit (Bob still holds the claim).
         updated.AssigneeUserId.Should().Be(Bob);

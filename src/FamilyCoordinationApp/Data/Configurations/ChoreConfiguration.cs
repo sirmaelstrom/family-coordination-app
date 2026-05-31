@@ -21,6 +21,12 @@ public class ChoreConfiguration : IEntityTypeConfiguration<Chore>
         builder.Property(c => c.Description)
             .HasMaxLength(2000);
 
+        // Optional emoji/short-code icon (parity with Room.Icon, ~line 21). Non-null;
+        // existing rows backfill to "" via the additive migration's default.
+        builder.Property(c => c.Icon)
+            .IsRequired()
+            .HasMaxLength(30);
+
         // Enums stored as strings (codebase convention).
         builder.Property(c => c.RecurrenceMode)
             .IsRequired()

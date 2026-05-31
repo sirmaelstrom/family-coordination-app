@@ -27,6 +27,7 @@ public sealed record ChoreBoardDto(
 public sealed record ChoreDto(
     int Id,
     string Name,
+    string Icon,
     string? Description,
     int? RoomId,
     string RecurrenceMode,

@@ -46,6 +46,7 @@ public class ChoreBoardDtoContractTests
             new(
                 Id: 1,
                 Name: "Mop the floor",
+                Icon: "🧹",
                 Description: "Use the good mop",
                 RoomId: 10,
                 RecurrenceMode: "Flexible",
@@ -67,6 +68,7 @@ public class ChoreBoardDtoContractTests
             new(
                 Id: 2,
                 Name: "Take out trash",
+                Icon: "",
                 Description: null,
                 RoomId: 10,
                 RecurrenceMode: "Fixed",
@@ -88,6 +90,7 @@ public class ChoreBoardDtoContractTests
             new(
                 Id: 3,
                 Name: "Water the plants",
+                Icon: "🪴",
                 Description: "Living room + balcony",
                 RoomId: null,
                 RecurrenceMode: "Fixed",
@@ -109,6 +112,7 @@ public class ChoreBoardDtoContractTests
             new(
                 Id: 4,
                 Name: "Fix the squeaky door",
+                Icon: "",
                 Description: null,
                 RoomId: null,
                 RecurrenceMode: "OneOff",
@@ -211,7 +215,7 @@ public class ChoreBoardDtoContractTests
 
         var firstChore = root["chores"]!.AsArray()[0]!.AsObject();
         firstChore.Select(kvp => kvp.Key).Should().BeEquivalentTo(
-            "id", "name", "description", "roomId", "recurrenceMode", "dueState", "colorTier", "nextDueAt",
+            "id", "name", "icon", "description", "roomId", "recurrenceMode", "dueState", "colorTier", "nextDueAt",
             "isClaimStale", "effortTier", "effortPoints", "ownerUserId", "assigneeUserId", "assignmentKind",
             "claimedAt", "lastCompletedAt", "photoPath", "version");
 

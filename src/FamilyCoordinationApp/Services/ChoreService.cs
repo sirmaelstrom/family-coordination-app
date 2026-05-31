@@ -56,6 +56,7 @@ public class ChoreService(
                     ChoreId = maxId + 1,
                     Name = cmd.Name.Trim(),
                     Description = string.IsNullOrWhiteSpace(cmd.Description) ? null : cmd.Description.Trim(),
+                    Icon = cmd.Icon ?? string.Empty,
                     RoomId = cmd.RoomId,
                     RecurrenceMode = cmd.RecurrenceMode,
                     IntervalDays = cmd.IntervalDays,
@@ -110,6 +111,7 @@ public class ChoreService(
 
         chore.Name = cmd.Name.Trim();
         chore.Description = string.IsNullOrWhiteSpace(cmd.Description) ? null : cmd.Description.Trim();
+        chore.Icon = cmd.Icon ?? string.Empty;
         chore.RoomId = cmd.RoomId;
         chore.RecurrenceMode = cmd.RecurrenceMode;
         chore.IntervalDays = cmd.IntervalDays;
