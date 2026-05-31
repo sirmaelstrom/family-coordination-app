@@ -23,6 +23,18 @@ import type {
   ChoreLensId,
   DueState,
 } from './types';
+import {
+  ApiError,
+  claimChore,
+  dropChore,
+  completeChore,
+  handOffChore,
+  createChore,
+  deleteChore,
+  type CreateChoreRequest,
+  type CompleteRequest,
+} from './api';
+import { showToast } from './toasts.svelte';
 
 /** One sectioned bucket of the Needs-attention lens. */
 export interface NeedsAttentionSection {
@@ -86,6 +98,21 @@ class BoardStore {
 
   /** This household member's userId — set once on init from the shell context. */
   currentUserId = $state(0);
+
+  /**
+   * Chore ids with an in-flight mutation. Drives per-card disabled state +
+   * double-submit prevention (M-in-flight). A `Set` swapped by reference so the
+   * `$state` reactivity fires.
+   */
+  pendingChoreIds = $state(new Set<number>());
+
+  /**
+   * The board refetch hook, wired by App.svelte (`store.setRefresh(loadBoard)`).
+   * The mutation layer calls it to reconcile after a 409 (xmin conflict — M7/M12)
+   * or any other 4xx rejection, so the user sees the true server state. Liveness
+   * shares the SAME loader, so a post-mutation refetch reuses it.
+   */
+  private refresh: (() => Promise<void>) | null = null;
 
   // ── Lookups off the single payload ─────────────────────────────────────
 
@@ -231,6 +258,230 @@ class BoardStore {
 
   setAttentionFilter(next: AttentionFilter): void {
     this.attentionFilter = next;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Mutation layer (WP-11) — optimistic updates + xmin-409 reconciliation.
+  //
+  // MODEL (every action follows this shape via `runOptimistic`):
+  //   1. OPTIMISTIC: immediately patch the matching chore in `board.chores` to
+  //      the expected post-action state (e.g. claim → assigneeUserId=me,
+  //      assignmentKind='claimed', claimedAt=now ISO). The card re-renders at
+  //      once. We do NOT recompute dueness/decay (M5/M6) — `colorTier`/`dueState`
+  //      stay as the server last reported until the authoritative response lands.
+  //   2. SUCCESS: the server returns the updated `ChoreDto` (with the NEW xmin
+  //      `version`). Replace the chore with it — the next mutation then carries a
+  //      fresh version (avoids a self-inflicted 409). The authoritative
+  //      tier/dueness come from THIS DTO, never a client recompute.
+  //   3. 409 (ApiError.isConflict — the retryable xmin conflict): someone else
+  //      changed the chore. Roll back the optimistic patch and REFETCH the board
+  //      so the user sees the true state (e.g. claimed by someone else). We do
+  //      NOT silently retry — that could clobber the other user's claim (MN8
+  //      spirit). A brief "someone got there first — refreshed" notice explains it.
+  //   4. OTHER 4xx (ApiError.isClientRejection — non-retryable: validation, an
+  //      illegal transition, or the WP-08 empty-400-that-is-really-404): roll
+  //      back, refetch to resync, surface a non-alarming toast. Not a crash.
+  //   5. NETWORK / 5xx: roll back + error toast; the action can be retried.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /** Wire the board refetch (App.svelte's loader). Used for 409/4xx reconcile. */
+  setRefresh(refresh: () => Promise<void>): void {
+    this.refresh = refresh;
+  }
+
+  /** Is a mutation in flight for this chore? (disable its controls). */
+  isPending(choreId: number): boolean {
+    return this.pendingChoreIds.has(choreId);
+  }
+
+  private markPending(choreId: number, on: boolean): void {
+    const next = new Set(this.pendingChoreIds);
+    if (on) next.add(choreId);
+    else next.delete(choreId);
+    this.pendingChoreIds = next;
+  }
+
+  /** Find a chore by id in the current board (null if the board is unloaded). */
+  private choreById(choreId: number): ChoreDto | null {
+    return this.board?.chores.find((c) => c.id === choreId) ?? null;
+  }
+
+  /** Replace the chore in `board.chores` with the authoritative server DTO. */
+  private applyChore(updated: ChoreDto): void {
+    const board = this.board;
+    if (!board) return;
+    const idx = board.chores.findIndex((c) => c.id === updated.id);
+    if (idx >= 0) {
+      board.chores[idx] = updated;
+    }
+  }
+
+  private async reconcile(): Promise<void> {
+    if (this.refresh) await this.refresh();
+  }
+
+  /**
+   * Core optimistic runner. Snapshots the chore, applies an optimistic patch,
+   * fires the request, then commits the returned DTO or rolls back + reconciles
+   * per the 409 / 4xx / network model documented above.
+   *
+   * @param choreId   the target chore
+   * @param patch     fields to optimistically merge onto the chore
+   * @param call      the API call (returns the authoritative ChoreDto)
+   * @param conflictMessage  the "someone got there first" notice for a 409
+   */
+  private async runOptimistic(
+    choreId: number,
+    patch: Partial<ChoreDto>,
+    call: (chore: ChoreDto) => Promise<ChoreDto>,
+    conflictMessage: string,
+  ): Promise<void> {
+    // Double-submit guard: ignore if a mutation is already in flight.
+    if (this.pendingChoreIds.has(choreId)) return;
+    const chore = this.choreById(choreId);
+    if (!chore) return;
+
+    // Snapshot the fields we touch so we can roll back precisely.
+    const snapshot: ChoreDto = { ...chore };
+    Object.assign(chore, patch);
+    this.markPending(choreId, true);
+
+    try {
+      const updated = await call(snapshot);
+      this.applyChore(updated);
+    } catch (e) {
+      // Roll back the optimistic patch first, regardless of failure mode.
+      const current = this.choreById(choreId);
+      if (current) Object.assign(current, snapshot);
+
+      if (e instanceof ApiError && e.isConflict) {
+        // 409 — xmin concurrency conflict (M7/M12). Refetch + non-alarming notice.
+        await this.reconcile();
+        showToast({ message: conflictMessage, kind: 'info' });
+      } else if (e instanceof ApiError && e.isClientRejection) {
+        // Other 4xx (incl. the empty-400-from-404 WP-08 quirk). Resync + notice.
+        await this.reconcile();
+        showToast({
+          message: "That didn't go through — the board has been refreshed.",
+          kind: 'info',
+        });
+      } else {
+        // Network / 5xx — leave the board as-is (rolled back), allow retry.
+        showToast({
+          message: 'Something went wrong. Please try again.',
+          kind: 'error',
+        });
+      }
+    } finally {
+      this.markPending(choreId, false);
+    }
+  }
+
+  /** Claim an unclaimed (or stale-claimed) pile chore for the current user. */
+  async claim(choreId: number): Promise<void> {
+    const me = this.currentUserId;
+    await this.runOptimistic(
+      choreId,
+      {
+        assigneeUserId: me,
+        assignmentKind: 'claimed',
+        claimedAt: new Date().toISOString(),
+        isClaimStale: false,
+      },
+      (c) => claimChore(c.id, c.version),
+      'Someone got there first — board refreshed.',
+    );
+  }
+
+  /** Drop a chore the current user holds (returns it to the pile). */
+  async drop(choreId: number): Promise<void> {
+    await this.runOptimistic(
+      choreId,
+      { assigneeUserId: null, assignmentKind: 'none', claimedAt: null, isClaimStale: false },
+      (c) => dropChore(c.id, c.version),
+      'That chore changed — board refreshed.',
+    );
+  }
+
+  /** Mark a chore done (optionally with a note / already-uploaded photo path). */
+  async complete(choreId: number, extra?: { note?: string | null; photoPath?: string | null }): Promise<void> {
+    await this.runOptimistic(
+      choreId,
+      // Optimistically reflect "just completed" by stamping lastCompletedAt.
+      // We do NOT recompute dueness/colorTier — the authoritative post-completion
+      // tier (e.g. recurring chore's next dueness) comes from the returned DTO.
+      { lastCompletedAt: new Date().toISOString() },
+      (c) =>
+        completeChore(c.id, {
+          note: extra?.note ?? null,
+          photoPath: extra?.photoPath ?? null,
+          version: c.version,
+        } satisfies CompleteRequest),
+      'That chore changed — board refreshed.',
+    );
+  }
+
+  /**
+   * Hand a chore off to another member, or back to the pile (targetUserId null).
+   */
+  async handOff(choreId: number, targetUserId: number | null): Promise<void> {
+    const toPile = targetUserId == null;
+    await this.runOptimistic(
+      choreId,
+      toPile
+        ? { assigneeUserId: null, assignmentKind: 'none', claimedAt: null, isClaimStale: false }
+        : {
+            assigneeUserId: targetUserId,
+            assignmentKind: 'claimed',
+            claimedAt: new Date().toISOString(),
+            isClaimStale: false,
+          },
+      (c) => handOffChore(c.id, { targetUserId, version: c.version }),
+      'That chore changed — board refreshed.',
+    );
+  }
+
+  /**
+   * Create a chore (quick-add). NOT optimistic — a new chore has no id/version
+   * to reconcile against and the server-computed dueness/rollups are needed, so
+   * we POST then refetch the whole board to render the new card authoritatively.
+   * Returns the created chore so the caller can chain a photo upload if needed.
+   * Throws on failure so the dialog can keep itself open + surface the error.
+   */
+  async create(body: CreateChoreRequest): Promise<ChoreDto> {
+    const created = await createChore(body);
+    await this.reconcile();
+    return created;
+  }
+
+  /** Delete a chore (optimistic removal + rollback/refetch on failure). */
+  async remove(choreId: number): Promise<void> {
+    if (this.pendingChoreIds.has(choreId)) return;
+    const board = this.board;
+    if (!board) return;
+    const idx = board.chores.findIndex((c) => c.id === choreId);
+    if (idx < 0) return;
+    const removed = board.chores[idx];
+
+    board.chores = board.chores.filter((c) => c.id !== choreId);
+    this.markPending(choreId, true);
+    try {
+      await deleteChore(choreId, removed.version);
+    } catch (e) {
+      // Restore the removed chore, then reconcile / surface.
+      await this.reconcile();
+      if (e instanceof ApiError && (e.isConflict || e.isClientRejection)) {
+        showToast({ message: 'That chore changed — board refreshed.', kind: 'info' });
+      } else {
+        // Network/5xx: the refetch may not have restored it; put it back.
+        if (this.board && !this.board.chores.some((c) => c.id === choreId)) {
+          this.board.chores = [...this.board.chores, removed];
+        }
+        showToast({ message: 'Something went wrong. Please try again.', kind: 'error' });
+      }
+    } finally {
+      this.markPending(choreId, false);
+    }
   }
 }
 

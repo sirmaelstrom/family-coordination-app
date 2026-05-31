@@ -12,18 +12,34 @@
   // The only Date use is locale formatting of a full ISO-8601 UTC timestamp for
   // DISPLAY (nextDueAt / lastCompletedAt), which is safe.
   //
-  // The claim/complete/handoff affordances render here as NON-FUNCTIONAL shells
-  // (disabled, no-op). WP-11 wires the `on*` handlers + optimistic update; the
-  // action elements are tagged with data-action so that wiring has a clear seam.
+  // The claim / drop / hand-off / Done affordances are wired here (WP-11). Each
+  // calls a handler prop; the parent runs the optimistic store mutation + 409
+  // reconciliation. The card disables its controls while a mutation is in flight
+  // (`pending`) to prevent double-submit. The action elements keep their
+  // data-action tags for a clear seam.
   // ───────────────────────────────────────────────────────────────────────
 
   interface Props {
     chore: ChoreDto;
     /** The viewing user's id, to label "you" on owner/assignee. */
     currentUserId: number;
+    /** True while a mutation for this chore is in flight (disables controls). */
+    pending?: boolean;
+    onClaim?: (chore: ChoreDto) => void;
+    onDrop?: (chore: ChoreDto) => void;
+    onComplete?: (chore: ChoreDto) => void;
+    onHandOff?: (chore: ChoreDto) => void;
   }
 
-  let { chore, currentUserId }: Props = $props();
+  let {
+    chore,
+    currentUserId,
+    pending = false,
+    onClaim,
+    onDrop,
+    onComplete,
+    onHandOff,
+  }: Props = $props();
 
   // ── Named effort tiers (P3 — never the raw points number as primary) ─────
   const EFFORT_LABEL: Record<EffortTier, string> = {
@@ -53,6 +69,18 @@
   let isClaimed = $derived(chore.assignmentKind === 'claimed' && !chore.isClaimStale);
   let isAssigned = $derived(chore.assignmentKind === 'assigned');
 
+  // ── Who can do what (drives the action buttons) ──────────────────────────
+  // The viewing user "holds" the chore when they're the active (non-stale)
+  // assignee. Drop is Claimed-only (a deliberate Assigned chore can't be
+  // dropped — WP-04). Hand-off is available to the active holder. Done is
+  // available on any non-pile chore (any member may complete — WP-04 M8).
+  let heldByMe = $derived(
+    chore.assigneeUserId === currentUserId &&
+      (isClaimed || isAssigned),
+  );
+  let canDrop = $derived(heldByMe && isClaimed);
+  let canHandOff = $derived(heldByMe);
+
   // ── Recurrence hint (human, derived from the plain-string union) ─────────
   const RECURRENCE_HINT: Record<RecurrenceMode, string> = {
     OneOff: 'One-off',
@@ -78,17 +106,14 @@
     if (userId != null && userId === currentUserId) return 'You';
     return displayName ?? 'Someone';
   }
-
-  // ── Action shells (WP-11 wires these). No-op + disabled for now. ─────────
-  function noop() {
-    /* WP-11: claim/complete/handoff handlers land here. */
-  }
 </script>
 
 <article
   class="ch-card ch-tier-{tier}"
   class:ch-card-stale={chore.isClaimStale}
+  class:ch-card-pending={pending}
   aria-label={chore.name}
+  aria-busy={pending}
 >
   <div class="ch-card-accent" aria-hidden="true"></div>
 
@@ -171,9 +196,9 @@
       </div>
 
       <!--
-        Action affordances. WP-11 replaces the no-op handlers + removes
-        `disabled`, and adds the optimistic-update plumbing. Tagged with
-        data-action so the wiring seam is unambiguous.
+        Action affordances (WP-11). Optimistic — the parent runs the store
+        mutation + 409 reconcile. Controls disable while a mutation is in flight
+        (`pending`) to prevent double-submit.
       -->
       <div class="ch-actions">
         {#if isUnclaimed}
@@ -181,20 +206,44 @@
             type="button"
             class="ch-btn ch-btn-primary"
             data-action="claim"
-            onclick={noop}
-            disabled
-            title="Claiming arrives in the next update"
+            onclick={() => onClaim?.(chore)}
+            disabled={pending}
+            title="Claim this chore"
           >
             Claim
           </button>
         {:else}
+          {#if canHandOff}
+            <button
+              type="button"
+              class="ch-btn ch-btn-ghost"
+              data-action="handoff"
+              onclick={() => onHandOff?.(chore)}
+              disabled={pending}
+              title="Hand off or release this chore"
+            >
+              Hand off
+            </button>
+          {/if}
+          {#if canDrop}
+            <button
+              type="button"
+              class="ch-btn ch-btn-ghost"
+              data-action="drop"
+              onclick={() => onDrop?.(chore)}
+              disabled={pending}
+              title="Put this chore back in the pile"
+            >
+              Drop
+            </button>
+          {/if}
           <button
             type="button"
-            class="ch-btn ch-btn-ghost"
+            class="ch-btn ch-btn-primary"
             data-action="complete"
-            onclick={noop}
-            disabled
-            title="Completing arrives in the next update"
+            onclick={() => onComplete?.(chore)}
+            disabled={pending}
+            title="Mark this chore done"
           >
             Done
           </button>
@@ -226,6 +275,10 @@
   .ch-card-stale {
     /* A stale claim reads as effectively up-for-grabs (WP-04/05 UX). */
     opacity: 0.92;
+  }
+  .ch-card-pending {
+    /* A mutation is in flight — dim the card while we await the server. */
+    opacity: 0.6;
   }
 
   /* ── colorTier → accent (the ONLY place the tier maps to a color) ──────── */

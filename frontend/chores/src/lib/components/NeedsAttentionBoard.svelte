@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { AttentionFilter, NeedsAttentionSection } from '../state.svelte';
+  import type { ChoreDto } from '../types';
   import ChoreCard from './ChoreCard.svelte';
 
   // ───────────────────────────────────────────────────────────────────────
@@ -19,9 +20,26 @@
     currentUserId: number;
     /** Total needs-attention count BEFORE the section split (for the empty state). */
     totalChores: number;
+    /** True while a mutation for the given chore id is in flight. */
+    isPending: (choreId: number) => boolean;
+    onClaim: (chore: ChoreDto) => void;
+    onDrop: (chore: ChoreDto) => void;
+    onComplete: (chore: ChoreDto) => void;
+    onHandOff: (chore: ChoreDto) => void;
   }
 
-  let { sections, filter, onFilter, currentUserId, totalChores }: Props = $props();
+  let {
+    sections,
+    filter,
+    onFilter,
+    currentUserId,
+    totalChores,
+    isPending,
+    onClaim,
+    onDrop,
+    onComplete,
+    onHandOff,
+  }: Props = $props();
 
   const FILTERS: { id: AttentionFilter; label: string }[] = [
     { id: 'everything', label: 'Everything' },
@@ -56,7 +74,15 @@
         </header>
         <div class="ch-section-cards">
           {#each section.chores as chore (chore.id)}
-            <ChoreCard {chore} {currentUserId} />
+            <ChoreCard
+              {chore}
+              {currentUserId}
+              pending={isPending(chore.id)}
+              {onClaim}
+              {onDrop}
+              {onComplete}
+              {onHandOff}
+            />
           {/each}
         </div>
       </section>
