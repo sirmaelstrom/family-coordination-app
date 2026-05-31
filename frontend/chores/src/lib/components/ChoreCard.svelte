@@ -193,10 +193,11 @@
               name={owner.displayName}
               initials={owner.initials}
               pictureUrl={owner.pictureUrl}
-              size={22}
+              size={28}
               relation="Minded by"
             />
             <span class="ch-minder-label">Minder</span>
+            <span class="ch-minder-name">{nameOf(chore.ownerUserId, owner.displayName)}</span>
           </span>
         {/if}
 
@@ -206,7 +207,7 @@
               name={assignee.displayName}
               initials={assignee.initials}
               pictureUrl={assignee.pictureUrl}
-              size={22}
+              size={28}
               relation="Claimed by"
             />
             <span class="ch-claim-label">{nameOf(chore.assigneeUserId, assignee.displayName)}</span>
@@ -217,7 +218,7 @@
               name={assignee.displayName}
               initials={assignee.initials}
               pictureUrl={assignee.pictureUrl}
-              size={22}
+              size={28}
               relation="Assigned to"
             />
             <span class="ch-claim-label">{nameOf(chore.assigneeUserId, assignee.displayName)}</span>
@@ -493,6 +494,10 @@
     font-size: 0.6875rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+  }
+  .ch-minder-name {
+    font-weight: 500;
+    color: var(--color-text);
   }
   .ch-claim-label {
     font-weight: 500;
