@@ -15,6 +15,9 @@ public class User
     public string? PictureUrl { get; set; }
     public string Initials { get; set; } = string.Empty;
 
+    // Chores: the user's preferred default board lens id (null => Needs-attention). D18 / approved E2 exception.
+    public string? ChoresDefaultView { get; set; }
+
     // Navigation
     public Household Household { get; set; } = default!;
 }
