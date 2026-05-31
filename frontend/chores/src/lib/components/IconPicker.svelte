@@ -17,9 +17,29 @@
     label?: string;
   }
 
+  // Curated palette covering the standard household rooms people set up, plus
+  // common chore icons. Grouped by area so a room icon is easy to find.
   const DEFAULT_ICONS = [
-    '🧹', '🍳', '🛏️', '🚿', '🛋️', '🧺', '🚪', '🌿',
-    '🗑️', '🧽', '🐾', '🚗', '🪴', '🧸', '📦', '🔧',
+    // Kitchen & dining
+    '🍳', '🍽️', '🥫', '☕',
+    // Living, media & den
+    '🛋️', '📺', '🔥',
+    // Bedrooms & bath
+    '🛏️', '🚿', '🛁', '🚽',
+    // Kids
+    '🧸', '🍼',
+    // Work & study
+    '💻', '📚',
+    // Entry, closet, storage, stairs & utility
+    '🚪', '🧥', '📦', '🪜', '🔧',
+    // Garage, home & outdoors
+    '🚗', '🏡', '🌳', '🪴', '🌿',
+    // Pets
+    '🐾',
+    // Cleaning & chores
+    '🧹', '🧺', '🧽', '🗑️', '🪟',
+    // Other spaces
+    '🪑', '🏋️',
   ];
 
   let { value, onSelect, icons = DEFAULT_ICONS, label = 'Icon' }: Props = $props();
