@@ -6,20 +6,27 @@
   import { showToast } from './lib/toasts.svelte';
   import ViewSwitcher from './lib/components/ViewSwitcher.svelte';
   import NeedsAttentionBoard from './lib/components/NeedsAttentionBoard.svelte';
+  import RoomsDashboard from './lib/components/RoomsDashboard.svelte';
+  import UpForGrabsLane from './lib/components/UpForGrabsLane.svelte';
+  import MineView from './lib/components/MineView.svelte';
   import QuickAddSheet, { type QuickAddValue } from './lib/components/QuickAddSheet.svelte';
   import HandOffPicker from './lib/components/HandOffPicker.svelte';
   import Toasts from './lib/components/Toasts.svelte';
 
   // ───────────────────────────────────────────────────────────────────────
   // Root of the chores island. Fetches the ONE board payload into the shared
-  // store, then renders the lens switcher + the default Needs-attention board.
-  // Every lens is a CLIENT-SIDE grouping of that one payload (M11) — switching
-  // lenses never refetches. All dueness/decay is SERVER-computed (M5/M6): this
-  // component never derives dueness and never builds a Date from 'YYYY-MM-DD'.
+  // store, then renders the lens switcher + the four lenses (Needs attention /
+  // Rooms / Up for grabs / Mine). Every lens is a CLIENT-SIDE grouping of that
+  // one payload (M11) — switching lenses never refetches. All dueness/decay is
+  // SERVER-computed (M5/M6): this component never derives dueness and never
+  // builds a Date from 'YYYY-MM-DD'.
   //
-  // WP-11 wires mutation handlers (the ChoreCard action shells); WP-12 builds
-  // the Rooms / Up-for-grabs / Mine lens UIs (the groupings already exist in
-  // the store) + the roaming default-view persistence.
+  // WP-11 wired the mutation handlers (shared by every lens via ChoreCard).
+  // WP-12 added the Rooms / Up-for-grabs / Mine lens UIs (off the store's
+  // existing groupings) + the roaming per-user default view: the store opens
+  // onto `board.userDefaultView` on first load (null ⇒ Needs attention) and
+  // persists changes via PATCH /api/chores/me/default-view (server-stored on
+  // User.ChoresDefaultView so it roams across devices — NOT localStorage).
   // ───────────────────────────────────────────────────────────────────────
 
   interface Props {
@@ -133,7 +140,13 @@
   </header>
 
   <div class="ch-toolbar">
-    <ViewSwitcher active={store.lens} onSelect={(l) => store.setLens(l)} />
+    <ViewSwitcher
+      active={store.lens}
+      defaultLens={store.defaultView ?? 'needs-attention'}
+      saving={store.savingDefaultView}
+      onSelect={(l) => store.setLens(l)}
+      onSetDefault={(l) => store.saveDefaultView(l)}
+    />
   </div>
 
   {#if store.error}
@@ -146,6 +159,12 @@
   {#if store.loading && !store.board}
     <div class="ch-loading">Loading the board…</div>
   {:else if store.board}
+    <!--
+      Lens routing. Every lens is a CLIENT-SIDE grouping of the ONE board
+      payload (store.needsAttentionSections / roomGroups / upForGrabsChores /
+      mineChores) — switching `store.lens` NEVER refetches (M11). All share the
+      same optimistic card handlers.
+    -->
     {#if store.lens === 'needs-attention'}
       <NeedsAttentionBoard
         sections={store.needsAttentionSections}
@@ -159,17 +178,37 @@
         onComplete={handleComplete}
         onHandOff={handleHandOff}
       />
-    {:else}
-      <!--
-        WP-12 builds the Rooms / Up-for-grabs / Mine lens UIs. The groupings
-        are already computed in the store (roomGroups / upForGrabsChores /
-        mineChores) off the SAME board payload — no refetch on switch (M11).
-        This placeholder is the seam WP-12 replaces.
-      -->
-      <div class="ch-lens-soon">
-        <p class="ch-lens-soon-head">This view is coming soon.</p>
-        <p>Switch back to <strong>Needs attention</strong> to see the board.</p>
-      </div>
+    {:else if store.lens === 'rooms'}
+      <RoomsDashboard
+        groups={store.roomGroups}
+        currentUserId={store.currentUserId}
+        isPending={(id) => store.isPending(id)}
+        onClaim={handleClaim}
+        onDrop={handleDrop}
+        onComplete={handleComplete}
+        onHandOff={handleHandOff}
+      />
+    {:else if store.lens === 'up-for-grabs'}
+      <UpForGrabsLane
+        chores={store.upForGrabsChores}
+        currentUserId={store.currentUserId}
+        isPending={(id) => store.isPending(id)}
+        onClaim={handleClaim}
+        onDrop={handleDrop}
+        onComplete={handleComplete}
+        onHandOff={handleHandOff}
+      />
+    {:else if store.lens === 'mine'}
+      <MineView
+        chores={store.mineChores}
+        loads={store.memberLoads}
+        currentUserId={store.currentUserId}
+        isPending={(id) => store.isPending(id)}
+        onClaim={handleClaim}
+        onDrop={handleDrop}
+        onComplete={handleComplete}
+        onHandOff={handleHandOff}
+      />
     {/if}
   {:else if !store.loading}
     <div class="ch-empty">No chore board data.</div>
@@ -242,17 +281,6 @@
     padding: 48px 16px;
     text-align: center;
     color: var(--color-text-muted);
-  }
-  .ch-lens-soon {
-    padding: 48px 16px;
-    text-align: center;
-    color: var(--color-text-muted);
-  }
-  .ch-lens-soon-head {
-    font-size: 1.125rem;
-    font-weight: 500;
-    color: var(--color-text);
-    margin: 0 0 4px;
   }
   .ch-inline-error {
     display: flex;

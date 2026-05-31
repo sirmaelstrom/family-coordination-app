@@ -23,6 +23,7 @@ import type {
   ChoreLensId,
   DueState,
 } from './types';
+import { CHORE_LENSES } from './types';
 import {
   ApiError,
   claimChore,
@@ -31,6 +32,7 @@ import {
   handOffChore,
   createChore,
   deleteChore,
+  setDefaultView,
   type CreateChoreRequest,
   type CompleteRequest,
 } from './api';
@@ -47,6 +49,23 @@ export interface NeedsAttentionSection {
 export interface RoomGroup {
   rollup: RoomRollupDto;
   chores: ChoreDto[];
+}
+
+/**
+ * Per-member current-load summary for the Mine lens's household load strip
+ * (the v1.1 equity seed — display-only over the already-loaded board, no
+ * schema change, no points engine). We surface the count a member is actively
+ * holding (claimed or assigned, excluding stale claims) — NOT a points total.
+ *
+ * ⚠ M5/M6: we deliberately do NOT compute a "completed today" count here — the
+ * board DTO's `lastCompletedAt` carries no actor and "today" would require
+ * client-side timezone day-boundary math, which is forbidden. The held count is
+ * a pure assignment-state grouping of the payload (no date logic).
+ */
+export interface MemberLoad {
+  member: MemberDto;
+  /** Chores this member is actively holding (claimed/assigned, non-stale). */
+  heldCount: number;
 }
 
 /**
@@ -98,6 +117,18 @@ class BoardStore {
 
   /** This household member's userId — set once on init from the shell context. */
   currentUserId = $state(0);
+
+  /**
+   * The persisted roaming default lens (per-user, server-stored on
+   * `User.ChoresDefaultView`). Mirrors `board.userDefaultView` (null ⇒
+   * Needs-attention). Kept as a local field so the "set as default" affordance
+   * reflects success immediately without a board refetch.
+   */
+  defaultView = $state<ChoreLensId | null>(null);
+  /** True while a `setDefaultView` PATCH is in flight (disables the control). */
+  savingDefaultView = $state(false);
+  /** Guards `initLensFromDefault` so the landing lens is set only on first load. */
+  private defaultViewInitialized = false;
 
   /**
    * Chore ids with an in-flight mutation. Drives per-card disabled state +
@@ -228,6 +259,34 @@ class BoardStore {
       .sort(sortDirtiestFirst);
   });
 
+  // ── Household load strip (Mine lens — the v1.1 equity SEED) ───────────────
+  //
+  // Per-member count of actively-held chores (claimed/assigned, non-stale),
+  // grouped off the one payload (M11). Display-only — NOT a points/equity
+  // engine, NOT a "completed today" tally (no actor in the DTO + would need
+  // client tz day math — M5). Ordered current-user first, then by load desc.
+
+  memberLoads = $derived.by<MemberLoad[]>(() => {
+    const board = this.board;
+    if (!board) return [];
+    const held = new Map<number, number>();
+    for (const c of this.chores) {
+      if (c.assigneeUserId != null && c.assignmentKind !== 'none' && !c.isClaimStale) {
+        held.set(c.assigneeUserId, (held.get(c.assigneeUserId) ?? 0) + 1);
+      }
+    }
+    const uid = this.currentUserId;
+    return board.members
+      .map((member) => ({ member, heldCount: held.get(member.userId) ?? 0 }))
+      .sort((a, b) => {
+        // Current user first, then heavier load first, then name for stability.
+        if (a.member.userId === uid && b.member.userId !== uid) return -1;
+        if (b.member.userId === uid && a.member.userId !== uid) return 1;
+        if (a.heldCount !== b.heldCount) return b.heldCount - a.heldCount;
+        return a.member.displayName.localeCompare(b.member.displayName);
+      });
+  });
+
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   private passesAttentionFilter(c: ChoreDto): boolean {
@@ -250,6 +309,10 @@ class BoardStore {
   setBoard(next: ChoreBoardDto): void {
     this.board = next;
     this.error = null;
+    // Keep the local default mirror in sync with the authoritative payload, and
+    // (on the FIRST load only) land on the user's roaming default lens.
+    this.defaultView = coerceLens(next.userDefaultView);
+    this.initLensFromDefault();
   }
 
   setLens(next: ChoreLensId): void {
@@ -258,6 +321,67 @@ class BoardStore {
 
   setAttentionFilter(next: AttentionFilter): void {
     this.attentionFilter = next;
+  }
+
+  // ── Roaming per-user default view (S10/D18) ───────────────────────────────
+  //
+  // The default lens is PER-USER and SERVER-PERSISTED (User.ChoresDefaultView),
+  // so it roams across devices — NOT localStorage (D18). It arrives on the board
+  // payload as `userDefaultView` (null ⇒ Needs-attention); no separate GET. The
+  // PATCH allowlist validates against the SAME canonical lens ids (ChoreLens.All).
+
+  /**
+   * On the FIRST board load, open the lens the user pinned as their default
+   * (null ⇒ Needs-attention). Runs once — later refetches (liveness, post-
+   * mutation reconcile) must NOT yank the user off whatever lens they switched
+   * to in-session.
+   */
+  private initLensFromDefault(): void {
+    if (this.defaultViewInitialized) return;
+    this.defaultViewInitialized = true;
+    this.lens = this.defaultView ?? 'needs-attention';
+  }
+
+  /** Is the given lens the user's current persisted default? */
+  isDefaultView(lens: ChoreLensId): boolean {
+    return (this.defaultView ?? 'needs-attention') === lens;
+  }
+
+  /**
+   * Pin a lens as the user's roaming default (persists via PATCH
+   * /api/chores/me/default-view). The lens switch itself is local + instant
+   * (M11 — no refetch); this only writes the preference. On an ApiError we keep
+   * the local lens but surface a NON-BLOCKING toast — the switch still works,
+   * only the persistence failed.
+   */
+  async saveDefaultView(lens: ChoreLensId): Promise<void> {
+    if (this.savingDefaultView) return;
+    // Already the default — no-op (the control renders as "current default").
+    if (this.isDefaultView(lens)) return;
+    this.savingDefaultView = true;
+    const previous = this.defaultView;
+    // Optimistic: reflect the new default at once.
+    this.defaultView = lens;
+    if (this.board) this.board.userDefaultView = lens;
+    try {
+      const result = await setDefaultView(lens);
+      // Server echoes the persisted value; reconcile to it.
+      const confirmed = coerceLens(result.view);
+      this.defaultView = confirmed;
+      if (this.board) this.board.userDefaultView = result.view;
+      showToast({ message: 'This is now your default view.', kind: 'success' });
+    } catch (e) {
+      // Roll back the optimistic default; the lens stays switched (local only).
+      this.defaultView = previous;
+      if (this.board) this.board.userDefaultView = previous;
+      const msg =
+        e instanceof ApiError
+          ? "Couldn't save your default view — it'll stay this session only."
+          : "Couldn't save your default view right now.";
+      showToast({ message: msg, kind: 'info' });
+    } finally {
+      this.savingDefaultView = false;
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -496,4 +620,15 @@ export const boardStore = new BoardStore();
 export function memberFor(userId: number | null | undefined): MemberDto | null {
   if (userId == null) return null;
   return boardStore.membersById.get(userId) ?? null;
+}
+
+/**
+ * Coerce a persisted `userDefaultView` string to a canonical `ChoreLensId`.
+ * null/blank/unknown ⇒ null (⇒ Needs-attention default). The server allowlist
+ * is authoritative (ChoreLens.All), but we re-validate defensively so an
+ * unexpected value never selects a non-existent lens.
+ */
+function coerceLens(view: string | null): ChoreLensId | null {
+  if (!view) return null;
+  return (CHORE_LENSES as readonly string[]).includes(view) ? (view as ChoreLensId) : null;
 }
