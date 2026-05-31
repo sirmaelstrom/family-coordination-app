@@ -33,7 +33,11 @@
     <MudNavLink Href="/shoppinglists" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ShoppingCart">
         @if (IsExpanded) { <text>Shopping Lists</text> }
     </MudNavLink>
-    
+
+    <MudNavLink Href="/chores" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.CleaningServices">
+        @if (IsExpanded) { <text>Chores</text> }
+    </MudNavLink>
+
     <MudDivider Class="my-4" />
     
     <MudNavLink Href="/settings/categories" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Settings">
