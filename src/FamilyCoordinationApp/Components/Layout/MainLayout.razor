@@ -131,26 +131,37 @@
     <MudHidden Breakpoint="Breakpoint.MdAndUp">
         <div class="mobile-bottom-nav">
             <MudPaper Elevation="4" Class="bottom-nav-paper">
+                @* Order mirrors the side NavMenu (Chores-first): Home · Chores · Shopping · Meals · Recipes · Settings. *@
                 <div class="d-flex justify-space-around align-center py-1">
-                    <MudIconButton Icon="@Icons.Material.Filled.Home" 
+                    <MudIconButton Icon="@Icons.Material.Filled.Home"
                                    Color="@(IsCurrentPage("/dashboard") ? Color.Primary : Color.Default)"
                                    Href="/dashboard"
+                                   aria-label="Home"
                                    Size="Size.Medium" />
-                    <MudIconButton Icon="@Icons.Material.Filled.MenuBook" 
-                                   Color="@(IsCurrentPage("/recipes") ? Color.Primary : Color.Default)"
-                                   Href="/recipes"
+                    <MudIconButton Icon="@Icons.Material.Filled.CleaningServices"
+                                   Color="@(IsCurrentPage("/chores") ? Color.Primary : Color.Default)"
+                                   Href="/chores"
+                                   aria-label="Chores"
                                    Size="Size.Medium" />
-                    <MudIconButton Icon="@Icons.Material.Filled.CalendarMonth" 
-                                   Color="@(IsCurrentPage("/meal-plan") ? Color.Primary : Color.Default)"
-                                   Href="/meal-plan"
-                                   Size="Size.Medium" />
-                    <MudIconButton Icon="@Icons.Material.Filled.ShoppingCart" 
+                    <MudIconButton Icon="@Icons.Material.Filled.ShoppingCart"
                                    Color="@(IsCurrentPage("/shopping") ? Color.Primary : Color.Default)"
                                    Href="/shoppinglists"
+                                   aria-label="Shopping lists"
                                    Size="Size.Medium" />
-                    <MudIconButton Icon="@Icons.Material.Filled.Settings" 
+                    <MudIconButton Icon="@Icons.Material.Filled.CalendarMonth"
+                                   Color="@(IsCurrentPage("/meal-plan") ? Color.Primary : Color.Default)"
+                                   Href="/meal-plan"
+                                   aria-label="Meal plan"
+                                   Size="Size.Medium" />
+                    <MudIconButton Icon="@Icons.Material.Filled.MenuBook"
+                                   Color="@(IsCurrentPage("/recipes") ? Color.Primary : Color.Default)"
+                                   Href="/recipes"
+                                   aria-label="Recipes"
+                                   Size="Size.Medium" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Settings"
                                    Color="@(IsCurrentPage("/settings") ? Color.Primary : Color.Default)"
                                    Href="/settings/categories"
+                                   aria-label="Settings"
                                    Size="Size.Medium" />
                 </div>
             </MudPaper>
