@@ -22,20 +22,20 @@
         @if (IsExpanded) { <text>Home</text> }
     </MudNavLink>
     
-    <MudNavLink Href="/recipes" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.MenuBook">
-        @if (IsExpanded) { <text>Recipes</text> }
+    <MudNavLink Href="/chores" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.CleaningServices">
+        @if (IsExpanded) { <text>Chores</text> }
     </MudNavLink>
-    
-    <MudNavLink Href="/meal-plan" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.CalendarMonth">
-        @if (IsExpanded) { <text>Meal Plan</text> }
-    </MudNavLink>
-    
+
     <MudNavLink Href="/shoppinglists" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ShoppingCart">
         @if (IsExpanded) { <text>Shopping Lists</text> }
     </MudNavLink>
 
-    <MudNavLink Href="/chores" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.CleaningServices">
-        @if (IsExpanded) { <text>Chores</text> }
+    <MudNavLink Href="/meal-plan" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.CalendarMonth">
+        @if (IsExpanded) { <text>Meal Plan</text> }
+    </MudNavLink>
+
+    <MudNavLink Href="/recipes" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.MenuBook">
+        @if (IsExpanded) { <text>Recipes</text> }
     </MudNavLink>
 
     <MudDivider Class="my-4" />

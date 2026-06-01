@@ -24,109 +24,6 @@
     </div>
 
     <MudGrid Spacing="4">
-        <!-- Today's Meals Card -->
-        <MudItem xs="12" md="6">
-            <MudCard Elevation="2" Class="dashboard-card">
-                <MudCardHeader>
-                    <CardHeaderAvatar>
-                        <MudAvatar Color="Color.Primary" Variant="Variant.Outlined">
-                            <MudIcon Icon="@Icons.Material.Filled.Today" />
-                        </MudAvatar>
-                    </CardHeaderAvatar>
-                    <CardHeaderContent>
-                        <MudText Typo="Typo.h6">Today's Meals</MudText>
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">@DateTime.Today.ToString("MMM d")</MudText>
-                    </CardHeaderContent>
-                    <CardHeaderActions>
-                        <MudIconButton Icon="@Icons.Material.Filled.ArrowForward" Href="/meal-plan" />
-                    </CardHeaderActions>
-                </MudCardHeader>
-                <MudCardContent Class="pt-0">
-                    @if (_todaysMeals.Count == 0)
-                    {
-                        <MudText Color="Color.Secondary" Class="text-center py-4">
-                            No meals planned for today
-                        </MudText>
-                        <div class="text-center">
-                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/meal-plan">
-                                Plan something
-                            </MudButton>
-                        </div>
-                    }
-                    else
-                    {
-                        @foreach (var mealGroup in _todaysMeals.GroupBy(m => m.MealType).OrderBy(g => g.Key))
-                        {
-                            <div class="meal-group py-2">
-                                <div class="d-flex align-center gap-2 mb-1">
-                                    <MudIcon Icon="@GetMealTypeIcon(mealGroup.Key)" Size="Size.Small" Color="Color.Secondary" />
-                                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">@mealGroup.Key</MudText>
-                                </div>
-                                @foreach (var meal in mealGroup)
-                                {
-                                    <div class="meal-item ps-6 py-1">
-                                        <MudText>@GetMealDisplayName(meal)</MudText>
-                                    </div>
-                                }
-                            </div>
-                        }
-                    }
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
-
-        <!-- Shopping List Card -->
-        <MudItem xs="12" md="6">
-            <MudCard Elevation="2" Class="dashboard-card">
-                <MudCardHeader>
-                    <CardHeaderAvatar>
-                        <MudAvatar Color="Color.Secondary" Variant="Variant.Outlined">
-                            <MudIcon Icon="@Icons.Material.Filled.ShoppingCart" />
-                        </MudAvatar>
-                    </CardHeaderAvatar>
-                    <CardHeaderContent>
-                        <MudText Typo="Typo.h6">Shopping List</MudText>
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">
-                            @if (_shoppingListCount > 0)
-                            {
-                                @:@_shoppingListCount items remaining
-                            }
-                            else
-                            {
-                                @:All done!
-                            }
-                        </MudText>
-                    </CardHeaderContent>
-                    <CardHeaderActions>
-                        <MudIconButton Icon="@Icons.Material.Filled.ArrowForward" Href="/shopping-list" />
-                    </CardHeaderActions>
-                </MudCardHeader>
-                <MudCardContent Class="pt-0">
-                    @if (_shoppingListCount == 0)
-                    {
-                        <MudText Color="Color.Secondary" Class="text-center py-4">
-                            Shopping list is empty
-                        </MudText>
-                        <div class="text-center">
-                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/shopping-list">
-                                Generate from meal plan
-                            </MudButton>
-                        </div>
-                    }
-                    else
-                    {
-                        <MudProgressLinear Color="Color.Success" 
-                                           Value="@_shoppingListProgress" 
-                                           Class="my-3" 
-                                           Rounded="true" />
-                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="text-center">
-                            @_shoppingListChecked of @(_shoppingListChecked + _shoppingListCount) items checked
-                        </MudText>
-                    }
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
-
         <!-- Chores Card -->
         <MudItem xs="12" md="6">
             <MudCard Elevation="2" Class="dashboard-card">
@@ -200,6 +97,109 @@
                                 </div>
                             }
                         </div>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- Shopping List Card -->
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="2" Class="dashboard-card">
+                <MudCardHeader>
+                    <CardHeaderAvatar>
+                        <MudAvatar Color="Color.Secondary" Variant="Variant.Outlined">
+                            <MudIcon Icon="@Icons.Material.Filled.ShoppingCart" />
+                        </MudAvatar>
+                    </CardHeaderAvatar>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Shopping List</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            @if (_shoppingListCount > 0)
+                            {
+                                @:@_shoppingListCount items remaining
+                            }
+                            else
+                            {
+                                @:All done!
+                            }
+                        </MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudIconButton Icon="@Icons.Material.Filled.ArrowForward" Href="/shopping-list" />
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent Class="pt-0">
+                    @if (_shoppingListCount == 0)
+                    {
+                        <MudText Color="Color.Secondary" Class="text-center py-4">
+                            Shopping list is empty
+                        </MudText>
+                        <div class="text-center">
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/shopping-list">
+                                Generate from meal plan
+                            </MudButton>
+                        </div>
+                    }
+                    else
+                    {
+                        <MudProgressLinear Color="Color.Success" 
+                                           Value="@_shoppingListProgress" 
+                                           Class="my-3" 
+                                           Rounded="true" />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="text-center">
+                            @_shoppingListChecked of @(_shoppingListChecked + _shoppingListCount) items checked
+                        </MudText>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- Today's Meals Card -->
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="2" Class="dashboard-card">
+                <MudCardHeader>
+                    <CardHeaderAvatar>
+                        <MudAvatar Color="Color.Primary" Variant="Variant.Outlined">
+                            <MudIcon Icon="@Icons.Material.Filled.Today" />
+                        </MudAvatar>
+                    </CardHeaderAvatar>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Today's Meals</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">@DateTime.Today.ToString("MMM d")</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudIconButton Icon="@Icons.Material.Filled.ArrowForward" Href="/meal-plan" />
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent Class="pt-0">
+                    @if (_todaysMeals.Count == 0)
+                    {
+                        <MudText Color="Color.Secondary" Class="text-center py-4">
+                            No meals planned for today
+                        </MudText>
+                        <div class="text-center">
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/meal-plan">
+                                Plan something
+                            </MudButton>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var mealGroup in _todaysMeals.GroupBy(m => m.MealType).OrderBy(g => g.Key))
+                        {
+                            <div class="meal-group py-2">
+                                <div class="d-flex align-center gap-2 mb-1">
+                                    <MudIcon Icon="@GetMealTypeIcon(mealGroup.Key)" Size="Size.Small" Color="Color.Secondary" />
+                                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">@mealGroup.Key</MudText>
+                                </div>
+                                @foreach (var meal in mealGroup)
+                                {
+                                    <div class="meal-item ps-6 py-1">
+                                        <MudText>@GetMealDisplayName(meal)</MudText>
+                                    </div>
+                                }
+                            </div>
+                        }
                     }
                 </MudCardContent>
             </MudCard>
