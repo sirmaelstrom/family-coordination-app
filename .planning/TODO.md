@@ -1,3 +1,12 @@
+> ⚠️ **HISTORICAL — SUPERSEDED (do not use as current status).**
+> This file is a frozen snapshot from the Phase 1 build (2026-01-23) and is kept only for
+> its debugging-session notes. The app is now in production with the full meal-planning core
+> (Phases 1–7) and the chores track (Phases 10–12) shipped. For authoritative phase status see
+> **`.planning/ROADMAP.md`**; for the project CLAUDE.md "Remaining Planned Work" summary see the
+> repo root `CLAUDE.md`. Everything below describes the state of the project in January 2026.
+
+---
+
 # Family Coordination App - Status & Next Steps
 
 **Last Updated:** 2026-01-23 (Evening Session)
