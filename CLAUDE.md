@@ -121,4 +121,8 @@ Required env vars (set via `.env` on the server, generated from a secrets manage
 
 ## Remaining Planned Work
 
-Phases 1-7 complete. Phases 8-9 were deprecated — the gaps are minor and not worth the effort given the app works well as-is.
+See `.planning/ROADMAP.md` for the authoritative phase list and status. Summary:
+
+**Core app (meal planning / recipes / shopping):** Phases 1–7 complete. Phases 8–9 were deprecated — the gaps are minor and not worth the effort given the app works well as-is.
+
+**Chores track:** Phase 10 (v1.0 — board, claim/hand-off/complete, recurrence, rooms), Phase 11 (v1.1 — equity view + weekly Discord digest), and Phase 12 (v1.2 — icons, home-page card, photo display, room manager) are all shipped and in production use. Phase 13 (multi-room chores, M:N — feedback #6) is **planned, spec-first** — not yet started.
