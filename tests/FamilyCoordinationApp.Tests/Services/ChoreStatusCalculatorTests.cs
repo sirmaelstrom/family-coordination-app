@@ -255,6 +255,22 @@ public class ChoreStatusCalculatorTests
     }
 
     [Fact]
+    public void OneOff_FutureDue_IsScheduled_WithFutureNextDue()
+    {
+        // A one-off WITH a future due date has a concrete pending slot, so it reads as Scheduled (matching the
+        // Fixed cadence paths) — NOT the bare NotDue/"On track". The card renders "Scheduled". (feedback #5)
+        var due = new DateOnly(2026, 6, 20);
+        var chore = OneOff(due);
+        var now = Utc0(2026, 6, 15, 9);
+
+        var result = _calc.Compute(chore, now, Utc);
+
+        result.DueState.Should().Be(DueState.Scheduled);
+        result.ColorTier.Should().Be(ColorTier.Fresh);
+        result.NextDueAt.Should().Be(Utc0(2026, 6, 20)); // local-midnight UTC of the due date
+    }
+
+    [Fact]
     public void OneOff_NoDueDate_NeverOverdue_NoNextDue()
     {
         var chore = OneOff(due: null);

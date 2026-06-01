@@ -288,7 +288,11 @@ public class ChoreStatusCalculator
             return new ChoreDuenessResult(DueState.Overdue, ColorTier.Overdue, nextDueAt);
         }
 
-        return new ChoreDuenessResult(DueState.NotDue, ColorTier.Fresh, nextDueAt);
+        // Future due date => Scheduled (NOT NotDue), matching the Fixed cadence paths above. NotDue means
+        // "recurs, no pending point"; a one-off WITH a future due date has a concrete pending slot, so it
+        // reads as "Scheduled" on the card (renders "Scheduled" instead of the bare "On track"). This keeps
+        // future-dated one-offs (feedback #5) consistent with future-dated fixed chores.
+        return new ChoreDuenessResult(DueState.Scheduled, ColorTier.Fresh, nextDueAt);
     }
 
     private static DateTime? NextDueForOneOff(ChoreRecurrenceSnapshot chore, TimeZoneInfo tz)
