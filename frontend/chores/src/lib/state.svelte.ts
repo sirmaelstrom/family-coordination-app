@@ -183,6 +183,19 @@ class BoardStore {
     return map;
   });
 
+  /**
+   * roomId → room rollup, for the per-card room locator chip. REAL rooms only —
+   * the virtual General group (roomId === null, roomless chores) is excluded so a
+   * roomless card shows no chip rather than a noisy "General" tag.
+   */
+  roomsById = $derived.by(() => {
+    const map = new Map<number, RoomRollupDto>();
+    for (const r of this.board?.rooms ?? []) {
+      if (r.roomId != null) map.set(r.roomId, r);
+    }
+    return map;
+  });
+
   /** All board chores (empty when unloaded). */
   chores = $derived<ChoreDto[]>(this.board?.chores ?? []);
 
@@ -784,6 +797,16 @@ export const boardStore = new BoardStore();
 export function memberFor(userId: number | null | undefined): MemberDto | null {
   if (userId == null) return null;
   return boardStore.membersById.get(userId) ?? null;
+}
+
+/**
+ * Resolve a room rollup (name + icon) for a chore's roomId, for the per-card
+ * room locator chip. null when the chore is roomless (the virtual General group)
+ * or the roomId is unknown — callers render no chip in that case.
+ */
+export function roomFor(roomId: number | null | undefined): RoomRollupDto | null {
+  if (roomId == null) return null;
+  return boardStore.roomsById.get(roomId) ?? null;
 }
 
 /**
