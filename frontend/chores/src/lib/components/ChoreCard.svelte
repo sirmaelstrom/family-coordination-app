@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ChoreDto, ColorTier, DueState, EffortTier, RecurrenceMode } from '../types';
-  import { memberFor } from '../state.svelte';
+  import { memberFor, roomFor } from '../state.svelte';
   import { showPhoto } from '../lightbox.svelte';
   import MemberAvatar from './MemberAvatar.svelte';
 
@@ -26,6 +26,12 @@
     currentUserId: number;
     /** True while a mutation for this chore is in flight (disables controls). */
     pending?: boolean;
+    /**
+     * Show the room locator chip (which room this chore lives in). True for the
+     * cross-room lenses (Needs-attention / Up-for-grabs / Mine); the Rooms lens
+     * passes false since its cards are already grouped under a room header.
+     */
+    showRoom?: boolean;
     onClaim?: (chore: ChoreDto) => void;
     onDrop?: (chore: ChoreDto) => void;
     onComplete?: (chore: ChoreDto) => void;
@@ -38,6 +44,7 @@
     chore,
     currentUserId,
     pending = false,
+    showRoom = true,
     onClaim,
     onDrop,
     onComplete,
@@ -68,6 +75,11 @@
 
   let owner = $derived(memberFor(chore.ownerUserId));
   let assignee = $derived(memberFor(chore.assigneeUserId));
+
+  // ── Room locator (which room this chore lives in) ────────────────────────
+  // Resolved off the board's room rollups. null for roomless chores (General)
+  // or when `showRoom` is off (the Rooms lens, where cards are already grouped).
+  let room = $derived(showRoom ? roomFor(chore.roomId) : null);
 
   let isUnclaimed = $derived(chore.assignmentKind === 'none' || chore.isClaimStale);
   let isClaimed = $derived(chore.assignmentKind === 'claimed' && !chore.isClaimStale);
@@ -160,6 +172,22 @@
     {/if}
 
     <div class="ch-card-meta">
+      {#if room}
+        <span class="ch-tag ch-tag-room" title="Room: {room.name}">
+          {#if room.icon}
+            <span class="ch-tag-room-icon" aria-hidden="true">{room.icon}</span>
+          {:else}
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path
+                d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"
+                fill="currentColor"
+              />
+            </svg>
+          {/if}
+          {room.name}
+        </span>
+      {/if}
+
       <span class="ch-tag ch-tag-effort" title="Effort: {effortLabel}">
         <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
           <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z" fill="currentColor" />
@@ -466,6 +494,16 @@
   }
   .ch-tag svg {
     flex-shrink: 0;
+  }
+  /* Room locator chip — tinted distinct from the muted effort/recurrence tags
+     so "which room" reads as the card's primary orientation cue. */
+  .ch-tag-room {
+    color: #fff;
+    background: var(--color-primary-soft);
+  }
+  .ch-tag-room-icon {
+    font-size: 0.875rem;
+    line-height: 1;
   }
 
   .ch-card-foot {

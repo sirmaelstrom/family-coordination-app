@@ -166,6 +166,7 @@
           <ChoreCard
             {chore}
             {currentUserId}
+            showRoom={false}
             pending={isPending(chore.id)}
             {onClaim}
             {onDrop}
