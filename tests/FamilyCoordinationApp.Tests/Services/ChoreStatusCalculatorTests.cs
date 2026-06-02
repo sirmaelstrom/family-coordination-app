@@ -37,11 +37,11 @@ public class ChoreStatusCalculatorTests
     private static ChoreRecurrenceSnapshot Flexible(int? intervalDays, DateTime? lastCompletedAt) =>
         new(RecurrenceMode.Flexible, intervalDays, AnchorDate: null, DaysOfWeek: null, DayOfMonth: null, lastCompletedAt);
 
-    private static ChoreRecurrenceSnapshot FixedEveryN(int intervalDays, DateOnly anchor) =>
-        new(RecurrenceMode.Fixed, intervalDays, anchor, DaysOfWeek: null, DayOfMonth: null, LastCompletedAt: null);
+    private static ChoreRecurrenceSnapshot FixedEveryN(int intervalDays, DateOnly anchor, DateTime? lastCompletedAt = null) =>
+        new(RecurrenceMode.Fixed, intervalDays, anchor, DaysOfWeek: null, DayOfMonth: null, lastCompletedAt);
 
-    private static ChoreRecurrenceSnapshot FixedWeekly(ChoreDaysOfWeek days) =>
-        new(RecurrenceMode.Fixed, IntervalDays: null, AnchorDate: null, days, DayOfMonth: null, LastCompletedAt: null);
+    private static ChoreRecurrenceSnapshot FixedWeekly(ChoreDaysOfWeek days, DateTime? lastCompletedAt = null) =>
+        new(RecurrenceMode.Fixed, IntervalDays: null, AnchorDate: null, days, DayOfMonth: null, lastCompletedAt);
 
     private static ChoreRecurrenceSnapshot OneOff(DateOnly? due, DateTime? lastCompletedAt = null) =>
         new(RecurrenceMode.OneOff, IntervalDays: null, due, DaysOfWeek: null, DayOfMonth: null, lastCompletedAt);
@@ -224,6 +224,120 @@ public class ChoreStatusCalculatorTests
 
         nextDueAt.Should().Be(Utc0(2026, 6, 18)); // Thursday
         nextDueAt!.Value.DayOfWeek.Should().Be(DayOfWeek.Thursday);
+    }
+
+    // ---- Fixed completion-awareness (catch-up + overdue, feedback) ----------------------------------
+    //
+    // A fixed/"Scheduled" chore is computed against its CURRENT slot (most recent cadence date <= today) and
+    // whether a completion satisfied it. One "Done" clears however many slots have elapsed since the last
+    // completion (no per-missed-day marking); a past, uncovered slot with a completion baseline reads Overdue.
+
+    [Fact]
+    public void FixedEveryN_CompletedCurrentSlot_RollsForwardToNextSlot()
+    {
+        // Cadence Jun 1, 6, 11, 16. Completed on the Jun 11 slot; today Jun 13 (between 11 and 16).
+        var anchor = new DateOnly(2026, 6, 1);
+        var chore = FixedEveryN(5, anchor, lastCompletedAt: Utc0(2026, 6, 11, 18));
+        var now = Utc0(2026, 6, 13, 9);
+
+        var result = _calc.Compute(chore, now, Utc);
+
+        result.DueState.Should().Be(DueState.Scheduled);       // current slot satisfied
+        result.ColorTier.Should().Be(ColorTier.Fresh);
+        result.NextDueAt.Should().Be(Utc0(2026, 6, 16));       // rolled forward to the next slot
+    }
+
+    [Fact]
+    public void FixedEveryN_DailyCompletedToday_IsNotDueAgainUntilTomorrow()
+    {
+        // The regression: a daily fixed chore (interval 1) completed today must NOT keep reading DueToday.
+        var anchor = new DateOnly(2026, 6, 1);
+        var chore = FixedEveryN(1, anchor, lastCompletedAt: Utc0(2026, 6, 15, 14));
+        var now = Utc0(2026, 6, 15, 18); // same local day as the completion
+
+        var result = _calc.Compute(chore, now, Utc);
+
+        result.DueState.Should().Be(DueState.Scheduled);
+        result.NextDueAt.Should().Be(Utc0(2026, 6, 16)); // tomorrow, not today
+    }
+
+    [Fact]
+    public void FixedEveryN_MissedPastSlotWithBaseline_IsOverdue()
+    {
+        // Cadence Jun 1, 6, 11, 16. Last done Jun 6; the Jun 11 slot was missed; today Jun 13.
+        var anchor = new DateOnly(2026, 6, 1);
+        var chore = FixedEveryN(5, anchor, lastCompletedAt: Utc0(2026, 6, 6, 12));
+        var now = Utc0(2026, 6, 13, 9);
+
+        var result = _calc.Compute(chore, now, Utc);
+
+        result.DueState.Should().Be(DueState.Overdue);
+        result.ColorTier.Should().Be(ColorTier.Overdue);
+        result.NextDueAt.Should().Be(Utc0(2026, 6, 11)); // points at the missed slot
+    }
+
+    [Fact]
+    public void FixedEveryN_CompletingWhileOverdue_CatchesUpInOneDone()
+    {
+        // Overdue (missed Jun 11). Completing on Jun 13 must clear it and roll to the next FUTURE slot — not
+        // to Jun 11 + interval (which would still be in the past and demand another completion).
+        var anchor = new DateOnly(2026, 6, 1);
+        var now = Utc0(2026, 6, 13, 9);
+
+        var overdue = FixedEveryN(5, anchor, lastCompletedAt: Utc0(2026, 6, 6, 12));
+        _calc.Compute(overdue, now, Utc).DueState.Should().Be(DueState.Overdue);
+
+        var afterDone = overdue with { LastCompletedAt = now };
+        var result = _calc.Compute(afterDone, now, Utc);
+
+        result.DueState.Should().Be(DueState.Scheduled);
+        result.NextDueAt.Should().Be(Utc0(2026, 6, 16)); // next future slot, fully caught up
+    }
+
+    [Fact]
+    public void FixedWeekly_MissedSlotWithBaseline_IsOverdue_ThenOneDoneRollsToNextWeek()
+    {
+        // Mondays. 2026-06-15 is a Monday. Last done the prior Monday (Jun 8); this Monday (Jun 15) missed;
+        // today is Wednesday Jun 17.
+        var now = Utc0(2026, 6, 17, 9); // Wednesday
+        var chore = FixedWeekly(ChoreDaysOfWeek.Monday, lastCompletedAt: Utc0(2026, 6, 8, 12));
+
+        var overdue = _calc.Compute(chore, now, Utc);
+        overdue.DueState.Should().Be(DueState.Overdue);
+        overdue.NextDueAt.Should().Be(Utc0(2026, 6, 15)); // the missed Monday
+
+        // One completion on Wednesday catches up and rolls to next Monday (Jun 22).
+        var afterDone = chore with { LastCompletedAt = now };
+        var result = _calc.Compute(afterDone, now, Utc);
+        result.DueState.Should().Be(DueState.Scheduled);
+        result.NextDueAt.Should().Be(Utc0(2026, 6, 22));
+    }
+
+    [Fact]
+    public void FixedWeekly_NeverCompleted_OffDay_IsNotRetroactivelyOverdue()
+    {
+        // Brand-new Monday chore, today Wednesday Jun 17, never completed: must read Scheduled (waiting for
+        // next Monday), NOT Overdue for the Monday that predates the chore.
+        var now = Utc0(2026, 6, 17, 9); // Wednesday
+        var chore = FixedWeekly(ChoreDaysOfWeek.Monday, lastCompletedAt: null);
+
+        var result = _calc.Compute(chore, now, Utc);
+
+        result.DueState.Should().Be(DueState.Scheduled);
+        result.NextDueAt.Should().Be(Utc0(2026, 6, 22)); // next Monday
+    }
+
+    [Fact]
+    public void FixedWeekly_CompletedTodayOnSlot_RollsToNextWeek()
+    {
+        // Mondays; today is Monday Jun 15 and it was done today => satisfied, next due is the following Monday.
+        var now = Utc0(2026, 6, 15, 16); // Monday
+        var chore = FixedWeekly(ChoreDaysOfWeek.Monday, lastCompletedAt: Utc0(2026, 6, 15, 8));
+
+        var result = _calc.Compute(chore, now, Utc);
+
+        result.DueState.Should().Be(DueState.Scheduled);
+        result.NextDueAt.Should().Be(Utc0(2026, 6, 22));
     }
 
     // ---- OneOff (V2) --------------------------------------------------------------------------------

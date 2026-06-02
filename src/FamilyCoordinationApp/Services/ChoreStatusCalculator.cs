@@ -89,14 +89,16 @@ public class ChoreStatusCalculator
     /// </summary>
     public ChoreDuenessResult Compute(ChoreRecurrenceSnapshot chore, DateTime now, TimeZoneInfo tz)
     {
-        var nextDueAt = ComputeNextDueAt(chore, now, tz);
+        var today = LocalDate(now, tz);
 
         return chore.RecurrenceMode switch
         {
-            RecurrenceMode.Flexible => ComputeFlexible(chore, now, tz, nextDueAt),
-            RecurrenceMode.Fixed => ComputeFixed(chore, now, tz, nextDueAt),
-            RecurrenceMode.OneOff => ComputeOneOff(chore, now, tz, nextDueAt),
-            _ => new ChoreDuenessResult(DueState.NotDue, ColorTier.Fresh, nextDueAt)
+            // Flexible/OneOff derive their next-due independently of the dueness branch; Fixed computes its
+            // state and next-due together (completion-aware slot logic), so it is fully self-contained.
+            RecurrenceMode.Flexible => ComputeFlexible(chore, now, tz, NextDueForFlexible(chore, today, tz)),
+            RecurrenceMode.Fixed => ComputeFixed(chore, now, tz),
+            RecurrenceMode.OneOff => ComputeOneOff(chore, now, tz, NextDueForOneOff(chore, tz)),
+            _ => new ChoreDuenessResult(DueState.NotDue, ColorTier.Fresh, NextDueAt: null)
         };
     }
 
@@ -112,7 +114,9 @@ public class ChoreStatusCalculator
         return chore.RecurrenceMode switch
         {
             RecurrenceMode.Flexible => NextDueForFlexible(chore, today, tz),
-            RecurrenceMode.Fixed => NextDueForFixed(chore, today, tz),
+            // Delegate to the unified Fixed logic so the public next-due never diverges from the dueness it
+            // reports (e.g. a covered slot rolls forward; an overdue slot points at the missed date).
+            RecurrenceMode.Fixed => ComputeFixed(chore, now, tz).NextDueAt,
             RecurrenceMode.OneOff => NextDueForOneOff(chore, tz),
             _ => null
         };
@@ -199,65 +203,118 @@ public class ChoreStatusCalculator
         return LocalMidnightUtc(baseDate, tz);
     }
 
-    // ---- Fixed: interval-from-anchor OR weekly-on-weekday --------------------------------------------
+    // ---- Fixed: interval-from-anchor OR weekly-on-weekday (completion-aware) -------------------------
+    //
+    // A fixed chore is tied to concrete calendar slots (every-N days from an anchor, or specific weekdays).
+    // Dueness is computed against the CURRENT slot — the most recent cadence date on or before today — and
+    // whether a completion has satisfied it:
+    //   • current slot already covered by a completion        -> Scheduled, rolled forward to the next slot
+    //   • current slot is today and not yet done              -> DueToday
+    //   • current slot is in the PAST, not done, and the chore
+    //     has a prior-completion baseline                     -> Overdue (lands in "Falling behind")
+    // A single completion on or after the current slot's date satisfies it and advances to the next future
+    // occurrence — so catching up after several missed slots takes ONE "Done", not one per missed day
+    // (feedback: forgetting the mail for 3 days should not require 3 completions). A never-completed fixed
+    // chore is treated as "new" — never retroactively overdue for a slot that predates it — though it can
+    // still read DueToday on a cadence day.
 
-    private static ChoreDuenessResult ComputeFixed(
-        ChoreRecurrenceSnapshot chore, DateTime now, TimeZoneInfo tz, DateTime? nextDueAt)
+    private static ChoreDuenessResult ComputeFixed(ChoreRecurrenceSnapshot chore, DateTime now, TimeZoneInfo tz)
     {
         var today = LocalDate(now, tz);
+        var (currentSlot, nextSlot) = FixedSlots(chore, today);
 
-        // Weekly-on-weekday (D4-B) — driven by the DaysOfWeek flags.
-        if (chore.DaysOfWeek is { } days && days != ChoreDaysOfWeek.None)
+        DateTime? AsUtc(DateOnly? date) => date is { } d ? LocalMidnightUtc(d, tz) : null;
+
+        // Under-specified fixed chore (no DaysOfWeek, no anchor+interval) => benign Scheduled, no due point.
+        if (currentSlot is null && nextSlot is null)
         {
-            var dueToday = days.HasFlag(ToChoreFlag(today.DayOfWeek));
-            return dueToday
-                ? new ChoreDuenessResult(DueState.DueToday, ColorTier.Due, nextDueAt)
-                : new ChoreDuenessResult(DueState.Scheduled, ColorTier.Fresh, nextDueAt);
+            return new ChoreDuenessResult(DueState.Scheduled, ColorTier.Fresh, NextDueAt: null);
         }
 
-        // Interval-from-anchor (every-N days). Needs both an anchor and a positive interval. Dueness is the
-        // "on-cadence-day vs not" binary (D4): today lands on a cadence multiple => DueToday; otherwise the
-        // chore is simply waiting for its next slot => Scheduled. (Per-completion "missed a slot => overdue"
-        // tracking is not modeled for fixed chores in v1; flexible recurrence carries the decay/overdue model.)
-        if (chore.AnchorDate is { } anchor && chore.IntervalDays is { } interval && interval > 0)
+        // Schedule hasn't started yet (anchor in the future) => waiting on the first occurrence.
+        if (currentSlot is not { } slot)
         {
-            var landsOnCadenceDay = today >= anchor &&
-                                    (today.DayNumber - anchor.DayNumber) % interval == 0;
-
-            return landsOnCadenceDay
-                ? new ChoreDuenessResult(DueState.DueToday, ColorTier.Due, nextDueAt)
-                : new ChoreDuenessResult(DueState.Scheduled, ColorTier.Fresh, nextDueAt);
+            return new ChoreDuenessResult(DueState.Scheduled, ColorTier.Fresh, AsUtc(nextSlot));
         }
 
-        // Under-specified fixed chore (no DaysOfWeek, no anchor+interval) => benign Scheduled.
-        return new ChoreDuenessResult(DueState.Scheduled, ColorTier.Fresh, nextDueAt);
+        // Has the current slot already been satisfied? A completion on or after the slot's LOCAL date covers
+        // it — and because we only ever test the CURRENT slot, one completion clears however many slots have
+        // elapsed since the last one (the catch-up property).
+        var covered = chore.LastCompletedAt is { } last && LocalDate(last, tz) >= slot;
+        if (covered)
+        {
+            return new ChoreDuenessResult(DueState.Scheduled, ColorTier.Fresh, AsUtc(nextSlot));
+        }
+
+        // Pending. Today's occurrence reads DueToday; a past, uncovered occurrence reads Overdue — but only
+        // once the chore has a completion baseline (a brand-new chore is "new", not retroactively behind).
+        if (slot == today)
+        {
+            return new ChoreDuenessResult(DueState.DueToday, ColorTier.Due, AsUtc(today));
+        }
+
+        if (chore.LastCompletedAt is not null)
+        {
+            return new ChoreDuenessResult(DueState.Overdue, ColorTier.Overdue, AsUtc(slot));
+        }
+
+        return new ChoreDuenessResult(DueState.Scheduled, ColorTier.Fresh, AsUtc(nextSlot));
     }
 
-    private static DateTime? NextDueForFixed(ChoreRecurrenceSnapshot chore, DateOnly today, TimeZoneInfo tz)
+    /// <summary>
+    /// The current and next fixed-cadence slots relative to <paramref name="today"/> (local dates).
+    /// <c>Current</c> is the most recent cadence date on or before today (null when the schedule starts in the
+    /// future); <c>Next</c> is the first cadence date strictly after today. Returns (null, null) for an
+    /// under-specified fixed recurrence (e.g. monthly-on-day, which is unsupported here).
+    /// </summary>
+    private static (DateOnly? Current, DateOnly? Next) FixedSlots(ChoreRecurrenceSnapshot chore, DateOnly today)
     {
-        // Weekly-on-weekday: next local date (today inclusive) that matches one of the flagged weekdays.
+        // Weekly-on-weekday (D4-B): scan a 7-day window each way for a flagged weekday. A non-empty flag set
+        // always matches within 7 days, so Current is never null for weekly.
         if (chore.DaysOfWeek is { } days && days != ChoreDaysOfWeek.None)
         {
-            for (var offset = 0; offset < 7; offset++)
+            DateOnly? current = null;
+            for (var back = 0; back < 7; back++)
             {
-                var candidate = today.AddDays(offset);
+                var candidate = today.AddDays(-back);
                 if (days.HasFlag(ToChoreFlag(candidate.DayOfWeek)))
                 {
-                    return LocalMidnightUtc(candidate, tz);
+                    current = candidate;
+                    break;
                 }
             }
 
-            return null; // unreachable: a non-None flag set always matches within 7 days.
+            DateOnly? next = null;
+            for (var fwd = 1; fwd <= 7; fwd++)
+            {
+                var candidate = today.AddDays(fwd);
+                if (days.HasFlag(ToChoreFlag(candidate.DayOfWeek)))
+                {
+                    next = candidate;
+                    break;
+                }
+            }
+
+            return (current, next);
         }
 
-        // Interval-from-anchor: the first cadence multiple >= today.
+        // Interval-from-anchor (every-N days): the cadence is anchor + k·interval (k >= 0).
         if (chore.AnchorDate is { } anchor && chore.IntervalDays is { } interval && interval > 0)
         {
-            var dueDate = FixedDueOnOrAfter(anchor, interval, today);
-            return LocalMidnightUtc(dueDate, tz);
+            if (today < anchor)
+            {
+                // Not started yet — the anchor itself is the first (next) slot, with no current slot.
+                return (null, anchor);
+            }
+
+            var k = (today.DayNumber - anchor.DayNumber) / interval;   // floor => most recent slot <= today
+            var current = anchor.AddDays(k * interval);
+            var next = anchor.AddDays((k + 1) * interval);
+            return (current, next);
         }
 
-        return null;
+        // Under-specified (e.g. DayOfMonth-only) — unsupported here; no slots.
+        return (null, null);
     }
 
     // ---- OneOff: due against AnchorDate, never recurs ------------------------------------------------
@@ -321,19 +378,6 @@ public class ChoreStatusCalculator
     {
         var localMidnight = localDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
         return TimeZoneInfo.ConvertTimeToUtc(localMidnight, tz);
-    }
-
-    /// <summary>The first cadence date (anchor + k·interval) on or after <paramref name="reference"/>.</summary>
-    private static DateOnly FixedDueOnOrAfter(DateOnly anchor, int interval, DateOnly reference)
-    {
-        var delta = reference.DayNumber - anchor.DayNumber;
-        if (delta <= 0)
-        {
-            return anchor;
-        }
-
-        var k = (delta + interval - 1) / interval; // ceil toward the future
-        return anchor.AddDays(k * interval);
     }
 
     /// <summary>Map a <see cref="System.DayOfWeek"/> to the project's custom <see cref="ChoreDaysOfWeek"/> flag.</summary>
