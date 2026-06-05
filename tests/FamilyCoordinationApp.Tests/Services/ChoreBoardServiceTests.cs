@@ -386,13 +386,13 @@ public class ChoreBoardServiceTests
         var multiDto = board.Chores.Single(c => c.Id == 1);
         multiDto.RequiredCount.Should().Be(2);
         multiDto.CompletedCount.Should().Be(1);
-        multiDto.ContributorUserIds.Should().Equal(Alice);  // [100]
+        multiDto.Roster.Should().ContainSingle(m => m.UserId == Alice && m.State == RosterState.Done);
 
         // Assert: single-person chore reports zeroed progress.
         var singleDto = board.Chores.Single(c => c.Id == 2);
         singleDto.RequiredCount.Should().Be(1);
         singleDto.CompletedCount.Should().Be(0);
-        singleDto.ContributorUserIds.Should().BeEmpty();
+        singleDto.Roster.Should().BeEmpty();
     }
 
     [Fact]
@@ -411,7 +411,7 @@ public class ChoreBoardServiceTests
         {
             dto.RequiredCount.Should().Be(1);
             dto.CompletedCount.Should().Be(0);
-            dto.ContributorUserIds.Should().BeEmpty();
+            dto.Roster.Should().BeEmpty();
         }
     }
 }

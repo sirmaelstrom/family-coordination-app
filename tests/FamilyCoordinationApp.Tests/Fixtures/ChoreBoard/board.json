@@ -25,7 +25,12 @@
       "version": 7,
       "requiredCount": 1,
       "completedCount": 0,
-      "contributorUserIds": []
+      "roster": [
+        {
+          "userId": 101,
+          "state": "in"
+        }
+      ]
     },
     {
       "id": 2,
@@ -52,7 +57,12 @@
       "version": 3,
       "requiredCount": 1,
       "completedCount": 0,
-      "contributorUserIds": []
+      "roster": [
+        {
+          "userId": 100,
+          "state": "assigned"
+        }
+      ]
     },
     {
       "id": 3,
@@ -79,7 +89,16 @@
       "version": 1,
       "requiredCount": 2,
       "completedCount": 1,
-      "contributorUserIds": [100]
+      "roster": [
+        {
+          "userId": 100,
+          "state": "done"
+        },
+        {
+          "userId": 101,
+          "state": "in"
+        }
+      ]
     },
     {
       "id": 4,
@@ -106,7 +125,12 @@
       "version": 2,
       "requiredCount": 1,
       "completedCount": 0,
-      "contributorUserIds": []
+      "roster": [
+        {
+          "userId": 101,
+          "state": "in"
+        }
+      ]
     }
   ],
   "rooms": [
