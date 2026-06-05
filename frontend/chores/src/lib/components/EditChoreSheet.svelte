@@ -52,6 +52,8 @@
   let effort = $state<EffortTier>('Standard');
   let roomId = $state<number | null>(null);
   let ownerUserId = $state<number | null>(null);
+  /** 1 = single person (default); ≥2 = multi-person requirement. */
+  let requiredCount = $state(1);
   let existingPhotoPath = $state<string | null>(null);
   let newPhotoFile = $state<File | null>(null);
   let localError = $state<string | null>(null);
@@ -180,6 +182,7 @@
     roomId = c.roomId ?? null;
     effort = c.effortTier;
     ownerUserId = c.ownerUserId ?? null;
+    requiredCount = c.requiredCount ?? 1;
     existingPhotoPath = c.photoPath;
     newPhotoFile = null;
     localError = null;
@@ -308,6 +311,7 @@
         effortTier: effort,
         icon: choreIcon,
         ownerUserId,
+        requiredCount,
         version: chore.version,
         photoPath: resolvedPhotoPath,
       };
@@ -444,6 +448,48 @@
           {/each}
         </div>
       </fieldset>
+
+      {#if members.length >= 2}
+        <fieldset class="ch-field">
+          <legend class="ch-field-label">How many people?</legend>
+          <div class="ch-chip-row" role="group" aria-label="How many people">
+            <button
+              type="button"
+              class="ch-chip"
+              class:active={requiredCount === 1}
+              aria-pressed={requiredCount === 1}
+              onclick={() => (requiredCount = 1)}
+            >
+              One person
+            </button>
+            <button
+              type="button"
+              class="ch-chip"
+              class:active={requiredCount > 1}
+              aria-pressed={requiredCount > 1}
+              onclick={() => { if (requiredCount < 2) requiredCount = 2; }}
+            >
+              Needs more than one
+            </button>
+          </div>
+          {#if requiredCount > 1}
+            <div class="ch-chip-row" role="group" aria-label="Number of people needed">
+              {#each { length: members.length - 1 } as _, i (i)}
+                {@const n = i + 2}
+                <button
+                  type="button"
+                  class="ch-chip"
+                  class:active={requiredCount === n}
+                  aria-pressed={requiredCount === n}
+                  onclick={() => (requiredCount = n)}
+                >
+                  Needs {n} people
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </fieldset>
+      {/if}
 
       <fieldset class="ch-field">
         <legend class="ch-field-label">Room</legend>
