@@ -66,6 +66,8 @@
   let assigneeUserId = $state<number | null>(null);
   /** 1 = single person (default); ≥2 = multi-person requirement. */
   let requiredCount = $state(1);
+  /** Named roster for a multi-person chore (assigned at create as a soft pre-opt-in). Ignored when 1. */
+  let assignedUserIds = $state<number[]>([]);
   let photo = $state<File | null>(null);
   let localError = $state<string | null>(null);
 
@@ -176,6 +178,7 @@
     roomId = null;
     assigneeUserId = null;
     requiredCount = 1;
+    assignedUserIds = [];
     photo = null;
     localError = null;
     // Reset the inline new-room form UI (keep createdRooms — a later board reload dedups them).
@@ -202,6 +205,13 @@
     if (next.has(flag)) next.delete(flag);
     else next.add(flag);
     selectedDays = next;
+  }
+
+  /** Toggle a member in the multi-person create-time roster (assigned). */
+  function toggleAssignee(userId: number) {
+    assignedUserIds = assignedUserIds.includes(userId)
+      ? assignedUserIds.filter((id) => id !== userId)
+      : [...assignedUserIds, userId];
   }
 
   function onPhotoChange(e: Event) {
@@ -264,8 +274,10 @@
       effortTier: effort,
       icon: choreIcon,
       ownerUserId: null,
-      assigneeUserId,
+      // X=1 uses the single-holder trio; X>1 ignores it and seeds the named roster instead.
+      assigneeUserId: requiredCount > 1 ? null : assigneeUserId,
       requiredCount,
+      assignedUserIds: requiredCount > 1 ? assignedUserIds : undefined,
       // Photo is NEVER in the create JSON (council C2) — the parent uploads it
       // separately to /api/chores/{id}/photo after the create returns an id.
       photoPath: null,
@@ -520,31 +532,53 @@
       </fieldset>
 
       <fieldset class="ch-field">
-        <legend class="ch-field-label">Who's on it?</legend>
-        <div class="ch-chip-row" role="group" aria-label="Assignee">
-          <button
-            type="button"
-            class="ch-chip"
-            class:active={assigneeUserId === null}
-            aria-pressed={assigneeUserId === null}
-            onclick={() => (assigneeUserId = null)}
-          >
-            Leave for anyone
-          </button>
-          {#each members as member (member.userId)}
+        <legend class="ch-field-label">
+          {requiredCount > 1 ? 'Assign people (optional)' : "Who's on it?"}
+        </legend>
+        {#if requiredCount > 1}
+          <div class="ch-chip-row" role="group" aria-label="Assign people">
+            {#each members as member (member.userId)}
+              <button
+                type="button"
+                class="ch-chip"
+                class:active={assignedUserIds.includes(member.userId)}
+                aria-pressed={assignedUserIds.includes(member.userId)}
+                onclick={() => toggleAssignee(member.userId)}
+              >
+                {member.displayName}
+              </button>
+            {/each}
+          </div>
+          <p class="ch-hint">
+            Name up to {requiredCount} — or leave it open and let people pitch in. Assigning is just a
+            suggestion: anyone can join (“I'm in”) or step off.
+          </p>
+        {:else}
+          <div class="ch-chip-row" role="group" aria-label="Assignee">
             <button
               type="button"
               class="ch-chip"
-              class:active={assigneeUserId === member.userId}
-              aria-pressed={assigneeUserId === member.userId}
-              onclick={() => (assigneeUserId = member.userId)}
+              class:active={assigneeUserId === null}
+              aria-pressed={assigneeUserId === null}
+              onclick={() => (assigneeUserId = null)}
             >
-              {member.displayName}
+              Leave for anyone
             </button>
-          {/each}
-        </div>
-        {#if assigneeUserId === null}
-          <p class="ch-hint">Anyone can pick it up — no one gets nagged.</p>
+            {#each members as member (member.userId)}
+              <button
+                type="button"
+                class="ch-chip"
+                class:active={assigneeUserId === member.userId}
+                aria-pressed={assigneeUserId === member.userId}
+                onclick={() => (assigneeUserId = member.userId)}
+              >
+                {member.displayName}
+              </button>
+            {/each}
+          </div>
+          {#if assigneeUserId === null}
+            <p class="ch-hint">Anyone can pick it up — no one gets nagged.</p>
+          {/if}
         {/if}
       </fieldset>
 

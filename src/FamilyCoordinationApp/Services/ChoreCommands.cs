@@ -10,6 +10,9 @@ namespace FamilyCoordinationApp.Services;
 /// <param name="Name">Required, non-empty after trim.</param>
 /// <param name="EffortTier">Named effort tier (P3) — drives the default <c>EffortPoints</c> snapshot.</param>
 /// <param name="Icon">Optional emoji/short-code icon (parity with Room.Icon); empty string = none.</param>
+/// <param name="AssignedUserIds">Initial named roster for a multi-person (<c>RequiredCount &gt; 1</c>) chore
+/// (rework, D8) — one <c>Assigned</c> participation event is written per member at creation. Ignored for
+/// X=1 chores (which use the single-holder trio via <see cref="AssigneeUserId"/>). null ⇒ no roster seed.</param>
 public record CreateChoreCommand(
     string Name,
     string? Description,
@@ -24,7 +27,8 @@ public record CreateChoreCommand(
     int? AssigneeUserId,
     string? PhotoPath,
     string Icon = "",
-    int RequiredCount = 1);
+    int RequiredCount = 1,
+    IReadOnlyList<int>? AssignedUserIds = null);
 
 /// <summary>
 /// Command to update a chore's editable fields (council M11) — the same editable subset as

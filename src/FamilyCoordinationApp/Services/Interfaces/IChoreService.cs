@@ -98,4 +98,35 @@ public interface IChoreService
     /// <exception cref="ChoreValidationException">A named participant is outside the household, or nothing new would be recorded (the actor already contributed, D6).</exception>
     /// <exception cref="ChoreConflictException">The client <paramref name="version"/> is stale.</exception>
     Task<Chore> CompleteAsync(int householdId, int choreId, int actorUserId, string? note, string? photoPath, IReadOnlyList<int>? participantUserIds, uint version, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Adds a named member to a multi-person chore's roster as <b>Assigned</b> (a pre-opt-in by
+    /// <paramref name="actorUserId"/>; declinable, never binding — rework D8). Appends a
+    /// <c>ChoreParticipationEvent{Assigned}</c> and forces the xmin touch (M3). X=1 ⇒ rejected.
+    /// </summary>
+    /// <exception cref="ChoreNotFoundException">No such chore.</exception>
+    /// <exception cref="ChoreValidationException">Single-person chore, or subject outside the household.</exception>
+    /// <exception cref="ChoreConflictException">Stale <paramref name="version"/>.</exception>
+    Task<Chore> AssignToRosterAsync(int householdId, int choreId, int actorUserId, int subjectUserId, uint version, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Marks <paramref name="actorUserId"/> as <b>In</b> ("I'm in") on a multi-person chore's roster —
+    /// self-opt-in or confirming an assignment (rework D4). Appends a <c>ChoreParticipationEvent{Committed}</c>
+    /// and forces the xmin touch (M3). X=1 ⇒ rejected.
+    /// </summary>
+    /// <exception cref="ChoreNotFoundException">No such chore.</exception>
+    /// <exception cref="ChoreValidationException">Single-person chore.</exception>
+    /// <exception cref="ChoreConflictException">Stale <paramref name="version"/>.</exception>
+    Task<Chore> CommitToRosterAsync(int householdId, int choreId, int actorUserId, uint version, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes a member from a multi-person chore's roster (decline / leave). <paramref name="subjectUserId"/>
+    /// null ⇒ the caller leaves; a non-null subject (removing someone else) requires the caller be the chore
+    /// creator or owner. Appends a <c>ChoreParticipationEvent{Left}</c> and forces the xmin touch (M3). A
+    /// completion already recorded this occurrence still counts (Done overlay wins, D7). X=1 ⇒ rejected.
+    /// </summary>
+    /// <exception cref="ChoreNotFoundException">No such chore.</exception>
+    /// <exception cref="ChoreValidationException">Single-person chore, or removing another without authority.</exception>
+    /// <exception cref="ChoreConflictException">Stale <paramref name="version"/>.</exception>
+    Task<Chore> LeaveRosterAsync(int householdId, int choreId, int actorUserId, int? subjectUserId, uint version, CancellationToken cancellationToken = default);
 }

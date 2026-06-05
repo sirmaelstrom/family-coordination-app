@@ -26,6 +26,8 @@
     onDrop: (chore: ChoreDto) => void;
     onComplete: (chore: ChoreDto) => void;
     onHandOff: (chore: ChoreDto) => void;
+    onCommit: (chore: ChoreDto) => void;
+    onLeave: (chore: ChoreDto) => void;
     onEdit: (chore: ChoreDto) => void;
   }
 
@@ -40,6 +42,8 @@
     onDrop,
     onComplete,
     onHandOff,
+    onCommit,
+    onLeave,
     onEdit,
   }: Props = $props();
 
@@ -84,6 +88,8 @@
               {onDrop}
               {onComplete}
               {onHandOff}
+              {onCommit}
+              {onLeave}
               {onEdit}
             />
           {/each}

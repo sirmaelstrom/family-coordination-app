@@ -68,7 +68,7 @@ public class ChoreBoardDtoContractTests
                 Version: 7,
                 RequiredCount: 1,
                 CompletedCount: 0,
-                ContributorUserIds: []),
+                Roster: [new RosterMemberDto(101, RosterState.In)]),
 
             // Due today, assigned (sticky), in the Kitchen room.
             new(
@@ -96,7 +96,7 @@ public class ChoreBoardDtoContractTests
                 Version: 3,
                 RequiredCount: 1,
                 CompletedCount: 0,
-                ContributorUserIds: []),
+                Roster: [new RosterMemberDto(100, RosterState.Assigned)]),
 
             // Scheduled, unclaimed pile (up-for-grabs), roomless (General group). Multi-person: 2 required, 1 signed.
             new(
@@ -124,7 +124,7 @@ public class ChoreBoardDtoContractTests
                 Version: 1,
                 RequiredCount: 2,
                 CompletedCount: 1,
-                ContributorUserIds: [100]),
+                Roster: [new RosterMemberDto(100, RosterState.Done), new RosterMemberDto(101, RosterState.In)]),
 
             // Not due, fresh, roomless one-off in the General group (claimed, not stale).
             new(
@@ -152,7 +152,7 @@ public class ChoreBoardDtoContractTests
                 Version: 2,
                 RequiredCount: 1,
                 CompletedCount: 0,
-                ContributorUserIds: []),
+                Roster: [new RosterMemberDto(101, RosterState.In)]),
         };
 
         var rooms = new List<RoomRollupDto>
@@ -243,12 +243,14 @@ public class ChoreBoardDtoContractTests
             "dueState", "colorTier", "nextDueAt",
             "isClaimStale", "effortTier", "effortPoints", "ownerUserId", "assigneeUserId", "assignmentKind",
             "claimedAt", "lastCompletedAt", "photoPath", "version",
-            "requiredCount", "completedCount", "contributorUserIds");
+            "requiredCount", "completedCount", "roster");
 
         // Enums serialize as camelCase strings (M11), NOT integers and NOT PascalCase.
         firstChore["dueState"]!.GetValue<string>().Should().Be("overdue");
         firstChore["colorTier"]!.GetValue<string>().Should().Be("overdue");
         firstChore["assignmentKind"]!.GetValue<string>().Should().Be("claimed");
+        // Roster member state serializes as a camelCase enum string ("assigned" | "in" | "done").
+        firstChore["roster"]!.AsArray()[0]!.AsObject()["state"]!.GetValue<string>().Should().Be("in");
 
         var assignedChore = root["chores"]!.AsArray()[1]!.AsObject();
         assignedChore["dueState"]!.GetValue<string>().Should().Be("dueToday");
@@ -259,6 +261,9 @@ public class ChoreBoardDtoContractTests
         pileChore["dueState"]!.GetValue<string>().Should().Be("scheduled");
         pileChore["colorTier"]!.GetValue<string>().Should().Be("fresh");
         pileChore["assignmentKind"]!.GetValue<string>().Should().Be("none");
+        // Multi-person roster: a done member + an in member (ascending by userId).
+        pileChore["roster"]!.AsArray()[0]!.AsObject()["state"]!.GetValue<string>().Should().Be("done");
+        pileChore["roster"]!.AsArray()[1]!.AsObject()["state"]!.GetValue<string>().Should().Be("in");
 
         var firstRollup = root["rooms"]!.AsArray()[0]!.AsObject();
         firstRollup.Select(kvp => kvp.Key).Should().BeEquivalentTo(

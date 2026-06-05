@@ -93,8 +93,10 @@ export interface CreateChoreRequest {
   photoPath?: string | null;
   /** Optional emoji/short-code icon; "" or omitted = none. */
   icon?: string;
-  /** Number of distinct contributors required to satisfy the chore (WP-05). Omit or 1 = normal. */
+  /** Number of people required to satisfy the chore. Omit or 1 = normal single-person chore. */
   requiredCount?: number;
+  /** Initial named roster for a multi-person chore (X>1) — each seeded as Assigned. Ignored for X=1. */
+  assignedUserIds?: number[];
 }
 
 /** No assignee — assignment never moves via edit. Carries the version. */
@@ -134,6 +136,18 @@ export interface CompleteRequest {
   version: number;
   /** Co-signers for multi-person chores (WP-05); omit for single-person completions. */
   participantUserIds?: number[];
+}
+
+/** Add a named member to a multi-person chore's roster (Assigned). */
+export interface AssignRosterRequest {
+  subjectUserId: number;
+  version: number;
+}
+
+/** Leave/remove from a roster. subjectUserId omitted/null ⇒ the caller leaves. */
+export interface LeaveRosterRequest {
+  subjectUserId?: number | null;
+  version: number;
 }
 
 export interface PhotoUploadResponse {
@@ -221,6 +235,42 @@ export async function completeChore(
   return request<ChoreDto>(`${CHORES_BASE}/${choreId}/complete`, {
     method: 'POST',
     ...jsonBody(body),
+  });
+}
+
+// ─── Roster mutations (multi-person named soft roster, rework) ──────────────
+// Each returns the projected ChoreDto; the store reconciles via the board GET
+// for the authoritative roster (the single-chore response carries an empty one).
+
+/** Assign a named member to a multi-person chore's roster (Assigned — a declinable pre-opt-in). */
+export async function assignRoster(
+  choreId: number,
+  subjectUserId: number,
+  version: number,
+): Promise<ChoreDto> {
+  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/roster/assign`, {
+    method: 'POST',
+    ...jsonBody({ subjectUserId, version } satisfies AssignRosterRequest),
+  });
+}
+
+/** Commit the caller to a multi-person chore's roster ("I'm in" — self-opt-in or confirm). */
+export async function commitRoster(choreId: number, version: number): Promise<ChoreDto> {
+  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/roster/commit`, {
+    method: 'POST',
+    ...jsonBody({ version } satisfies VersionRequest),
+  });
+}
+
+/** Leave/remove from a roster. `subjectUserId` null ⇒ the caller leaves. */
+export async function leaveRoster(
+  choreId: number,
+  subjectUserId: number | null,
+  version: number,
+): Promise<ChoreDto> {
+  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/roster/leave`, {
+    method: 'POST',
+    ...jsonBody({ subjectUserId, version } satisfies LeaveRosterRequest),
   });
 }
 

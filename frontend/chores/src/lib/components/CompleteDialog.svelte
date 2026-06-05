@@ -36,8 +36,10 @@
 
   let dialogEl: HTMLDialogElement | null = $state(null);
 
-  // The contributors who have already signed THIS occurrence (server field).
-  let alreadyIn = $derived<number[]>(chore?.contributorUserIds ?? []);
+  // The members who have already completed THIS occurrence — the roster's done members (server field).
+  let alreadyIn = $derived<number[]>(
+    (chore?.roster ?? []).filter((m) => m.state === 'done').map((m) => m.userId),
+  );
 
   // The members the user can newly select (everyone NOT already in). The
   // current user, if not already in, is prefilled (see `selected` seeding).
@@ -54,7 +56,8 @@
     if (!dialogEl) return;
     if (open && !dialogEl.open) {
       const next = new Set<number>();
-      if (chore && !(chore.contributorUserIds ?? []).includes(currentUserId)) {
+      const doneIds = (chore?.roster ?? []).filter((m) => m.state === 'done').map((m) => m.userId);
+      if (chore && !doneIds.includes(currentUserId)) {
         next.add(currentUserId);
       }
       selected = next;

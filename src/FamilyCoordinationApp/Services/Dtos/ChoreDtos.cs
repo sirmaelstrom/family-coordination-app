@@ -28,12 +28,14 @@ public sealed record ChoreBoardDto(
 /// fixed-weekly / every-N / dated one-off chore lost the existing selection). <see cref="DaysOfWeek"/>
 /// serializes as a camelCase CSV (e.g. <c>"monday, thursday"</c>); <see cref="AnchorDate"/> as an ISO date
 /// (<c>"2026-06-10"</c>) — the same shapes the write request accepts.</para>
-/// <para>Multi-person co-sign progress (WP-04): <see cref="RequiredCount"/> is always ≥ 1 (1 = normal,
-/// &gt;1 = multi-person). <see cref="CompletedCount"/> is the count of distinct contributors toward the
-/// CURRENT open occurrence (0..<see cref="RequiredCount"/>); <see cref="ContributorUserIds"/> lists those
-/// users in ascending order. These are populated only in the board projection (<c>GetBoardAsync</c>);
-/// single-chore projections always report <c>completedCount=0, contributorUserIds=[]</c> — the client
-/// refetches the board for authoritative co-sign progress (WP-07).</para>
+/// <para>Multi-person named roster (rework): <see cref="RequiredCount"/> is always ≥ 1 (1 = normal,
+/// &gt;1 = multi-person). <see cref="CompletedCount"/> is the count of distinct members DONE toward the
+/// CURRENT open occurrence (0..<see cref="RequiredCount"/> — the satisfaction gate). <see cref="Roster"/>
+/// is the derived named roster: each member with state assigned/in/done (ascending by userId). For X&gt;1
+/// chores it is folded by <c>ChoreRosterCalculator</c>; for X=1 it is synthesized from the assignment trio
+/// (0 or 1 member); these are populated only in the board projection (<c>GetBoardAsync</c>). Single-chore
+/// projections report <c>completedCount=0</c> and an X&gt;1 chore's roster empty — the client refetches the
+/// board for authoritative roster progress (WP-07).</para>
 /// </summary>
 public sealed record ChoreDto(
     int Id,
@@ -59,9 +61,32 @@ public sealed record ChoreDto(
     string? PhotoPath,
     uint Version,
     int RequiredCount,                    // 1 = normal; >1 = multi-person
-    int CompletedCount,                   // distinct contributors toward the CURRENT occurrence (0..RequiredCount)
-    IReadOnlyList<int> ContributorUserIds // who has signed the current occurrence (drives per-user button state)
+    int CompletedCount,                   // distinct DONE toward the CURRENT occurrence (0..RequiredCount) — the gate
+    IReadOnlyList<RosterMemberDto> Roster // named roster + per-member state; [] = open / single-person unassigned
     );
+
+/// <summary>
+/// A member's DERIVED state on a multi-person chore's named roster, for the current occurrence (rework).
+/// Serialized camelCase via <c>JsonStringEnumConverter(CamelCase)</c>: <c>"assigned" | "in" | "done"</c>.
+/// <list type="bullet">
+///   <item><see cref="Assigned"/> — suggested (a pre-opt-in by someone else; no reply yet, declinable).</item>
+///   <item><see cref="In"/> — committed ("I'm in": self-opt-in, or confirming an assignment).</item>
+///   <item><see cref="Done"/> — completed their part this occurrence (overlaid from <c>ChoreCompletion</c>).</item>
+/// </list>
+/// </summary>
+public enum RosterState
+{
+    Assigned,
+    In,
+    Done
+}
+
+/// <summary>
+/// One member of a multi-person chore's derived roster (D10). Wire shape: <c>{ userId, state }</c>.
+/// Empty roster list ⇒ no one on the chore (open / single-person). Derived on read by
+/// <c>ChoreRosterCalculator</c>; never stored.
+/// </summary>
+public sealed record RosterMemberDto(int UserId, RosterState State);
 
 /// <summary>
 /// Per-room dirtiness rollup. The <see cref="Status"/> bucket is derived from the count of chores in the

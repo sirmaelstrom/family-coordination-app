@@ -32,6 +32,9 @@ import {
   dropChore,
   completeChore,
   handOffChore,
+  assignRoster,
+  commitRoster,
+  leaveRoster,
   createChore,
   deleteChore,
   updateChore,
@@ -280,12 +283,11 @@ class BoardStore {
     const uid = this.currentUserId;
     return this.chores
       .filter((c) => {
-        // Multi-person (co-sign) chores stay in the pile until the full
-        // complement signs — claiming no longer hides them (a still-incomplete
-        // co-sign chore is "up for grabs" to every member who hasn't signed yet,
-        // so they can pick up their part). Signers see it in Mine instead.
+        // Multi-person chores are up-for-grabs to anyone NOT yet on the roster —
+        // they can join ("I'm in") or just do their part. Members already on the
+        // roster (assigned / in / done) see it in Mine instead.
         if (c.requiredCount > 1 && c.completedCount < c.requiredCount) {
-          return !c.contributorUserIds.includes(uid);
+          return !c.roster.some((m) => m.userId === uid);
         }
         return c.assignmentKind === 'none' || c.isClaimStale;
       })
@@ -302,12 +304,13 @@ class BoardStore {
     const uid = this.currentUserId;
     return this.chores
       .filter((c) => {
-        // A co-sign chore the viewer has already signed sits on their plate
-        // (waiting on the others) until it's satisfied; if they haven't signed,
-        // it's an up-for-grabs pile chore, not theirs. Co-sign chores aren't
-        // claimable, so the claim/owner rules below don't apply to them.
+        // A multi-person chore is "mine" if I'm on its roster in any state
+        // (assigned/in/done) — awaiting my confirm, my part, or done-and-waiting
+        // on the others. If I'm not on the roster it's an up-for-grabs chore, not
+        // mine. Multi-person chores aren't claimable, so the claim/owner rules
+        // below don't apply to them.
         if (c.requiredCount > 1 && c.completedCount < c.requiredCount) {
-          return c.contributorUserIds.includes(uid);
+          return c.roster.some((m) => m.userId === uid);
         }
         const heldByMe =
           c.assigneeUserId === uid && c.assignmentKind !== 'none' && !c.isClaimStale;
@@ -354,14 +357,15 @@ class BoardStore {
     // mine. They are never claimable, so the claim/owner rules don't apply.
     const coSignInProgress = c.requiredCount > 1 && c.completedCount < c.requiredCount;
     const uid = this.currentUserId;
+    const onRoster = c.roster.some((m) => m.userId === uid);
     switch (this.attentionFilter) {
       case 'up-for-grabs':
         return coSignInProgress
-          ? !c.contributorUserIds.includes(uid)
+          ? !onRoster
           : c.assignmentKind === 'none' || c.isClaimStale;
       case 'mine':
         return coSignInProgress
-          ? c.contributorUserIds.includes(uid)
+          ? onRoster
           : (c.assigneeUserId === uid && c.assignmentKind !== 'none' && !c.isClaimStale) ||
               c.ownerUserId === uid;
       case 'everything':
@@ -777,6 +781,40 @@ class BoardStore {
     // equity hook; the multi-person path already reconciled via setBoard (which
     // also invalidates), and a 409/4xx reconciled the same way.
     this.invalidateEquity();
+  }
+
+  // ── Roster (multi-person named soft roster, rework) ───────────────────────
+  // All three are multi-person-only and use the runMultiPersonMutation path
+  // (fire → reconcile via the board GET; never auto-retry on 409/4xx — MN4).
+
+  /**
+   * Commit the current user to a multi-person chore's roster ("I'm in" — self-opt-in or confirming an
+   * assignment). The single-chore response carries an empty roster, so we reconcile via the board GET.
+   */
+  async commit(choreId: number): Promise<void> {
+    await this.runMultiPersonMutation(
+      choreId,
+      (c) => commitRoster(c.id, c.version),
+      'That chore changed — board refreshed.',
+    );
+  }
+
+  /** Leave a multi-person chore's roster (decline / "not me"). */
+  async leave(choreId: number): Promise<void> {
+    await this.runMultiPersonMutation(
+      choreId,
+      (c) => leaveRoster(c.id, null, c.version),
+      'That chore changed — board refreshed.',
+    );
+  }
+
+  /** Assign a named member to a multi-person chore's roster (Assigned — from the edit sheet). */
+  async assign(choreId: number, subjectUserId: number): Promise<void> {
+    await this.runMultiPersonMutation(
+      choreId,
+      (c) => assignRoster(c.id, subjectUserId, c.version),
+      'That chore changed — board refreshed.',
+    );
   }
 
   /**

@@ -41,8 +41,9 @@ public class ChoreService(
             {
                 await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-                // A non-null assignee at creation must be a member of this household (M1 isolation).
-                if (cmd.AssigneeUserId is { } assigneeId)
+                // A non-null assignee at creation must be a member (M1). X=1 only — a multi-person chore
+                // (RequiredCount>1) ignores AssigneeUserId and seeds its named roster from AssignedUserIds.
+                if (cmd.RequiredCount == 1 && cmd.AssigneeUserId is { } assigneeId)
                 {
                     await EnsureHouseholdMemberAsync(context, householdId, assigneeId, cancellationToken);
                 }
@@ -75,8 +76,9 @@ public class ChoreService(
                     LastCompletedAt = null
                 };
 
-                // Assignment trio (council M1) — assign-at-creation if an assignee was supplied, else pile.
-                if (cmd.AssigneeUserId is { } assignee)
+                // Assignment: X=1 uses the single-holder trio (today's behavior); X>1 leaves the trio on the
+                // pile and seeds its named roster from AssignedUserIds via participation events (D3/D8).
+                if (chore.RequiredCount == 1 && cmd.AssigneeUserId is { } assignee)
                 {
                     SetAssigned(chore, assignee, now);
                 }
@@ -87,6 +89,17 @@ public class ChoreService(
 
                 context.Chores.Add(chore);
                 AppendEvent(context, chore, ChoreEventType.Created, actorUserId, targetUserId: null, now);
+
+                // Multi-person named roster seed (D8): one Assigned event per member (validated, deduped). The
+                // events save in the SAME transaction as the chore, so the (HouseholdId, ChoreId) FK resolves.
+                if (chore.RequiredCount > 1 && cmd.AssignedUserIds is { Count: > 0 } assignedUserIds)
+                {
+                    foreach (var memberId in assignedUserIds.Distinct())
+                    {
+                        await EnsureHouseholdMemberAsync(context, householdId, memberId, cancellationToken);
+                        AppendParticipation(context, chore, ChoreParticipationType.Assigned, memberId, actorUserId, now);
+                    }
+                }
 
                 await context.SaveChangesAsync(cancellationToken);
 
@@ -105,6 +118,7 @@ public class ChoreService(
 
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         var chore = await LoadChoreAsync(context, householdId, choreId, cancellationToken);
+        var previousRequiredCount = chore.RequiredCount;
 
         // Delete-on-replace for the photo (M8) — drop the old file when the path changes.
         if (!string.Equals(chore.PhotoPath, cmd.PhotoPath, StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(chore.PhotoPath))
@@ -126,8 +140,23 @@ public class ChoreService(
         chore.RequiredCount = cmd.RequiredCount;
         chore.OwnerUserId = cmd.OwnerUserId;
         chore.PhotoPath = cmd.PhotoPath;
-        // NOTE: the assignment trio is intentionally NOT touched by an edit — assignment moves only via
-        // claim/drop/hand-off/complete.
+        // Assignment is otherwise NOT touched by an edit (it moves via claim/drop/hand-off/complete) — EXCEPT
+        // when RequiredCount crosses the single↔multi boundary (D9), which migrates the representation.
+        if (previousRequiredCount == 1 && cmd.RequiredCount > 1)
+        {
+            // 1 → N: preserve a lone trio assignee as an Assigned roster member, then free the trio to the pile.
+            if (chore.AssigneeUserId is { } heldBy && chore.AssignmentKind != AssignmentKind.None)
+            {
+                AppendParticipation(context, chore, ChoreParticipationType.Assigned, heldBy, heldBy, UtcNow());
+            }
+            ClearToPile(chore);
+        }
+        else if (previousRequiredCount > 1 && cmd.RequiredCount == 1)
+        {
+            // N → 1: back to single-person; clear the (already-None) trio to the pile. Dormant participation
+            // events are simply ignored by the X=1 read path (D3).
+            ClearToPile(chore);
+        }
 
         await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
         logger.LogInformation("Updated Chore {ChoreId} for household {HouseholdId}", choreId, householdId);
@@ -334,6 +363,73 @@ public class ChoreService(
         return chore;
     }
 
+    // -------------------------------------------------------- roster (multi-person named soft roster, rework)
+
+    public async Task<Chore> AssignToRosterAsync(int householdId, int choreId, int actorUserId, int subjectUserId, uint version, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var chore = await LoadChoreAsync(context, householdId, choreId, cancellationToken);
+        EnsureMultiPerson(chore);
+        await EnsureHouseholdMemberAsync(context, householdId, subjectUserId, cancellationToken);
+
+        var now = UtcNow();
+        AppendParticipation(context, chore, ChoreParticipationType.Assigned, subjectUserId, actorUserId, now);
+        MarkChoreTouched(context, chore, now);
+
+        await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
+        logger.LogInformation("Chore {ChoreId} roster: user {Subject} assigned by {Actor} (household {HouseholdId})",
+            choreId, subjectUserId, actorUserId, householdId);
+        return chore;
+    }
+
+    public async Task<Chore> CommitToRosterAsync(int householdId, int choreId, int actorUserId, uint version, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var chore = await LoadChoreAsync(context, householdId, choreId, cancellationToken);
+        EnsureMultiPerson(chore);
+        // The caller is a resolved household member; assert defensively (M1).
+        await EnsureHouseholdMemberAsync(context, householdId, actorUserId, cancellationToken);
+
+        var now = UtcNow();
+        AppendParticipation(context, chore, ChoreParticipationType.Committed, actorUserId, actorUserId, now);
+        MarkChoreTouched(context, chore, now);
+
+        await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
+        logger.LogInformation("Chore {ChoreId} roster: user {UserId} committed (household {HouseholdId})",
+            choreId, actorUserId, householdId);
+        return chore;
+    }
+
+    public async Task<Chore> LeaveRosterAsync(int householdId, int choreId, int actorUserId, int? subjectUserId, uint version, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var chore = await LoadChoreAsync(context, householdId, choreId, cancellationToken);
+        EnsureMultiPerson(chore);
+
+        var subject = subjectUserId ?? actorUserId;
+        if (subject != actorUserId)
+        {
+            // Removing SOMEONE ELSE requires the actor be the chore creator or owner (non-punitive default:
+            // anyone may remove themselves; only the owner/creator may remove others).
+            if (actorUserId != chore.EnteredByUserId && actorUserId != chore.OwnerUserId)
+            {
+                throw new ChoreValidationException(
+                    $"User {actorUserId} cannot remove user {subject} from chore {choreId}'s roster " +
+                    "(only the creator or owner may remove others).");
+            }
+            await EnsureHouseholdMemberAsync(context, householdId, subject, cancellationToken);
+        }
+
+        var now = UtcNow();
+        AppendParticipation(context, chore, ChoreParticipationType.Left, subject, actorUserId, now);
+        MarkChoreTouched(context, chore, now);
+
+        await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
+        logger.LogInformation("Chore {ChoreId} roster: user {Subject} left (by {Actor}, household {HouseholdId})",
+            choreId, subject, actorUserId, householdId);
+        return chore;
+    }
+
     // ------------------------------------------------------------ helpers
 
     /// <summary>
@@ -396,6 +492,42 @@ public class ChoreService(
             TargetUserId = targetUserId,
             At = now
         });
+    }
+
+    /// <summary>Append a roster participation event (rework). <c>ParticipationEventId</c> is DB-generated.</summary>
+    private static void AppendParticipation(ApplicationDbContext context, Chore chore, ChoreParticipationType type, int subjectUserId, int actorUserId, DateTime now)
+    {
+        context.ChoreParticipationEvents.Add(new ChoreParticipationEvent
+        {
+            HouseholdId = chore.HouseholdId,
+            ChoreId = chore.ChoreId,
+            Type = type,
+            SubjectUserId = subjectUserId,
+            ActorUserId = actorUserId,
+            At = now
+        });
+    }
+
+    /// <summary>
+    /// Force the xmin UPDATE on every roster write (M3/D6) so concurrent roster mutations serialize on the
+    /// single Chore-row frontier — the same discipline as <c>CompleteAsync</c>. EF emits no UPDATE for a row
+    /// with no changed scalar (and a same-tick <c>now</c> could equal the stored value), so mark it modified.
+    /// </summary>
+    private static void MarkChoreTouched(ApplicationDbContext context, Chore chore, DateTime now)
+    {
+        chore.LastContributionAt = now;
+        context.Entry(chore).Property(c => c.LastContributionAt).IsModified = true;
+    }
+
+    /// <summary>Reject a roster action on a single-person chore — the roster exists only for X &gt; 1 (D3).</summary>
+    private static void EnsureMultiPerson(Chore chore)
+    {
+        if (chore.RequiredCount <= 1)
+        {
+            throw new ChoreValidationException(
+                $"Chore {chore.ChoreId} is a single-person chore (RequiredCount={chore.RequiredCount}); " +
+                "roster actions apply only to multi-person chores.");
+        }
     }
 
     private static async Task<Chore> LoadChoreAsync(ApplicationDbContext context, int householdId, int choreId, CancellationToken cancellationToken)

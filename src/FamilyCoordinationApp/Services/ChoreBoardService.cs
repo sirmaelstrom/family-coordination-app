@@ -72,6 +72,20 @@ public class ChoreBoardService(
                 .ToDictionary(g => g.Key, g => g.ToList());
         }
 
+        // P5 (rework): lazily load participation events for the same multi-person chore set — the fold
+        // (ChoreRosterCalculator) derives the named roster on read. Single-person chores never query this.
+        Dictionary<int, List<ChoreParticipationEvent>> participationByChore = [];
+        if (multiPersonIds.Count > 0)
+        {
+            var allEvents = await context.ChoreParticipationEvents
+                .Where(e => e.HouseholdId == householdId && multiPersonIds.Contains(e.ChoreId))
+                .ToListAsync(cancellationToken);
+
+            participationByChore = allEvents
+                .GroupBy(e => e.ChoreId)
+                .ToDictionary(g => g.Key, g => g.ToList());
+        }
+
         // Project each chore once; reuse the computed dueness for both the per-chore DTO and the rollups so
         // a chore's dueness is computed in exactly one place (no divergence between the card and the room
         // bucket). The board buckets off COMPUTED dueness, never stored Status (decay would be ignored).
@@ -87,13 +101,27 @@ public class ChoreBoardService(
         var choreDtos = projected
             .Select(p =>
             {
-                // A RequiredCount==1 chore gets an empty set (CompletedCount=0, ContributorUserIds=[]).
-                IReadOnlySet<int> contributors = p.Chore.RequiredCount > 1
-                    ? ChoreCompletionProgress.DistinctContributorsSince(
+                // X>1: fold the named roster (events + completion ledger) for the current occurrence.
+                // X=1: synthesize a 0/1-member roster from the assignment trio (CompletedCount stays 0).
+                IReadOnlyList<RosterMemberDto> roster;
+                int completedCount;
+                if (p.Chore.RequiredCount > 1)
+                {
+                    var derived = ChoreRosterCalculator.Fold(
+                        participationByChore.GetValueOrDefault(p.Chore.ChoreId) ?? [],
                         completionsByChore.GetValueOrDefault(p.Chore.ChoreId) ?? [],
-                        p.Chore.LastCompletedAt)
-                    : (IReadOnlySet<int>)new HashSet<int>();
-                return ToDto(p.Chore, p.Dueness, p.IsClaimStale, contributors);
+                        p.Chore.LastCompletedAt,
+                        p.Chore.RequiredCount,
+                        recurring: p.Chore.RecurrenceMode != RecurrenceMode.OneOff);
+                    roster = derived.Members;
+                    completedCount = derived.CompletedCount;
+                }
+                else
+                {
+                    roster = SynthesizeTrioRoster(p.Chore);
+                    completedCount = 0;
+                }
+                return ToDto(p.Chore, p.Dueness, p.IsClaimStale, roster, completedCount);
             })
             .ToList();
 
@@ -120,9 +148,11 @@ public class ChoreBoardService(
     {
         var dueness = calculator.Compute(ChoreRecurrenceSnapshot.FromChore(chore), now, timeZone);
         var isClaimStale = calculator.IsClaimStale(chore.AssignmentKind, chore.ClaimedAt, now);
-        // progress is computed only in GetBoardAsync; single-chore projections report requiredCount plus
-        // zeroed progress — the client refetches the board for authoritative co-sign progress.
-        return ToDto(chore, dueness, isClaimStale, contributors: new HashSet<int>());
+        // The roster is folded only in GetBoardAsync (it needs the participation events + completion ledger).
+        // The single-chore mutation response synthesizes the X=1 trio roster and returns an EMPTY roster for
+        // X>1 with completedCount=0 — the island reconciles via the board GET for authoritative progress (WP-07).
+        var roster = chore.RequiredCount > 1 ? Array.Empty<RosterMemberDto>() : SynthesizeTrioRoster(chore);
+        return ToDto(chore, dueness, isClaimStale, roster, completedCount: 0);
     }
 
     // ------------------------------------------------------------------ projection
@@ -131,7 +161,8 @@ public class ChoreBoardService(
         Chore chore,
         ChoreDuenessResult dueness,
         bool isClaimStale,
-        IReadOnlySet<int> contributors) => new(
+        IReadOnlyList<RosterMemberDto> roster,
+        int completedCount) => new(
         chore.ChoreId,
         chore.Name,
         chore.Icon,
@@ -155,8 +186,26 @@ public class ChoreBoardService(
         chore.PhotoPath,
         chore.Version,
         chore.RequiredCount,
-        contributors.Count,
-        contributors.OrderBy(x => x).ToList());
+        completedCount,
+        roster);
+
+    /// <summary>
+    /// Synthesize the uniform <c>roster[]</c> for a single-person (X=1) chore from the assignment trio (D3),
+    /// so the card can render it identically to a multi-person chore. The trio holder becomes one member:
+    /// <see cref="RosterState.In"/> when self-<see cref="AssignmentKind.Claimed"/>,
+    /// <see cref="RosterState.Assigned"/> when deliberately <see cref="AssignmentKind.Assigned"/>. Unassigned
+    /// ⇒ empty. (X=1 advances on a single completion, so a "done" state is transient and not surfaced here.)
+    /// </summary>
+    private static IReadOnlyList<RosterMemberDto> SynthesizeTrioRoster(Chore chore)
+    {
+        if (chore.AssigneeUserId is int assignee && chore.AssignmentKind != AssignmentKind.None)
+        {
+            var state = chore.AssignmentKind == AssignmentKind.Claimed ? RosterState.In : RosterState.Assigned;
+            return [new RosterMemberDto(assignee, state)];
+        }
+
+        return [];
+    }
 
     // ------------------------------------------------------------------ rollups
 
