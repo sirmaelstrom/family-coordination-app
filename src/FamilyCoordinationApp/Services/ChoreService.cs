@@ -32,6 +32,7 @@ public class ChoreService(
     {
         ValidateName(cmd.Name);
         ValidateRecurrence(cmd.RecurrenceMode, cmd.IntervalDays, cmd.DaysOfWeek, cmd.DayOfMonth);
+        ValidateRequiredCount(cmd.RequiredCount);
 
         var now = UtcNow();
 
@@ -65,6 +66,7 @@ public class ChoreService(
                     DayOfMonth = cmd.DayOfMonth,
                     EffortTier = cmd.EffortTier,
                     EffortPoints = ChoreEffort.PointsFor(cmd.EffortTier),
+                    RequiredCount = cmd.RequiredCount,
                     Status = ChoreStatus.Active,
                     EnteredByUserId = actorUserId,
                     OwnerUserId = cmd.OwnerUserId,
@@ -99,6 +101,7 @@ public class ChoreService(
     {
         ValidateName(cmd.Name);
         ValidateRecurrence(cmd.RecurrenceMode, cmd.IntervalDays, cmd.DaysOfWeek, cmd.DayOfMonth);
+        ValidateRequiredCount(cmd.RequiredCount);
 
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         var chore = await LoadChoreAsync(context, householdId, choreId, cancellationToken);
@@ -120,6 +123,7 @@ public class ChoreService(
         chore.DayOfMonth = cmd.DayOfMonth;
         chore.EffortTier = cmd.EffortTier;
         chore.EffortPoints = ChoreEffort.PointsFor(cmd.EffortTier);
+        chore.RequiredCount = cmd.RequiredCount;
         chore.OwnerUserId = cmd.OwnerUserId;
         chore.PhotoPath = cmd.PhotoPath;
         // NOTE: the assignment trio is intentionally NOT touched by an edit — assignment moves only via
@@ -227,7 +231,7 @@ public class ChoreService(
         return chore;
     }
 
-    public async Task<Chore> CompleteAsync(int householdId, int choreId, int actorUserId, string? note, string? photoPath, uint version, CancellationToken cancellationToken = default)
+    public async Task<Chore> CompleteAsync(int householdId, int choreId, int actorUserId, string? note, string? photoPath, IReadOnlyList<int>? participantUserIds, uint version, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         var chore = await LoadChoreAsync(context, householdId, choreId, cancellationToken);
@@ -238,39 +242,95 @@ public class ChoreService(
         // chore stays on the pile after completion — consistent with D7.)
         MaterializeAutoReleaseIfStale(context, chore, now);
 
-        // Snapshot the effort points at completion time (the v1.1 equity substrate, MN3/MN4).
-        var completion = new ChoreCompletion
+        // Resolve the contributor set for THIS call: the actor plus any named participants (D7 name-others).
+        // Each named member is validated for household membership (reusing EnsureHouseholdMemberAsync, M1);
+        // the set dedupes within the call.
+        var candidates = new HashSet<int> { actorUserId };
+        if (participantUserIds is not null)
         {
-            HouseholdId = householdId,
-            ChoreId = choreId,
-            CompletedByUserId = actorUserId,   // council M8 — the completer, even if a different user held it
-            CompletedAt = now,
-            EffortPointsSnapshot = chore.EffortPoints,
-            Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim(),
-            PhotoPath = photoPath
-        };
-        context.ChoreCompletions.Add(completion);
-
-        chore.LastCompletedAt = now;
-
-        if (chore.RecurrenceMode == RecurrenceMode.OneOff)
-        {
-            // OneOff: lifecycle terminates. The board (WP-05) excludes Done chores.
-            chore.Status = ChoreStatus.Done;
+            foreach (var participantId in participantUserIds)
+            {
+                candidates.Add(participantId);
+            }
         }
-        // Flexible/Fixed: recurrence advance is DERIVED, not stored. Flexible decays off the new
-        // LastCompletedAt; Fixed derives the next slot from the unchanged AnchorDate/cadence — we mutate NO
-        // recurrence field here (do not rewrite AnchorDate). The calculator owns the next-due derivation.
 
-        // Post-completion assignment: a recurring chore held by a self-claim returns to the pile so it is
-        // up-for-grabs again; a deliberately-Assigned chore keeps its sticky assignee.
-        if (chore.RecurrenceMode != RecurrenceMode.OneOff && chore.AssignmentKind == AssignmentKind.Claimed)
+        foreach (var candidateId in candidates)
         {
-            ClearToPile(chore);
+            await EnsureHouseholdMemberAsync(context, householdId, candidateId, cancellationToken);
         }
+
+        // Prior distinct contributors toward the CURRENT open occurrence (rows after LastCompletedAt, M7 —
+        // filtered by HouseholdId AND ChoreId). The count is derived, never stored (M5/MN6).
+        var priorCompletions = await context.ChoreCompletions
+            .Where(cc => cc.HouseholdId == householdId && cc.ChoreId == choreId)
+            .ToListAsync(cancellationToken);
+        var priorSet = ChoreCompletionProgress.DistinctContributorsSince(priorCompletions, chore.LastCompletedAt);
+
+        // Only members not already counted toward the current occurrence add anything (D6 distinctness).
+        var newContributors = candidates.Where(id => !priorSet.Contains(id)).ToHashSet();
+
+        // Nothing this call would add => reject (D6). Critically, an actor already in priorSet who names a
+        // NEW participant has a non-empty newContributors set and does NOT throw (D7 escape hatch).
+        if (newContributors.Count == 0)
+        {
+            throw new ChoreValidationException("You've already marked your part — waiting on the others.");
+        }
+
+        // Write one ChoreCompletion per newly-contributing member — full effort points each (D5). The
+        // note/photo attach to the actor's OWN row iff the actor is newly contributing; otherwise discarded.
+        foreach (var contributorId in newContributors)
+        {
+            var attachActorPayload = contributorId == actorUserId;
+            context.ChoreCompletions.Add(new ChoreCompletion
+            {
+                HouseholdId = householdId,
+                ChoreId = choreId,
+                CompletedByUserId = contributorId,   // council M8 — the completer, even if a different user held it
+                CompletedAt = now,
+                EffortPointsSnapshot = chore.EffortPoints,
+                Note = attachActorPayload && !string.IsNullOrWhiteSpace(note) ? note.Trim() : null,
+                PhotoPath = attachActorPayload ? photoPath : null
+            });
+        }
+
+        var newDistinctCount = priorSet.Count + newContributors.Count;
+
+        // Every contribution (partial OR final) stamps LastContributionAt and FORCES the row UPDATE so the
+        // xmin concurrency check always fires (D3/M4). EF emits no UPDATE for a row with no changed scalar,
+        // and a same-tick / fixed-clock `now` could equal the existing value — so mark it modified
+        // explicitly. Without this, two racing partials can both skip the UPDATE, never serialize, and wedge
+        // the chore at "N of N, not advanced" (E2). LOAD-BEARING — do not remove.
+        chore.LastContributionAt = now;
+        context.Entry(chore).Property(c => c.LastContributionAt).IsModified = true;
+
+        if (ChoreCompletionProgress.IsSatisfied(newDistinctCount, chore.RequiredCount))
+        {
+            // SATISFYING completion — run the existing advance logic UNCHANGED.
+            chore.LastCompletedAt = now;
+
+            if (chore.RecurrenceMode == RecurrenceMode.OneOff)
+            {
+                // OneOff: lifecycle terminates. The board (WP-05) excludes Done chores.
+                chore.Status = ChoreStatus.Done;
+            }
+            // Flexible/Fixed: recurrence advance is DERIVED, not stored. Flexible decays off the new
+            // LastCompletedAt; Fixed derives the next slot from the unchanged AnchorDate/cadence — we mutate
+            // NO recurrence field here (do not rewrite AnchorDate). The calculator owns the next-due derivation.
+
+            // Post-completion assignment: a recurring chore held by a self-claim returns to the pile so it is
+            // up-for-grabs again; a deliberately-Assigned chore keeps its sticky assignee.
+            if (chore.RecurrenceMode != RecurrenceMode.OneOff && chore.AssignmentKind == AssignmentKind.Claimed)
+            {
+                ClearToPile(chore);
+            }
+        }
+        // Else (partial): leave LastCompletedAt, Status, and the assignment trio untouched (D4) — only the
+        // ChoreCompletion rows + LastContributionAt above were written.
 
         await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
-        logger.LogInformation("Chore {ChoreId} completed by user {UserId} (household {HouseholdId})", choreId, actorUserId, householdId);
+        logger.LogInformation(
+            "Chore {ChoreId} contribution by user {UserId} (+{New} contributor(s), {Distinct} of {Required}) (household {HouseholdId})",
+            choreId, actorUserId, newContributors.Count, newDistinctCount, chore.RequiredCount, householdId);
         return chore;
     }
 
@@ -394,6 +454,20 @@ public class ChoreService(
 
         throw new ChoreValidationException(
             $"A {mode} chore requires a positive IntervalDays or a DaysOfWeek selection.");
+    }
+
+    /// <summary>
+    /// The multi-person requirement (D2): <c>1</c> = a normal single-completion chore (the default);
+    /// <c>&gt;= 2</c> = co-sign. Reject <c>&lt; 1</c>. There is NO server-side upper bound (a member can leave;
+    /// the create/edit UI caps the picker at the household member count, WP-06; an unsatisfiable count is
+    /// recovered by editing it down, E1) — do not clamp.
+    /// </summary>
+    private static void ValidateRequiredCount(int requiredCount)
+    {
+        if (requiredCount < 1)
+        {
+            throw new ChoreValidationException("RequiredCount must be at least 1.");
+        }
     }
 
     /// <summary>

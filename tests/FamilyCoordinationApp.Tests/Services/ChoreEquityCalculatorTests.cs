@@ -82,6 +82,35 @@ public class ChoreEquityCalculatorTests
         bob.SharePct.Should().Be(37.5);
     }
 
+    // ---- Multi-person credit (D5 — full points to EACH contributor) --------------------------------
+
+    [Fact]
+    public void Compute_MultiPersonChore_FullPointsToEachContributor()
+    {
+        // D5: a multi-person (co-sign) chore writes one ChoreCompletion per contributor, each snapshotting the
+        // chore's FULL EffortPoints (no split). Two distinct contributors of a BigJob (3 pts) each get +3, so
+        // the household total is +6. The calculator is unchanged — it just sums the two rows.
+        var now = Utc0(2026, 6, 15, 12); // Monday
+        var completions = new[]
+        {
+            Completion(userId: 1, Utc0(2026, 6, 15, 10), effortPoints: 3),
+            Completion(userId: 2, Utc0(2026, 6, 15, 11), effortPoints: 3),
+        };
+        var members = new[] { Member(1, "Alice"), Member(2, "Bob") };
+
+        var result = _calc.Compute(completions, members, EquityWindow.Week, now, Utc);
+
+        result.TotalPoints.Should().Be(6, "full points to each of the two contributors (3 + 3)");
+        result.TotalCompletions.Should().Be(2);
+
+        var alice = result.Members.Single(m => m.UserId == 1);
+        var bob = result.Members.Single(m => m.UserId == 2);
+        alice.Points.Should().Be(3);
+        bob.Points.Should().Be(3);
+        alice.SharePct.Should().Be(50.0);
+        bob.SharePct.Should().Be(50.0);
+    }
+
     // ---- Monday week boundary (council MAJOR) -------------------------------------------------------
 
     [Fact]

@@ -237,7 +237,7 @@ public static class ChoresEndpoints
         try
         {
             var chore = await svc.CompleteAsync(
-                user.HouseholdId, choreId, user.UserId, req.Note, req.PhotoPath, req.Version, ct);
+                user.HouseholdId, choreId, user.UserId, req.Note, req.PhotoPath, req.ParticipantUserIds, req.Version, ct);
             return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
@@ -570,7 +570,7 @@ public static class ChoresEndpoints
 
     public sealed record HandOffRequest(int? TargetUserId, uint Version);
 
-    public sealed record CompleteRequest(string? Note, string? PhotoPath, uint Version);
+    public sealed record CompleteRequest(string? Note, string? PhotoPath, uint Version, IReadOnlyList<int>? ParticipantUserIds = null);
 
     public sealed record DefaultViewRequest(string? View);
 
