@@ -237,7 +237,7 @@ public static class ChoresEndpoints
         try
         {
             var chore = await svc.CompleteAsync(
-                user.HouseholdId, choreId, user.UserId, req.Note, req.PhotoPath, req.Version, ct);
+                user.HouseholdId, choreId, user.UserId, req.Note, req.PhotoPath, req.ParticipantUserIds, req.Version, ct);
             return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
@@ -570,7 +570,7 @@ public static class ChoresEndpoints
 
     public sealed record HandOffRequest(int? TargetUserId, uint Version);
 
-    public sealed record CompleteRequest(string? Note, string? PhotoPath, uint Version);
+    public sealed record CompleteRequest(string? Note, string? PhotoPath, uint Version, IReadOnlyList<int>? ParticipantUserIds = null);
 
     public sealed record DefaultViewRequest(string? View);
 
@@ -631,7 +631,8 @@ public static class ChoresEndpoints
         int? OwnerUserId,
         int? AssigneeUserId,
         string? PhotoPath,
-        string? Icon = null)
+        string? Icon = null,
+        int RequiredCount = 1)
     {
         public CreateChoreCommand ToCommand() => new(
             Name,
@@ -646,7 +647,8 @@ public static class ChoresEndpoints
             OwnerUserId,
             AssigneeUserId,
             PhotoPath,
-            Icon ?? string.Empty);
+            Icon ?? string.Empty,
+            RequiredCount);
     }
 
     public sealed record UpdateChoreRequest(
@@ -662,7 +664,8 @@ public static class ChoresEndpoints
         int? OwnerUserId,
         string? PhotoPath,
         uint Version,
-        string? Icon = null)
+        string? Icon = null,
+        int RequiredCount = 1)
     {
         public UpdateChoreCommand ToCommand() => new(
             Name,
@@ -676,6 +679,7 @@ public static class ChoresEndpoints
             EffortTier,
             OwnerUserId,
             PhotoPath,
-            Icon ?? string.Empty);
+            Icon ?? string.Empty,
+            RequiredCount);
     }
 }

@@ -13,6 +13,7 @@
   import QuickAddSheet, { type QuickAddValue } from './lib/components/QuickAddSheet.svelte';
   import EditChoreSheet from './lib/components/EditChoreSheet.svelte';
   import HandOffPicker from './lib/components/HandOffPicker.svelte';
+  import CompleteDialog from './lib/components/CompleteDialog.svelte';
   import DigestSettings from './lib/components/DigestSettings.svelte';
   import Toasts from './lib/components/Toasts.svelte';
   import PhotoLightbox from './lib/components/PhotoLightbox.svelte';
@@ -48,6 +49,8 @@
   let quickAddSubmitting = $state(false);
   let handOffOpen = $state(false);
   let handOffChore = $state<ChoreDto | null>(null);
+  let completeOpen = $state(false);
+  let completeChore = $state<ChoreDto | null>(null);
   let editOpen = $state(false);
   let editChore = $state<ChoreDto | null>(null);
   let digestSettingsOpen = $state(false);
@@ -79,7 +82,21 @@
     store.drop(chore.id);
   }
   function handleComplete(chore: ChoreDto) {
-    store.complete(chore.id);
+    // Multi-person (co-sign) chore → open the participant dialog so the present
+    // member can record who's marking it done (D7). Single-person chore → keep
+    // the exact one-tap Done (unchanged): complete immediately, no dialog.
+    if (chore.requiredCount > 1) {
+      completeChore = chore;
+      completeOpen = true;
+    } else {
+      store.complete(chore.id);
+    }
+  }
+  function handleCompleteSubmit(participantUserIds: number[]) {
+    const chore = completeChore;
+    completeOpen = false;
+    completeChore = null;
+    if (chore) store.complete(chore.id, { participantUserIds });
   }
   function handleHandOff(chore: ChoreDto) {
     handOffChore = chore;
@@ -327,6 +344,18 @@
     handOffChore = null;
   }}
   onSelect={handleHandOffSelect}
+/>
+
+<CompleteDialog
+  open={completeOpen}
+  chore={completeChore}
+  members={store.board?.members ?? []}
+  currentUserId={store.currentUserId}
+  onClose={() => {
+    completeOpen = false;
+    completeChore = null;
+  }}
+  onSubmit={handleCompleteSubmit}
 />
 
 <EditChoreSheet

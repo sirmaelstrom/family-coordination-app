@@ -23,7 +23,8 @@ public record CreateChoreCommand(
     int? OwnerUserId,
     int? AssigneeUserId,
     string? PhotoPath,
-    string Icon = "");
+    string Icon = "",
+    int RequiredCount = 1);
 
 /// <summary>
 /// Command to update a chore's editable fields (council M11) — the same editable subset as
@@ -42,4 +43,5 @@ public record UpdateChoreCommand(
     EffortTier EffortTier,
     int? OwnerUserId,
     string? PhotoPath,
-    string Icon = "");
+    string Icon = "",
+    int RequiredCount = 1);

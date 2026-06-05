@@ -85,6 +85,16 @@
   let isClaimed = $derived(chore.assignmentKind === 'claimed' && !chore.isClaimStale);
   let isAssigned = $derived(chore.assignmentKind === 'assigned');
 
+  // ── Multi-person co-sign (WP-07) ─────────────────────────────────────────
+  // SERVER fields only (MN3 — no client count/membership math). `requiredCount
+  // > 1` marks a co-sign chore; `completedCount`/`contributorUserIds` are the
+  // authoritative current-occurrence progress from the board GET (the store
+  // reconciles after each mutation, so these are fresh). When the viewing user
+  // is already in `contributorUserIds` they've signed this occurrence and the
+  // Done button shows a waiting state (D6) instead of re-opening the dialog.
+  let isMultiPerson = $derived(chore.requiredCount > 1);
+  let iSigned = $derived(chore.contributorUserIds.includes(currentUserId));
+
   // ── Who can do what (drives the action buttons) ──────────────────────────
   // The viewing user "holds" the chore when they're the active (non-stale)
   // assignee. Drop is Claimed-only (a deliberate Assigned chore can't be
@@ -172,6 +182,20 @@
     {/if}
 
     <div class="ch-card-meta">
+      {#if isMultiPerson}
+        <span
+          class="ch-tag ch-tag-cosign"
+          title="{chore.completedCount} of {chore.requiredCount} people have marked this done"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+            <path
+              d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"
+              fill="currentColor"
+            />
+          </svg>
+          {chore.completedCount} of {chore.requiredCount} done
+        </span>
+      {/if}
       {#if room}
         <span class="ch-tag ch-tag-room" title="Room: {room.name}">
           {#if room.icon}
@@ -298,16 +322,42 @@
               Drop
             </button>
           {/if}
-          <button
-            type="button"
-            class="ch-btn ch-btn-primary"
-            data-action="complete"
-            onclick={() => onComplete?.(chore)}
-            disabled={pending}
-            title="Mark this chore done"
-          >
-            Done
-          </button>
+          {#if !isMultiPerson}
+            <!-- Single-person chore — today's exact one-tap Done (unchanged, P2). -->
+            <button
+              type="button"
+              class="ch-btn ch-btn-primary"
+              data-action="complete"
+              onclick={() => onComplete?.(chore)}
+              disabled={pending}
+              title="Mark this chore done"
+            >
+              Done
+            </button>
+          {:else if iSigned}
+            <!-- Co-sign chore the viewing user has already signed (D6). -->
+            <button
+              type="button"
+              class="ch-btn ch-btn-ghost"
+              data-action="complete"
+              disabled
+              title="You've marked this done — waiting on others"
+            >
+              You're in — waiting on others
+            </button>
+          {:else}
+            <!-- Co-sign chore the viewing user hasn't signed — opens the dialog. -->
+            <button
+              type="button"
+              class="ch-btn ch-btn-primary"
+              data-action="complete"
+              onclick={() => onComplete?.(chore)}
+              disabled={pending}
+              title="Mark this chore done"
+            >
+              Mark done
+            </button>
+          {/if}
         {/if}
         {#if onEdit}
           <button
@@ -504,6 +554,14 @@
   .ch-tag-room-icon {
     font-size: 0.875rem;
     line-height: 1;
+  }
+  /* Co-sign progress chip ("X of N done") — solid tint with white text so it
+     reads as a status cue distinct from the muted effort/recurrence tags. The
+     accent color carries the meaning; the same fill the room locator uses. */
+  .ch-tag-cosign {
+    color: #fff;
+    background: var(--color-info);
+    font-weight: 600;
   }
 
   .ch-card-foot {

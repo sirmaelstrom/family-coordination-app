@@ -78,15 +78,24 @@ public interface IChoreService
     Task<Chore> HandOffAsync(int householdId, int choreId, int actorUserId, int? targetUserId, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Completes a chore (council M8 — any household member may complete; an unclaimed pile chore may be
-    /// completed directly; <c>CompletedByUserId = actorUserId</c> even if a different user held the claim).
-    /// Writes a <see cref="ChoreCompletion"/> snapshotting <c>EffortPoints</c>, sets <c>LastCompletedAt = now</c>,
-    /// and advances the clock per recurrence: Flexible recomputes off the new completion, Fixed mutates no
-    /// field beyond <c>LastCompletedAt</c> (the calculator derives the next slot from the unchanged anchor),
-    /// OneOff sets <c>Status = Done</c>. A recurring chore held by Claimed returns to the pile; an Assigned
-    /// chore keeps its sticky assignee.
+    /// Records a completion contribution toward a chore (council M8 — any household member may complete; an
+    /// unclaimed pile chore may be completed directly; <c>CompletedByUserId = actorUserId</c> even if a
+    /// different user held the claim). Multi-person (co-sign, D1=C): the chore advances only when
+    /// <b>distinct</b> contributors toward the current occurrence reach <c>RequiredCount</c>.
+    /// <para>The contributor set for this call is <c>{actorUserId} ∪ participantUserIds</c> (the D7 name-others
+    /// escape hatch — each named member validated via household membership). One <see cref="ChoreCompletion"/>
+    /// is written per <b>newly-contributing</b> member (full <c>EffortPoints</c> each, D5); members who already
+    /// contributed to the current occurrence are silently skipped. If nothing new would be added (the actor
+    /// already contributed and named no new participant), a <see cref="ChoreValidationException"/> is thrown
+    /// (D6). <c>note</c>/<c>photoPath</c> attach to the actor's own row iff the actor is newly contributing.</para>
+    /// <para>Every contribution stamps <c>LastContributionAt = now</c> (forcing the xmin UPDATE so concurrent
+    /// contributions serialize, D3). A <b>partial</b> contribution leaves <c>LastCompletedAt</c>, <c>Status</c>,
+    /// and the assignment trio untouched (D4). The <b>satisfying</b> contribution runs the existing advance:
+    /// sets <c>LastCompletedAt = now</c>; OneOff → <c>Status = Done</c>; a recurring chore held by Claimed
+    /// returns to the pile; an Assigned chore keeps its sticky assignee.</para>
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore in the household.</exception>
+    /// <exception cref="ChoreValidationException">A named participant is outside the household, or nothing new would be recorded (the actor already contributed, D6).</exception>
     /// <exception cref="ChoreConflictException">The client <paramref name="version"/> is stale.</exception>
-    Task<Chore> CompleteAsync(int householdId, int choreId, int actorUserId, string? note, string? photoPath, uint version, CancellationToken cancellationToken = default);
+    Task<Chore> CompleteAsync(int householdId, int choreId, int actorUserId, string? note, string? photoPath, IReadOnlyList<int>? participantUserIds, uint version, CancellationToken cancellationToken = default);
 }

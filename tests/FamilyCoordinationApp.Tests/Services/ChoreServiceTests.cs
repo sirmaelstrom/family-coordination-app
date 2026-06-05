@@ -293,7 +293,7 @@ public class ChoreServiceTests : IDisposable
         var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd());
         var current = await ReloadAsync(created.ChoreId);
 
-        var result = await _service.CompleteAsync(HouseholdId, created.ChoreId, Bob, note: " good ", photoPath: null, current.Version);
+        var result = await _service.CompleteAsync(HouseholdId, created.ChoreId, Bob, note: " good ", photoPath: null, participantUserIds: null, current.Version);
 
         result.LastCompletedAt.Should().Be(NowBase);
 
@@ -313,7 +313,7 @@ public class ChoreServiceTests : IDisposable
         await _service.ClaimAsync(HouseholdId, created.ChoreId, Bob, (await ReloadAsync(created.ChoreId)).Version);
 
         var current = await ReloadAsync(created.ChoreId);
-        await _service.CompleteAsync(HouseholdId, created.ChoreId, Alice, note: null, photoPath: null, current.Version);
+        await _service.CompleteAsync(HouseholdId, created.ChoreId, Alice, note: null, photoPath: null, participantUserIds: null, current.Version);
 
         await using var ctx = new ApplicationDbContext(_options);
         var completion = await ctx.ChoreCompletions.SingleAsync(cc => cc.ChoreId == created.ChoreId);
@@ -327,7 +327,7 @@ public class ChoreServiceTests : IDisposable
         await _service.ClaimAsync(HouseholdId, created.ChoreId, Bob, (await ReloadAsync(created.ChoreId)).Version);
 
         var current = await ReloadAsync(created.ChoreId);
-        var result = await _service.CompleteAsync(HouseholdId, created.ChoreId, Bob, null, null, current.Version);
+        var result = await _service.CompleteAsync(HouseholdId, created.ChoreId, Bob, null, null, participantUserIds: null, current.Version);
 
         // Recurring + Claimed => back to pile after completion (all three cleared, council M1).
         result.AssigneeUserId.Should().BeNull();
@@ -342,7 +342,7 @@ public class ChoreServiceTests : IDisposable
         var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd(assignee: Bob));
         var current = await ReloadAsync(created.ChoreId);
 
-        var result = await _service.CompleteAsync(HouseholdId, created.ChoreId, Bob, null, null, current.Version);
+        var result = await _service.CompleteAsync(HouseholdId, created.ChoreId, Bob, null, null, participantUserIds: null, current.Version);
 
         // Recurring + Assigned => keeps the sticky assignee.
         result.AssigneeUserId.Should().Be(Bob);
@@ -362,7 +362,7 @@ public class ChoreServiceTests : IDisposable
         var created = await _service.CreateChoreAsync(HouseholdId, Alice, cmd);
         var current = await ReloadAsync(created.ChoreId);
 
-        var result = await _service.CompleteAsync(HouseholdId, created.ChoreId, Alice, null, null, current.Version);
+        var result = await _service.CompleteAsync(HouseholdId, created.ChoreId, Alice, null, null, participantUserIds: null, current.Version);
 
         result.Status.Should().Be(ChoreStatus.Done);
         result.LastCompletedAt.Should().Be(NowBase);
@@ -382,7 +382,7 @@ public class ChoreServiceTests : IDisposable
         var created = await _service.CreateChoreAsync(HouseholdId, Alice, cmd);
         var current = await ReloadAsync(created.ChoreId);
 
-        var result = await _service.CompleteAsync(HouseholdId, created.ChoreId, Alice, null, null, current.Version);
+        var result = await _service.CompleteAsync(HouseholdId, created.ChoreId, Alice, null, null, participantUserIds: null, current.Version);
 
         // Fixed completion mutates NO recurrence field beyond LastCompletedAt — the anchor is untouched.
         result.AnchorDate.Should().Be(anchor);
@@ -393,8 +393,270 @@ public class ChoreServiceTests : IDisposable
     [Fact]
     public async Task Complete_MissingChore_ThrowsNotFound()
     {
-        var act = async () => await _service.CompleteAsync(HouseholdId, choreId: 99, Alice, null, null, version: 0);
+        var act = async () => await _service.CompleteAsync(HouseholdId, choreId: 99, Alice, null, null, participantUserIds: null, version: 0);
         await act.Should().ThrowAsync<ChoreNotFoundException>();
+    }
+
+    // ---- MULTI-PERSON COMPLETE (co-sign gate, D1=C / D4 / D5 / D6 / D7) ------
+
+    /// <summary>Council M1 trio invariant: AssigneeUserId==null ⟺ AssignmentKind==None ⟺ ClaimedAt==null.</summary>
+    private static void AssertTrioInvariant(Chore chore)
+    {
+        var noAssignee = chore.AssigneeUserId is null;
+        var kindNone = chore.AssignmentKind == AssignmentKind.None;
+        var noClaimedAt = chore.ClaimedAt is null;
+        (noAssignee == kindNone).Should().BeTrue("AssigneeUserId==null ⟺ AssignmentKind==None");
+        (kindNone == noClaimedAt).Should().BeTrue("AssignmentKind==None ⟺ ClaimedAt==null");
+    }
+
+    private async Task<int> CompletionRowCountAsync(int choreId)
+    {
+        await using var ctx = new ApplicationDbContext(_options);
+        return await ctx.ChoreCompletions.CountAsync(cc => cc.HouseholdId == HouseholdId && cc.ChoreId == choreId);
+    }
+
+    private static CreateChoreCommand OneOffCmd(int requiredCount) => FlexibleCmd() with
+    {
+        RecurrenceMode = RecurrenceMode.OneOff,
+        IntervalDays = null,
+        DaysOfWeek = null,
+        AnchorDate = new DateOnly(2026, 6, 1),
+        RequiredCount = requiredCount
+    };
+
+    [Fact]
+    public async Task Complete_OneOff_RequiredTwo_FirstCompleter_IsPartial_NoAdvance()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, OneOffCmd(requiredCount: 2));
+        var current = await ReloadAsync(created.ChoreId);
+
+        var result = await _service.CompleteAsync(
+            HouseholdId, created.ChoreId, Alice, null, null, participantUserIds: null, current.Version);
+
+        // Partial: not satisfied — no advance, no Done, but LastContributionAt stamped + 1 row.
+        result.Status.Should().Be(ChoreStatus.Active);
+        result.LastCompletedAt.Should().BeNull();
+        result.LastContributionAt.Should().Be(NowBase);
+        (await CompletionRowCountAsync(created.ChoreId)).Should().Be(1);
+        AssertTrioInvariant(result);
+    }
+
+    [Fact]
+    public async Task Complete_OneOff_RequiredTwo_SecondDistinctUser_Satisfies_SetsDone()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, OneOffCmd(requiredCount: 2));
+
+        await _service.CompleteAsync(
+            HouseholdId, created.ChoreId, Alice, null, null, participantUserIds: null, (await ReloadAsync(created.ChoreId)).Version);
+
+        var afterFirst = await ReloadAsync(created.ChoreId);
+        var result = await _service.CompleteAsync(
+            HouseholdId, created.ChoreId, Bob, null, null, participantUserIds: null, afterFirst.Version);
+
+        // The 2nd distinct contributor satisfies RequiredCount=2 → advance.
+        result.Status.Should().Be(ChoreStatus.Done);
+        result.LastCompletedAt.Should().Be(NowBase);
+        (await CompletionRowCountAsync(created.ChoreId)).Should().Be(2);
+        AssertTrioInvariant(result);
+    }
+
+    [Fact]
+    public async Task Complete_Flexible_RequiredTwo_ClaimedByA_PartialByA_LeavesTrioAndClockUntouched()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RequiredCount = 2 });
+        await _service.ClaimAsync(HouseholdId, created.ChoreId, Alice, (await ReloadAsync(created.ChoreId)).Version);
+
+        var current = await ReloadAsync(created.ChoreId);
+        var result = await _service.CompleteAsync(
+            HouseholdId, created.ChoreId, Alice, null, null, participantUserIds: null, current.Version);
+
+        // Partial completion by the holder must NOT advance or change assignment (D4): trio still (A, Claimed).
+        result.AssigneeUserId.Should().Be(Alice);
+        result.AssignmentKind.Should().Be(AssignmentKind.Claimed);
+        result.LastCompletedAt.Should().BeNull();
+        result.LastContributionAt.Should().Be(NowBase);
+        (await CompletionRowCountAsync(created.ChoreId)).Should().Be(1);
+        AssertTrioInvariant(result);
+    }
+
+    [Fact]
+    public async Task Complete_Flexible_RequiredTwo_ClaimedByA_SecondByB_ReturnsToPile()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RequiredCount = 2 });
+        await _service.ClaimAsync(HouseholdId, created.ChoreId, Alice, (await ReloadAsync(created.ChoreId)).Version);
+
+        await _service.CompleteAsync(
+            HouseholdId, created.ChoreId, Alice, null, null, participantUserIds: null, (await ReloadAsync(created.ChoreId)).Version);
+
+        var afterFirst = await ReloadAsync(created.ChoreId);
+        var result = await _service.CompleteAsync(
+            HouseholdId, created.ChoreId, Bob, null, null, participantUserIds: null, afterFirst.Version);
+
+        // The satisfying completion of a recurring + Claimed chore returns it to the pile (existing branch).
+        result.AssigneeUserId.Should().BeNull();
+        result.AssignmentKind.Should().Be(AssignmentKind.None);
+        result.ClaimedAt.Should().BeNull();
+        result.Status.Should().Be(ChoreStatus.Active);
+        result.LastCompletedAt.Should().Be(NowBase);
+        (await CompletionRowCountAsync(created.ChoreId)).Should().Be(2);
+        AssertTrioInvariant(result);
+    }
+
+    [Fact]
+    public async Task Complete_RequiredTwo_SameUserTwice_SecondThrows_StillOneRow()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RequiredCount = 2 });
+
+        await _service.CompleteAsync(
+            HouseholdId, created.ChoreId, Alice, null, null, participantUserIds: null, (await ReloadAsync(created.ChoreId)).Version);
+
+        var afterFirst = await ReloadAsync(created.ChoreId);
+        var act = async () => await _service.CompleteAsync(
+            HouseholdId, created.ChoreId, Alice, null, null, participantUserIds: null, afterFirst.Version);
+
+        // The same user contributing twice toward the same occurrence is rejected (D6) — still 1 row.
+        await act.Should().ThrowAsync<ChoreValidationException>();
+        (await CompletionRowCountAsync(created.ChoreId)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Complete_NameOthers_ActorPlusParticipant_SatisfiesInOneCall_TwoRows()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RequiredCount = 2 });
+        var current = await ReloadAsync(created.ChoreId);
+
+        // Actor Alice names Bob as a co-participant (D7) — [A,B] on a RequiredCount=2 chore satisfies at once.
+        var result = await _service.CompleteAsync(
+            HouseholdId, created.ChoreId, Alice, null, null, participantUserIds: new[] { Alice, Bob }, current.Version);
+
+        result.LastCompletedAt.Should().Be(NowBase);
+        (await CompletionRowCountAsync(created.ChoreId)).Should().Be(2);
+
+        await using var ctx = new ApplicationDbContext(_options);
+        var contributors = await ctx.ChoreCompletions
+            .Where(cc => cc.ChoreId == created.ChoreId)
+            .Select(cc => cc.CompletedByUserId)
+            .ToListAsync();
+        contributors.Should().BeEquivalentTo(new[] { Alice, Bob });
+        AssertTrioInvariant(result);
+    }
+
+    [Fact]
+    public async Task Complete_NameOthers_DuplicateInList_DedupesToOneRow()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RequiredCount = 2 });
+        var current = await ReloadAsync(created.ChoreId);
+
+        // [A,A] dedupes within the call → a single contributor → 1 row (and a partial, RequiredCount=2 unmet).
+        var result = await _service.CompleteAsync(
+            HouseholdId, created.ChoreId, Alice, null, null, participantUserIds: new[] { Alice }, current.Version);
+
+        (await CompletionRowCountAsync(created.ChoreId)).Should().Be(1);
+        result.LastCompletedAt.Should().BeNull();
+        result.LastContributionAt.Should().Be(NowBase);
+        AssertTrioInvariant(result);
+    }
+
+    [Fact]
+    public async Task Complete_NameOthers_NonMember_IsRejected()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RequiredCount = 2 });
+        var current = await ReloadAsync(created.ChoreId);
+
+        // Carol belongs to another household — naming her must be rejected (D7 member validation, M1).
+        var act = async () => await _service.CompleteAsync(
+            HouseholdId, created.ChoreId, Alice, null, null, participantUserIds: new[] { Carol }, current.Version);
+
+        await act.Should().ThrowAsync<ChoreValidationException>();
+        (await CompletionRowCountAsync(created.ChoreId)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Complete_NameOthers_RepeatActorNamesNewParticipant_DoesNotThrow_AdvancesViaParticipant()
+    {
+        // D7 escape hatch: a present member (already in priorSet) can record a NEW participant. Even though the
+        // actor already contributed, newContributors is non-empty → no D6 throw, and the new participant
+        // satisfies the count.
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RequiredCount = 2 });
+
+        await _service.CompleteAsync(
+            HouseholdId, created.ChoreId, Alice, null, null, participantUserIds: null, (await ReloadAsync(created.ChoreId)).Version);
+
+        var afterFirst = await ReloadAsync(created.ChoreId);
+        var result = await _service.CompleteAsync(
+            HouseholdId, created.ChoreId, Alice, null, null, participantUserIds: new[] { Bob }, afterFirst.Version);
+
+        // Alice (already counted) is silently skipped; Bob is the only new row → 2 distinct → satisfied.
+        result.LastCompletedAt.Should().Be(NowBase);
+        (await CompletionRowCountAsync(created.ChoreId)).Should().Be(2);
+        AssertTrioInvariant(result);
+    }
+
+    [Fact]
+    public async Task Complete_RequiredOne_Regression_AdvancesOnFirstCompletion()
+    {
+        // The RequiredCount=1 default path is unchanged: one completion satisfies and advances.
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd());
+        var current = await ReloadAsync(created.ChoreId);
+
+        var result = await _service.CompleteAsync(
+            HouseholdId, created.ChoreId, Alice, null, null, participantUserIds: null, current.Version);
+
+        result.LastCompletedAt.Should().Be(NowBase);
+        result.LastContributionAt.Should().Be(NowBase);
+        (await CompletionRowCountAsync(created.ChoreId)).Should().Be(1);
+        AssertTrioInvariant(result);
+    }
+
+    // ---- REQUIRED-COUNT VALIDATION (D2 / ValidateRequiredCount) -------------
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task Create_RequiredCountBelowOne_IsRejected(int requiredCount)
+    {
+        var cmd = FlexibleCmd() with { RequiredCount = requiredCount };
+        var act = async () => await _service.CreateChoreAsync(HouseholdId, Alice, cmd);
+        await act.Should().ThrowAsync<ChoreValidationException>();
+    }
+
+    [Fact]
+    public async Task Create_RequiredCountTwo_IsPersisted()
+    {
+        var chore = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RequiredCount = 2 });
+        chore.RequiredCount.Should().Be(2);
+        (await ReloadAsync(chore.ChoreId)).RequiredCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Update_RequiredCountBelowOne_IsRejected()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RequiredCount = 2 });
+        var current = await ReloadAsync(created.ChoreId);
+        var cmd = new UpdateChoreCommand(
+            Name: "Dishes", Description: null, RoomId: null,
+            RecurrenceMode: RecurrenceMode.Flexible, IntervalDays: 7, AnchorDate: null,
+            DaysOfWeek: null, DayOfMonth: null, EffortTier: EffortTier.Standard,
+            OwnerUserId: null, PhotoPath: null, Icon: "", RequiredCount: 0);
+
+        var act = async () => await _service.UpdateChoreAsync(HouseholdId, created.ChoreId, cmd, current.Version);
+        await act.Should().ThrowAsync<ChoreValidationException>();
+    }
+
+    [Fact]
+    public async Task Update_RequiredCount_IsPersisted()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd());
+        var current = await ReloadAsync(created.ChoreId);
+        var cmd = new UpdateChoreCommand(
+            Name: "Dishes", Description: null, RoomId: null,
+            RecurrenceMode: RecurrenceMode.Flexible, IntervalDays: 7, AnchorDate: null,
+            DaysOfWeek: null, DayOfMonth: null, EffortTier: EffortTier.Standard,
+            OwnerUserId: null, PhotoPath: null, Icon: "", RequiredCount: 3);
+
+        var updated = await _service.UpdateChoreAsync(HouseholdId, created.ChoreId, cmd, current.Version);
+        updated.RequiredCount.Should().Be(3);
+        (await ReloadAsync(created.ChoreId)).RequiredCount.Should().Be(3);
     }
 
     // ---- CONCURRENCY MAPPING (not the xmin detection — that's WP-08) -------

@@ -46,6 +46,13 @@ public class ChoreConfiguration : IEntityTypeConfiguration<Chore>
             .IsRequired()
             .HasDefaultValue(1);
 
+        // Multi-person fields (WP-01).
+        builder.Property(c => c.RequiredCount)
+            .IsRequired()
+            .HasDefaultValue(1);
+
+        // LastContributionAt: nullable timestamptz — no special config needed (Npgsql convention).
+
         builder.Property(c => c.Status)
             .IsRequired()
             .HasConversion<string>()

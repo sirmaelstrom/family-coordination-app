@@ -28,6 +28,12 @@ public sealed record ChoreBoardDto(
 /// fixed-weekly / every-N / dated one-off chore lost the existing selection). <see cref="DaysOfWeek"/>
 /// serializes as a camelCase CSV (e.g. <c>"monday, thursday"</c>); <see cref="AnchorDate"/> as an ISO date
 /// (<c>"2026-06-10"</c>) — the same shapes the write request accepts.</para>
+/// <para>Multi-person co-sign progress (WP-04): <see cref="RequiredCount"/> is always ≥ 1 (1 = normal,
+/// &gt;1 = multi-person). <see cref="CompletedCount"/> is the count of distinct contributors toward the
+/// CURRENT open occurrence (0..<see cref="RequiredCount"/>); <see cref="ContributorUserIds"/> lists those
+/// users in ascending order. These are populated only in the board projection (<c>GetBoardAsync</c>);
+/// single-chore projections always report <c>completedCount=0, contributorUserIds=[]</c> — the client
+/// refetches the board for authoritative co-sign progress (WP-07).</para>
 /// </summary>
 public sealed record ChoreDto(
     int Id,
@@ -51,7 +57,11 @@ public sealed record ChoreDto(
     DateTime? ClaimedAt,
     DateTime? LastCompletedAt,
     string? PhotoPath,
-    uint Version);
+    uint Version,
+    int RequiredCount,                    // 1 = normal; >1 = multi-person
+    int CompletedCount,                   // distinct contributors toward the CURRENT occurrence (0..RequiredCount)
+    IReadOnlyList<int> ContributorUserIds // who has signed the current occurrence (drives per-user button state)
+    );
 
 /// <summary>
 /// Per-room dirtiness rollup. The <see cref="Status"/> bucket is derived from the count of chores in the
