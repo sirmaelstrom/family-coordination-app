@@ -13,6 +13,12 @@ public class Chore
     // Optional emoji/short-code icon (parity with Room.Icon). Empty string = no icon.
     public string Icon { get; set; } = string.Empty;
 
+    // Multi-person: number of distinct members required to complete (1 = normal single-completion chore).
+    public int RequiredCount { get; set; } = 1;
+
+    // Multi-person: UTC timestamp set on every contribution — activity marker, not a progress count.
+    public DateTime? LastContributionAt { get; set; }
+
     // Optional room association (nullable FK -> Room).
     public int? RoomId { get; set; }
 
