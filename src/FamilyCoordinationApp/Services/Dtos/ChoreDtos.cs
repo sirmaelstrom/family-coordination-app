@@ -64,6 +64,29 @@ public sealed record ChoreDto(
     );
 
 /// <summary>
+/// A member's DERIVED state on a multi-person chore's named roster, for the current occurrence (rework).
+/// Serialized camelCase via <c>JsonStringEnumConverter(CamelCase)</c>: <c>"assigned" | "in" | "done"</c>.
+/// <list type="bullet">
+///   <item><see cref="Assigned"/> — suggested (a pre-opt-in by someone else; no reply yet, declinable).</item>
+///   <item><see cref="In"/> — committed ("I'm in": self-opt-in, or confirming an assignment).</item>
+///   <item><see cref="Done"/> — completed their part this occurrence (overlaid from <c>ChoreCompletion</c>).</item>
+/// </list>
+/// </summary>
+public enum RosterState
+{
+    Assigned,
+    In,
+    Done
+}
+
+/// <summary>
+/// One member of a multi-person chore's derived roster (D10). Wire shape: <c>{ userId, state }</c>.
+/// Empty roster list ⇒ no one on the chore (open / single-person). Derived on read by
+/// <c>ChoreRosterCalculator</c>; never stored.
+/// </summary>
+public sealed record RosterMemberDto(int UserId, RosterState State);
+
+/// <summary>
 /// Per-room dirtiness rollup. The <see cref="Status"/> bucket is derived from the count of chores in the
 /// room whose computed dueness is due-or-overdue (NOT from stored <c>ChoreStatus</c>), bucketed by the
 /// named thresholds in <see cref="ChoreRollup"/> (P4): 0 ⇒ clean, 1–2 ⇒ attention, 3+ ⇒ needs-work.
