@@ -41,6 +41,9 @@ public static class ChoresEndpoints
         group.MapPost("/{choreId:int}/drop", DropChore);
         group.MapPost("/{choreId:int}/handoff", HandOffChore);
         group.MapPost("/{choreId:int}/complete", CompleteChore);
+        group.MapPost("/{choreId:int}/roster/assign", AssignRoster);
+        group.MapPost("/{choreId:int}/roster/commit", CommitRoster);
+        group.MapPost("/{choreId:int}/roster/leave", LeaveRoster);
         group.MapPost("/{choreId:int}/photo", UploadChorePhoto);
 
         group.MapPatch("/me/default-view", SetDefaultView);
@@ -238,6 +241,80 @@ public static class ChoresEndpoints
         {
             var chore = await svc.CompleteAsync(
                 user.HouseholdId, choreId, user.UserId, req.Note, req.PhotoPath, req.ParticipantUserIds, req.Version, ct);
+            return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
+        }
+        catch (ChoreNotFoundException) { return Results.NotFound(); }
+        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
+        catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+    }
+
+    // ─── Roster (multi-person named soft roster, rework) ────────────────────────────
+
+    private static async Task<IResult> AssignRoster(
+        int choreId,
+        AssignRosterRequest req,
+        ClaimsPrincipal principal,
+        IChoreService svc,
+        IChoreBoardService boardService,
+        TimeProvider timeProvider,
+        TimeZoneInfo timeZone,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
+        if (user is null) return Results.Unauthorized();
+
+        try
+        {
+            var chore = await svc.AssignToRosterAsync(user.HouseholdId, choreId, user.UserId, req.SubjectUserId, req.Version, ct);
+            return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
+        }
+        catch (ChoreNotFoundException) { return Results.NotFound(); }
+        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
+        catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+    }
+
+    private static async Task<IResult> CommitRoster(
+        int choreId,
+        VersionRequest req,
+        ClaimsPrincipal principal,
+        IChoreService svc,
+        IChoreBoardService boardService,
+        TimeProvider timeProvider,
+        TimeZoneInfo timeZone,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
+        if (user is null) return Results.Unauthorized();
+
+        try
+        {
+            var chore = await svc.CommitToRosterAsync(user.HouseholdId, choreId, user.UserId, req.Version, ct);
+            return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
+        }
+        catch (ChoreNotFoundException) { return Results.NotFound(); }
+        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
+        catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+    }
+
+    private static async Task<IResult> LeaveRoster(
+        int choreId,
+        LeaveRosterRequest req,
+        ClaimsPrincipal principal,
+        IChoreService svc,
+        IChoreBoardService boardService,
+        TimeProvider timeProvider,
+        TimeZoneInfo timeZone,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
+        if (user is null) return Results.Unauthorized();
+
+        try
+        {
+            var chore = await svc.LeaveRosterAsync(user.HouseholdId, choreId, user.UserId, req.SubjectUserId, req.Version, ct);
             return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
@@ -572,6 +649,13 @@ public static class ChoresEndpoints
 
     public sealed record CompleteRequest(string? Note, string? PhotoPath, uint Version, IReadOnlyList<int>? ParticipantUserIds = null);
 
+    /// <summary>Add a named member to a multi-person chore's roster (Assigned). Subject = the member to add.</summary>
+    public sealed record AssignRosterRequest(int SubjectUserId, uint Version);
+
+    /// <summary>Leave/remove from a roster. Null SubjectUserId ⇒ the caller leaves; a non-null subject
+    /// (removing someone else) requires the caller be the chore creator/owner.</summary>
+    public sealed record LeaveRosterRequest(int? SubjectUserId, uint Version);
+
     public sealed record DefaultViewRequest(string? View);
 
     /// <summary>
@@ -632,7 +716,8 @@ public static class ChoresEndpoints
         int? AssigneeUserId,
         string? PhotoPath,
         string? Icon = null,
-        int RequiredCount = 1)
+        int RequiredCount = 1,
+        IReadOnlyList<int>? AssignedUserIds = null)
     {
         public CreateChoreCommand ToCommand() => new(
             Name,
@@ -648,7 +733,8 @@ public static class ChoresEndpoints
             AssigneeUserId,
             PhotoPath,
             Icon ?? string.Empty,
-            RequiredCount);
+            RequiredCount,
+            AssignedUserIds);
     }
 
     public sealed record UpdateChoreRequest(
