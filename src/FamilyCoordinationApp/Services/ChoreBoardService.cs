@@ -52,6 +52,26 @@ public class ChoreBoardService(
             .Select(u => u.ChoresDefaultView)
             .FirstOrDefaultAsync(cancellationToken);
 
+        // P5: Lazy progress query — only issued when the household has at least one multi-person chore.
+        // Load completions in ONE query, group by ChoreId; single-person chores get an empty set.
+        var multiPersonIds = chores
+            .Where(c => c.RequiredCount > 1)
+            .Select(c => c.ChoreId)
+            .ToList();
+
+        Dictionary<int, List<ChoreCompletion>> completionsByChore = [];
+        if (multiPersonIds.Count > 0)
+        {
+            // M7: single household-scoped query covering only the multi-person chore ids.
+            var allCompletions = await context.ChoreCompletions
+                .Where(c => c.HouseholdId == householdId && multiPersonIds.Contains(c.ChoreId))
+                .ToListAsync(cancellationToken);
+
+            completionsByChore = allCompletions
+                .GroupBy(c => c.ChoreId)
+                .ToDictionary(g => g.Key, g => g.ToList());
+        }
+
         // Project each chore once; reuse the computed dueness for both the per-chore DTO and the rollups so
         // a chore's dueness is computed in exactly one place (no divergence between the card and the room
         // bucket). The board buckets off COMPUTED dueness, never stored Status (decay would be ignored).
@@ -65,7 +85,16 @@ public class ChoreBoardService(
             .ToList();
 
         var choreDtos = projected
-            .Select(p => ToDto(p.Chore, p.Dueness, p.IsClaimStale))
+            .Select(p =>
+            {
+                // A RequiredCount==1 chore gets an empty set (CompletedCount=0, ContributorUserIds=[]).
+                IReadOnlySet<int> contributors = p.Chore.RequiredCount > 1
+                    ? ChoreCompletionProgress.DistinctContributorsSince(
+                        completionsByChore.GetValueOrDefault(p.Chore.ChoreId) ?? [],
+                        p.Chore.LastCompletedAt)
+                    : (IReadOnlySet<int>)new HashSet<int>();
+                return ToDto(p.Chore, p.Dueness, p.IsClaimStale, contributors);
+            })
             .ToList();
 
         var rollups = BuildRollups(projected.Select(p => (p.Chore, p.Dueness)), rooms);
@@ -91,12 +120,18 @@ public class ChoreBoardService(
     {
         var dueness = calculator.Compute(ChoreRecurrenceSnapshot.FromChore(chore), now, timeZone);
         var isClaimStale = calculator.IsClaimStale(chore.AssignmentKind, chore.ClaimedAt, now);
-        return ToDto(chore, dueness, isClaimStale);
+        // progress is computed only in GetBoardAsync; single-chore projections report requiredCount plus
+        // zeroed progress — the client refetches the board for authoritative co-sign progress.
+        return ToDto(chore, dueness, isClaimStale, contributors: new HashSet<int>());
     }
 
     // ------------------------------------------------------------------ projection
 
-    private static ChoreDto ToDto(Chore chore, ChoreDuenessResult dueness, bool isClaimStale) => new(
+    private static ChoreDto ToDto(
+        Chore chore,
+        ChoreDuenessResult dueness,
+        bool isClaimStale,
+        IReadOnlySet<int> contributors) => new(
         chore.ChoreId,
         chore.Name,
         chore.Icon,
@@ -118,7 +153,10 @@ public class ChoreBoardService(
         chore.ClaimedAt,
         chore.LastCompletedAt,
         chore.PhotoPath,
-        chore.Version);
+        chore.Version,
+        chore.RequiredCount,
+        contributors.Count,
+        contributors.OrderBy(x => x).ToList());
 
     // ------------------------------------------------------------------ rollups
 

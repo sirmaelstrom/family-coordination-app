@@ -93,6 +93,8 @@ export interface CreateChoreRequest {
   photoPath?: string | null;
   /** Optional emoji/short-code icon; "" or omitted = none. */
   icon?: string;
+  /** Number of distinct contributors required to satisfy the chore (WP-05). Omit or 1 = normal. */
+  requiredCount?: number;
 }
 
 /** No assignee — assignment never moves via edit. Carries the version. */
@@ -112,6 +114,8 @@ export interface UpdateChoreRequest {
   photoPath?: string | null;
   /** Optional emoji/short-code icon; "" or omitted = none. */
   icon?: string;
+  /** Number of distinct contributors required to satisfy the chore (WP-05). Omit or 1 = normal. */
+  requiredCount?: number;
 }
 
 export interface SeedStarterResponse {
@@ -128,6 +132,8 @@ export interface CompleteRequest {
   note?: string | null;
   photoPath?: string | null;
   version: number;
+  /** Co-signers for multi-person chores (WP-05); omit for single-person completions. */
+  participantUserIds?: number[];
 }
 
 export interface PhotoUploadResponse {

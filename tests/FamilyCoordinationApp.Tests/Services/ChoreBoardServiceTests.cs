@@ -349,4 +349,69 @@ public class ChoreBoardServiceTests
         dto.RecurrenceMode.Should().Be("OneOff");
         dto.Version.Should().Be(5u);
     }
+
+    // ------------------------------------------------------------------ multi-person co-sign progress (WP-04)
+
+    [Fact]
+    public async Task MultiPersonChore_WithOneCompletion_ProjectsCorrectProgress()
+    {
+        // Arrange: one RequiredCount=2 chore with one completion; one RequiredCount=1 chore with no completions.
+        var multiChore = OneOff(1, H1, roomId: null, new DateOnly(2026, 6, 10));
+        multiChore.RequiredCount = 2;
+
+        var singleChore = OneOff(2, H1, roomId: null, new DateOnly(2026, 6, 10));
+        // RequiredCount defaults to 1 (entity default)
+
+        Seed(multiChore, singleChore);
+
+        // Alice has signed chore 1 in the current occurrence window (no LastCompletedAt → all rows count).
+        using (var ctx = new ApplicationDbContext(_options))
+        {
+            ctx.ChoreCompletions.Add(new ChoreCompletion
+            {
+                HouseholdId = H1,
+                ChoreId = 1,
+                CompletionId = 1,
+                CompletedByUserId = Alice,
+                CompletedAt = Now.AddHours(-2),
+                EffortPointsSnapshot = 2,
+            });
+            ctx.SaveChanges();
+        }
+
+        // Act
+        var board = await CreateService().GetBoardAsync(H1, Alice, Now);
+
+        // Assert: multi-person chore has progress from Alice's completion.
+        var multiDto = board.Chores.Single(c => c.Id == 1);
+        multiDto.RequiredCount.Should().Be(2);
+        multiDto.CompletedCount.Should().Be(1);
+        multiDto.ContributorUserIds.Should().Equal(Alice);  // [100]
+
+        // Assert: single-person chore reports zeroed progress.
+        var singleDto = board.Chores.Single(c => c.Id == 2);
+        singleDto.RequiredCount.Should().Be(1);
+        singleDto.CompletedCount.Should().Be(0);
+        singleDto.ContributorUserIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task MultiPersonChore_ProgressQuerySkipped_WhenNoMultiPersonChores()
+    {
+        // Arrange: all chores have RequiredCount=1 (default). The lazy P5 query should not run.
+        Seed(
+            OneOff(1, H1, null, new DateOnly(2026, 6, 10)),
+            OneOff(2, H1, null, new DateOnly(2026, 6, 10)));
+
+        // Act
+        var board = await CreateService().GetBoardAsync(H1, Alice, Now);
+
+        // All single-person chores get zeroed progress.
+        foreach (var dto in board.Chores)
+        {
+            dto.RequiredCount.Should().Be(1);
+            dto.CompletedCount.Should().Be(0);
+            dto.ContributorUserIds.Should().BeEmpty();
+        }
+    }
 }

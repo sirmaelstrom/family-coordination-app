@@ -65,7 +65,10 @@ public class ChoreBoardDtoContractTests
                 ClaimedAt: new DateTime(2026, 5, 25, 5, 0, 0, DateTimeKind.Utc),
                 LastCompletedAt: new DateTime(2026, 5, 20, 5, 0, 0, DateTimeKind.Utc),
                 PhotoPath: "/uploads/1/abc.jpg",
-                Version: 7),
+                Version: 7,
+                RequiredCount: 1,
+                CompletedCount: 0,
+                ContributorUserIds: []),
 
             // Due today, assigned (sticky), in the Kitchen room.
             new(
@@ -90,9 +93,12 @@ public class ChoreBoardDtoContractTests
                 ClaimedAt: new DateTime(2026, 5, 30, 4, 0, 0, DateTimeKind.Utc),
                 LastCompletedAt: null,
                 PhotoPath: null,
-                Version: 3),
+                Version: 3,
+                RequiredCount: 1,
+                CompletedCount: 0,
+                ContributorUserIds: []),
 
-            // Scheduled, unclaimed pile (up-for-grabs), roomless (General group).
+            // Scheduled, unclaimed pile (up-for-grabs), roomless (General group). Multi-person: 2 required, 1 signed.
             new(
                 Id: 3,
                 Name: "Water the plants",
@@ -115,7 +121,10 @@ public class ChoreBoardDtoContractTests
                 ClaimedAt: null,
                 LastCompletedAt: new DateTime(2026, 5, 15, 5, 0, 0, DateTimeKind.Utc),
                 PhotoPath: null,
-                Version: 1),
+                Version: 1,
+                RequiredCount: 2,
+                CompletedCount: 1,
+                ContributorUserIds: [100]),
 
             // Not due, fresh, roomless one-off in the General group (claimed, not stale).
             new(
@@ -140,7 +149,10 @@ public class ChoreBoardDtoContractTests
                 ClaimedAt: new DateTime(2026, 5, 30, 3, 0, 0, DateTimeKind.Utc),
                 LastCompletedAt: null,
                 PhotoPath: null,
-                Version: 2),
+                Version: 2,
+                RequiredCount: 1,
+                CompletedCount: 0,
+                ContributorUserIds: []),
         };
 
         var rooms = new List<RoomRollupDto>
@@ -230,7 +242,8 @@ public class ChoreBoardDtoContractTests
             "id", "name", "icon", "description", "roomId", "recurrenceMode", "intervalDays", "daysOfWeek", "anchorDate",
             "dueState", "colorTier", "nextDueAt",
             "isClaimStale", "effortTier", "effortPoints", "ownerUserId", "assigneeUserId", "assignmentKind",
-            "claimedAt", "lastCompletedAt", "photoPath", "version");
+            "claimedAt", "lastCompletedAt", "photoPath", "version",
+            "requiredCount", "completedCount", "contributorUserIds");
 
         // Enums serialize as camelCase strings (M11), NOT integers and NOT PascalCase.
         firstChore["dueState"]!.GetValue<string>().Should().Be("overdue");

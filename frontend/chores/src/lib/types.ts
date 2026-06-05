@@ -62,6 +62,12 @@ export interface ChoreDto {
   photoPath: string | null;
   /** xmin optimistic-concurrency token. Echo back on mutations (WP-11). */
   version: number;
+  /** 1 = normal chore; >1 = multi-person (co-sign required). Always ≥ 1. */
+  requiredCount: number;
+  /** Distinct contributors toward the CURRENT open occurrence (0..requiredCount). Board GET only; ProjectChore path always returns 0. */
+  completedCount: number;
+  /** User IDs who have signed the current occurrence, ascending. Empty for single-person chores. */
+  contributorUserIds: number[];
 }
 
 export interface RoomRollupDto {
