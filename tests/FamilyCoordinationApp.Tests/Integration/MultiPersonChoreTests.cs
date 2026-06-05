@@ -66,7 +66,9 @@ public sealed class MultiPersonChoreTests(PostgresContainerFixture postgres) : I
         DateTime? lastCompletedAt,
         int requiredCount,
         int completedCount,
-        IReadOnlyList<int> contributorUserIds);
+        IReadOnlyList<RosterMember> roster);
+
+    private sealed record RosterMember(int userId, string state);
 
     private sealed record Board(List<BoardChore> chores);
 
@@ -124,7 +126,8 @@ public sealed class MultiPersonChoreTests(PostgresContainerFixture postgres) : I
         afterFirst.Should().NotBeNull("a partial co-sign OneOff must remain on the board (not yet Done)");
         afterFirst!.requiredCount.Should().Be(2);
         afterFirst.completedCount.Should().Be(1, "exactly one distinct member has contributed so far");
-        afterFirst.contributorUserIds.Should().BeEquivalentTo(new[] { ChoresWebAppFactory.UserAId });
+        afterFirst.roster.Should().ContainSingle(m => m.userId == ChoresWebAppFactory.UserAId && m.state == "done",
+            "the lone contributor shows as done on the derived roster");
         afterFirst.lastCompletedAt.Should().BeNull("a partial contribution must NOT advance the chore (D4)");
 
         // Second distinct member (A2) contributes against the chore's CURRENT version (fresh read off the board).
@@ -318,7 +321,7 @@ public sealed class MultiPersonChoreTests(PostgresContainerFixture postgres) : I
         var afterSecond = FindChore(afterSecondBoard, choreId);
         afterSecond.Should().NotBeNull("rejected re-completion must NOT have advanced/removed the chore");
         afterSecond!.completedCount.Should().Be(1, "the rejected duplicate added no second contribution row");
-        afterSecond.contributorUserIds.Should().BeEquivalentTo(new[] { ChoresWebAppFactory.UserAId });
+        afterSecond.roster.Should().ContainSingle(m => m.userId == ChoresWebAppFactory.UserAId && m.state == "done");
     }
 
     // ── service-level helpers (mirror ChoreServiceConcurrencyTests) ──────────────────────────────────
