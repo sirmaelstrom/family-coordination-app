@@ -286,7 +286,39 @@
         (`pending`) to prevent double-submit.
       -->
       <div class="ch-actions">
-        {#if isUnclaimed}
+        {#if isMultiPerson}
+          <!--
+            Multi-person (co-sign) chores are NOT claimable — they stay in the
+            pile until the full complement signs, so every member who hasn't yet
+            signed can pick up their part from up-for-grabs. No Claim / Drop /
+            Hand-off here (the grouping in state.svelte.ts routes a co-sign chore
+            to up-for-grabs for non-signers, Mine for signers).
+          -->
+          {#if iSigned}
+            <!-- Already signed this occurrence (D6) — waiting on the others. -->
+            <button
+              type="button"
+              class="ch-btn ch-btn-ghost"
+              data-action="complete"
+              disabled
+              title="You've marked this done — waiting on others"
+            >
+              You're in — waiting on others
+            </button>
+          {:else}
+            <!-- Hasn't signed — opens the participant dialog (App.svelte). -->
+            <button
+              type="button"
+              class="ch-btn ch-btn-primary"
+              data-action="complete"
+              onclick={() => onComplete?.(chore)}
+              disabled={pending}
+              title="Mark this chore done"
+            >
+              Mark done
+            </button>
+          {/if}
+        {:else if isUnclaimed}
           <button
             type="button"
             class="ch-btn ch-btn-primary"
@@ -322,42 +354,17 @@
               Drop
             </button>
           {/if}
-          {#if !isMultiPerson}
-            <!-- Single-person chore — today's exact one-tap Done (unchanged, P2). -->
-            <button
-              type="button"
-              class="ch-btn ch-btn-primary"
-              data-action="complete"
-              onclick={() => onComplete?.(chore)}
-              disabled={pending}
-              title="Mark this chore done"
-            >
-              Done
-            </button>
-          {:else if iSigned}
-            <!-- Co-sign chore the viewing user has already signed (D6). -->
-            <button
-              type="button"
-              class="ch-btn ch-btn-ghost"
-              data-action="complete"
-              disabled
-              title="You've marked this done — waiting on others"
-            >
-              You're in — waiting on others
-            </button>
-          {:else}
-            <!-- Co-sign chore the viewing user hasn't signed — opens the dialog. -->
-            <button
-              type="button"
-              class="ch-btn ch-btn-primary"
-              data-action="complete"
-              onclick={() => onComplete?.(chore)}
-              disabled={pending}
-              title="Mark this chore done"
-            >
-              Mark done
-            </button>
-          {/if}
+          <!-- Single-person chore — today's exact one-tap Done (unchanged, P2). -->
+          <button
+            type="button"
+            class="ch-btn ch-btn-primary"
+            data-action="complete"
+            onclick={() => onComplete?.(chore)}
+            disabled={pending}
+            title="Mark this chore done"
+          >
+            Done
+          </button>
         {/if}
         {#if onEdit}
           <button

@@ -276,12 +276,22 @@ class BoardStore {
   // Unclaimed pile chores PLUS stale claims (isClaimStale — pile-eligible per
   // WP-04/05 stale-claim UX). Dirtiest-first. WP-12 builds the lane UI.
 
-  upForGrabsChores = $derived.by<ChoreDto[]>(() =>
-    this.chores
-      .filter((c) => c.assignmentKind === 'none' || c.isClaimStale)
+  upForGrabsChores = $derived.by<ChoreDto[]>(() => {
+    const uid = this.currentUserId;
+    return this.chores
+      .filter((c) => {
+        // Multi-person (co-sign) chores stay in the pile until the full
+        // complement signs — claiming no longer hides them (a still-incomplete
+        // co-sign chore is "up for grabs" to every member who hasn't signed yet,
+        // so they can pick up their part). Signers see it in Mine instead.
+        if (c.requiredCount > 1 && c.completedCount < c.requiredCount) {
+          return !c.contributorUserIds.includes(uid);
+        }
+        return c.assignmentKind === 'none' || c.isClaimStale;
+      })
       .slice()
-      .sort(sortDirtiestFirst),
-  );
+      .sort(sortDirtiestFirst);
+  });
 
   // ── Mine lens (grouping seam — full UI is WP-12) ─────────────────────────
   //
@@ -292,6 +302,13 @@ class BoardStore {
     const uid = this.currentUserId;
     return this.chores
       .filter((c) => {
+        // A co-sign chore the viewer has already signed sits on their plate
+        // (waiting on the others) until it's satisfied; if they haven't signed,
+        // it's an up-for-grabs pile chore, not theirs. Co-sign chores aren't
+        // claimable, so the claim/owner rules below don't apply to them.
+        if (c.requiredCount > 1 && c.completedCount < c.requiredCount) {
+          return c.contributorUserIds.includes(uid);
+        }
         const heldByMe =
           c.assigneeUserId === uid && c.assignmentKind !== 'none' && !c.isClaimStale;
         const ownedByMe = c.ownerUserId === uid;
@@ -332,16 +349,21 @@ class BoardStore {
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   private passesAttentionFilter(c: ChoreDto): boolean {
+    // Co-sign chores partition by whether the viewer has signed (mirrors
+    // upForGrabsChores / mineChores): not-yet-signed → up-for-grabs, signed →
+    // mine. They are never claimable, so the claim/owner rules don't apply.
+    const coSignInProgress = c.requiredCount > 1 && c.completedCount < c.requiredCount;
+    const uid = this.currentUserId;
     switch (this.attentionFilter) {
       case 'up-for-grabs':
-        return c.assignmentKind === 'none' || c.isClaimStale;
+        return coSignInProgress
+          ? !c.contributorUserIds.includes(uid)
+          : c.assignmentKind === 'none' || c.isClaimStale;
       case 'mine':
-        return (
-          (c.assigneeUserId === this.currentUserId &&
-            c.assignmentKind !== 'none' &&
-            !c.isClaimStale) ||
-          c.ownerUserId === this.currentUserId
-        );
+        return coSignInProgress
+          ? c.contributorUserIds.includes(uid)
+          : (c.assigneeUserId === uid && c.assignmentKind !== 'none' && !c.isClaimStale) ||
+              c.ownerUserId === uid;
       case 'everything':
       default:
         return true;
