@@ -60,6 +60,23 @@ public enum ChoreEventType
 }
 
 /// <summary>
+/// Append-only participation event type for a multi-person chore's named soft roster (rework). The roster
+/// and each member's display state are DERIVED by folding these (see <c>ChoreRosterCalculator</c>); "done"
+/// is NOT here — it stays in <see cref="ChoreCompletion"/>.
+/// <list type="bullet">
+///   <item><see cref="Assigned"/> — someone added the subject (a pre-opt-in; declinable, never binding).</item>
+///   <item><see cref="Committed"/> — the subject is in (self-opt-in, or confirming an assignment).</item>
+///   <item><see cref="Left"/> — the subject was removed from the roster (decline / leave / admin-remove).</item>
+/// </list>
+/// </summary>
+public enum ChoreParticipationType
+{
+    Assigned,
+    Committed,
+    Left
+}
+
+/// <summary>
 /// Custom project flags enum for the days a fixed-weekly chore recurs on. This is a deliberate
 /// project type — do NOT wrap <see cref="System.DayOfWeek"/> (which is not a flags enum).
 /// </summary>
