@@ -631,7 +631,8 @@ public static class ChoresEndpoints
         int? OwnerUserId,
         int? AssigneeUserId,
         string? PhotoPath,
-        string? Icon = null)
+        string? Icon = null,
+        int RequiredCount = 1)
     {
         public CreateChoreCommand ToCommand() => new(
             Name,
@@ -646,7 +647,8 @@ public static class ChoresEndpoints
             OwnerUserId,
             AssigneeUserId,
             PhotoPath,
-            Icon ?? string.Empty);
+            Icon ?? string.Empty,
+            RequiredCount);
     }
 
     public sealed record UpdateChoreRequest(
@@ -662,7 +664,8 @@ public static class ChoresEndpoints
         int? OwnerUserId,
         string? PhotoPath,
         uint Version,
-        string? Icon = null)
+        string? Icon = null,
+        int RequiredCount = 1)
     {
         public UpdateChoreCommand ToCommand() => new(
             Name,
@@ -676,6 +679,7 @@ public static class ChoresEndpoints
             EffortTier,
             OwnerUserId,
             PhotoPath,
-            Icon ?? string.Empty);
+            Icon ?? string.Empty,
+            RequiredCount);
     }
 }

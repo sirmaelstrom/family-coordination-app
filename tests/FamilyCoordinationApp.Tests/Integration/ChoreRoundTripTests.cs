@@ -24,8 +24,10 @@ public sealed class ChoreRoundTripTests(PostgresContainerFixture postgres) : IAs
     public async Task DisposeAsync() => await _factory.DisposeAsync();
 
     private sealed record Chore(
-        int id, string name, uint version, string assignmentKind, int? assigneeUserId, DateTime? lastCompletedAt);
+        int id, string name, uint version, string assignmentKind, int? assigneeUserId, DateTime? lastCompletedAt,
+        int requiredCount = 1);
     private sealed record VersionBody(uint version);
+    private sealed record Board(List<Chore> chores);
 
     private HttpClient ClientA => _factory.CreateClientAs(ChoresWebAppFactory.UserAEmail);
 
@@ -109,5 +111,52 @@ public sealed class ChoreRoundTripTests(PostgresContainerFixture postgres) : IAs
 
         claimResp.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.BadRequest);
         claimResp.StatusCode.Should().NotBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task RequiredCount_CreateAndUpdate_EchoesOnBoard()
+    {
+        var client = ClientA;
+
+        // CREATE with requiredCount:2 (201) — the DTO echoes the value back.
+        var createResp = await client.PostAsJsonAsync("/api/chores/", new
+        {
+            name = "Multi-person chore",
+            recurrenceMode = "flexible",
+            intervalDays = 7,
+            effortTier = "standard",
+            requiredCount = 2
+        }, Json);
+        createResp.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResp.Content.ReadFromJsonAsync<Chore>(Json);
+        created.Should().NotBeNull();
+        created!.requiredCount.Should().Be(2, "create response must echo the supplied requiredCount");
+
+        // GET /board — the created chore must appear with requiredCount:2.
+        var board = await client.GetFromJsonAsync<Board>("/api/chores/board", Json);
+        var onBoard = board!.chores.SingleOrDefault(c => c.id == created.id);
+        onBoard.Should().NotBeNull("the newly created chore must be on the board");
+        onBoard!.requiredCount.Should().Be(2, "board projection must echo requiredCount from the entity");
+
+        // UPDATE requiredCount to 3 via PUT (200).
+        var updateResp = await client.PutAsJsonAsync($"/api/chores/{created.id}", new
+        {
+            name = "Multi-person chore",
+            recurrenceMode = "flexible",
+            intervalDays = 7,
+            effortTier = "standard",
+            requiredCount = 3,
+            version = created.version
+        }, Json);
+        updateResp.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = await updateResp.Content.ReadFromJsonAsync<Chore>(Json);
+        updated.Should().NotBeNull();
+        updated!.requiredCount.Should().Be(3, "update response must echo the new requiredCount");
+
+        // GET /board again — must reflect the updated value.
+        var boardAfterUpdate = await client.GetFromJsonAsync<Board>("/api/chores/board", Json);
+        var onBoardAfterUpdate = boardAfterUpdate!.chores.SingleOrDefault(c => c.id == created.id);
+        onBoardAfterUpdate.Should().NotBeNull();
+        onBoardAfterUpdate!.requiredCount.Should().Be(3, "board must echo requiredCount after a PUT update");
     }
 }
