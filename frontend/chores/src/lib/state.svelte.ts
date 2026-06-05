@@ -554,6 +554,63 @@ class BoardStore {
     if (this.refresh) await this.refresh();
   }
 
+  /** Is this chore a multi-person (co-sign) chore per the CURRENT board? */
+  private isMultiPerson(choreId: number): boolean {
+    return (this.choreById(choreId)?.requiredCount ?? 1) > 1;
+  }
+
+  /**
+   * Mutation runner for MULTI-PERSON (`requiredCount > 1`) chores. Unlike
+   * `runOptimistic`, it applies NO optimistic patch: a single co-sign
+   * (claim / drop / hand-off / partial complete) does NOT change the card to a
+   * "done" state, and — critically — the single-chore mutation RESPONSE carries
+   * `completedCount = 0` for the co-sign progress (the board GET is the only
+   * authoritative source, see WP-07). So we fire the call, then `reconcile()`
+   * (full board refetch) so the card reflects the true current-occurrence
+   * progress (or drops off / resets if the count was just satisfied). The 409 /
+   * other-4xx / network branches mirror `runOptimistic` exactly — refetch +
+   * surface, never an auto-retry.
+   *
+   * The returned DTO is still applied first so the version stays fresh even in
+   * the (rare) window before the reconcile lands; the reconcile then overwrites
+   * the whole board with authoritative progress.
+   */
+  private async runMultiPersonMutation(
+    choreId: number,
+    call: (chore: ChoreDto) => Promise<ChoreDto>,
+    conflictMessage: string,
+  ): Promise<void> {
+    if (this.pendingChoreIds.has(choreId)) return;
+    const chore = this.choreById(choreId);
+    if (!chore) return;
+
+    const snapshot: ChoreDto = { ...chore };
+    this.markPending(choreId, true);
+    try {
+      const updated = await call(snapshot);
+      this.applyChore(updated);
+      // Authoritative co-sign progress comes only from the board GET (the
+      // mutation response can't signal "X of N" — it returns completedCount=0).
+      await this.reconcile();
+    } catch (e) {
+      if (e instanceof ApiError && e.isConflict) {
+        await this.reconcile();
+        showToast({ message: conflictMessage, kind: 'info' });
+      } else if (e instanceof ApiError && e.isClientRejection) {
+        // Incl. the D6 distinctness rejection (a non-409 4xx). Resync + notice.
+        await this.reconcile();
+        showToast({
+          message: "That didn't go through — the board has been refreshed.",
+          kind: 'info',
+        });
+      } else {
+        showToast({ message: 'Something went wrong. Please try again.', kind: 'error' });
+      }
+    } finally {
+      this.markPending(choreId, false);
+    }
+  }
+
   /**
    * Core optimistic runner. Snapshots the chore, applies an optimistic patch,
    * fires the request, then commits the returned DTO or rolls back + reconciles
@@ -614,6 +671,15 @@ class BoardStore {
   /** Claim an unclaimed (or stale-claimed) pile chore for the current user. */
   async claim(choreId: number): Promise<void> {
     const me = this.currentUserId;
+    const call = (c: ChoreDto) => claimChore(c.id, c.version);
+    // Multi-person: reconcile after so the card never shows a stale
+    // `completedCount=0` from the single-chore response (WP-07). Assignment
+    // isn't co-sign progress, but the response carries no live progress at all,
+    // so we re-read the board for truth. Single-person path untouched.
+    if (this.isMultiPerson(choreId)) {
+      await this.runMultiPersonMutation(choreId, call, 'Someone got there first — board refreshed.');
+      return;
+    }
     await this.runOptimistic(
       choreId,
       {
@@ -622,41 +688,72 @@ class BoardStore {
         claimedAt: new Date().toISOString(),
         isClaimStale: false,
       },
-      (c) => claimChore(c.id, c.version),
+      call,
       'Someone got there first — board refreshed.',
     );
   }
 
   /** Drop a chore the current user holds (returns it to the pile). */
   async drop(choreId: number): Promise<void> {
+    const call = (c: ChoreDto) => dropChore(c.id, c.version);
+    if (this.isMultiPerson(choreId)) {
+      await this.runMultiPersonMutation(choreId, call, 'That chore changed — board refreshed.');
+      return;
+    }
     await this.runOptimistic(
       choreId,
       { assigneeUserId: null, assignmentKind: 'none', claimedAt: null, isClaimStale: false },
-      (c) => dropChore(c.id, c.version),
+      call,
       'That chore changed — board refreshed.',
     );
   }
 
-  /** Mark a chore done (optionally with a note / already-uploaded photo path). */
-  async complete(choreId: number, extra?: { note?: string | null; photoPath?: string | null }): Promise<void> {
-    await this.runOptimistic(
-      choreId,
-      // Optimistically reflect "just completed" by stamping lastCompletedAt.
-      // We do NOT recompute dueness/colorTier — the authoritative post-completion
-      // tier (e.g. recurring chore's next dueness) comes from the returned DTO.
-      { lastCompletedAt: new Date().toISOString() },
-      (c) =>
-        completeChore(c.id, {
-          note: extra?.note ?? null,
-          photoPath: extra?.photoPath ?? null,
-          version: c.version,
-        } satisfies CompleteRequest),
-      'That chore changed — board refreshed.',
-    );
+  /**
+   * Mark a chore done. `extra` may carry a note / already-uploaded photo path
+   * and — for multi-person (co-sign) chores — the `participantUserIds` recorded
+   * via the complete dialog (WP-07). The `api.ts` CompleteRequest already has
+   * the field; we pass it straight through.
+   *
+   * SINGLE-PERSON (`requiredCount == 1`): the EXISTING optimistic path —
+   * stamp `lastCompletedAt` then commit the returned DTO. Behaviorally identical
+   * to before this WP.
+   *
+   * MULTI-PERSON (`requiredCount > 1`): no optimistic `{ lastCompletedAt }`
+   * patch (a partial co-sign is NOT "done"); fire then reconcile so the card
+   * shows the authoritative "X of N" (or drops off when the count is satisfied).
+   * The mutation response can't signal progress (returns completedCount=0), so
+   * the board refetch is the only correct source — see WP-07.
+   */
+  async complete(
+    choreId: number,
+    extra?: { note?: string | null; photoPath?: string | null; participantUserIds?: number[] },
+  ): Promise<void> {
+    const call = (c: ChoreDto) =>
+      completeChore(c.id, {
+        note: extra?.note ?? null,
+        photoPath: extra?.photoPath ?? null,
+        participantUserIds: extra?.participantUserIds,
+        version: c.version,
+      } satisfies CompleteRequest);
+
+    if (this.isMultiPerson(choreId)) {
+      await this.runMultiPersonMutation(choreId, call, 'That chore changed — board refreshed.');
+    } else {
+      await this.runOptimistic(
+        choreId,
+        // Optimistically reflect "just completed" by stamping lastCompletedAt.
+        // We do NOT recompute dueness/colorTier — the authoritative post-completion
+        // tier (e.g. recurring chore's next dueness) comes from the returned DTO.
+        { lastCompletedAt: new Date().toISOString() },
+        call,
+        'That chore changed — board refreshed.',
+      );
+    }
     // A completion shifts the distribution — invalidate the cached equity so it
-    // reloads when next viewed (or now, if the equity lens is active). The happy
-    // path doesn't refetch the board, so this is the only equity hook for it; a
-    // 409/4xx already reconciled via setBoard (which also invalidates).
+    // reloads when next viewed (or now, if the equity lens is active). The
+    // single-person happy path doesn't refetch the board, so this is its only
+    // equity hook; the multi-person path already reconciled via setBoard (which
+    // also invalidates), and a 409/4xx reconciled the same way.
     this.invalidateEquity();
   }
 
@@ -665,6 +762,11 @@ class BoardStore {
    */
   async handOff(choreId: number, targetUserId: number | null): Promise<void> {
     const toPile = targetUserId == null;
+    const call = (c: ChoreDto) => handOffChore(c.id, { targetUserId, version: c.version });
+    if (this.isMultiPerson(choreId)) {
+      await this.runMultiPersonMutation(choreId, call, 'That chore changed — board refreshed.');
+      return;
+    }
     await this.runOptimistic(
       choreId,
       toPile
@@ -675,7 +777,7 @@ class BoardStore {
             claimedAt: new Date().toISOString(),
             isClaimStale: false,
           },
-      (c) => handOffChore(c.id, { targetUserId, version: c.version }),
+      call,
       'That chore changed — board refreshed.',
     );
   }
