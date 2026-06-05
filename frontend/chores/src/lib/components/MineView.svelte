@@ -26,11 +26,24 @@
     onDrop: (chore: ChoreDto) => void;
     onComplete: (chore: ChoreDto) => void;
     onHandOff: (chore: ChoreDto) => void;
+    onCommit: (chore: ChoreDto) => void;
+    onLeave: (chore: ChoreDto) => void;
     onEdit: (chore: ChoreDto) => void;
   }
 
-  let { chores, loads, currentUserId, isPending, onClaim, onDrop, onComplete, onHandOff, onEdit }: Props =
-    $props();
+  let {
+    chores,
+    loads,
+    currentUserId,
+    isPending,
+    onClaim,
+    onDrop,
+    onComplete,
+    onHandOff,
+    onCommit,
+    onLeave,
+    onEdit,
+  }: Props = $props();
 
   // Deterministic per-user avatar accent (hash userId → palette). Purely
   // cosmetic, no schema change — gives each member a stable color in the strip.
@@ -102,6 +115,8 @@
             {onDrop}
             {onComplete}
             {onHandOff}
+            {onCommit}
+            {onLeave}
             {onEdit}
           />
         {/each}

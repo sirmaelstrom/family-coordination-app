@@ -81,6 +81,12 @@
   function handleDrop(chore: ChoreDto) {
     store.drop(chore.id);
   }
+  function handleCommit(chore: ChoreDto) {
+    store.commit(chore.id);
+  }
+  function handleLeave(chore: ChoreDto) {
+    store.leave(chore.id);
+  }
   function handleComplete(chore: ChoreDto) {
     // Multi-person (co-sign) chore → open the participant dialog so the present
     // member can record who's marking it done (D7). Single-person chore → keep
@@ -243,6 +249,8 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+        onCommit={handleCommit}
+        onLeave={handleLeave}
         onEdit={handleEdit}
       />
     {:else if store.lens === 'rooms'}
@@ -254,6 +262,8 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+        onCommit={handleCommit}
+        onLeave={handleLeave}
         onEdit={handleEdit}
       />
     {:else if store.lens === 'up-for-grabs'}
@@ -265,6 +275,8 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+        onCommit={handleCommit}
+        onLeave={handleLeave}
         onEdit={handleEdit}
       />
     {:else if store.lens === 'mine'}
@@ -277,6 +289,8 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+        onCommit={handleCommit}
+        onLeave={handleLeave}
         onEdit={handleEdit}
       />
     {:else if store.lens === 'equity'}

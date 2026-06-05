@@ -21,11 +21,23 @@
     onDrop: (chore: ChoreDto) => void;
     onComplete: (chore: ChoreDto) => void;
     onHandOff: (chore: ChoreDto) => void;
+    onCommit: (chore: ChoreDto) => void;
+    onLeave: (chore: ChoreDto) => void;
     onEdit: (chore: ChoreDto) => void;
   }
 
-  let { chores, currentUserId, isPending, onClaim, onDrop, onComplete, onHandOff, onEdit }: Props =
-    $props();
+  let {
+    chores,
+    currentUserId,
+    isPending,
+    onClaim,
+    onDrop,
+    onComplete,
+    onHandOff,
+    onCommit,
+    onLeave,
+    onEdit,
+  }: Props = $props();
 </script>
 
 <div class="ch-grabs">
@@ -45,6 +57,8 @@
           {onDrop}
           {onComplete}
           {onHandOff}
+          {onCommit}
+          {onLeave}
           {onEdit}
         />
       {/each}

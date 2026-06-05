@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ChoreDto, ColorTier, DueState, EffortTier, RecurrenceMode } from '../types';
+  import type { ChoreDto, ColorTier, DueState, EffortTier, RecurrenceMode, RosterState } from '../types';
   import { memberFor, roomFor } from '../state.svelte';
   import { showPhoto } from '../lightbox.svelte';
   import MemberAvatar from './MemberAvatar.svelte';
@@ -36,6 +36,10 @@
     onDrop?: (chore: ChoreDto) => void;
     onComplete?: (chore: ChoreDto) => void;
     onHandOff?: (chore: ChoreDto) => void;
+    /** Commit ("I'm in") on a multi-person chore's roster. */
+    onCommit?: (chore: ChoreDto) => void;
+    /** Leave ("Not me") a multi-person chore's roster. */
+    onLeave?: (chore: ChoreDto) => void;
     /** Open the edit sheet for this chore. */
     onEdit?: (chore: ChoreDto) => void;
   }
@@ -49,6 +53,8 @@
     onDrop,
     onComplete,
     onHandOff,
+    onCommit,
+    onLeave,
     onEdit,
   }: Props = $props();
 
@@ -85,15 +91,31 @@
   let isClaimed = $derived(chore.assignmentKind === 'claimed' && !chore.isClaimStale);
   let isAssigned = $derived(chore.assignmentKind === 'assigned');
 
-  // ── Multi-person co-sign (WP-07) ─────────────────────────────────────────
-  // SERVER fields only (MN3 — no client count/membership math). `requiredCount
-  // > 1` marks a co-sign chore; `completedCount`/`contributorUserIds` are the
-  // authoritative current-occurrence progress from the board GET (the store
-  // reconciles after each mutation, so these are fresh). When the viewing user
-  // is already in `contributorUserIds` they've signed this occurrence and the
-  // Done button shows a waiting state (D6) instead of re-opening the dialog.
+  // ── Multi-person named roster (rework) ───────────────────────────────────
+  // SERVER fields only (MN3 — no client count/membership math). `roster` carries
+  // each member's derived state (assigned/in/done); `completedCount`/`requiredCount`
+  // are the authoritative "k of X" gate (fresh — the store reconciles via the board
+  // GET after each mutation). The viewer's OWN roster state drives which actions show.
   let isMultiPerson = $derived(chore.requiredCount > 1);
-  let iSigned = $derived(chore.contributorUserIds.includes(currentUserId));
+  let myRosterState = $derived<RosterState | null>(
+    chore.roster.find((m) => m.userId === currentUserId)?.state ?? null,
+  );
+  let iAmDone = $derived(myRosterState === 'done');
+  let onRoster = $derived(myRosterState !== null);
+  let rosterMembers = $derived(
+    chore.roster.map((m) => ({ userId: m.userId, state: m.state, member: memberFor(m.userId) })),
+  );
+
+  const ROSTER_LABEL: Record<RosterState, string> = {
+    assigned: 'Assigned',
+    in: "I'm in",
+    done: 'Done',
+  };
+  const ROSTER_GLYPH: Record<RosterState, string> = {
+    assigned: '○',
+    in: '●',
+    done: '✓',
+  };
 
   // ── Who can do what (drives the action buttons) ──────────────────────────
   // The viewing user "holds" the chore when they're the active (non-stale)
@@ -253,7 +275,30 @@
           </span>
         {/if}
 
-        {#if isClaimed && assignee}
+        {#if isMultiPerson}
+          <div class="ch-roster" aria-label="Roster: {chore.completedCount} of {chore.requiredCount} done">
+            {#each rosterMembers as r (r.userId)}
+              {#if r.member}
+                <span
+                  class="ch-roster-member ch-roster-{r.state}"
+                  title="{nameOf(r.userId, r.member.displayName)} — {ROSTER_LABEL[r.state]}"
+                >
+                  <MemberAvatar
+                    name={r.member.displayName}
+                    initials={r.member.initials}
+                    pictureUrl={r.member.pictureUrl}
+                    size={26}
+                    relation={ROSTER_LABEL[r.state]}
+                  />
+                  <span class="ch-roster-badge" aria-hidden="true">{ROSTER_GLYPH[r.state]}</span>
+                </span>
+              {/if}
+            {/each}
+            {#if rosterMembers.length === 0}
+              <span class="ch-claim ch-claim-open">Needs {chore.requiredCount} — no one yet</span>
+            {/if}
+          </div>
+        {:else if isClaimed && assignee}
           <span class="ch-claim ch-claim-claimed">
             <MemberAvatar
               name={assignee.displayName}
@@ -288,35 +333,57 @@
       <div class="ch-actions">
         {#if isMultiPerson}
           <!--
-            Multi-person (co-sign) chores are NOT claimable — they stay in the
-            pile until the full complement signs, so every member who hasn't yet
-            signed can pick up their part from up-for-grabs. No Claim / Drop /
-            Hand-off here (the grouping in state.svelte.ts routes a co-sign chore
-            to up-for-grabs for non-signers, Mine for signers).
+            Multi-person chores are NOT claimable. Actions depend on the viewer's
+            roster state: done → waiting; on-roster → mark-done / not-me; assigned
+            or not-on-roster → I'm-in/I'll-help to join, plus mark-done (anyone may
+            complete toward the count). The store routes the chore to Mine (on
+            roster) or Up-for-grabs (not) — see state.svelte.ts.
           -->
-          {#if iSigned}
-            <!-- Already signed this occurrence (D6) — waiting on the others. -->
+          {#if iAmDone}
             <button
               type="button"
               class="ch-btn ch-btn-ghost"
               data-action="complete"
               disabled
-              title="You've marked this done — waiting on others"
+              title="You've done your part — waiting on the others"
             >
-              You're in — waiting on others
+              You're done ✓
             </button>
           {:else}
-            <!-- Hasn't signed — opens the participant dialog (App.svelte). -->
+            {#if !onRoster || myRosterState === 'assigned'}
+              <button
+                type="button"
+                class="ch-btn ch-btn-ghost"
+                data-action="commit"
+                onclick={() => onCommit?.(chore)}
+                disabled={pending}
+                title={onRoster ? "Confirm you're in" : "Join in — I'll help"}
+              >
+                {onRoster ? "I'm in" : "I'll help"}
+              </button>
+            {/if}
             <button
               type="button"
               class="ch-btn ch-btn-primary"
               data-action="complete"
               onclick={() => onComplete?.(chore)}
               disabled={pending}
-              title="Mark this chore done"
+              title="Mark your part done"
             >
-              Mark done
+              Mark my part done
             </button>
+            {#if onRoster}
+              <button
+                type="button"
+                class="ch-btn ch-btn-ghost"
+                data-action="leave"
+                onclick={() => onLeave?.(chore)}
+                disabled={pending}
+                title="I can't do this one — take me off"
+              >
+                Not me
+              </button>
+            {/if}
           {/if}
         {:else if isUnclaimed}
           <button
@@ -608,6 +675,43 @@
   }
   .ch-claim-open {
     font-style: italic;
+  }
+
+  /* ── Multi-person roster strip (avatars badged assigned ○ / in ● / done ✓) ── */
+  .ch-roster {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .ch-roster-member {
+    position: relative;
+    display: inline-flex;
+  }
+  /* An assigned (not-yet-confirmed) member reads quieter than a committed one. */
+  .ch-roster-assigned {
+    opacity: 0.65;
+  }
+  .ch-roster-badge {
+    position: absolute;
+    right: -3px;
+    bottom: -3px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 9px;
+    line-height: 1;
+    color: #fff;
+    background: var(--color-text-muted);
+    box-shadow: 0 0 0 2px var(--color-surface);
+  }
+  .ch-roster-in .ch-roster-badge {
+    background: var(--color-info);
+  }
+  .ch-roster-done .ch-roster-badge {
+    background: var(--color-success);
   }
 
   .ch-actions {

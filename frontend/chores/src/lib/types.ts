@@ -28,6 +28,19 @@ export type ColorTier = 'fresh' | 'mid' | 'due' | 'overdue';
 /** camelCase — enum via JsonStringEnumConverter(CamelCase). */
 export type AssignmentKind = 'none' | 'assigned' | 'claimed';
 
+/**
+ * camelCase — enum via JsonStringEnumConverter(CamelCase). A member's DERIVED state on a multi-person
+ * chore's named roster (rework): `assigned` = suggested (a pre-opt-in, no reply); `in` = committed
+ * ("I'm in"); `done` = completed their part this occurrence.
+ */
+export type RosterState = 'assigned' | 'in' | 'done';
+
+/** One member of a multi-person chore's derived roster. */
+export interface RosterMemberDto {
+  userId: number;
+  state: RosterState;
+}
+
 /** camelCase — enum via JsonStringEnumConverter(CamelCase). Room rollup dirtiness. */
 export type RoomRollupStatus = 'clean' | 'attention' | 'needsWork';
 
@@ -62,12 +75,12 @@ export interface ChoreDto {
   photoPath: string | null;
   /** xmin optimistic-concurrency token. Echo back on mutations (WP-11). */
   version: number;
-  /** 1 = normal chore; >1 = multi-person (co-sign required). Always ≥ 1. */
+  /** 1 = normal chore; >1 = multi-person (named roster). Always ≥ 1. */
   requiredCount: number;
-  /** Distinct contributors toward the CURRENT open occurrence (0..requiredCount). Board GET only; ProjectChore path always returns 0. */
+  /** Distinct members DONE toward the CURRENT open occurrence (0..requiredCount) — the gate. Board GET only. */
   completedCount: number;
-  /** User IDs who have signed the current occurrence, ascending. Empty for single-person chores. */
-  contributorUserIds: number[];
+  /** Named roster + per-member state (assigned/in/done), ascending by userId. [] = open / single-person. */
+  roster: RosterMemberDto[];
 }
 
 export interface RoomRollupDto {

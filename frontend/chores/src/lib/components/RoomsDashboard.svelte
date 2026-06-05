@@ -25,11 +25,23 @@
     onDrop: (chore: ChoreDto) => void;
     onComplete: (chore: ChoreDto) => void;
     onHandOff: (chore: ChoreDto) => void;
+    onCommit: (chore: ChoreDto) => void;
+    onLeave: (chore: ChoreDto) => void;
     onEdit: (chore: ChoreDto) => void;
   }
 
-  let { groups, currentUserId, isPending, onClaim, onDrop, onComplete, onHandOff, onEdit }: Props =
-    $props();
+  let {
+    groups,
+    currentUserId,
+    isPending,
+    onClaim,
+    onDrop,
+    onComplete,
+    onHandOff,
+    onCommit,
+    onLeave,
+    onEdit,
+  }: Props = $props();
 
   // The drilled-into room (by roomId; null = the General group; undefined = the
   // dashboard grid). Number-or-null can't disambiguate "General" from "grid", so
@@ -172,6 +184,8 @@
             {onDrop}
             {onComplete}
             {onHandOff}
+            {onCommit}
+            {onLeave}
             {onEdit}
           />
         {/each}
