@@ -35,7 +35,7 @@
     // Garage, home & outdoors
     '🚗', '🏡', '🌳', '🪴', '🌿',
     // Pets
-    '🐾', '🐕', '🐈',
+    '🐾', '🐶', '🐱',
     // Cleaning & chores
     '🧹', '🧺', '🧽', '🗑️', '🪟',
     // Other spaces
