@@ -49,6 +49,10 @@
   let quickAddSubmitting = $state(false);
   let handOffOpen = $state(false);
   let handOffChore = $state<ChoreDto | null>(null);
+  // The shared member picker serves both "hand off / reassign" (held chores) and
+  // "assign" (up-for-grabs chores). The mode only changes copy + whether the
+  // "Leave for anyone" pile row shows — both call store.handOff on select.
+  let pickerMode = $state<'handoff' | 'assign'>('handoff');
   let completeOpen = $state(false);
   let completeChore = $state<ChoreDto | null>(null);
   let editOpen = $state(false);
@@ -105,6 +109,18 @@
     if (chore) store.complete(chore.id, { participantUserIds });
   }
   function handleHandOff(chore: ChoreDto) {
+    pickerMode = 'handoff';
+    handOffChore = chore;
+    handOffOpen = true;
+  }
+  /**
+   * Assign an up-for-grabs chore to a chosen member. Opens the SAME member picker
+   * in "assign" mode; selecting a member runs store.handOff (a member target lands
+   * a deliberate Assigned server-side — see ChoreService.HandOffAsync). No new
+   * endpoint: assigning from the pile is just a hand-off with no current holder.
+   */
+  function handleAssign(chore: ChoreDto) {
+    pickerMode = 'assign';
     handOffChore = chore;
     handOffOpen = true;
   }
@@ -257,6 +273,7 @@
         onComplete={handleComplete}
         onHandOff={handleHandOff}
         onTake={handleTake}
+        onAssign={handleAssign}
         onCommit={handleCommit}
         onLeave={handleLeave}
         onEdit={handleEdit}
@@ -271,6 +288,7 @@
         onComplete={handleComplete}
         onHandOff={handleHandOff}
         onTake={handleTake}
+        onAssign={handleAssign}
         onCommit={handleCommit}
         onLeave={handleLeave}
         onEdit={handleEdit}
@@ -285,6 +303,7 @@
         onComplete={handleComplete}
         onHandOff={handleHandOff}
         onTake={handleTake}
+        onAssign={handleAssign}
         onCommit={handleCommit}
         onLeave={handleLeave}
         onEdit={handleEdit}
@@ -300,6 +319,7 @@
         onComplete={handleComplete}
         onHandOff={handleHandOff}
         onTake={handleTake}
+        onAssign={handleAssign}
         onCommit={handleCommit}
         onLeave={handleLeave}
         onEdit={handleEdit}
@@ -363,7 +383,8 @@
   open={handOffOpen}
   choreName={handOffChore?.name ?? ''}
   members={store.board?.members ?? []}
-  excludeUserId={handOffChore?.assigneeUserId ?? null}
+  mode={pickerMode}
+  excludeUserId={pickerMode === 'assign' ? null : (handOffChore?.assigneeUserId ?? null)}
   onClose={() => {
     handOffOpen = false;
     handOffChore = null;

@@ -38,6 +38,8 @@
     onHandOff?: (chore: ChoreDto) => void;
     /** Take a chore held by someone else — assign it to the current user (one tap). */
     onTake?: (chore: ChoreDto) => void;
+    /** Assign an up-for-grabs chore to a chosen member (opens the member picker). */
+    onAssign?: (chore: ChoreDto) => void;
     /** Commit ("I'm in") on a multi-person chore's roster. */
     onCommit?: (chore: ChoreDto) => void;
     /** Leave ("Not me") a multi-person chore's roster. */
@@ -56,6 +58,7 @@
     onComplete,
     onHandOff,
     onTake,
+    onAssign,
     onCommit,
     onLeave,
     onEdit,
@@ -264,24 +267,39 @@
           Done {lastDoneLabel}
         </span>
       {/if}
+
+      <!--
+        Minder chip (the chore's ultimate owner — "makes sure it gets done").
+        Deliberately lives UP HERE among the chore's attribute chips, NOT down in
+        the footer next to the doer — the minder is a property of the chore, the
+        doer is the live work state. Rendering it as an eye-icon chip (no avatar)
+        keeps it visually distinct from the footer's avatar-led doer, so the two
+        roles never read as the same thing.
+      -->
+      {#if owner}
+        <span
+          class="ch-tag ch-tag-minder"
+          title="Minder — makes sure this gets done: {nameOf(chore.ownerUserId, owner.displayName)}"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+            <path
+              d="M12 5c-5 0-9.27 3.11-11 7 1.73 3.89 6 7 11 7s9.27-3.11 11-7c-1.73-3.89-6-7-11-7zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"
+              fill="currentColor"
+            />
+          </svg>
+          <span class="ch-tag-minder-role">Minder</span>
+          {nameOf(chore.ownerUserId, owner.displayName)}
+        </span>
+      {/if}
     </div>
 
     <div class="ch-card-foot">
+      <!--
+        The footer people row is the DOER only — who's actively on it (roster /
+        claimed / assigned) or "Up for grabs". The minder moved up to the chip row
+        above so the two roles are visually separated (operator feedback).
+      -->
       <div class="ch-people">
-        {#if owner}
-          <span class="ch-minder" title="Minder: {nameOf(chore.ownerUserId, owner.displayName)}">
-            <MemberAvatar
-              name={owner.displayName}
-              initials={owner.initials}
-              pictureUrl={owner.pictureUrl}
-              size={28}
-              relation="Minded by"
-            />
-            <span class="ch-minder-label">Minder</span>
-            <span class="ch-minder-name">{nameOf(chore.ownerUserId, owner.displayName)}</span>
-          </span>
-        {/if}
-
         {#if isMultiPerson}
           <div class="ch-roster" aria-label="Roster: {chore.completedCount} of {chore.requiredCount} done">
             {#each rosterMembers as r (r.userId)}
@@ -403,6 +421,24 @@
           >
             Claim
           </button>
+          {#if onAssign}
+            <!--
+              Assign an up-for-grabs chore to a specific person (opens the member
+              picker). Lands a deliberate Assigned via the hand-off endpoint — the
+              same mechanism "Reassign" uses on held chores, just surfaced from the
+              pile. Distinct from Claim (self) and Take (grab someone else's).
+            -->
+            <button
+              type="button"
+              class="ch-btn ch-btn-ghost"
+              data-action="assign"
+              onclick={() => onAssign?.(chore)}
+              disabled={pending}
+              title="Assign this chore to someone"
+            >
+              Assign
+            </button>
+          {/if}
         {:else}
           {#if heldByMe}
             <button
@@ -674,6 +710,25 @@
     background: var(--color-info);
     font-weight: 600;
   }
+  /* Minder chip — the chore's ultimate owner. A quiet, bordered "accountability"
+     cue (eye icon + uppercase role + name) that reads distinctly from both the
+     muted attribute chips and the footer's avatar-led doer. */
+  .ch-tag-minder {
+    color: var(--color-text);
+    background: transparent;
+    border: 1px solid var(--color-line-strong);
+    font-weight: 500;
+  }
+  .ch-tag-minder svg {
+    color: var(--color-primary);
+  }
+  .ch-tag-minder-role {
+    text-transform: uppercase;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted);
+  }
 
   .ch-card-foot {
     display: flex;
@@ -689,22 +744,12 @@
     min-width: 0;
     flex-wrap: wrap;
   }
-  .ch-minder,
   .ch-claim {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     font-size: 0.8125rem;
     color: var(--color-text-muted);
-  }
-  .ch-minder-label {
-    font-size: 0.6875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .ch-minder-name {
-    font-weight: 500;
-    color: var(--color-text);
   }
   .ch-claim-label {
     font-weight: 500;

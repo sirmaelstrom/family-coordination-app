@@ -52,6 +52,12 @@
   let effort = $state<EffortTier>('Standard');
   let roomId = $state<number | null>(null);
   let ownerUserId = $state<number | null>(null);
+  /**
+   * Single-person assignee (null = up for grabs). Assignment is NOT part of the
+   * PUT contract — it's applied via the dedicated hand-off endpoint after the
+   * metadata save (see handleSubmit). Only meaningful when requiredCount === 1.
+   */
+  let assignTo = $state<number | null>(null);
   /** 1 = single person (default); ≥2 = multi-person requirement. */
   let requiredCount = $state(1);
   let existingPhotoPath = $state<string | null>(null);
@@ -182,6 +188,9 @@
     roomId = c.roomId ?? null;
     effort = c.effortTier;
     ownerUserId = c.ownerUserId ?? null;
+    // Single-person assignment, pre-filled from the chore's CURRENT holder
+    // (assigned or claimed); a None/pile chore reads as "Up for grabs" (null).
+    assignTo = c.assignmentKind !== 'none' ? (c.assigneeUserId ?? null) : null;
     requiredCount = c.requiredCount ?? 1;
     existingPhotoPath = c.photoPath;
     newPhotoFile = null;
@@ -317,6 +326,25 @@
       };
 
       await boardStore.edit(chore.id, body);
+
+      // Assignment isn't part of the PUT contract (it moves via the dedicated
+      // claim/hand-off endpoints). For a single-person chore, apply any change to
+      // "Assign to" via hand-off AFTER the metadata save: boardStore.edit just
+      // refreshed this chore's version in the board, so the follow-on read carries
+      // a fresh xmin (no self-409). A member target lands a deliberate Assigned;
+      // clearing back to "Up for grabs" returns a held chore to the pile.
+      if (requiredCount === 1) {
+        const currentAssignee =
+          chore.assignmentKind !== 'none' ? (chore.assigneeUserId ?? null) : null;
+        if (assignTo !== currentAssignee) {
+          if (assignTo === null) {
+            if (currentAssignee !== null) await boardStore.handOff(chore.id, null);
+          } else {
+            await boardStore.handOff(chore.id, assignTo);
+          }
+        }
+      }
+
       onClose();
     } finally {
       submitting = false;
@@ -616,7 +644,41 @@
         </div>
       </fieldset>
 
-      <!-- Assignment is NOT editable (v1.0 D6 — use Claim / Hand off on the card). -->
+      <!--
+        Assign to (single-person only). Multi-person chores use the named roster
+        (commit/leave on the card), so this is hidden when requiredCount > 1. The
+        change is applied via the hand-off endpoint on save (handleSubmit), NOT
+        through the PUT body — assignment moves through its own endpoint to keep
+        the assignment trio invariant intact.
+      -->
+      {#if requiredCount === 1}
+        <fieldset class="ch-field">
+          <legend class="ch-field-label">Assign to (optional)</legend>
+          <div class="ch-chip-row" role="group" aria-label="Assign to">
+            <button
+              type="button"
+              class="ch-chip"
+              class:active={assignTo === null}
+              aria-pressed={assignTo === null}
+              onclick={() => (assignTo = null)}
+            >
+              Up for grabs
+            </button>
+            {#each members as member (member.userId)}
+              <button
+                type="button"
+                class="ch-chip"
+                class:active={assignTo === member.userId}
+                aria-pressed={assignTo === member.userId}
+                onclick={() => (assignTo = member.userId)}
+              >
+                {member.displayName}
+              </button>
+            {/each}
+          </div>
+          <p class="ch-hint">Pin this on one person, or leave it up for grabs for anyone to claim.</p>
+        </fieldset>
+      {/if}
 
       <label class="ch-field">
         <span class="ch-field-label">Photo (optional)</span>
