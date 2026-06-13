@@ -356,16 +356,16 @@
 
     private async Task LoadShoppingListStats()
     {
+        // Summarize across ALL active (non-archived) lists, not just the most recent one —
+        // the household may have several lists going at once and the home card should reflect
+        // everything still to buy.
         var lists = await ShoppingListService.GetActiveShoppingListsAsync(_householdId);
-        var currentList = lists.OrderByDescending(l => l.CreatedAt).FirstOrDefault();
-        
-        if (currentList != null)
-        {
-            _shoppingListCount = currentList.Items.Count(i => !i.IsChecked);
-            _shoppingListChecked = currentList.Items.Count(i => i.IsChecked);
-            var total = _shoppingListCount + _shoppingListChecked;
-            _shoppingListProgress = total > 0 ? (_shoppingListChecked * 100.0 / total) : 0;
-        }
+        var allItems = lists.SelectMany(l => l.Items).ToList();
+
+        _shoppingListCount = allItems.Count(i => !i.IsChecked);
+        _shoppingListChecked = allItems.Count(i => i.IsChecked);
+        var total = _shoppingListCount + _shoppingListChecked;
+        _shoppingListProgress = total > 0 ? (_shoppingListChecked * 100.0 / total) : 0;
     }
 
     private async Task LoadChoreStats(int userId)
