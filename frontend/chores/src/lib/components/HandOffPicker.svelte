@@ -15,14 +15,30 @@
     members: MemberDto[];
     /** Hide the current holder from the list (no point handing to yourself). */
     excludeUserId?: number | null;
+    /**
+     * 'handoff' (default) — passing a HELD chore on, with a "Leave for anyone"
+     * pile option. 'assign' — pushing an UP-FOR-GRABS chore onto someone; the
+     * pile option is hidden (it's already in the pile) and the copy says "Assign".
+     * Both call the SAME hand-off mechanism server-side (a member target ⇒ Assigned).
+     */
+    mode?: 'handoff' | 'assign';
     onClose: () => void;
     /** targetUserId null ⇒ return to the pile ("Leave for anyone"). */
     onSelect: (targetUserId: number | null) => void;
   }
 
-  let { open, choreName, members, excludeUserId = null, onClose, onSelect }: Props = $props();
+  let { open, choreName, members, excludeUserId = null, mode = 'handoff', onClose, onSelect }: Props =
+    $props();
 
   let dialogEl: HTMLDialogElement | null = $state(null);
+
+  let isAssign = $derived(mode === 'assign');
+  let heading = $derived(isAssign ? 'Assign chore' : 'Hand off');
+  let subtitle = $derived(
+    isAssign
+      ? `Pick who should take “${choreName}”.`
+      : `Pass “${choreName}” to someone — or leave it for anyone.`,
+  );
 
   let pickable = $derived(members.filter((m) => m.userId !== excludeUserId));
 
@@ -42,15 +58,17 @@
 
 <dialog bind:this={dialogEl} onclose={onClose} class="ch-dialog">
   <div class="ch-dialog-body">
-    <h2>Hand off</h2>
-    <p class="ch-dialog-sub">Pass “{choreName}” to someone — or leave it for anyone.</p>
+    <h2>{heading}</h2>
+    <p class="ch-dialog-sub">{subtitle}</p>
 
     <div class="ch-handoff-list">
-      <button type="button" class="ch-handoff-row ch-handoff-pile" onclick={() => choose(null)}>
-        <span class="ch-handoff-pile-icon" aria-hidden="true">↩</span>
-        <span class="ch-handoff-name">Leave for anyone</span>
-        <span class="ch-handoff-hint">No one gets nagged</span>
-      </button>
+      {#if !isAssign}
+        <button type="button" class="ch-handoff-row ch-handoff-pile" onclick={() => choose(null)}>
+          <span class="ch-handoff-pile-icon" aria-hidden="true">↩</span>
+          <span class="ch-handoff-name">Leave for anyone</span>
+          <span class="ch-handoff-hint">No one gets nagged</span>
+        </button>
+      {/if}
 
       {#each pickable as member (member.userId)}
         <button type="button" class="ch-handoff-row" onclick={() => choose(member.userId)}>
@@ -59,7 +77,7 @@
             initials={member.initials}
             pictureUrl={member.pictureUrl}
             size={28}
-            relation="Hand off to"
+            relation={isAssign ? 'Assign to' : 'Hand off to'}
           />
           <span class="ch-handoff-name">{member.displayName}</span>
         </button>
