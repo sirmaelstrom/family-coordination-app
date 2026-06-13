@@ -21,6 +21,7 @@
     onDrop: (chore: ChoreDto) => void;
     onComplete: (chore: ChoreDto) => void;
     onHandOff: (chore: ChoreDto) => void;
+    onTake: (chore: ChoreDto) => void;
     onCommit: (chore: ChoreDto) => void;
     onLeave: (chore: ChoreDto) => void;
     onEdit: (chore: ChoreDto) => void;
@@ -34,6 +35,7 @@
     onDrop,
     onComplete,
     onHandOff,
+    onTake,
     onCommit,
     onLeave,
     onEdit,
@@ -57,6 +59,7 @@
           {onDrop}
           {onComplete}
           {onHandOff}
+          {onTake}
           {onCommit}
           {onLeave}
           {onEdit}

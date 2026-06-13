@@ -29,6 +29,7 @@ import { CHORE_LENSES } from './types';
 import {
   ApiError,
   claimChore,
+  takeChore,
   dropChore,
   completeChore,
   handOffChore,
@@ -719,6 +720,32 @@ class BoardStore {
     );
   }
 
+  /**
+   * Take a chore currently held by another member — grab it as a self-claim
+   * ("covering" for someone out/sick). The server displaces the holder and
+   * lands a Claimed (NOT a sticky Assigned), so a recurring chore returns to the
+   * pile after the taker completes it. Optimistic end-state is the same as claim.
+   */
+  async take(choreId: number): Promise<void> {
+    const me = this.currentUserId;
+    const call = (c: ChoreDto) => takeChore(c.id, c.version);
+    if (this.isMultiPerson(choreId)) {
+      await this.runMultiPersonMutation(choreId, call, 'That chore changed — board refreshed.');
+      return;
+    }
+    await this.runOptimistic(
+      choreId,
+      {
+        assigneeUserId: me,
+        assignmentKind: 'claimed',
+        claimedAt: new Date().toISOString(),
+        isClaimStale: false,
+      },
+      call,
+      'That chore changed — board refreshed.',
+    );
+  }
+
   /** Drop a chore the current user holds (returns it to the pile). */
   async drop(choreId: number): Promise<void> {
     const call = (c: ChoreDto) => dropChore(c.id, c.version);
@@ -832,8 +859,11 @@ class BoardStore {
       toPile
         ? { assigneeUserId: null, assignmentKind: 'none', claimedAt: null, isClaimStale: false }
         : {
+            // Hand-off to a member is a deliberate Assigned server-side
+            // (SetAssigned) — reflect that optimistically so the taker doesn't
+            // see a "Drop" flash (Drop is Claimed-only) before the board GET.
             assigneeUserId: targetUserId,
-            assignmentKind: 'claimed',
+            assignmentKind: 'assigned',
             claimedAt: new Date().toISOString(),
             isClaimStale: false,
           },

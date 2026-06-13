@@ -56,6 +56,19 @@ public interface IChoreService
     Task<Chore> ClaimAsync(int householdId, int choreId, int actorUserId, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Takes a chore for <paramref name="actorUserId"/> as a self-<see cref="AssignmentKind.Claimed"/>,
+    /// <b>displacing any current holder</b> (the "covering for someone out/sick" case — no coordination, no
+    /// roles). Unlike <see cref="ClaimAsync"/> (pile-only, rejects a held chore, MN8) this is allowed to take
+    /// a chore another member holds; unlike hand-off-to-self it lands a Claimed (not a sticky Assigned), so a
+    /// recurring chore returns to the pile after the taker completes it. A stale prior claim materializes its
+    /// auto-release event first (records the lapsed claimer, M16). Sets the trio to <c>(actor, Claimed, now)</c>
+    /// and appends a <c>ChoreEvent{Claimed}</c>.
+    /// </summary>
+    /// <exception cref="ChoreNotFoundException">No such chore in the household.</exception>
+    /// <exception cref="ChoreConflictException">The client <paramref name="version"/> is stale.</exception>
+    Task<Chore> TakeAsync(int householdId, int choreId, int actorUserId, uint version, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Drops a self-claim back to the pile. Precondition: <paramref name="actorUserId"/> holds it AND the
     /// hold is <see cref="AssignmentKind.Claimed"/> (drop is Claimed-only; a deliberately-Assigned chore is
     /// freed via hand-off, council M9). Clears the trio to <c>(null, None, null)</c> and appends a

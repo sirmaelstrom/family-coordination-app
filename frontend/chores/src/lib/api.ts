@@ -211,6 +211,14 @@ export async function claimChore(choreId: number, version: number): Promise<Chor
   });
 }
 
+/** Take a chore held by someone else — assign it to the caller as a self-claim (displaces the holder). */
+export async function takeChore(choreId: number, version: number): Promise<ChoreDto> {
+  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/take`, {
+    method: 'POST',
+    ...jsonBody({ version } satisfies VersionRequest),
+  });
+}
+
 export async function dropChore(choreId: number, version: number): Promise<ChoreDto> {
   return request<ChoreDto>(`${CHORES_BASE}/${choreId}/drop`, {
     method: 'POST',

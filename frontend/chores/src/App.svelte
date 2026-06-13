@@ -114,6 +114,13 @@
     handOffChore = null;
     if (chore) store.handOff(chore.id, targetUserId);
   }
+  function handleTake(chore: ChoreDto) {
+    // Take a chore currently held by someone else — grab it as a self-claim in
+    // one tap (covering for someone out/sick). No coordination with the holder
+    // needed; lands a Claimed (not a sticky assignment), so a recurring chore
+    // returns to the pile after this user completes it.
+    store.take(chore.id);
+  }
 
   /** Open the edit sheet for a chore. */
   function handleEdit(chore: ChoreDto) {
@@ -249,6 +256,7 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+        onTake={handleTake}
         onCommit={handleCommit}
         onLeave={handleLeave}
         onEdit={handleEdit}
@@ -262,6 +270,7 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+        onTake={handleTake}
         onCommit={handleCommit}
         onLeave={handleLeave}
         onEdit={handleEdit}
@@ -275,6 +284,7 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+        onTake={handleTake}
         onCommit={handleCommit}
         onLeave={handleLeave}
         onEdit={handleEdit}
@@ -289,6 +299,7 @@
         onDrop={handleDrop}
         onComplete={handleComplete}
         onHandOff={handleHandOff}
+        onTake={handleTake}
         onCommit={handleCommit}
         onLeave={handleLeave}
         onEdit={handleEdit}
