@@ -58,6 +58,12 @@
    * metadata save (see handleSubmit). Only meaningful when requiredCount === 1.
    */
   let assignTo = $state<number | null>(null);
+  /**
+   * Multi-person roster selection (when requiredCount > 1). Pre-filled from the
+   * chore's current roster; reconciled via the roster assign/leave endpoints on
+   * save. Ignored when requiredCount === 1 (that path uses `assignTo`).
+   */
+  let assignedUserIds = $state<number[]>([]);
   /** 1 = single person (default); ≥2 = multi-person requirement. */
   let requiredCount = $state(1);
   let existingPhotoPath = $state<string | null>(null);
@@ -191,6 +197,9 @@
     // Single-person assignment, pre-filled from the chore's CURRENT holder
     // (assigned or claimed); a None/pile chore reads as "Up for grabs" (null).
     assignTo = c.assignmentKind !== 'none' ? (c.assigneeUserId ?? null) : null;
+    // Multi-person roster pre-fill — everyone currently on the roster (the board
+    // payload carries the authoritative roster for X>1 chores).
+    assignedUserIds = c.roster.map((m) => m.userId);
     requiredCount = c.requiredCount ?? 1;
     existingPhotoPath = c.photoPath;
     newPhotoFile = null;
@@ -240,6 +249,13 @@
     if (next.has(flag)) next.delete(flag);
     else next.add(flag);
     selectedDays = next;
+  }
+
+  /** Toggle a member in the multi-person roster selection (requiredCount > 1). */
+  function toggleAssignee(userId: number) {
+    assignedUserIds = assignedUserIds.includes(userId)
+      ? assignedUserIds.filter((id) => id !== userId)
+      : [...assignedUserIds, userId];
   }
 
   function onPhotoChange(e: Event) {
@@ -325,15 +341,19 @@
         photoPath: resolvedPhotoPath,
       };
 
+      // Snapshot the roster BEFORE the save so the multi-person reconcile diffs
+      // against the chore's pre-edit roster (the PUT response carries an empty one).
+      const originalRoster = chore.roster.map((m) => ({ userId: m.userId, state: m.state }));
+
       await boardStore.edit(chore.id, body);
 
-      // Assignment isn't part of the PUT contract (it moves via the dedicated
-      // claim/hand-off endpoints). For a single-person chore, apply any change to
-      // "Assign to" via hand-off AFTER the metadata save: boardStore.edit just
-      // refreshed this chore's version in the board, so the follow-on read carries
-      // a fresh xmin (no self-409). A member target lands a deliberate Assigned;
-      // clearing back to "Up for grabs" returns a held chore to the pile.
+      // Assignment isn't part of the PUT contract — it moves via the dedicated
+      // claim/hand-off + roster endpoints. Apply it AFTER the metadata save:
+      // boardStore.edit just refreshed this chore's version in the board, so the
+      // follow-on read carries a fresh xmin (no self-409).
       if (requiredCount === 1) {
+        // Single-person: a member target lands a deliberate Assigned via hand-off;
+        // clearing back to "Up for grabs" returns a held chore to the pile.
         const currentAssignee =
           chore.assignmentKind !== 'none' ? (chore.assigneeUserId ?? null) : null;
         if (assignTo !== currentAssignee) {
@@ -343,6 +363,10 @@
             await boardStore.handOff(chore.id, assignTo);
           }
         }
+      } else {
+        // Multi-person: reconcile the named roster to the chosen set (adds/removes
+        // via the roster endpoints, diffed against the pre-edit roster).
+        await boardStore.applyRosterSelection(chore.id, originalRoster, assignedUserIds);
       }
 
       onClose();
@@ -645,11 +669,14 @@
       </fieldset>
 
       <!--
-        Assign to (single-person only). Multi-person chores use the named roster
-        (commit/leave on the card), so this is hidden when requiredCount > 1. The
-        change is applied via the hand-off endpoint on save (handleSubmit), NOT
-        through the PUT body — assignment moves through its own endpoint to keep
-        the assignment trio invariant intact.
+        Assignment is applied through the dedicated assignment endpoints on save
+        (handleSubmit), NOT the PUT body — so the assignment trio / roster events
+        stay the single source of truth.
+          • single-person (requiredCount === 1): "Assign to" one member, via hand-off.
+          • multi-person (requiredCount > 1): "Assign people", reconciled against the
+            chore's named roster via roster assign/leave.
+        The field tracks the LIVE requiredCount, so flipping "How many people?"
+        above swaps which picker shows.
       -->
       {#if requiredCount === 1}
         <fieldset class="ch-field">
@@ -677,6 +704,27 @@
             {/each}
           </div>
           <p class="ch-hint">Pin this on one person, or leave it up for grabs for anyone to claim.</p>
+        </fieldset>
+      {:else}
+        <fieldset class="ch-field">
+          <legend class="ch-field-label">Assign people (optional)</legend>
+          <div class="ch-chip-row" role="group" aria-label="Assign people">
+            {#each members as member (member.userId)}
+              <button
+                type="button"
+                class="ch-chip"
+                class:active={assignedUserIds.includes(member.userId)}
+                aria-pressed={assignedUserIds.includes(member.userId)}
+                onclick={() => toggleAssignee(member.userId)}
+              >
+                {member.displayName}
+              </button>
+            {/each}
+          </div>
+          <p class="ch-hint">
+            Name who's on this one — assigning is a suggestion: anyone can still join (“I'm in”) or
+            step off. Removing someone else needs you to be the chore's minder or creator.
+          </p>
         </fieldset>
       {/if}
 

@@ -24,6 +24,7 @@ import type {
   MemberDto,
   ChoreLensId,
   DueState,
+  RosterState,
 } from './types';
 import { CHORE_LENSES } from './types';
 import {
@@ -842,6 +843,48 @@ class BoardStore {
       (c) => assignRoster(c.id, subjectUserId, c.version),
       'That chore changed — board refreshed.',
     );
+  }
+
+  /**
+   * Remove a NAMED member from a multi-person chore's roster. Server-guarded:
+   * only the chore's creator or owner may remove someone else (anyone may remove
+   * themselves via `leave`). A rejected remove reconciles + surfaces a notice.
+   */
+  async removeFromRoster(choreId: number, subjectUserId: number): Promise<void> {
+    await this.runMultiPersonMutation(
+      choreId,
+      (c) => leaveRoster(c.id, subjectUserId, c.version),
+      'That chore changed — board refreshed.',
+    );
+  }
+
+  /**
+   * Reconcile a multi-person chore's named roster to a chosen member set (the
+   * edit sheet's "Assign people"). Diffs `selectedUserIds` against
+   * `originalRoster` (the roster captured at edit time): assigns anyone newly
+   * selected, removes anyone deselected who is still assigned/in. DONE members
+   * are never removed — their contribution stands. Runs sequentially so each op
+   * carries a fresh version (every roster mutation reconciles the board). Adding
+   * is unguarded; removing OTHERS is creator/owner-only server-side, so a rejected
+   * remove just surfaces a gentle notice and the board reconciles to the truth.
+   */
+  async applyRosterSelection(
+    choreId: number,
+    originalRoster: { userId: number; state: RosterState }[],
+    selectedUserIds: number[],
+  ): Promise<void> {
+    const selected = new Set(selectedUserIds);
+    const currentIds = new Set(originalRoster.map((m) => m.userId));
+    const toAdd = selectedUserIds.filter((id) => !currentIds.has(id));
+    const toRemove = originalRoster
+      .filter((m) => m.state !== 'done' && !selected.has(m.userId))
+      .map((m) => m.userId);
+    for (const id of toAdd) {
+      await this.assign(choreId, id);
+    }
+    for (const id of toRemove) {
+      await this.removeFromRoster(choreId, id);
+    }
   }
 
   /**
