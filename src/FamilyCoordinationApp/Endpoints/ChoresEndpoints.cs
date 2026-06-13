@@ -38,6 +38,7 @@ public static class ChoresEndpoints
         group.MapDelete("/{choreId:int}", DeleteChore);
 
         group.MapPost("/{choreId:int}/claim", ClaimChore);
+        group.MapPost("/{choreId:int}/take", TakeChore);
         group.MapPost("/{choreId:int}/drop", DropChore);
         group.MapPost("/{choreId:int}/handoff", HandOffChore);
         group.MapPost("/{choreId:int}/complete", CompleteChore);
@@ -168,6 +169,30 @@ public static class ChoresEndpoints
         try
         {
             var chore = await svc.ClaimAsync(user.HouseholdId, choreId, user.UserId, req.Version, ct);
+            return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
+        }
+        catch (ChoreNotFoundException) { return Results.NotFound(); }
+        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
+        catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+    }
+
+    private static async Task<IResult> TakeChore(
+        int choreId,
+        VersionRequest req,
+        ClaimsPrincipal principal,
+        IChoreService svc,
+        IChoreBoardService boardService,
+        TimeProvider timeProvider,
+        TimeZoneInfo timeZone,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
+        if (user is null) return Results.Unauthorized();
+
+        try
+        {
+            var chore = await svc.TakeAsync(user.HouseholdId, choreId, user.UserId, req.Version, ct);
             return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }

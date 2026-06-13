@@ -36,6 +36,8 @@
     onDrop?: (chore: ChoreDto) => void;
     onComplete?: (chore: ChoreDto) => void;
     onHandOff?: (chore: ChoreDto) => void;
+    /** Take a chore held by someone else — assign it to the current user (one tap). */
+    onTake?: (chore: ChoreDto) => void;
     /** Commit ("I'm in") on a multi-person chore's roster. */
     onCommit?: (chore: ChoreDto) => void;
     /** Leave ("Not me") a multi-person chore's roster. */
@@ -53,6 +55,7 @@
     onDrop,
     onComplete,
     onHandOff,
+    onTake,
     onCommit,
     onLeave,
     onEdit,
@@ -120,14 +123,18 @@
   // ── Who can do what (drives the action buttons) ──────────────────────────
   // The viewing user "holds" the chore when they're the active (non-stale)
   // assignee. Drop is Claimed-only (a deliberate Assigned chore can't be
-  // dropped — WP-04). Hand-off is available to the active holder. Done is
+  // dropped — WP-04). The holder can hand off; ANYONE can take a chore held by
+  // someone else or reassign it — the service has no holder guard on hand-off
+  // ("anyone can reassign, no roles", ChoreService.HandOffAsync). Done is
   // available on any non-pile chore (any member may complete — WP-04 M8).
   let heldByMe = $derived(
     chore.assigneeUserId === currentUserId &&
       (isClaimed || isAssigned),
   );
+  // Held (fresh, non-stale) by another member — surfaces Take it / Reassign so
+  // you can grab or pass a chore without coordinating with the current holder.
+  let heldByOther = $derived(!isUnclaimed && !heldByMe);
   let canDrop = $derived(heldByMe && isClaimed);
-  let canHandOff = $derived(heldByMe);
 
   // ── Recurrence hint (human, derived from the plain-string union) ─────────
   const RECURRENCE_HINT: Record<RecurrenceMode, string> = {
@@ -397,7 +404,7 @@
             Claim
           </button>
         {:else}
-          {#if canHandOff}
+          {#if heldByMe}
             <button
               type="button"
               class="ch-btn ch-btn-ghost"
@@ -408,17 +415,47 @@
             >
               Hand off
             </button>
-          {/if}
-          {#if canDrop}
+            {#if canDrop}
+              <button
+                type="button"
+                class="ch-btn ch-btn-ghost"
+                data-action="drop"
+                onclick={() => onDrop?.(chore)}
+                disabled={pending}
+                title="Put this chore back in the pile"
+              >
+                Drop
+              </button>
+            {/if}
+          {:else if heldByOther}
+            <!--
+              Held by someone else. Take it (claim it for yourself in one tap —
+              covering for someone who's out/sick, no need to coordinate) or
+              Reassign it to another member / release it via the shared hand-off
+              picker. Take lands a self-CLAIM (not a sticky assignment), so a
+              recurring chore returns to the pile after you finish it; completion
+              already credits the completer, so Take-then-Done attributes the
+              work to you.
+            -->
             <button
               type="button"
               class="ch-btn ch-btn-ghost"
-              data-action="drop"
-              onclick={() => onDrop?.(chore)}
+              data-action="take"
+              onclick={() => onTake?.(chore)}
               disabled={pending}
-              title="Put this chore back in the pile"
+              title="Take this chore — claim it for yourself"
             >
-              Drop
+              Take it
+            </button>
+            <button
+              type="button"
+              class="ch-btn ch-btn-ghost"
+              data-action="handoff"
+              onclick={() => onHandOff?.(chore)}
+              disabled={pending}
+              title="Reassign this chore to someone else or release it"
+            >
+              Reassign
             </button>
           {/if}
           <!-- Single-person chore — today's exact one-tap Done (unchanged, P2). -->

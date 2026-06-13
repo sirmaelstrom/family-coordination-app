@@ -207,6 +207,28 @@ public class ChoreService(
         return chore;
     }
 
+    public async Task<Chore> TakeAsync(int householdId, int choreId, int actorUserId, uint version, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var chore = await LoadChoreAsync(context, householdId, choreId, cancellationToken);
+        var now = UtcNow();
+
+        // "Take it" (covering for someone out/sick): grab the chore as a self-CLAIM regardless of who holds
+        // it, silently displacing any current holder (no coordination — mirrors hand-off's no-roles model).
+        // Unlike ClaimAsync (pile-only, MN8) Take is allowed to displace; unlike hand-off-to-self it lands a
+        // Claimed (not a sticky Assigned), so a recurring chore returns to the pile after the taker completes
+        // it. A stale prior claim still materializes its auto-release event first (records the lapsed claimer,
+        // M16) before the new self-claim overwrites the trio.
+        MaterializeAutoReleaseIfStale(context, chore, now);
+
+        SetClaimed(chore, actorUserId, now);
+        AppendEvent(context, chore, ChoreEventType.Claimed, actorUserId, targetUserId: null, now);
+
+        await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
+        logger.LogInformation("Chore {ChoreId} taken (self-claim) by user {UserId} (household {HouseholdId})", choreId, actorUserId, householdId);
+        return chore;
+    }
+
     public async Task<Chore> DropAsync(int householdId, int choreId, int actorUserId, uint version, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);

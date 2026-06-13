@@ -194,6 +194,68 @@ public class ChoreClaimStateMachineTests : IDisposable
     }
 
     [Fact]
+    public async Task Take_AChoreFreshlyClaimedByAnother_BecomesSelfClaim_NoCoordinationNeeded()
+    {
+        // "Take it": Bob holds a FRESH (non-stale) self-claim; Alice takes it (covering). The chore becomes a
+        // self-CLAIM by Alice — NOT a sticky Assigned — displacing Bob with no coordination. A Claimed event
+        // records Alice. (Completion separately credits whoever marks it done — council M8.)
+        SeedChoreWithHold(Bob, AssignmentKind.Claimed, NowBase.AddHours(-1));
+        var chore = await ReloadAsync();
+
+        var result = await _service.TakeAsync(HouseholdId, ChoreId, Alice, chore.Version);
+
+        result.AssigneeUserId.Should().Be(Alice);
+        result.AssignmentKind.Should().Be(AssignmentKind.Claimed);   // claim (returns to pile on complete), not a sticky assignment
+        result.ClaimedAt.Should().Be(NowBase);
+
+        var reloaded = await ReloadAsync();
+        reloaded.AssigneeUserId.Should().Be(Alice);
+        reloaded.AssignmentKind.Should().Be(AssignmentKind.Claimed);
+
+        var events = await EventsAsync();
+        events.Should().ContainSingle(e => e.Type == ChoreEventType.Claimed)
+            .Which.ActorUserId.Should().Be(Alice);
+    }
+
+    [Fact]
+    public async Task Take_AnAssignedChore_DisplacesTheAssignee_AsSelfClaim()
+    {
+        // Bob is deliberately ASSIGNED (it's "his" chore) but is out sick. Alice takes it: the chore is
+        // displaced to a self-CLAIM by Alice — so after she completes a recurring instance it returns to the
+        // pile rather than staying assigned. Take is allowed to displace an Assigned hold (unlike Claim/Drop).
+        SeedChoreWithHold(Bob, AssignmentKind.Assigned, NowBase.AddHours(-1));
+        var chore = await ReloadAsync();
+
+        var result = await _service.TakeAsync(HouseholdId, ChoreId, Alice, chore.Version);
+
+        result.AssigneeUserId.Should().Be(Alice);
+        result.AssignmentKind.Should().Be(AssignmentKind.Claimed);
+
+        var events = await EventsAsync();
+        events.Should().ContainSingle(e => e.Type == ChoreEventType.Claimed)
+            .Which.ActorUserId.Should().Be(Alice);
+    }
+
+    [Fact]
+    public async Task Take_AStaleClaimByAnother_AutoReleasesThenSelfClaims()
+    {
+        // Bob's claim is stale (49h). Alice takes it: the stale claim auto-releases first (actor = the lapsed
+        // claimer Bob, M16), then Alice's self-claim lands — events in that order.
+        SeedChoreWithHold(Bob, AssignmentKind.Claimed, NowBase.AddHours(-49));
+        var chore = await ReloadAsync();
+
+        var result = await _service.TakeAsync(HouseholdId, ChoreId, Alice, chore.Version);
+
+        result.AssigneeUserId.Should().Be(Alice);
+        result.AssignmentKind.Should().Be(AssignmentKind.Claimed);
+
+        var events = await EventsAsync();
+        events.Select(e => e.Type).Should().ContainInOrder(ChoreEventType.AutoReleased, ChoreEventType.Claimed);
+        events.Single(e => e.Type == ChoreEventType.AutoReleased).ActorUserId.Should().Be(Bob);
+        events.Single(e => e.Type == ChoreEventType.Claimed).ActorUserId.Should().Be(Alice);
+    }
+
+    [Fact]
     public async Task HandOff_ToNull_ReturnsAssignedChoreToPile_TheStuckAssignedEscapeHatch()
     {
         // A deliberately-Assigned chore (cannot be dropped) — hand-off-to-null is its escape hatch (council M9).
