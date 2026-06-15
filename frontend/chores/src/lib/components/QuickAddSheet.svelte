@@ -33,6 +33,8 @@
   export interface QuickAddValue {
     request: CreateChoreRequest;
     photo: File | null;
+    /** Checklist item titles — created by the parent AFTER the chore POST returns an id. */
+    subtasks: string[];
   }
 
   interface Props {
@@ -70,6 +72,22 @@
   let assignedUserIds = $state<number[]>([]);
   let photo = $state<File | null>(null);
   let localError = $state<string | null>(null);
+
+  // ── Checklist (optional) — collected locally; a new chore has no id yet, so
+  //    subtasks can't attach until it exists. The parent (App.handleQuickAdd)
+  //    creates each item after the chore POST returns an id.
+  let subtaskTitles = $state<string[]>([]);
+  let newSubtaskTitle = $state('');
+
+  function addSubtaskDraft(): void {
+    const t = newSubtaskTitle.trim();
+    if (!t) return;
+    subtaskTitles = [...subtaskTitles, t];
+    newSubtaskTitle = '';
+  }
+  function removeSubtaskDraft(index: number): void {
+    subtaskTitles = subtaskTitles.filter((_, i) => i !== index);
+  }
 
   // ── Inline "new room" (v1.2 quick win) ─────────────────────────────────────
   // Create a room without leaving the sheet (the full room manager is deferred —
@@ -180,6 +198,8 @@
     requiredCount = 1;
     assignedUserIds = [];
     photo = null;
+    subtaskTitles = [];
+    newSubtaskTitle = '';
     localError = null;
     // Reset the inline new-room form UI (keep createdRooms — a later board reload dedups them).
     showNewRoom = false;
@@ -283,7 +303,7 @@
       photoPath: null,
     };
 
-    await onSubmit({ request, photo });
+    await onSubmit({ request, photo, subtasks: subtaskTitles });
   }
 </script>
 
@@ -582,6 +602,55 @@
         {/if}
       </fieldset>
 
+      <fieldset class="ch-field">
+        <legend class="ch-field-label">Checklist (optional)</legend>
+        {#if subtaskTitles.length > 0}
+          <ul class="ch-subtasks">
+            {#each subtaskTitles as t, i (i)}
+              <li class="ch-subtask-row">
+                <span class="ch-subtask-text">{t}</span>
+                <button
+                  type="button"
+                  class="ch-subtask-del"
+                  onclick={() => removeSubtaskDraft(i)}
+                  title="Remove this item"
+                  aria-label="Remove {t}"
+                >
+                  ×
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        <div class="ch-subtask-add">
+          <input
+            type="text"
+            class="ch-subtask-input"
+            bind:value={newSubtaskTitle}
+            autocomplete="off"
+            placeholder="Add an item…"
+            aria-label="Add a checklist item"
+            onkeydown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addSubtaskDraft();
+              }
+            }}
+          />
+          <button
+            type="button"
+            class="ch-btn-primary ch-subtask-add-btn"
+            onclick={addSubtaskDraft}
+            disabled={!newSubtaskTitle.trim()}
+          >
+            Add
+          </button>
+        </div>
+        <p class="ch-hint">
+          A quick checklist anyone can tick off from the card — optional, and never needed to finish the chore.
+        </p>
+      </fieldset>
+
       <label class="ch-field">
         <span class="ch-field-label">Photo (optional)</span>
         <input type="file" accept="image/*" onchange={onPhotoChange} />
@@ -850,6 +919,66 @@
     margin: 0;
     font-size: 0.875rem;
     color: var(--color-error);
+  }
+
+  /* ── Checklist (optional) — draft items collected before the chore exists ── */
+  .ch-subtasks {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .ch-subtask-row,
+  .ch-subtask-add {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ch-subtask-text {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: 0.875rem;
+  }
+  .ch-subtask-input {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    color: inherit;
+    padding: 10px 12px;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    min-height: 44px;
+  }
+  .ch-subtask-input:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -1px;
+    border-color: var(--color-primary);
+  }
+  .ch-subtask-del {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    font-size: 1.25rem;
+    line-height: 1;
+    color: var(--color-text-muted);
+    background: transparent;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .ch-subtask-del:hover {
+    background: var(--color-action-hover);
+    color: var(--color-error);
+  }
+  .ch-subtask-add-btn {
+    flex-shrink: 0;
+    min-height: 44px;
   }
 
   .ch-sheet-actions {

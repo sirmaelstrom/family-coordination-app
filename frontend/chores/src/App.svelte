@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ChoreDto, ShellContext } from './lib/types';
-  import { getBoard, uploadChorePhoto, ApiError } from './lib/api';
+  import { getBoard, uploadChorePhoto, createSubtask, ApiError } from './lib/api';
   import { boardStore } from './lib/state.svelte';
   import { startLiveness, type LivenessHandle } from './lib/liveness';
   import { showToast } from './lib/toasts.svelte';
@@ -154,16 +154,28 @@
     try {
       // 1. POST the create JSON (no file in the body).
       const created = await store.create(value.request);
-      // 2. If a photo was chosen, upload it to the dedicated /photo route, then
-      //    refetch so the board reflects the stored photoPath.
+      // 2. Checklist items: a new chore has no id until now, so create each item
+      //    against the returned id (versionless). One bad item shouldn't block.
+      for (const title of value.subtasks) {
+        try {
+          await createSubtask(created.id, { title });
+        } catch {
+          // Skip a failed item; the chore + the rest still land.
+        }
+      }
+      // 3. If a photo was chosen, upload it to the dedicated /photo route.
       if (value.photo) {
         try {
           await uploadChorePhoto(created.id, value.photo);
-          await loadBoard();
         } catch {
           // The chore exists; only the photo failed. Don't block the create.
           showToast({ message: "Chore added, but the photo didn't upload.", kind: 'info' });
         }
+      }
+      // Refetch once so the new checklist + photo render (store.create reconciled
+      // BEFORE these follow-on writes, so the board doesn't carry them yet).
+      if (value.subtasks.length > 0 || value.photo) {
+        await loadBoard();
       }
       quickAddOpen = false;
       showToast({ message: `Added “${created.name}”.`, kind: 'success' });

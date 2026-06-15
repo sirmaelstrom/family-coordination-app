@@ -271,6 +271,16 @@
   // items is from the card; the sheet manages the list. Never gates completion.
   let newSubtaskTitle = $state('');
 
+  // Render the checklist from the LIVE board chore (looked up by id), NOT the
+  // `chore` prop. App captures that prop reference when the sheet opens, so a
+  // liveness refetch (~20s) swaps the board proxy underneath and the prop goes
+  // stale — an added item lands on the live proxy but the sheet kept rendering
+  // the old one (it only showed after save/close/reopen). The id-based lookup
+  // always tracks the current proxy, so add/remove/rename reflect immediately.
+  let liveSubtasks = $derived(
+    (chore ? boardStore.choresById.get(chore.id)?.subtasks : null) ?? chore?.subtasks ?? [],
+  );
+
   function addSubtaskItem(): void {
     if (!chore) return;
     const title = newSubtaskTitle.trim();
@@ -753,9 +763,9 @@
       {#if chore}
         <fieldset class="ch-field">
           <legend class="ch-field-label">Checklist (optional)</legend>
-          {#if chore.subtasks.length > 0}
+          {#if liveSubtasks.length > 0}
             <ul class="ch-subtasks">
-              {#each chore.subtasks as s (s.id)}
+              {#each liveSubtasks as s (s.id)}
                 <li class="ch-subtask-row">
                   <input
                     type="text"
