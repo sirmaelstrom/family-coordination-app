@@ -33,5 +33,31 @@
       "completions": 1,
       "sharePct": 25
     }
+  ],
+  "planning": [
+    {
+      "userId": 1,
+      "displayName": "Alice",
+      "choresSetUp": 19,
+      "recipesAdded": 6,
+      "listItemsCurated": 28,
+      "handOffs": 4
+    },
+    {
+      "userId": 2,
+      "displayName": "Bob",
+      "choresSetUp": 3,
+      "recipesAdded": 2,
+      "listItemsCurated": 5,
+      "handOffs": 1
+    },
+    {
+      "userId": 3,
+      "displayName": "Carol",
+      "choresSetUp": 0,
+      "recipesAdded": 0,
+      "listItemsCurated": 0,
+      "handOffs": 0
+    }
   ]
 }

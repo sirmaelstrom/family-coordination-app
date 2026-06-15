@@ -72,6 +72,34 @@ public class ChoreEquityDtoContractTests
                 SharePct: 25.0),
         };
 
+        // Planning footprint (Phase 15): per-member, all-time, un-blended labeled tallies. Hand-picked so
+        // Alice leads every lane, Bob trails, and Carol is an all-zero row (proving zero rows still appear).
+        // These exact values appear in equity.json.
+        var planning = new List<MemberPlanningDto>
+        {
+            new(
+                UserId: 1,
+                DisplayName: "Alice",
+                ChoresSetUp: 19,
+                RecipesAdded: 6,
+                ListItemsCurated: 28,
+                HandOffs: 4),
+            new(
+                UserId: 2,
+                DisplayName: "Bob",
+                ChoresSetUp: 3,
+                RecipesAdded: 2,
+                ListItemsCurated: 5,
+                HandOffs: 1),
+            new(
+                UserId: 3,
+                DisplayName: "Carol",
+                ChoresSetUp: 0,
+                RecipesAdded: 0,
+                ListItemsCurated: 0,
+                HandOffs: 0),
+        };
+
         return new ChoreEquityDto(
             Window: "week",
             TotalPoints: 12,
@@ -79,7 +107,10 @@ public class ChoreEquityDtoContractTests
             EqualSharePct: 33.3,
             FallingBehindCount: 2,
             UpForGrabsCount: 3,
-            Members: members);
+            Members: members)
+        {
+            Planning = planning,
+        };
     }
 
     [Fact]
@@ -110,11 +141,16 @@ public class ChoreEquityDtoContractTests
         // Top-level camelCase property set is frozen (M7 — added/removed keys break this).
         root.Select(kvp => kvp.Key).Should().BeEquivalentTo(
             "window", "totalPoints", "totalCompletions", "equalSharePct",
-            "fallingBehindCount", "upForGrabsCount", "members");
+            "fallingBehindCount", "upForGrabsCount", "members", "planning");
 
         var firstMember = root["members"]!.AsArray()[0]!.AsObject();
         firstMember.Select(kvp => kvp.Key).Should().BeEquivalentTo(
             "userId", "displayName", "initials", "pictureUrl", "points", "completions", "sharePct");
+
+        // Per-member planning object key set is frozen too (Phase 15 — mirrored by island types.ts).
+        var firstPlanning = root["planning"]!.AsArray()[0]!.AsObject();
+        firstPlanning.Select(kvp => kvp.Key).Should().BeEquivalentTo(
+            "userId", "displayName", "choresSetUp", "recipesAdded", "listItemsCurated", "handOffs");
 
         // sharePct and equalSharePct are PERCENT 0–100, not fractions 0–1.
         root["equalSharePct"]!.GetValue<double>().Should().BeGreaterThan(1.0,

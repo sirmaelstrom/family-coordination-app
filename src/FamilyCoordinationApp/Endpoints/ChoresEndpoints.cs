@@ -504,6 +504,7 @@ public static class ChoresEndpoints
         [FromQuery] string? window,
         ClaimsPrincipal principal,
         ChoreEquityCalculator equityCalculator,
+        ChorePlanningCalculator planningCalculator,
         ChoreStatusCalculator statusCalculator,
         TimeProvider timeProvider,
         TimeZoneInfo timeZone,
@@ -537,7 +538,27 @@ public static class ChoresEndpoints
             .Where(c => c.HouseholdId == user.HouseholdId && c.Status == ChoreStatus.Active)
             .ToListAsync(ct);
 
+        // Planning footprint (Phase 15): ALL-TIME, household-scoped authorship across four lanes — these are
+        // independent of the equity `window` (which governs only the physical lane). All HouseholdId-scoped (M1).
+        var allChores = await context.Chores
+            .Where(c => c.HouseholdId == user.HouseholdId)
+            .ToListAsync(ct);
+
+        var recipes = await context.Recipes
+            .Where(r => r.HouseholdId == user.HouseholdId && !r.IsDeleted && r.CreatedByUserId != null)
+            .ToListAsync(ct);
+
+        var manualListItems = await context.ShoppingListItems
+            .Where(s => s.HouseholdId == user.HouseholdId && s.IsManuallyAdded && s.AddedByUserId != null)
+            .ToListAsync(ct);
+
+        var choreEvents = await context.ChoreEvents
+            .Where(e => e.HouseholdId == user.HouseholdId)
+            .ToListAsync(ct);
+
         var equity = equityCalculator.Compute(completions, members, equityWindow, now, timeZone);
+
+        var planning = planningCalculator.Compute(members, allChores, recipes, manualListItems, choreEvents);
 
         var fallingBehindCount = 0;
         var upForGrabsCount = 0;
@@ -566,7 +587,11 @@ public static class ChoresEndpoints
             Members: equity.Members
                 .Select(m => new MemberShareDto(
                     m.UserId, m.DisplayName, m.Initials, m.PictureUrl, m.Points, m.Completions, m.SharePct))
-                .ToList());
+                .ToList())
+        {
+            // Planning is ALL-TIME — independent of the window param (D5).
+            Planning = planning,
+        };
 
         return Results.Ok(dto);
     }
