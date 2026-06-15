@@ -56,7 +56,7 @@
 <div class="ch-equity">
   <header class="ch-equity-head">
     <div class="ch-equity-titles">
-      <h2 class="ch-equity-title">Household load</h2>
+      <h2 class="ch-equity-title">Physical board-load — this week</h2>
       <p class="ch-equity-sub">How the chore load has been shared — not a scoreboard.</p>
     </div>
     <div class="ch-equity-windows" role="group" aria-label="Equity window">

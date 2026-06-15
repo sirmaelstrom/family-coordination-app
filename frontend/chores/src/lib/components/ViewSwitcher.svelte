@@ -45,7 +45,7 @@
     mine: 'Mine',
     'needs-attention': 'All',
     rooms: 'Rooms',
-    equity: 'Equity',
+    equity: 'Board load',
   };
 
   // The primary segmented filters (board filters) vs the secondary organizers.
