@@ -718,6 +718,10 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    /* Query container so the footer can lay itself out against the CARD's own
+       width (not the viewport) — a card is narrow on mobile and wide on desktop
+       regardless of screen size. Drives the @container rule on .ch-card-foot. */
+    container-type: inline-size;
   }
 
   .ch-card-top {
@@ -855,19 +859,29 @@
     border-color: var(--color-success);
   }
 
+  /*
+   * Footer layout — STACKED by default (mobile-first). The doer strip drops to
+   * its own row at the BOTTOM via column-reverse (DOM order stays people→actions,
+   * which keeps a sane tab order — the doer strip has no focusable elements). This
+   * fixes the mobile overlap where a long assignee name ran under the "Take it"
+   * button (the actions were flex-shrink:0 and the name had no room). The wide-card
+   * @container rule below puts them back side-by-side when there's space.
+   */
   .ch-card-foot {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 10px;
     margin-top: 2px;
   }
   .ch-people {
     display: flex;
     align-items: center;
     gap: 12px;
-    min-width: 0;
     flex-wrap: wrap;
+    /* The doer's own bespoke space — a divider sets it apart from the actions. */
+    padding-top: 8px;
+    border-top: 1px solid var(--color-line);
   }
   .ch-claim {
     display: inline-flex;
@@ -1055,7 +1069,32 @@
   .ch-actions {
     display: flex;
     gap: 8px;
-    flex-shrink: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  /*
+   * Wide card (desktop / tablet — the card itself is ≥460px): restore the
+   * original single-row footer with the doer on the left and actions on the
+   * right. Below this, the stacked layout above keeps the assignee name and the
+   * action buttons from ever colliding regardless of how many buttons show.
+   */
+  @container (min-width: 460px) {
+    .ch-card-foot {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .ch-people {
+      min-width: 0;
+      padding-top: 0;
+      border-top: none;
+    }
+    .ch-actions {
+      flex-wrap: nowrap;
+      flex-shrink: 0;
+    }
   }
   .ch-btn {
     font: inherit;
