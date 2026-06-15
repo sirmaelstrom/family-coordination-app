@@ -374,6 +374,21 @@ public class ChoreService(
             {
                 ClearToPile(chore);
             }
+
+            // Phase-14 checklist reset: each occurrence of a recurring chore gets a fresh checklist, so on the
+            // SATISFYING completion we clear every checked subtask back to IsDone=false. OneOff is skipped (its
+            // lifecycle terminates). These updates ride the SAME SaveWithConcurrencyAsync below — no separate
+            // save, and Chore.Version is untouched (subtasks are versionless / last-write-wins).
+            if (chore.RecurrenceMode != RecurrenceMode.OneOff)
+            {
+                var doneSubtasks = await context.ChoreSubtasks
+                    .Where(s => s.HouseholdId == householdId && s.ChoreId == choreId && s.IsDone)
+                    .ToListAsync(cancellationToken);
+                foreach (var subtask in doneSubtasks)
+                {
+                    subtask.IsDone = false;
+                }
+            }
         }
         // Else (partial): leave LastCompletedAt, Status, and the assignment trio untouched (D4) — only the
         // ChoreCompletion rows + LastContributionAt above were written.

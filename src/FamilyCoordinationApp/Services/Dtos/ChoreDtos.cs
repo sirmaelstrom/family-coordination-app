@@ -66,6 +66,13 @@ public sealed record ChoreDto(
     );
 
 /// <summary>
+/// A lightweight checklist item on a chore (Phase 14). Wire shape camelCase: <c>{ id, title, isDone,
+/// sortOrder }</c>. Versionless / last-write-wins — there is no concurrency token on this DTO. NOT yet
+/// embedded in <see cref="ChoreDto"/> (that is Phase-14 Unit #2).
+/// </summary>
+public sealed record ChoreSubtaskDto(int Id, string Title, bool IsDone, int SortOrder);
+
+/// <summary>
 /// A member's DERIVED state on a multi-person chore's named roster, for the current occurrence (rework).
 /// Serialized camelCase via <c>JsonStringEnumConverter(CamelCase)</c>: <c>"assigned" | "in" | "done"</c>.
 /// <list type="bullet">

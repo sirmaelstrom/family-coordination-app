@@ -66,4 +66,5 @@ public class Chore
     public ICollection<ChoreCompletion> Completions { get; set; } = new List<ChoreCompletion>();
     public ICollection<ChoreEvent> Events { get; set; } = new List<ChoreEvent>();
     public ICollection<ChoreParticipationEvent> ParticipationEvents { get; set; } = new List<ChoreParticipationEvent>();
+    public ICollection<ChoreSubtask> Subtasks { get; set; } = new List<ChoreSubtask>();
 }

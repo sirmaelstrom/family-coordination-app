@@ -27,6 +27,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<ChoreCompletion> ChoreCompletions => Set<ChoreCompletion>();
     public DbSet<ChoreEvent> ChoreEvents => Set<ChoreEvent>();
     public DbSet<ChoreParticipationEvent> ChoreParticipationEvents => Set<ChoreParticipationEvent>();
+    public DbSet<ChoreSubtask> ChoreSubtasks => Set<ChoreSubtask>();
     public DbSet<HouseholdChoreDigestSettings> ChoreDigestSettings => Set<HouseholdChoreDigestSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

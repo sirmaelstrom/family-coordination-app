@@ -47,6 +47,11 @@ public static class ChoresEndpoints
         group.MapPost("/{choreId:int}/roster/leave", LeaveRoster);
         group.MapPost("/{choreId:int}/photo", UploadChorePhoto);
 
+        // Phase-14 checklist (subtasks): versionless / last-write-wins — NO version field on any of these.
+        group.MapPost("/{choreId:int}/subtasks", CreateSubtask);
+        group.MapPut("/{choreId:int}/subtasks/{subtaskId:int}", UpdateSubtask);
+        group.MapDelete("/{choreId:int}/subtasks/{subtaskId:int}", DeleteSubtask);
+
         group.MapPatch("/me/default-view", SetDefaultView);
 
         // v1.1 (WP-06): equity distribution lens + digest settings + dev backfill — all cookie-authed,
@@ -372,6 +377,68 @@ public static class ChoresEndpoints
         }
     }
 
+    // ─── Checklist / subtasks (Phase 14 — versionless, last-write-wins) ─────────────
+
+    private static async Task<IResult> CreateSubtask(
+        int choreId,
+        CreateSubtaskRequest req,
+        ClaimsPrincipal principal,
+        IChoreSubtaskService svc,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
+        if (user is null) return Results.Unauthorized();
+
+        try
+        {
+            var dto = await svc.CreateAsync(user.HouseholdId, choreId, req.Title, ct);
+            return Results.Ok(dto);
+        }
+        catch (ChoreNotFoundException) { return Results.NotFound(); }
+        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
+    }
+
+    private static async Task<IResult> UpdateSubtask(
+        int choreId,
+        int subtaskId,
+        UpdateSubtaskRequest req,
+        ClaimsPrincipal principal,
+        IChoreSubtaskService svc,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
+        if (user is null) return Results.Unauthorized();
+
+        try
+        {
+            var dto = await svc.UpdateAsync(user.HouseholdId, choreId, subtaskId, req.Title, req.IsDone, req.SortOrder, ct);
+            return Results.Ok(dto);
+        }
+        catch (ChoreNotFoundException) { return Results.NotFound(); }
+        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
+    }
+
+    private static async Task<IResult> DeleteSubtask(
+        int choreId,
+        int subtaskId,
+        ClaimsPrincipal principal,
+        IChoreSubtaskService svc,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
+        if (user is null) return Results.Unauthorized();
+
+        try
+        {
+            await svc.DeleteAsync(user.HouseholdId, choreId, subtaskId, ct);
+            return Results.NoContent();
+        }
+        catch (ChoreNotFoundException) { return Results.NotFound(); }
+    }
+
     // ─── Per-user default lens (D18, council M7 pinned route) ───────────────────────
 
     private static async Task<IResult> SetDefaultView(
@@ -669,6 +736,12 @@ public static class ChoresEndpoints
 
     /// <summary>The client's xmin token for an optimistic-concurrency-checked mutation (M7/M12).</summary>
     public sealed record VersionRequest(uint Version);
+
+    /// <summary>Add a checklist item (Phase 14). Versionless — no concurrency token.</summary>
+    public sealed record CreateSubtaskRequest(string Title);
+
+    /// <summary>Patch a checklist item (Phase 14). Only the non-null fields apply. Versionless.</summary>
+    public sealed record UpdateSubtaskRequest(string? Title, bool? IsDone, int? SortOrder);
 
     public sealed record HandOffRequest(int? TargetUserId, uint Version);
 
