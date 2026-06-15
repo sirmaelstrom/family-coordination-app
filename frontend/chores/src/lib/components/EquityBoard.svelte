@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ChoreEquityDto, EquityWindow } from '../types';
+  import type { ChoreEquityDto, EquityWindow, CapacityTier } from '../types';
   import MemberAvatar from './MemberAvatar.svelte';
 
   // ───────────────────────────────────────────────────────────────────────
@@ -31,14 +31,34 @@
     onWindow: (window: EquityWindow) => void;
     /** Retry after an error (re-runs loadEquity for the current window). */
     onRetry: () => void;
+    /** Set the CURRENT user's own physical-capacity tier (self-only — MN5). */
+    onCapacity: (tier: CapacityTier) => void;
+    /** True while a capacity PATCH is in flight (disables the selector). */
+    savingCapacity: boolean;
   }
 
-  let { equity, window, loading, error, onWindow, onRetry }: Props = $props();
+  let { equity, window, loading, error, onWindow, onRetry, onCapacity, savingCapacity }: Props =
+    $props();
 
   const WINDOWS: { id: EquityWindow; label: string }[] = [
     { id: 'week', label: 'This week' },
     { id: 'all', label: 'All time' },
   ];
+
+  // ── Self-only capacity selector (Phase 15 WP-06, MN5/M6) ──────────────────
+  // The current user sets ONLY their own physical-capacity tier. Descriptive,
+  // never evaluative (M6): "Full" / "Reduced" / "Minimal" describe how much
+  // physical work a member can take on right now — NOT a performance rating.
+  // The selected tier reshapes each member's EXPECTED reference line (below);
+  // it is NOT a target/quota or a blame label.
+  const CAPACITY_TIERS: { id: CapacityTier; label: string }[] = [
+    { id: 'Full', label: 'Full' },
+    { id: 'Reduced', label: 'Reduced' },
+    { id: 'Minimal', label: 'Minimal' },
+  ];
+
+  // The caller's current tier rides the equity payload (null ⇒ Full). No separate fetch (M7/P4).
+  let callerTier = $derived<CapacityTier>(equity?.callerCapacityTier ?? 'Full');
 
   // Render a percent without trailing-zero noise (e.g. 25 → "25", 41.7 → "41.7").
   // Pure number formatting — NOT date math. Values already arrive as 0..100.
@@ -96,6 +116,30 @@
     </div>
   </header>
 
+  <!-- Self-only physical-capacity selector (Phase 15 WP-06). The current user sets ONLY their own tier
+       (MN5). Descriptive, not evaluative (M6): it reshapes that member's EXPECTED reference line below —
+       it is never a score, target, or blame label. -->
+  <div class="ch-cap">
+    <span class="ch-cap-label" id="ch-cap-label">My physical capacity</span>
+    <div class="ch-cap-options" role="group" aria-labelledby="ch-cap-label">
+      {#each CAPACITY_TIERS as tier (tier.id)}
+        <button
+          type="button"
+          class="ch-cap-option"
+          class:active={callerTier === tier.id}
+          aria-pressed={callerTier === tier.id}
+          disabled={savingCapacity}
+          onclick={() => onCapacity(tier.id)}
+        >
+          {tier.label}
+        </button>
+      {/each}
+    </div>
+    <p class="ch-cap-hint">
+      Sets your own expected share of physical chores — descriptive, not a target.
+    </p>
+  </div>
+
   {#if error}
     <div class="ch-equity-error" role="alert">
       <span>{error}</span>
@@ -105,9 +149,12 @@
     <div class="ch-equity-state">Loading the household load…</div>
   {:else if equity != null && hasDistribution}
     <section class="ch-equity-dist" aria-label="Per-member share of the load">
-      <!-- Each row is a proportional bar at the member's share. A neutral
-           equal-share reference marker sits at `equalSharePct` so the even
-           split reads at a glance — no ranking, no highlight of high/low. -->
+      <!-- Each row is a proportional bar at the member's actual share (`sharePct`).
+           A neutral reference marker sits at THAT member's capacity-weighted EXPECTED
+           share (`expectedSharePct`, Phase 15 WP-06) — so a Reduced/Minimal member's
+           reference shifts to reflect their stated capacity, not a single flat line.
+           Descriptive only — no ranking, no highlight of high/low (M6). Server values
+           verbatim — NO client math (M7/MN9). -->
       <ul class="ch-equity-rows">
         {#each equity.members as member (member.userId)}
           <li class="ch-equity-row">
@@ -128,7 +175,7 @@
               ></span>
               <span
                 class="ch-equity-ref"
-                style="left: {equity.equalSharePct}%;"
+                style="left: {member.expectedSharePct}%;"
                 aria-hidden="true"
               ></span>
             </span>
@@ -145,7 +192,7 @@
 
       <p class="ch-equity-legend">
         <span class="ch-equity-legend-ref" aria-hidden="true"></span>
-        Even split: {pct(equity.equalSharePct)}% each
+        The marker shows each person's expected share, adjusted for their stated capacity.
       </p>
 
       <!-- Outstanding work — discrete entries, distinct from the completed-effort
@@ -289,6 +336,65 @@
   .ch-equity-window:focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: -2px;
+  }
+
+  /* ── Self-only capacity selector ──────────────────────────────────────── */
+  .ch-cap {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .ch-cap-label {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+  .ch-cap-options {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    background: var(--color-action-hover);
+    border-radius: var(--radius-md);
+    align-self: flex-start;
+  }
+  .ch-cap-option {
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    padding: 6px 14px;
+    min-height: 34px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      background-color 0.15s,
+      color 0.15s;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .ch-cap-option:hover:not(.active):not(:disabled) {
+    color: var(--color-text);
+  }
+  .ch-cap-option.active {
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: var(--shadow-1);
+  }
+  .ch-cap-option:disabled {
+    cursor: default;
+    opacity: 0.7;
+  }
+  .ch-cap-option:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+  }
+  .ch-cap-hint {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
   }
 
   /* ── Distribution rows ────────────────────────────────────────────────── */

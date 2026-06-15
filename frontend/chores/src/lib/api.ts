@@ -4,6 +4,7 @@ import type {
   ChoreSubtaskDto,
   ChoreEquityDto,
   EquityWindow,
+  CapacityTier,
   RoomDto,
   EffortTier,
   RecurrenceMode,
@@ -352,6 +353,19 @@ export async function setDefaultView(view: string | null): Promise<DefaultViewRe
   return request<DefaultViewResponse>(`${CHORES_BASE}/me/default-view`, {
     method: 'PATCH',
     ...jsonBody({ view }),
+  });
+}
+
+/**
+ * Persist the caller's OWN physical-capacity tier (Phase 15 WP-05/WP-06; self-set only — MN5). Mirrors
+ * `setDefaultView`. The input is NON-nullable (the UI always sends one of {Full, Reduced, Minimal} — there
+ * is no clear-to-null path); the endpoint echoes the persisted `{ tier }` on 200. The fresh tier also rides
+ * the next equity payload as `callerCapacityTier`, so the store invalidates equity after a successful PATCH.
+ */
+export async function setCapacity(tier: CapacityTier): Promise<{ tier: CapacityTier | null }> {
+  return request<{ tier: CapacityTier | null }>(`${CHORES_BASE}/me/capacity`, {
+    method: 'PATCH',
+    ...jsonBody({ tier }),
   });
 }
 

@@ -319,6 +319,8 @@
         error={store.equityError}
         onWindow={(w) => store.setEquityWindow(w)}
         onRetry={() => store.loadEquity()}
+        onCapacity={(t) => store.saveCapacity(t)}
+        savingCapacity={store.savingCapacity}
       />
     {/if}
   {:else if !store.loading}
