@@ -1,6 +1,7 @@
 import type {
   ChoreBoardDto,
   ChoreDto,
+  ChoreSubtaskDto,
   ChoreEquityDto,
   EquityWindow,
   RoomDto,
@@ -280,6 +281,48 @@ export async function leaveRoster(
     method: 'POST',
     ...jsonBody({ subjectUserId, version } satisfies LeaveRosterRequest),
   });
+}
+
+// ─── Checklist / subtasks (Phase 14 — versionless / last-write-wins) ────────
+// NO version field anywhere: these touch only the subtask row, never the chore's
+// xmin. Create/Update return the affected ChoreSubtaskDto; Delete is 204 (no body).
+
+export interface CreateSubtaskRequest {
+  title: string;
+}
+
+export interface UpdateSubtaskRequest {
+  title?: string;
+  isDone?: boolean;
+  sortOrder?: number;
+}
+
+/** Add a checklist item to a chore. POST .../{choreId}/subtasks → the new ChoreSubtaskDto. */
+export async function createSubtask(
+  choreId: number,
+  body: CreateSubtaskRequest,
+): Promise<ChoreSubtaskDto> {
+  return request<ChoreSubtaskDto>(`${CHORES_BASE}/${choreId}/subtasks`, {
+    method: 'POST',
+    ...jsonBody(body),
+  });
+}
+
+/** Patch a checklist item (any subset of title/isDone/sortOrder). PUT → the updated ChoreSubtaskDto. */
+export async function updateSubtask(
+  choreId: number,
+  subtaskId: number,
+  body: UpdateSubtaskRequest,
+): Promise<ChoreSubtaskDto> {
+  return request<ChoreSubtaskDto>(`${CHORES_BASE}/${choreId}/subtasks/${subtaskId}`, {
+    method: 'PUT',
+    ...jsonBody(body),
+  });
+}
+
+/** Remove a checklist item. DELETE → 204 (no body). */
+export async function deleteSubtask(choreId: number, subtaskId: number): Promise<void> {
+  await request<void>(`${CHORES_BASE}/${choreId}/subtasks/${subtaskId}`, { method: 'DELETE' });
 }
 
 /** Upload a chore photo (multipart field name `file`) → { photoPath } to pass in create/complete. */

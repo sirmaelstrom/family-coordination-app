@@ -18,6 +18,7 @@
 import type {
   ChoreBoardDto,
   ChoreDto,
+  ChoreSubtaskDto,
   ChoreEquityDto,
   EquityWindow,
   RoomRollupDto,
@@ -40,6 +41,9 @@ import {
   createChore,
   deleteChore,
   updateChore,
+  createSubtask,
+  updateSubtask,
+  deleteSubtask,
   seedStarter as apiSeedStarter,
   setDefaultView,
   getEquity,
@@ -1019,6 +1023,124 @@ class BoardStore {
       this.markPending(choreId, false);
     }
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Checklist / subtasks (Phase 14) — VERSIONLESS / last-write-wins.
+  //
+  // These are deliberately NOT on the optimistic `runOptimistic`/xmin path: a
+  // subtask carries no concurrency token, never gates completion, and a check
+  // mid-conflict is not worth a 409 dance. The model is simpler: mutate
+  // `board.chores[i].subtasks` IN PLACE (deep-reactive per M11), fire the
+  // versionless API call, and on ANY error `reconcile()` (board refetch) + a
+  // calm `info` toast. We do NOT touch `pendingChoreIds` — a subtask op must
+  // never disable the whole card's chore controls. NO Date is built here.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Add a checklist item to a chore. Add is infrequent, so we await then push
+   * the server DTO (no temp id) — keeping the list sorted by sortOrder. A
+   * blank/whitespace title is ignored client-side (no call).
+   */
+  async addSubtask(choreId: number, title: string): Promise<void> {
+    if (!this.board) return;
+    const chore = this.choreById(choreId);
+    if (!chore) return;
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    try {
+      const created = await createSubtask(choreId, { title: trimmed });
+      const current = this.choreById(choreId);
+      if (!current) return;
+      current.subtasks = sortSubtasks([...current.subtasks, created]);
+    } catch {
+      await this.reconcile();
+      showToast({ message: "Couldn't add that item — the list was refreshed.", kind: 'info' });
+    }
+  }
+
+  /**
+   * Toggle a checklist item's done state — the HOT path, so it's optimistic:
+   * flip `isDone` in place immediately, then PUT. Replace with the returned DTO
+   * on success; reconcile + calm toast on error.
+   */
+  async toggleSubtask(choreId: number, subtaskId: number, isDone: boolean): Promise<void> {
+    if (!this.board) return;
+    const chore = this.choreById(choreId);
+    if (!chore) return;
+    const item = chore.subtasks.find((s) => s.id === subtaskId);
+    if (!item) return;
+    const previous = item.isDone;
+    item.isDone = isDone; // optimistic — must feel instant
+    try {
+      const updated = await updateSubtask(choreId, subtaskId, { isDone });
+      this.replaceSubtask(choreId, updated);
+    } catch {
+      // Roll back the optimistic flip, then resync to be safe.
+      const cur = this.choreById(choreId)?.subtasks.find((s) => s.id === subtaskId);
+      if (cur) cur.isDone = previous;
+      await this.reconcile();
+      showToast({ message: "Couldn't update that item — the list was refreshed.", kind: 'info' });
+    }
+  }
+
+  /**
+   * Rename a checklist item (optimistic). A blank/whitespace title is ignored
+   * client-side (no call). Replace with the server DTO on success; reconcile +
+   * calm toast on error.
+   */
+  async renameSubtask(choreId: number, subtaskId: number, title: string): Promise<void> {
+    if (!this.board) return;
+    const chore = this.choreById(choreId);
+    if (!chore) return;
+    const item = chore.subtasks.find((s) => s.id === subtaskId);
+    if (!item) return;
+    const trimmed = title.trim();
+    if (!trimmed) return; // ignore blank rename
+    if (trimmed === item.title) return; // no-op
+    const previous = item.title;
+    item.title = trimmed; // optimistic
+    try {
+      const updated = await updateSubtask(choreId, subtaskId, { title: trimmed });
+      this.replaceSubtask(choreId, updated);
+    } catch {
+      const cur = this.choreById(choreId)?.subtasks.find((s) => s.id === subtaskId);
+      if (cur) cur.title = previous;
+      await this.reconcile();
+      showToast({ message: "Couldn't rename that item — the list was refreshed.", kind: 'info' });
+    }
+  }
+
+  /**
+   * Remove a checklist item (optimistic splice). Reconcile + calm toast on error.
+   */
+  async removeSubtask(choreId: number, subtaskId: number): Promise<void> {
+    if (!this.board) return;
+    const chore = this.choreById(choreId);
+    if (!chore) return;
+    const item = chore.subtasks.find((s) => s.id === subtaskId);
+    if (!item) return;
+    chore.subtasks = chore.subtasks.filter((s) => s.id !== subtaskId); // optimistic
+    try {
+      await deleteSubtask(choreId, subtaskId);
+    } catch {
+      await this.reconcile();
+      showToast({ message: "Couldn't remove that item — the list was refreshed.", kind: 'info' });
+    }
+  }
+
+  /** Replace one subtask in a chore's list with the authoritative server DTO (kept sorted). */
+  private replaceSubtask(choreId: number, updated: ChoreSubtaskDto): void {
+    const chore = this.choreById(choreId);
+    if (!chore) return;
+    chore.subtasks = sortSubtasks(
+      chore.subtasks.map((s) => (s.id === updated.id ? updated : s)),
+    );
+  }
+}
+
+/** Stable ordering for a chore's checklist — by sortOrder, then id for ties. */
+function sortSubtasks(items: ChoreSubtaskDto[]): ChoreSubtaskDto[] {
+  return [...items].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
 }
 
 /**

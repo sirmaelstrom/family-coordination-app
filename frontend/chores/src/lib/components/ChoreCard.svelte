@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ChoreDto, ColorTier, DueState, EffortTier, RecurrenceMode, RosterState } from '../types';
-  import { memberFor, roomFor } from '../state.svelte';
+  import { boardStore, memberFor, roomFor } from '../state.svelte';
   import { showPhoto } from '../lightbox.svelte';
   import MemberAvatar from './MemberAvatar.svelte';
 
@@ -164,6 +164,28 @@
     if (userId != null && userId === currentUserId) return 'You';
     return displayName ?? 'Someone';
   }
+
+  // ── Checklist / subtasks (Phase 14 — momentum aid, NEVER gates completion) ─
+  // Rendered only when the chore already has at least one item; the FIRST item
+  // is added from the edit sheet. All ops go straight to the versionless store
+  // path (boardStore.{toggle,remove,add}Subtask) — last-write-wins, no version,
+  // and they never disable the chore's own controls. No dueness/Date here.
+  let subtasks = $derived(chore.subtasks);
+  let hasChecklist = $derived(subtasks.length > 0);
+  let doneCount = $derived(subtasks.filter((s) => s.isDone).length);
+  let totalCount = $derived(subtasks.length);
+
+  /** Local collapse state — the checklist starts collapsed; the chip toggles it. */
+  let expanded = $state(false);
+  /** Inline "add item" draft for the expanded checklist. */
+  let newItemTitle = $state('');
+
+  function submitNewItem() {
+    const title = newItemTitle.trim();
+    if (!title) return;
+    boardStore.addSubtask(chore.id, title);
+    newItemTitle = '';
+  }
 </script>
 
 <article
@@ -214,6 +236,25 @@
     {/if}
 
     <div class="ch-card-meta">
+      {#if hasChecklist}
+        <!--
+          Checklist progress chip — a tappable button that expands/collapses the
+          per-chore checklist below. Momentum surface only; never gates the
+          Complete button. ✓ done/total.
+        -->
+        <button
+          type="button"
+          class="ch-tag ch-tag-checklist"
+          class:ch-tag-checklist-done={doneCount === totalCount}
+          data-action="toggle-checklist"
+          aria-expanded={expanded}
+          onclick={() => (expanded = !expanded)}
+          title="Checklist: {doneCount} of {totalCount} done — tap to {expanded ? 'hide' : 'show'}"
+        >
+          <span aria-hidden="true">✓</span>
+          {doneCount}/{totalCount}
+        </button>
+      {/if}
       {#if isMultiPerson}
         <span
           class="ch-tag ch-tag-cosign"
@@ -292,6 +333,69 @@
         </span>
       {/if}
     </div>
+
+    {#if hasChecklist && expanded}
+      <!--
+        Per-chore checklist (Phase 14). Each row is a tappable checkbox + title;
+        tapping toggles via the versionless store path. A subtle "×" removes the
+        item. The bottom row adds a new item (Enter or the + button). Subtasks are
+        a momentum aid only — they never gate the Done/Complete button.
+      -->
+      <ul class="ch-checklist" aria-label="Checklist for {chore.name}">
+        {#each subtasks as s (s.id)}
+          <li class="ch-checkitem" class:ch-checkitem-done={s.isDone}>
+            <button
+              type="button"
+              class="ch-check-toggle"
+              data-action="subtask-toggle"
+              aria-pressed={s.isDone}
+              onclick={() => boardStore.toggleSubtask(chore.id, s.id, !s.isDone)}
+              title={s.isDone ? 'Mark not done' : 'Mark done'}
+            >
+              <span class="ch-check-box" aria-hidden="true">{s.isDone ? '✓' : ''}</span>
+              <span class="ch-check-title">{s.title}</span>
+            </button>
+            <button
+              type="button"
+              class="ch-check-del"
+              data-action="subtask-remove"
+              onclick={() => boardStore.removeSubtask(chore.id, s.id)}
+              title="Remove this item"
+              aria-label="Remove {s.title}"
+            >
+              ×
+            </button>
+          </li>
+        {/each}
+        <li class="ch-checkadd">
+          <input
+            type="text"
+            class="ch-checkadd-input"
+            bind:value={newItemTitle}
+            autocomplete="off"
+            placeholder="Add an item…"
+            aria-label="Add a checklist item"
+            onkeydown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                submitNewItem();
+              }
+            }}
+          />
+          <button
+            type="button"
+            class="ch-checkadd-btn"
+            data-action="subtask-add"
+            onclick={submitNewItem}
+            disabled={!newItemTitle.trim()}
+            title="Add item"
+            aria-label="Add checklist item"
+          >
+            ＋
+          </button>
+        </li>
+      </ul>
+    {/if}
 
     <div class="ch-card-foot">
       <!--
@@ -729,6 +833,27 @@
     letter-spacing: 0.04em;
     color: var(--color-text-muted);
   }
+  /* Checklist progress chip — a tappable button styled like the other meta tags.
+     A subtle bordered pill so it reads as interactive without shouting; goes
+     green-tinted once every item is checked. Never gates completion. */
+  .ch-tag-checklist {
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    border: 1px solid var(--color-line-strong);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .ch-tag-checklist:hover {
+    background: var(--color-action-hover);
+    color: var(--color-text);
+  }
+  .ch-tag-checklist-done {
+    color: var(--color-success);
+    border-color: var(--color-success);
+  }
 
   .ch-card-foot {
     display: flex;
@@ -794,6 +919,134 @@
   }
   .ch-roster-done .ch-roster-badge {
     background: var(--color-success);
+  }
+
+  /* ── Per-chore checklist (Phase 14) ─────────────────────────────────────── */
+  .ch-checklist {
+    list-style: none;
+    margin: 0;
+    padding: 8px 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-top: 1px solid var(--color-line);
+  }
+  .ch-checkitem {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  /* The tappable label region (checkbox + title) is the whole left side — a
+     comfortable mobile target. */
+  .ch-check-toggle {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font: inherit;
+    font-size: 0.875rem;
+    text-align: left;
+    color: var(--color-text);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 8px 6px;
+    min-height: 40px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .ch-check-toggle:hover {
+    background: var(--color-action-hover);
+  }
+  .ch-check-box {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    border: 1.5px solid var(--color-line-strong);
+    border-radius: 5px;
+    font-size: 13px;
+    line-height: 1;
+    color: #fff;
+  }
+  .ch-checkitem-done .ch-check-box {
+    background: var(--color-success);
+    border-color: var(--color-success);
+  }
+  .ch-check-title {
+    overflow-wrap: anywhere;
+  }
+  .ch-checkitem-done .ch-check-title {
+    text-decoration: line-through;
+    color: var(--color-text-muted);
+  }
+  .ch-check-del {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    font-size: 1.125rem;
+    line-height: 1;
+    color: var(--color-text-muted);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .ch-check-del:hover {
+    background: var(--color-action-hover);
+    color: var(--color-error);
+  }
+  .ch-checkadd {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-top: 4px;
+  }
+  .ch-checkadd-input {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: 0.875rem;
+    color: inherit;
+    padding: 8px 10px;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    min-height: 40px;
+  }
+  .ch-checkadd-input:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -1px;
+    border-color: var(--color-primary);
+  }
+  .ch-checkadd-btn {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    font-size: 1.125rem;
+    color: var(--color-primary);
+    background: transparent;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .ch-checkadd-btn:hover:not(:disabled) {
+    background: var(--color-action-hover);
+  }
+  .ch-checkadd-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .ch-actions {
