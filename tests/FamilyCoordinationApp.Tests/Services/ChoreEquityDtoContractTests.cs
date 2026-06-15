@@ -44,6 +44,14 @@ public class ChoreEquityDtoContractTests
         //   Carol:  3 pts, 1 completion  → sharePct = round(100 * 3/12, 1) = 25.0
         //   equalSharePct = round(100/3, 1) = 33.3
         // These specific values appear in equity.json to prove the 0–100 scale is unambiguous.
+        //
+        // expectedSharePct (Phase 15 WP-05, D1/D3) is the capacity-WEIGHTED fair share — UNROUNDED
+        // (the island formats). The representative household models one of each tier:
+        //   Alice = Full (1.0), Bob = Reduced (0.5), Carol = Minimal (0.15) → Σweight = 1.65.
+        //   Alice: 100 * 1.0  / 1.65 = 60.60606060606061
+        //   Bob:   100 * 0.5  / 1.65 = 30.303030303030305
+        //   Carol: 100 * 0.15 / 1.65 = 9.090909090909092
+        // SharePct stays RAW (digest-safe); expectedSharePct is additive only.
         var members = new List<MemberShareDto>
         {
             new(
@@ -53,7 +61,10 @@ public class ChoreEquityDtoContractTests
                 PictureUrl: "https://example.com/alice.png",
                 Points: 5,
                 Completions: 2,
-                SharePct: 41.7),
+                SharePct: 41.7)
+            {
+                ExpectedSharePct = 100.0 * 1.0 / 1.65,
+            },
             new(
                 UserId: 2,
                 DisplayName: "Bob",
@@ -61,7 +72,10 @@ public class ChoreEquityDtoContractTests
                 PictureUrl: null,
                 Points: 4,
                 Completions: 1,
-                SharePct: 33.3),
+                SharePct: 33.3)
+            {
+                ExpectedSharePct = 100.0 * 0.5 / 1.65,
+            },
             new(
                 UserId: 3,
                 DisplayName: "Carol",
@@ -69,7 +83,10 @@ public class ChoreEquityDtoContractTests
                 PictureUrl: null,
                 Points: 3,
                 Completions: 1,
-                SharePct: 25.0),
+                SharePct: 25.0)
+            {
+                ExpectedSharePct = 100.0 * 0.15 / 1.65,
+            },
         };
 
         // Planning footprint (Phase 15): per-member, all-time, un-blended labeled tallies. Hand-picked so
@@ -110,6 +127,8 @@ public class ChoreEquityDtoContractTests
             Members: members)
         {
             Planning = planning,
+            // The requesting user's own tier (Phase 15 WP-05, P4); here the caller is Alice (Full).
+            CallerCapacityTier = "Full",
         };
     }
 
@@ -141,11 +160,12 @@ public class ChoreEquityDtoContractTests
         // Top-level camelCase property set is frozen (M7 — added/removed keys break this).
         root.Select(kvp => kvp.Key).Should().BeEquivalentTo(
             "window", "totalPoints", "totalCompletions", "equalSharePct",
-            "fallingBehindCount", "upForGrabsCount", "members", "planning");
+            "fallingBehindCount", "upForGrabsCount", "members", "planning", "callerCapacityTier");
 
         var firstMember = root["members"]!.AsArray()[0]!.AsObject();
         firstMember.Select(kvp => kvp.Key).Should().BeEquivalentTo(
-            "userId", "displayName", "initials", "pictureUrl", "points", "completions", "sharePct");
+            "userId", "displayName", "initials", "pictureUrl", "points", "completions", "sharePct",
+            "expectedSharePct");
 
         // Per-member planning object key set is frozen too (Phase 15 — mirrored by island types.ts).
         var firstPlanning = root["planning"]!.AsArray()[0]!.AsObject();

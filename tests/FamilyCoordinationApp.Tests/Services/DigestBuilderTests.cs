@@ -81,6 +81,32 @@ public class DigestBuilderTests
     }
 
     [Fact]
+    public void Build_DistributionUnaffectedBy_ExpectedSharePct_DigestByteIdentical()
+    {
+        // Phase 15 WP-05 (MN2/D1 seam proof): MemberEquityShare gained an additive ExpectedSharePct init
+        // property. The digest reads ONLY DisplayName / Points / SharePct by name — setting ExpectedSharePct
+        // (the capacity-weighted reference) must NOT change a single digest member line.
+        var withoutExpected = ThreeMemberEquity();
+        var withExpected = new ChoreEquityResult(
+            withoutExpected.TotalPoints,
+            withoutExpected.TotalCompletions,
+            withoutExpected.EqualSharePct,
+            withoutExpected.Members
+                // Same positional fields; only the new init property differs (arbitrary non-flat values).
+                .Select((m, i) => m with { ExpectedSharePct = 12.3 + i })
+                .ToList());
+
+        var baseline = _builder.Build("Heath", withoutExpected, MixedDueness(), upForGrabsCount: 3);
+        var withCapacity = _builder.Build("Heath", withExpected, MixedDueness(), upForGrabsCount: 3);
+
+        // The distribution member lines (DisplayName / Points / SharePct) are byte-identical.
+        withCapacity.Distribution.Should().BeEquivalentTo(baseline.Distribution,
+            "ExpectedSharePct is purely additive — the digest never reads it (MN2/D1)");
+        withCapacity.TotalPoints.Should().Be(baseline.TotalPoints);
+        withCapacity.CollectiveHeadline.Should().Be(baseline.CollectiveHeadline);
+    }
+
+    [Fact]
     public void Build_DistributionOrderedAlphabetically()
     {
         // Members arrive in points-desc order from the equity result (Alice, Bob, Carol).

@@ -608,7 +608,16 @@ public static class ChoresEndpoints
             .Where(e => e.HouseholdId == user.HouseholdId)
             .ToListAsync(ct);
 
-        var equity = equityCalculator.Compute(completions, members, equityWindow, now, timeZone);
+        // Per-member physical-capacity tiers (Phase 15 WP-05, D3). A lightweight household-scoped projection
+        // separate from the MemberDto projection (so the board DTO / ChoreDtos.cs stay untouched — MN1) and
+        // filtered to the caller's household (no cross-tenant leakage — M1). null tier ⇒ Full.
+        var tiersByUserId = (await context.Users
+                .Where(u => u.HouseholdId == user.HouseholdId)
+                .Select(u => new { u.Id, u.PhysicalCapacityTier })
+                .ToListAsync(ct))
+            .ToDictionary(u => u.Id, u => u.PhysicalCapacityTier);
+
+        var equity = equityCalculator.Compute(completions, members, equityWindow, now, timeZone, tiersByUserId);
 
         var planning = planningCalculator.Compute(members, allChores, recipes, manualListItems, choreEvents);
 
@@ -638,11 +647,17 @@ public static class ChoresEndpoints
             UpForGrabsCount: upForGrabsCount,
             Members: equity.Members
                 .Select(m => new MemberShareDto(
-                    m.UserId, m.DisplayName, m.Initials, m.PictureUrl, m.Points, m.Completions, m.SharePct))
+                    m.UserId, m.DisplayName, m.Initials, m.PictureUrl, m.Points, m.Completions, m.SharePct)
+                {
+                    // ExpectedSharePct is an init property, not a ctor param (Phase 15 WP-05).
+                    ExpectedSharePct = m.ExpectedSharePct,
+                })
                 .ToList())
         {
             // Planning is ALL-TIME — independent of the window param (D5).
             Planning = planning,
+            // The caller's own capacity tier rides the payload (P4); null ⇒ Full.
+            CallerCapacityTier = tiersByUserId.GetValueOrDefault(user.UserId),
         };
 
         return Results.Ok(dto);

@@ -43,6 +43,15 @@ public sealed record ChoreEquityDto(
     /// (MN4).
     /// </summary>
     public IReadOnlyList<MemberPlanningDto> Planning { get; init; } = Array.Empty<MemberPlanningDto>();
+
+    /// <summary>
+    /// The REQUESTING user's own physical-capacity tier (<c>Full</c> / <c>Reduced</c> / <c>Minimal</c>;
+    /// <c>null</c> ⇒ Full, the pre-migration default). Phase 15 (P4): rides the equity payload so the island's
+    /// self-only capacity selector reflects current state without a separate GET. Additive <c>init</c>-only
+    /// property in the record BODY (no primary-ctor arity change) — set via object initializer / <c>with</c>.
+    /// Serializes camelCase as <c>callerCapacityTier</c>.
+    /// </summary>
+    public string? CallerCapacityTier { get; init; }
 }
 
 /// <summary>
@@ -55,7 +64,17 @@ public sealed record MemberShareDto(
     string? PictureUrl,
     int Points,
     int Completions,
-    double SharePct);
+    double SharePct)
+{
+    /// <summary>
+    /// The member's capacity-WEIGHTED fair share of the physical load (PERCENT 0–100, UNROUNDED — the island
+    /// formats; Phase 15 D1/D3). Additive <c>init</c>-only property in the record BODY (no primary-ctor arity
+    /// change) so every existing positional <c>new MemberShareDto(7 args)</c> site compiles unchanged — set
+    /// via object initializer / <c>with</c>. <c>SharePct</c> stays the RAW actual share (digest-safe). The
+    /// island draws this as each member's per-member EXPECTED reference instead of the single flat line.
+    /// </summary>
+    public double ExpectedSharePct { get; init; }
+}
 
 /// <summary>
 /// Per-member planning footprint (Phase 15). Plain source-noun count fields (P3) — un-weighted, all-time,
