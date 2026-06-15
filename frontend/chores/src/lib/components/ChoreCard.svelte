@@ -943,6 +943,9 @@
     min-width: 0;
     display: flex;
     align-items: center;
+    /* A flex <button> centers its content under the UA stylesheet — text-align is
+       ignored for flex children — so pin the checkbox + title hard-left. */
+    justify-content: flex-start;
     gap: 10px;
     font: inherit;
     font-size: 0.875rem;
