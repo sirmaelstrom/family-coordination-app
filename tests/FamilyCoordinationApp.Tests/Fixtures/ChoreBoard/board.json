@@ -30,6 +30,20 @@
           "userId": 101,
           "state": "in"
         }
+      ],
+      "subtasks": [
+        {
+          "id": 1,
+          "title": "Sweep first",
+          "isDone": true,
+          "sortOrder": 0
+        },
+        {
+          "id": 2,
+          "title": "Mop",
+          "isDone": false,
+          "sortOrder": 1
+        }
       ]
     },
     {
@@ -62,7 +76,8 @@
           "userId": 100,
           "state": "assigned"
         }
-      ]
+      ],
+      "subtasks": []
     },
     {
       "id": 3,
@@ -98,7 +113,8 @@
           "userId": 101,
           "state": "in"
         }
-      ]
+      ],
+      "subtasks": []
     },
     {
       "id": 4,
@@ -130,7 +146,8 @@
           "userId": 101,
           "state": "in"
         }
-      ]
+      ],
+      "subtasks": []
     }
   ],
   "rooms": [

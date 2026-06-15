@@ -1,24 +1,28 @@
 <script lang="ts">
-  import type { AttentionFilter, NeedsAttentionSection } from '../state.svelte';
-  import type { ChoreDto } from '../types';
+  import type { NeedsAttentionSection } from '../state.svelte';
+  import type { ChoreDto, ChoreLensId } from '../types';
   import ChoreCard from './ChoreCard.svelte';
 
   // ───────────────────────────────────────────────────────────────────────
-  // The default lens (S1/S2): Needs-attention, split Falling behind → Due now
-  // → Coming up, dirtiest-first. Inclusion + ordering come from the SERVER
-  // (`needsAttentionChoreIds`) via the store — no client-side dueness (M5/M11).
+  // The unified board (Phase 14 — Model A board IA). It ALWAYS sections by
+  // attention (Falling behind → Due now → Coming up, dirtiest-first). The active
+  // PRIMARY FILTER (Up for grabs / Mine / All) decides WHICH chore set is
+  // sectioned — that selection happens upstream in the store (`boardSections`),
+  // so this component just renders whatever sections it's handed.
   //
-  // Filter chips (Everything / Up-for-grabs / Mine) narrow the visible set;
-  // they re-group the SAME payload (no fetch).
+  // ⚠ M11: the sections are a CLIENT-SIDE grouping of the ONE board payload — no
+  // fetch on filter switch. ⚠ M5/M6: ordering + bucketing read the SERVER
+  // `dueState`; no client dueness recompute.
+  //
+  // `filterLens` is used ONLY to pick the empty-state copy for the active filter.
   // ───────────────────────────────────────────────────────────────────────
 
   interface Props {
     sections: NeedsAttentionSection[];
-    /** Active filter chip. */
-    filter: AttentionFilter;
-    onFilter: (f: AttentionFilter) => void;
+    /** The active primary filter — drives the empty-state copy only. */
+    filterLens: ChoreLensId;
     currentUserId: number;
-    /** Total needs-attention count BEFORE the section split (for the empty state). */
+    /** Total chores in the active filter's set BEFORE the section split (empty state). */
     totalChores: number;
     /** True while a mutation for the given chore id is in flight. */
     isPending: (choreId: number) => boolean;
@@ -35,8 +39,7 @@
 
   let {
     sections,
-    filter,
-    onFilter,
+    filterLens,
     currentUserId,
     totalChores,
     isPending,
@@ -51,30 +54,24 @@
     onEdit,
   }: Props = $props();
 
-  const FILTERS: { id: AttentionFilter; label: string }[] = [
-    { id: 'everything', label: 'Everything' },
-    { id: 'up-for-grabs', label: 'Up for grabs' },
-    { id: 'mine', label: 'Mine' },
-  ];
+  // The active filter's set is empty when its pre-section count is 0 (equivalent
+  // to every section being empty). Drive the empty state off `totalChores` so the
+  // count the store computed is the single source for "is the board empty".
+  let hasVisible = $derived(totalChores > 0);
 
-  let hasVisible = $derived(sections.some((s) => s.chores.length > 0));
+  // Empty-state copy per active primary filter.
+  const EMPTY_COPY: Record<ChoreLensId, { head: string; body: string }> = {
+    'up-for-grabs': { head: 'Nothing up for grabs.', body: 'Every chore has someone on it. Nice.' },
+    mine: { head: 'Nothing on your plate.', body: "You're not holding any chores right now." },
+    'needs-attention': { head: 'All clear.', body: 'No active chores right now.' },
+    // The two organizers never render this board, but the map must be total.
+    rooms: { head: 'All clear.', body: 'No active chores right now.' },
+    equity: { head: 'All clear.', body: 'No active chores right now.' },
+  };
+  let emptyCopy = $derived(EMPTY_COPY[filterLens] ?? EMPTY_COPY['needs-attention']);
 </script>
 
 <div class="ch-board">
-  <div class="ch-chips" role="group" aria-label="Filter chores">
-    {#each FILTERS as chip (chip.id)}
-      <button
-        type="button"
-        class="ch-chip"
-        class:active={chip.id === filter}
-        aria-pressed={chip.id === filter}
-        onclick={() => onFilter(chip.id)}
-      >
-        {chip.label}
-      </button>
-    {/each}
-  </div>
-
   {#if hasVisible}
     {#each sections as section (section.id)}
       <section class="ch-section">
@@ -104,13 +101,8 @@
     {/each}
   {:else}
     <div class="ch-board-empty">
-      {#if totalChores === 0 && filter === 'everything'}
-        <p class="ch-board-empty-head">All clear.</p>
-        <p>Nothing needs attention right now — nice work.</p>
-      {:else}
-        <p class="ch-board-empty-head">Nothing here.</p>
-        <p>No chores match this filter.</p>
-      {/if}
+      <p class="ch-board-empty-head">{emptyCopy.head}</p>
+      <p>{emptyCopy.body}</p>
     </div>
   {/if}
 </div>
@@ -120,43 +112,6 @@
     display: flex;
     flex-direction: column;
     gap: 20px;
-  }
-
-  .ch-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .ch-chip {
-    font: inherit;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    border: 1px solid var(--color-line-strong);
-    background: transparent;
-    color: var(--color-text-muted);
-    padding: 6px 14px;
-    min-height: 32px;
-    border-radius: 16px;
-    cursor: pointer;
-    transition:
-      background-color 0.15s,
-      color 0.15s,
-      border-color 0.15s;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-  }
-  .ch-chip:hover:not(.active) {
-    background: var(--color-action-hover);
-    color: var(--color-text);
-  }
-  .ch-chip.active {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
-    color: #fff;
-  }
-  .ch-chip:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: 2px;
   }
 
   .ch-section {

@@ -25,6 +25,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 11: Chores v1.1 — Equity View & Weekly Discord Digest** - Household effort-distribution lens + cron-triggered weekly digest, edit-chore dialog, starter backfill
 - [x] **Phase 12: Chores v1.2 — Finish the Surface** - COMPLETE (2026-05-31): icons, home card, photo display/capture, room manager
 - [ ] **Phase 13: Chores v1.3 — Multi-room chores** - PLANNED (from prod feedback #6): one chore belonging to multiple rooms (M:N) — needs a spec
+- [ ] **Phase 14: Chores v1.4 — Board simplification + subtask checklist** - IN PROGRESS (from prod feedback 2026-06-14): collapse the lens/sub-chip duplication into a single filter axis (Up for grabs / Mine / All) with always-on attention sectioning + on-demand organizers (Rooms kept, Equity demoted); plus a per-chore subtask checklist (last-write-wins, never gates completion, resets on recurrence completion). Spec: `workshops/chores-v1.4-views-subtasks`
+- [ ] **Phase 15: Chores v1.5 — Equity rework (invisible labor)** - CAPTURED (from prod feedback 2026-06-14): the Equity lens only counts physical board completions and undercounts invisible planning/coordination labor; rework to add new contribution dimensions + mechanisms that drive *toward* equity. Spec-first when prioritized.
 
 ## Phase Details
 
@@ -212,6 +214,19 @@ Phases 8 and 9 were deprecated 2026-02-08. The identified gaps (attribution trac
   - the room-manager **delete→General** reassignment (a chore loses one room but may keep others).
 **Recommendation**: `/spec` before building — it's a data-model + board-contract change with broad blast radius, not a surface tweak. Brushes the room model shipped in v1.2.
 
+### Phase 14: Chores v1.4 — Board simplification + subtask checklist (IN PROGRESS)
+**Goal**: Cut the navigation duplication and add a lightweight per-chore checklist. From prod feedback 2026-06-14.
+**Source**: in-app feedback (2026-06-14). Spec: `D:\Development\data\outputs\workshops\chores-v1.4-views-subtasks\`.
+**Two capabilities**:
+  - **Board IA simplification (Model A)** — the 5 lenses (Needs attention / Rooms / Up for grabs / Mine / Equity) plus the 3 Needs-attention sub-chips (Everything / Up for grabs / Mine) conflate a *filter* (whose/what-state) with an *organizer* (how it's arranged) and duplicate "Up for grabs"/"Mine". Collapse to **one filter axis — Up for grabs · Mine · All** (default Up for grabs) — with the board **always** sectioning by attention (Falling behind / Due now / Coming up), and the organizers surfaced **on demand**: **Rooms kept accessible**, **Equity demoted** to a back-seat surface (it earns prominence back only via Phase 15). The per-user 📌 default machinery (already shipped) is reused, now pinning a filter state.
+  - **Subtask checklist** — new `ChoreSubtask` entity (composite key `HouseholdId+ChoreId+SubtaskId`), **last-write-wins (no xmin, never bumps `Chore.Version`)** dedicated endpoints, **never gates completion**, **resets on the satisfying completion** of a recurring chore. Rides the one board payload → M9 contract lockstep (DTO + `board.json` + frozen key list + island `types.ts`).
+**Execution**: roadmap-guided, gated autonomous build — small ordered stack, each unit ending in a local validation gate (build + targeted tests; browser-verify for UI), auto-continuing on green.
+
+### Phase 15: Chores v1.5 — Equity rework / invisible labor (CAPTURED)
+**Goal**: Make the equity model measure the *real* distribution of household labor, including invisible/planning work, and actively help move toward equity.
+**Source**: prod feedback 2026-06-14 (split out of the Phase 14 discussion). KB: "Chores Equity Rework — invisible/planning labor".
+**Why it's a phase**: the current Equity lens counts only physical board completions (`EffortPoints`), which undercounts members whose contribution is planning/coordination/mental-load — invisible to the board. Rework needs (1) **new contribution dimensions** beyond physical completions and (2) **mechanisms that drive toward equity** (capacity-aware assignment, rebalancing nudges), not just a displayed distribution. Brushes `ChoreEquityCalculator` + the digest + possibly the work model. **Spec-first when prioritized** — not started.
+
 ## Progress
 
 **Execution Order:**
@@ -232,7 +247,9 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 (8 & 9 de
 | 11. Chores v1.1 (Equity & Digest) | 11 WPs | Complete | 2026-05-31 |
 | 12. Chores v1.2 (Finish the Surface) | 6/6 items | Complete | PRs #13–15, #18–21 (2026-05-31) |
 | 13. Chores v1.3 (Multi-room chores) | - | Planned | from prod feedback #6 — needs a spec |
+| 14. Chores v1.4 (Board simplification + subtasks) | - | In progress | from prod feedback 2026-06-14 — Model A IA + subtask checklist |
+| 15. Chores v1.5 (Equity rework / invisible labor) | - | Captured | from prod feedback 2026-06-14 — spec-first when prioritized |
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-05-31 (v1.2 COMPLETE — photo display/capture + room manager shipped; added Phase 13 multi-room chores from prod feedback #6)*
+*Last updated: 2026-06-14 (added Phase 14 — Model A board simplification + subtask checklist, in progress; added Phase 15 — equity rework / invisible labor, captured — both from prod feedback 2026-06-14)*

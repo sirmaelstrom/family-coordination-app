@@ -98,6 +98,7 @@ builder.Services.AddScoped<IHouseholdConnectionService, HouseholdConnectionServi
 // board service + the endpoint projection. Enum DTOs serialize as camelCase strings (see ConfigureHttpJsonOptions below).
 builder.Services.AddScoped<IRoomService, RoomService>();
 builder.Services.AddScoped<IChoreService, ChoreService>();
+builder.Services.AddScoped<IChoreSubtaskService, ChoreSubtaskService>();
 builder.Services.AddScoped<IChoreBoardService, ChoreBoardService>();
 builder.Services.AddSingleton<ChoreStatusCalculator>();
 builder.Services.AddSingleton(TimeProvider.System);

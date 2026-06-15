@@ -44,6 +44,17 @@ export interface RosterMemberDto {
 /** camelCase — enum via JsonStringEnumConverter(CamelCase). Room rollup dirtiness. */
 export type RoomRollupStatus = 'clean' | 'attention' | 'needsWork';
 
+/**
+ * A lightweight per-chore checklist item (Phase 14). Versionless / last-write-wins (no concurrency token).
+ * A momentum aid only — never gates completion; resets on a recurring chore's satisfying completion.
+ */
+export interface ChoreSubtaskDto {
+  id: number;
+  title: string;
+  isDone: boolean;
+  sortOrder: number;
+}
+
 export interface ChoreDto {
   id: number;
   name: string;
@@ -81,6 +92,8 @@ export interface ChoreDto {
   completedCount: number;
   /** Named roster + per-member state (assigned/in/done), ascending by userId. [] = open / single-person. */
   roster: RosterMemberDto[];
+  /** Per-chore checklist (Phase 14); momentum aid, never gates completion. Ordered by sortOrder; [] = none. */
+  subtasks: ChoreSubtaskDto[];
 }
 
 export interface RoomRollupDto {
@@ -109,7 +122,7 @@ export interface ChoreBoardDto {
   members: MemberDto[];
   /** Overdue/dueToday OR unclaimed pile, server-ordered. */
   needsAttentionChoreIds: number[];
-  /** Persisted lens id; null ⇒ Needs-attention. One of ChoreLens (see below). */
+  /** Persisted lens id; null ⇒ Up-for-grabs. One of ChoreLens (see below). */
   userDefaultView: string | null;
 }
 
@@ -124,22 +137,29 @@ export interface RoomDto {
 }
 
 // ─── Canonical lens ids (M-canonical-lens / council M6) ─────────────────────
-// Must match the C# ChoreLens.All allowlist used by PATCH /me/default-view.
-// No ad-hoc casings. WP-10/12 switch lenses against these against the ONE
-// board payload (client-side grouping; no per-lens endpoint — M11).
+// Must match the C# ChoreLens.All allowlist used by PATCH /me/default-view —
+// the server validates the persisted default against these EXACT ids, so none
+// may be removed. No ad-hoc casings. Switching groups the ONE board payload
+// client-side (no per-lens endpoint — M11).
+//
+// Model A board IA (Phase 14) reinterprets them in the island: the first three
+// are PRIMARY board filters (up-for-grabs / mine / needs-attention="All") over a
+// single attention-sectioned board; rooms / equity are on-demand ORGANIZERS. The
+// ViewSwitcher defines the grouping/labels explicitly, so this order is just for
+// tidiness — it is NOT load-bearing.
 
 export type ChoreLensId =
-  | 'needs-attention'
-  | 'rooms'
   | 'up-for-grabs'
   | 'mine'
+  | 'needs-attention'
+  | 'rooms'
   | 'equity';
 
 export const CHORE_LENSES: readonly ChoreLensId[] = [
-  'needs-attention',
-  'rooms',
   'up-for-grabs',
   'mine',
+  'needs-attention',
+  'rooms',
   'equity',
 ] as const;
 

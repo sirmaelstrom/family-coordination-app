@@ -86,6 +86,16 @@ public class ChoreBoardService(
                 .ToDictionary(g => g.Key, g => g.ToList());
         }
 
+        // Phase 14: load every chore's subtasks in ONE household-scoped query, ordered + grouped by ChoreId
+        // (mirrors the completions/participation batch pattern). A chore with no checklist gets an empty list.
+        var choreIds = chores.Select(c => c.ChoreId).ToList();
+        var subtasksByChore = (await context.ChoreSubtasks
+            .Where(s => s.HouseholdId == householdId && choreIds.Contains(s.ChoreId))
+            .ToListAsync(cancellationToken))
+            .GroupBy(s => s.ChoreId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(s => s.SortOrder).ThenBy(s => s.SubtaskId)
+                .Select(s => new ChoreSubtaskDto(s.SubtaskId, s.Title, s.IsDone, s.SortOrder)).ToList());
+
         // Project each chore once; reuse the computed dueness for both the per-chore DTO and the rollups so
         // a chore's dueness is computed in exactly one place (no divergence between the card and the room
         // bucket). The board buckets off COMPUTED dueness, never stored Status (decay would be ignored).
@@ -121,7 +131,8 @@ public class ChoreBoardService(
                     roster = SynthesizeTrioRoster(p.Chore);
                     completedCount = 0;
                 }
-                return ToDto(p.Chore, p.Dueness, p.IsClaimStale, roster, completedCount);
+                var subtasks = subtasksByChore.GetValueOrDefault(p.Chore.ChoreId) ?? [];
+                return ToDto(p.Chore, p.Dueness, p.IsClaimStale, roster, completedCount, subtasks);
             })
             .ToList();
 
@@ -152,7 +163,13 @@ public class ChoreBoardService(
         // The single-chore mutation response synthesizes the X=1 trio roster and returns an EMPTY roster for
         // X>1 with completedCount=0 — the island reconciles via the board GET for authoritative progress (WP-07).
         var roster = chore.RequiredCount > 1 ? Array.Empty<RosterMemberDto>() : SynthesizeTrioRoster(chore);
-        return ToDto(chore, dueness, isClaimStale, roster, completedCount: 0);
+        // Map the chore's own subtasks (ordered). Accessing an unloaded EF collection returns the empty
+        // initialized list (no lazy query) — so this is empty unless the caller .Include'd them (ChoreService
+        // mutations do, so the post-reset unchecked checklist is reflected without a board refetch).
+        var subtasks = (chore.Subtasks ?? [])
+            .OrderBy(s => s.SortOrder).ThenBy(s => s.SubtaskId)
+            .Select(s => new ChoreSubtaskDto(s.SubtaskId, s.Title, s.IsDone, s.SortOrder)).ToList();
+        return ToDto(chore, dueness, isClaimStale, roster, completedCount: 0, subtasks);
     }
 
     // ------------------------------------------------------------------ projection
@@ -162,7 +179,8 @@ public class ChoreBoardService(
         ChoreDuenessResult dueness,
         bool isClaimStale,
         IReadOnlyList<RosterMemberDto> roster,
-        int completedCount) => new(
+        int completedCount,
+        IReadOnlyList<ChoreSubtaskDto> subtasks) => new(
         chore.ChoreId,
         chore.Name,
         chore.Icon,
@@ -187,7 +205,8 @@ public class ChoreBoardService(
         chore.Version,
         chore.RequiredCount,
         completedCount,
-        roster);
+        roster,
+        subtasks);
 
     /// <summary>
     /// Synthesize the uniform <c>roster[]</c> for a single-person (X=1) chore from the assignment trio (D3),

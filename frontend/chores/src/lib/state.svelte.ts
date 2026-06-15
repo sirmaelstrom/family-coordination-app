@@ -1,10 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────
 // Board store — the SINGLE source of truth for the chores island.
 //
-// One `ChoreBoardDto` is fetched (App.svelte) and held here. Every lens is a
-// CLIENT-SIDE grouping of that one payload (M11) — switching lenses never
-// refetches. The derived groupings below (Needs-attention sections, Rooms,
-// Up-for-grabs, Mine) all read the same `board` and recompute reactively.
+// One `ChoreBoardDto` is fetched (App.svelte) and held here. Every view is a
+// CLIENT-SIDE grouping of that one payload (M11) — switching never refetches.
+// The derived groupings below (the attention-sectioned board — filtered to
+// Up-for-grabs / Mine / All — plus the Rooms organizer) all read the same
+// `board` and recompute reactively.
 //
 // ⚠ Svelte 5 rune rule (global CORRECTION): never `export` a reassigned
 // `$state`/`$derived` from a module. We wrap the mutable state in a class
@@ -18,6 +19,7 @@
 import type {
   ChoreBoardDto,
   ChoreDto,
+  ChoreSubtaskDto,
   ChoreEquityDto,
   EquityWindow,
   RoomRollupDto,
@@ -40,6 +42,9 @@ import {
   createChore,
   deleteChore,
   updateChore,
+  createSubtask,
+  updateSubtask,
+  deleteSubtask,
   seedStarter as apiSeedStarter,
   setDefaultView,
   getEquity,
@@ -49,7 +54,7 @@ import {
 } from './api';
 import { showToast } from './toasts.svelte';
 
-/** One sectioned bucket of the Needs-attention lens. */
+/** One attention bucket of the unified board (Falling behind / Due now / Coming up). */
 export interface NeedsAttentionSection {
   id: 'falling-behind' | 'due-now' | 'coming-up';
   title: string;
@@ -61,29 +66,6 @@ export interface RoomGroup {
   rollup: RoomRollupDto;
   chores: ChoreDto[];
 }
-
-/**
- * Per-member current-load summary for the Mine lens's household load strip
- * (the v1.1 equity seed — display-only over the already-loaded board, no
- * schema change, no points engine). We surface the count a member is actively
- * holding (claimed or assigned, excluding stale claims) — NOT a points total.
- *
- * ⚠ M5/M6: we deliberately do NOT compute a "completed today" count here — the
- * board DTO's `lastCompletedAt` carries no actor and "today" would require
- * client-side timezone day-boundary math, which is forbidden. The held count is
- * a pure assignment-state grouping of the payload (no date logic).
- */
-export interface MemberLoad {
-  member: MemberDto;
-  /** Chores this member is actively holding (claimed/assigned, non-stale). */
-  heldCount: number;
-}
-
-/**
- * The in-board filter applied within the Needs-attention lens
- * (Everything / Up-for-grabs / Mine chips — S2 of the UX recommendation).
- */
-export type AttentionFilter = 'everything' | 'up-for-grabs' | 'mine';
 
 /**
  * Rank a chore for "dirtiest-first" ordering WITHIN a section. We order by the
@@ -121,10 +103,8 @@ class BoardStore {
   /** Human-readable error message; null when healthy. */
   error = $state<string | null>(null);
 
-  /** The active lens (ViewSwitcher). Defaults to Needs-attention. */
-  lens = $state<ChoreLensId>('needs-attention');
-  /** The in-Needs-attention filter chip selection. */
-  attentionFilter = $state<AttentionFilter>('everything');
+  /** The active lens (ViewSwitcher). Defaults to Up-for-grabs. */
+  lens = $state<ChoreLensId>('up-for-grabs');
 
   /** This household member's userId — set once on init from the shell context. */
   currentUserId = $state(0);
@@ -132,7 +112,7 @@ class BoardStore {
   /**
    * The persisted roaming default lens (per-user, server-stored on
    * `User.ChoresDefaultView`). Mirrors `board.userDefaultView` (null ⇒
-   * Needs-attention). Kept as a local field so the "set as default" affordance
+   * Up-for-grabs). Kept as a local field so the "set as default" affordance
    * reflects success immediately without a board refetch.
    */
   defaultView = $state<ChoreLensId | null>(null);
@@ -211,47 +191,6 @@ class BoardStore {
     return map;
   });
 
-  // ── Needs-attention lens (WP-10 default) ────────────────────────────────
-  //
-  // Inclusion + base order come from the SERVER's `needsAttentionChoreIds`
-  // (overdue → dueToday → pile, dirtiest-first — computed server-side, M11/M5).
-  // We then split into the three display sections by the server `dueState` /
-  // assignment, and apply the active filter chip.
-
-  /** The needs-attention chores, in server order, after the active filter chip. */
-  needsAttentionChores = $derived.by(() => {
-    const board = this.board;
-    if (!board) return [] as ChoreDto[];
-    const byId = this.choresById;
-    const ordered: ChoreDto[] = [];
-    for (const id of board.needsAttentionChoreIds) {
-      const c = byId.get(id);
-      if (c) ordered.push(c);
-    }
-    return ordered.filter((c) => this.passesAttentionFilter(c));
-  });
-
-  /** Needs-attention split into Falling behind → Due now → Coming up. */
-  needsAttentionSections = $derived.by<NeedsAttentionSection[]>(() => {
-    const chores = this.needsAttentionChores;
-    const fallingBehind: ChoreDto[] = [];
-    const dueNow: ChoreDto[] = [];
-    const comingUp: ChoreDto[] = [];
-    for (const c of chores) {
-      if (c.dueState === 'overdue') fallingBehind.push(c);
-      else if (c.dueState === 'dueToday') dueNow.push(c);
-      else comingUp.push(c); // scheduled / notDue pile chores
-    }
-    // Server order is already dirtiest-first; keep it (do NOT re-sort and risk
-    // diverging from the server verdict).
-    const sections: NeedsAttentionSection[] = [
-      { id: 'falling-behind', title: 'Falling behind', chores: fallingBehind },
-      { id: 'due-now', title: 'Due now', chores: dueNow },
-      { id: 'coming-up', title: 'Coming up', chores: comingUp },
-    ];
-    return sections.filter((s) => s.chores.length > 0);
-  });
-
   // ── Rooms lens (grouping seam — full UI is WP-12) ────────────────────────
   //
   // Buckets the one payload by roomId against the server rollups, including the
@@ -323,58 +262,53 @@ class BoardStore {
       .sort(sortDirtiestFirst);
   });
 
-  // ── Household load strip (Mine lens — the v1.1 equity SEED) ───────────────
+  // ── Unified attention-sectioned board (Phase 14 — Model A board IA) ──────
   //
-  // Per-member count of actively-held chores (claimed/assigned, non-stale),
-  // grouped off the one payload (M11). Display-only — NOT a points/equity
-  // engine, NOT a "completed today" tally (no actor in the DTO + would need
-  // client tz day math — M5). Ordered current-user first, then by load desc.
+  // The board ALWAYS sections by attention (Falling behind / Due now / Coming
+  // up). The active PRIMARY FILTER (lens) only picks WHICH chore set is sectioned:
+  //   'up-for-grabs' ⇒ the pile (upForGrabsChores)
+  //   'mine'         ⇒ what I hold (mineChores)
+  //   'needs-attention' (relabeled "All") ⇒ every active chore (chores)
+  // We order each set dirtiest-first (server `dueState`, then `nextDueAt`) and
+  // bucket by the server `dueState` — NO client dueness recompute (M5/M11). The
+  // Rooms / Equity organizers are reached via the secondary control, not here.
+  //
+  // Declared AFTER upForGrabsChores / mineChores: a class `$derived` field's
+  // initializer runs in declaration order at construction, so it must follow the
+  // fields it reads.
 
-  memberLoads = $derived.by<MemberLoad[]>(() => {
-    const board = this.board;
-    if (!board) return [];
-    const held = new Map<number, number>();
-    for (const c of this.chores) {
-      if (c.assigneeUserId != null && c.assignmentKind !== 'none' && !c.isClaimStale) {
-        held.set(c.assigneeUserId, (held.get(c.assigneeUserId) ?? 0) + 1);
-      }
+  boardSections = $derived.by<NeedsAttentionSection[]>(() => {
+    const set =
+      this.lens === 'up-for-grabs'
+        ? this.upForGrabsChores
+        : this.lens === 'mine'
+          ? this.mineChores
+          : this.chores; // 'needs-attention' ⇒ All
+    const ordered = [...set].sort(sortDirtiestFirst);
+    const fallingBehind: ChoreDto[] = [];
+    const dueNow: ChoreDto[] = [];
+    const comingUp: ChoreDto[] = [];
+    for (const c of ordered) {
+      if (c.dueState === 'overdue') fallingBehind.push(c);
+      else if (c.dueState === 'dueToday') dueNow.push(c);
+      else comingUp.push(c); // scheduled / notDue pile chores
     }
-    const uid = this.currentUserId;
-    return board.members
-      .map((member) => ({ member, heldCount: held.get(member.userId) ?? 0 }))
-      .sort((a, b) => {
-        // Current user first, then heavier load first, then name for stability.
-        if (a.member.userId === uid && b.member.userId !== uid) return -1;
-        if (b.member.userId === uid && a.member.userId !== uid) return 1;
-        if (a.heldCount !== b.heldCount) return b.heldCount - a.heldCount;
-        return a.member.displayName.localeCompare(b.member.displayName);
-      });
+    const sections: NeedsAttentionSection[] = [
+      { id: 'falling-behind', title: 'Falling behind', chores: fallingBehind },
+      { id: 'due-now', title: 'Due now', chores: dueNow },
+      { id: 'coming-up', title: 'Coming up', chores: comingUp },
+    ];
+    return sections.filter((s) => s.chores.length > 0);
   });
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-
-  private passesAttentionFilter(c: ChoreDto): boolean {
-    // Co-sign chores partition by whether the viewer has signed (mirrors
-    // upForGrabsChores / mineChores): not-yet-signed → up-for-grabs, signed →
-    // mine. They are never claimable, so the claim/owner rules don't apply.
-    const coSignInProgress = c.requiredCount > 1 && c.completedCount < c.requiredCount;
-    const uid = this.currentUserId;
-    const onRoster = c.roster.some((m) => m.userId === uid);
-    switch (this.attentionFilter) {
-      case 'up-for-grabs':
-        return coSignInProgress
-          ? !onRoster
-          : c.assignmentKind === 'none' || c.isClaimStale;
-      case 'mine':
-        return coSignInProgress
-          ? onRoster
-          : (c.assigneeUserId === uid && c.assignmentKind !== 'none' && !c.isClaimStale) ||
-              c.ownerUserId === uid;
-      case 'everything':
-      default:
-        return true;
-    }
-  }
+  /** Count of the active filter's set BEFORE the section split (for the empty state). */
+  boardTotalCount = $derived(
+    this.lens === 'up-for-grabs'
+      ? this.upForGrabsChores.length
+      : this.lens === 'mine'
+        ? this.mineChores.length
+        : this.chores.length,
+  );
 
   setBoard(next: ChoreBoardDto): void {
     this.board = next;
@@ -391,10 +325,6 @@ class BoardStore {
 
   setLens(next: ChoreLensId): void {
     this.lens = next;
-  }
-
-  setAttentionFilter(next: AttentionFilter): void {
-    this.attentionFilter = next;
   }
 
   // ── Equity lens fetch + invalidation ──────────────────────────────────────
@@ -454,24 +384,24 @@ class BoardStore {
   //
   // The default lens is PER-USER and SERVER-PERSISTED (User.ChoresDefaultView),
   // so it roams across devices — NOT localStorage (D18). It arrives on the board
-  // payload as `userDefaultView` (null ⇒ Needs-attention); no separate GET. The
+  // payload as `userDefaultView` (null ⇒ Up-for-grabs); no separate GET. The
   // PATCH allowlist validates against the SAME canonical lens ids (ChoreLens.All).
 
   /**
    * On the FIRST board load, open the lens the user pinned as their default
-   * (null ⇒ Needs-attention). Runs once — later refetches (liveness, post-
+   * (null ⇒ Up-for-grabs). Runs once — later refetches (liveness, post-
    * mutation reconcile) must NOT yank the user off whatever lens they switched
    * to in-session.
    */
   private initLensFromDefault(): void {
     if (this.defaultViewInitialized) return;
     this.defaultViewInitialized = true;
-    this.lens = this.defaultView ?? 'needs-attention';
+    this.lens = this.defaultView ?? 'up-for-grabs';
   }
 
   /** Is the given lens the user's current persisted default? */
   isDefaultView(lens: ChoreLensId): boolean {
-    return (this.defaultView ?? 'needs-attention') === lens;
+    return (this.defaultView ?? 'up-for-grabs') === lens;
   }
 
   /**
@@ -1019,6 +949,124 @@ class BoardStore {
       this.markPending(choreId, false);
     }
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Checklist / subtasks (Phase 14) — VERSIONLESS / last-write-wins.
+  //
+  // These are deliberately NOT on the optimistic `runOptimistic`/xmin path: a
+  // subtask carries no concurrency token, never gates completion, and a check
+  // mid-conflict is not worth a 409 dance. The model is simpler: mutate
+  // `board.chores[i].subtasks` IN PLACE (deep-reactive per M11), fire the
+  // versionless API call, and on ANY error `reconcile()` (board refetch) + a
+  // calm `info` toast. We do NOT touch `pendingChoreIds` — a subtask op must
+  // never disable the whole card's chore controls. NO Date is built here.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Add a checklist item to a chore. Add is infrequent, so we await then push
+   * the server DTO (no temp id) — keeping the list sorted by sortOrder. A
+   * blank/whitespace title is ignored client-side (no call).
+   */
+  async addSubtask(choreId: number, title: string): Promise<void> {
+    if (!this.board) return;
+    const chore = this.choreById(choreId);
+    if (!chore) return;
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    try {
+      const created = await createSubtask(choreId, { title: trimmed });
+      const current = this.choreById(choreId);
+      if (!current) return;
+      current.subtasks = sortSubtasks([...current.subtasks, created]);
+    } catch {
+      await this.reconcile();
+      showToast({ message: "Couldn't add that item — the list was refreshed.", kind: 'info' });
+    }
+  }
+
+  /**
+   * Toggle a checklist item's done state — the HOT path, so it's optimistic:
+   * flip `isDone` in place immediately, then PUT. Replace with the returned DTO
+   * on success; reconcile + calm toast on error.
+   */
+  async toggleSubtask(choreId: number, subtaskId: number, isDone: boolean): Promise<void> {
+    if (!this.board) return;
+    const chore = this.choreById(choreId);
+    if (!chore) return;
+    const item = chore.subtasks.find((s) => s.id === subtaskId);
+    if (!item) return;
+    const previous = item.isDone;
+    item.isDone = isDone; // optimistic — must feel instant
+    try {
+      const updated = await updateSubtask(choreId, subtaskId, { isDone });
+      this.replaceSubtask(choreId, updated);
+    } catch {
+      // Roll back the optimistic flip, then resync to be safe.
+      const cur = this.choreById(choreId)?.subtasks.find((s) => s.id === subtaskId);
+      if (cur) cur.isDone = previous;
+      await this.reconcile();
+      showToast({ message: "Couldn't update that item — the list was refreshed.", kind: 'info' });
+    }
+  }
+
+  /**
+   * Rename a checklist item (optimistic). A blank/whitespace title is ignored
+   * client-side (no call). Replace with the server DTO on success; reconcile +
+   * calm toast on error.
+   */
+  async renameSubtask(choreId: number, subtaskId: number, title: string): Promise<void> {
+    if (!this.board) return;
+    const chore = this.choreById(choreId);
+    if (!chore) return;
+    const item = chore.subtasks.find((s) => s.id === subtaskId);
+    if (!item) return;
+    const trimmed = title.trim();
+    if (!trimmed) return; // ignore blank rename
+    if (trimmed === item.title) return; // no-op
+    const previous = item.title;
+    item.title = trimmed; // optimistic
+    try {
+      const updated = await updateSubtask(choreId, subtaskId, { title: trimmed });
+      this.replaceSubtask(choreId, updated);
+    } catch {
+      const cur = this.choreById(choreId)?.subtasks.find((s) => s.id === subtaskId);
+      if (cur) cur.title = previous;
+      await this.reconcile();
+      showToast({ message: "Couldn't rename that item — the list was refreshed.", kind: 'info' });
+    }
+  }
+
+  /**
+   * Remove a checklist item (optimistic splice). Reconcile + calm toast on error.
+   */
+  async removeSubtask(choreId: number, subtaskId: number): Promise<void> {
+    if (!this.board) return;
+    const chore = this.choreById(choreId);
+    if (!chore) return;
+    const item = chore.subtasks.find((s) => s.id === subtaskId);
+    if (!item) return;
+    chore.subtasks = chore.subtasks.filter((s) => s.id !== subtaskId); // optimistic
+    try {
+      await deleteSubtask(choreId, subtaskId);
+    } catch {
+      await this.reconcile();
+      showToast({ message: "Couldn't remove that item — the list was refreshed.", kind: 'info' });
+    }
+  }
+
+  /** Replace one subtask in a chore's list with the authoritative server DTO (kept sorted). */
+  private replaceSubtask(choreId: number, updated: ChoreSubtaskDto): void {
+    const chore = this.choreById(choreId);
+    if (!chore) return;
+    chore.subtasks = sortSubtasks(
+      chore.subtasks.map((s) => (s.id === updated.id ? updated : s)),
+    );
+  }
+}
+
+/** Stable ordering for a chore's checklist — by sortOrder, then id for ties. */
+function sortSubtasks(items: ChoreSubtaskDto[]): ChoreSubtaskDto[] {
+  return [...items].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
 }
 
 /**
@@ -1046,7 +1094,7 @@ export function roomFor(roomId: number | null | undefined): RoomRollupDto | null
 
 /**
  * Coerce a persisted `userDefaultView` string to a canonical `ChoreLensId`.
- * null/blank/unknown ⇒ null (⇒ Needs-attention default). The server allowlist
+ * null/blank/unknown ⇒ null (⇒ Up-for-grabs default). The server allowlist
  * is authoritative (ChoreLens.All), but we re-validate defensively so an
  * unexpected value never selects a non-existent lens.
  */

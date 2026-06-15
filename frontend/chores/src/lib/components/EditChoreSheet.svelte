@@ -263,6 +263,28 @@
     newPhotoFile = input.files && input.files.length > 0 ? input.files[0] : null;
   }
 
+  // ── Checklist (optional) — immediate / versionless store ops (Phase 14) ────
+  // These run independently of the sheet's PUT-on-Save flow: each calls the
+  // versionless store path (boardStore.{add,rename,remove}Subtask) at once. The
+  // sheet renders the chore's LIVE subtasks straight off the (deep-reactive)
+  // board chore, so an add/remove reflects without a local mirror. Checking
+  // items is from the card; the sheet manages the list. Never gates completion.
+  let newSubtaskTitle = $state('');
+
+  function addSubtaskItem(): void {
+    if (!chore) return;
+    const title = newSubtaskTitle.trim();
+    if (!title) return;
+    boardStore.addSubtask(chore.id, title);
+    newSubtaskTitle = '';
+  }
+
+  /** Rename on blur/Enter only when the value actually changed (store ignores blanks/no-ops). */
+  function renameSubtaskItem(subtaskId: number, value: string): void {
+    if (!chore) return;
+    boardStore.renameSubtask(chore.id, subtaskId, value);
+  }
+
   /** Map the 3-button cadence into the API recurrence fields (D4-B). */
   function buildRecurrence():
     | { ok: true; mode: RecurrenceMode; intervalDays: number | null; daysOfWeek: string | null }
@@ -728,6 +750,71 @@
         </fieldset>
       {/if}
 
+      {#if chore}
+        <fieldset class="ch-field">
+          <legend class="ch-field-label">Checklist (optional)</legend>
+          {#if chore.subtasks.length > 0}
+            <ul class="ch-subtasks">
+              {#each chore.subtasks as s (s.id)}
+                <li class="ch-subtask-row">
+                  <input
+                    type="text"
+                    class="ch-subtask-input"
+                    value={s.title}
+                    autocomplete="off"
+                    aria-label="Checklist item"
+                    onblur={(e) => renameSubtaskItem(s.id, (e.currentTarget as HTMLInputElement).value)}
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        (e.currentTarget as HTMLInputElement).blur();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    class="ch-subtask-del"
+                    onclick={() => boardStore.removeSubtask(chore.id, s.id)}
+                    title="Remove this item"
+                    aria-label="Remove {s.title}"
+                  >
+                    ×
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          <div class="ch-subtask-add">
+            <input
+              type="text"
+              class="ch-subtask-input"
+              bind:value={newSubtaskTitle}
+              autocomplete="off"
+              placeholder="Add an item…"
+              aria-label="Add a checklist item"
+              onkeydown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addSubtaskItem();
+                }
+              }}
+            />
+            <button
+              type="button"
+              class="ch-btn-primary ch-subtask-add-btn"
+              onclick={addSubtaskItem}
+              disabled={!newSubtaskTitle.trim()}
+            >
+              Add
+            </button>
+          </div>
+          <p class="ch-hint">
+            A quick checklist for this chore — anyone can tick items off from the card. It's optional and
+            never needed to finish the chore.
+          </p>
+        </fieldset>
+      {/if}
+
       <label class="ch-field">
         <span class="ch-field-label">Photo (optional)</span>
         {#if existingPhotoPath && !newPhotoFile}
@@ -1021,6 +1108,60 @@
     margin: 0;
     font-size: 0.875rem;
     color: var(--color-error);
+  }
+
+  /* ── Checklist (optional) — manage list within the edit sheet (Phase 14) ── */
+  .ch-subtasks {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .ch-subtask-row,
+  .ch-subtask-add {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ch-subtask-input {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    color: inherit;
+    padding: 10px 12px;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    min-height: 44px;
+  }
+  .ch-subtask-input:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -1px;
+    border-color: var(--color-primary);
+  }
+  .ch-subtask-del {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    font-size: 1.25rem;
+    line-height: 1;
+    color: var(--color-text-muted);
+    background: transparent;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .ch-subtask-del:hover {
+    background: var(--color-action-hover);
+    color: var(--color-error);
+  }
+  .ch-subtask-add-btn {
+    flex-shrink: 0;
+    min-height: 44px;
   }
 
   .ch-sheet-actions {

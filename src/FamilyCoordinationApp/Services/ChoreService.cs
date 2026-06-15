@@ -374,6 +374,21 @@ public class ChoreService(
             {
                 ClearToPile(chore);
             }
+
+            // Phase-14 checklist reset: each occurrence of a recurring chore gets a fresh checklist, so on the
+            // SATISFYING completion we clear every checked subtask back to IsDone=false. OneOff is skipped (its
+            // lifecycle terminates). These updates ride the SAME SaveWithConcurrencyAsync below — no separate
+            // save, and Chore.Version is untouched (subtasks are versionless / last-write-wins).
+            if (chore.RecurrenceMode != RecurrenceMode.OneOff)
+            {
+                var doneSubtasks = await context.ChoreSubtasks
+                    .Where(s => s.HouseholdId == householdId && s.ChoreId == choreId && s.IsDone)
+                    .ToListAsync(cancellationToken);
+                foreach (var subtask in doneSubtasks)
+                {
+                    subtask.IsDone = false;
+                }
+            }
         }
         // Else (partial): leave LastCompletedAt, Status, and the assignment trio untouched (D4) — only the
         // ChoreCompletion rows + LastContributionAt above were written.
@@ -554,7 +569,12 @@ public class ChoreService(
 
     private static async Task<Chore> LoadChoreAsync(ApplicationDbContext context, int householdId, int choreId, CancellationToken cancellationToken)
     {
+        // Include the checklist so every mutation response (claim/drop/complete/handoff/edit/roster) projects
+        // the chore's actual — and post-reset — subtasks, preventing a blank-checklist flash in the island's
+        // optimistic apply. The Unit-1 completion reset mutates these same tracked entities (IsDone=false), so a
+        // completion response reflects the unchecked state.
         return await context.Chores
+            .Include(c => c.Subtasks)
             .FirstOrDefaultAsync(c => c.HouseholdId == householdId && c.ChoreId == choreId, cancellationToken)
             ?? throw new ChoreNotFoundException($"Chore {choreId} not found for household {householdId}.");
     }
