@@ -25,9 +25,11 @@ public sealed class EquityEndpointIntegrationTests(PostgresContainerFixture post
     public async Task DisposeAsync() => await _factory.DisposeAsync();
 
     private sealed record MemberShare(int userId, string displayName, int points, int completions, double sharePct);
+    private sealed record MemberPlanning(
+        int userId, string displayName, int choresSetUp, int recipesAdded, int listItemsCurated, int handOffs);
     private sealed record Equity(
         string window, int totalPoints, int totalCompletions, double equalSharePct,
-        int fallingBehindCount, int upForGrabsCount, List<MemberShare> members);
+        int fallingBehindCount, int upForGrabsCount, List<MemberShare> members, List<MemberPlanning> planning);
 
     [Fact]
     public async Task Equity_AsUserA_SumsOnlyHouseholdA()
@@ -88,6 +90,27 @@ public sealed class EquityEndpointIntegrationTests(PostgresContainerFixture post
         // Same three completions are also within the all-time window (no lower bound).
         equity.totalCompletions.Should().Be(3);
         equity.totalPoints.Should().Be(5);
+    }
+
+    [Fact]
+    public async Task Equity_PlanningIsAllTime_ByteIdenticalAcrossWindows()
+    {
+        // V5: planning lanes are ALL-TIME — the `window` param governs only the physical lane. The
+        // `planning` array must be byte-identical between ?window=week and ?window=all. Compare the raw
+        // serialized `planning` node so any drift (count, ordering, key) fails the assertion.
+        var client = _factory.CreateClientAs(ChoresWebAppFactory.UserAEmail);
+
+        var weekJson = await client.GetStringAsync("/api/chores/equity?window=week");
+        var allJson = await client.GetStringAsync("/api/chores/equity?window=all");
+
+        var weekPlanning = JsonDocument.Parse(weekJson).RootElement.GetProperty("planning").GetRawText();
+        var allPlanning = JsonDocument.Parse(allJson).RootElement.GetProperty("planning").GetRawText();
+
+        weekPlanning.Should().Be(allPlanning, "planning is all-time and must not vary with the equity window");
+
+        // Sanity: the planning array carries one row per household-A member (Alice, Amy).
+        var planning = await client.GetFromJsonAsync<Equity>("/api/chores/equity?window=week", Json);
+        planning!.planning.Should().HaveCount(2, "one planning row per household-A member");
     }
 
     [Fact]

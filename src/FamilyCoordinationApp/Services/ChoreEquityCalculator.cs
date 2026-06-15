@@ -23,7 +23,18 @@ public record MemberEquityShare(
     string? PictureUrl,
     int Points,
     int Completions,
-    double SharePct);
+    double SharePct)
+{
+    /// <summary>
+    /// The member's capacity-WEIGHTED fair share of the physical load (PERCENT 0–100, UNROUNDED —
+    /// the UI formats). Phase 15 (D1/D3): a NON-positional <c>init</c>-only property in the record BODY,
+    /// so every existing positional <c>new MemberEquityShare(7 args)</c> site (the calculator tests, the
+    /// digest fixtures) compiles UNCHANGED. <c>SharePct</c> / <c>EqualSharePct</c> stay RAW physical facts
+    /// (digest-safe); this is the per-member EXPECTED reference the island draws instead of the single flat
+    /// equal-share line. Defaults to 0.0; the calculator sets the real computed value via object initializer.
+    /// </summary>
+    public double ExpectedSharePct { get; init; }
+}
 
 /// <summary>
 /// Pure, stateless, parameterless-ctor calculator that aggregates the completion log into a
@@ -46,6 +57,26 @@ public record MemberEquityShare(
 /// </summary>
 public class ChoreEquityCalculator
 {
+    /// <summary>Shared empty tier map for the no-capacity-data (all-<c>Full</c>) path.</summary>
+    private static readonly IReadOnlyDictionary<int, string?> EmptyTiers =
+        new Dictionary<int, string?>();
+
+    /// <summary>
+    /// Physical-capacity tier → expected-share weight (Phase 15 D3). <c>Full</c>=1.0, <c>Reduced</c>=0.5,
+    /// <c>Minimal</c>=0.15 (NOT zero — keeps a Minimal member's reference humane and Σweight&gt;0). A
+    /// null/absent/unrecognized tier is treated as <c>Full</c>. Tier strings mirror <c>CapacityTier.All</c>.
+    /// </summary>
+    private static double WeightFor(IReadOnlyDictionary<int, string?> tiers, int userId)
+    {
+        tiers.TryGetValue(userId, out var tier);
+        return tier switch
+        {
+            "Reduced" => 0.5,
+            "Minimal" => 0.15,
+            _ => 1.0, // Full, null, or any unrecognized value
+        };
+    }
+
     /// <summary>
     /// Compute the equity distribution for <paramref name="members"/> over the given
     /// <paramref name="window"/> using the effort-weighted <paramref name="completions"/> log.
@@ -59,14 +90,25 @@ public class ChoreEquityCalculator
     /// <param name="now">The current UTC instant (injected — never <see cref="DateTime.UtcNow"/>
     /// inside this method).</param>
     /// <param name="tz">The household timezone for local-day boundary math (M5).</param>
+    /// <param name="tiersByUserId">Optional per-member physical-capacity tier map (<c>Full</c> /
+    /// <c>Reduced</c> / <c>Minimal</c>, Phase 15 D3). A TRAILING OPTIONAL param (default <c>null</c>, the only
+    /// compile-time-constant default C# allows) — an absent/empty map OR a null/unrecognized tier means that
+    /// member is treated as <c>Full</c> (weight 1.0), so <c>ExpectedSharePct</c> falls back to the flat
+    /// distribution. The digest call site omits this arg (all-<c>Full</c>) so its output stays byte-identical
+    /// (MN2/D1). This does NOT touch <c>SharePct</c> / <c>EqualSharePct</c> — those stay RAW.</param>
     public ChoreEquityResult Compute(
         IEnumerable<ChoreCompletion> completions,
         IReadOnlyList<MemberDto> members,
         EquityWindow window,
         DateTime now,
-        TimeZoneInfo tz)
+        TimeZoneInfo tz,
+        IReadOnlyDictionary<int, string?>? tiersByUserId = null)
     {
         var windowStart = ComputeWindowStart(window, now, tz);
+
+        // Capacity weighting (D3): absent/empty map ⇒ every member Full (flat distribution). The default
+        // MUST be a compile-time constant (null), so coalesce to an empty dictionary here.
+        var tiers = tiersByUserId ?? EmptyTiers;
 
         // Aggregate effort points + completion count per user for in-window completions.
         var byUser = new Dictionary<int, (int Points, int Completions)>();
@@ -97,6 +139,15 @@ public class ChoreEquityCalculator
         // EqualSharePct: what each member's fair share would be (0 when no members).
         var equalSharePct = memberCount == 0 ? 0.0 : Math.Round(100.0 / memberCount, 1);
 
+        // Capacity-weighted EXPECTED-share denominator (D3): Σ weight across members. Guard Σ==0
+        // (impossible given Minimal=0.15>0, but explicit) by falling back to the flat 100/N distribution.
+        double totalWeight = 0.0;
+        foreach (var m in members)
+        {
+            totalWeight += WeightFor(tiers, m.UserId);
+        }
+        bool useFlatExpected = totalWeight <= 0.0;
+
         var shares = new List<MemberEquityShare>(memberCount);
 
         foreach (var m in members)
@@ -109,6 +160,14 @@ public class ChoreEquityCalculator
                 ? 0.0
                 : Math.Round(100.0 * memberPoints / householdTotal, 1);
 
+            // ExpectedSharePct (D3): 100 × weight[i] / Σweight, UNROUNDED (UI formats). The flat fallback
+            // (Σweight==0) mirrors EqualSharePct's even split. Raw — does NOT touch SharePct/EqualSharePct.
+            var expectedSharePct = memberCount == 0
+                ? 0.0
+                : useFlatExpected
+                    ? 100.0 / memberCount
+                    : 100.0 * WeightFor(tiers, m.UserId) / totalWeight;
+
             shares.Add(new MemberEquityShare(
                 UserId: m.UserId,
                 DisplayName: m.DisplayName,
@@ -116,7 +175,10 @@ public class ChoreEquityCalculator
                 PictureUrl: m.PictureUrl,
                 Points: memberPoints,
                 Completions: memberCompletions,
-                SharePct: sharePct));
+                SharePct: sharePct)
+            {
+                ExpectedSharePct = expectedSharePct,
+            });
         }
 
         return new ChoreEquityResult(

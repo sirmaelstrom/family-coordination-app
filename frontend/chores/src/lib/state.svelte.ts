@@ -22,6 +22,7 @@ import type {
   ChoreSubtaskDto,
   ChoreEquityDto,
   EquityWindow,
+  CapacityTier,
   RoomRollupDto,
   MemberDto,
   ChoreLensId,
@@ -47,6 +48,7 @@ import {
   deleteSubtask,
   seedStarter as apiSeedStarter,
   setDefaultView,
+  setCapacity,
   getEquity,
   type CreateChoreRequest,
   type UpdateChoreRequest,
@@ -120,6 +122,12 @@ class BoardStore {
   savingDefaultView = $state(false);
   /** Guards `initLensFromDefault` so the landing lens is set only on first load. */
   private defaultViewInitialized = false;
+
+  /**
+   * True while a `setCapacity` PATCH is in flight (disables the self-only capacity selector). The caller's
+   * CURRENT tier is read off `equity?.callerCapacityTier` (no separate state) — Phase 15 WP-06, P4.
+   */
+  savingCapacity = $state(false);
 
   /**
    * Chore ids with an in-flight mutation. Drives per-card disabled state +
@@ -438,6 +446,40 @@ class BoardStore {
       showToast({ message: msg, kind: 'info' });
     } finally {
       this.savingDefaultView = false;
+    }
+  }
+
+  // ── Self-only physical-capacity tier (Phase 15 WP-06, MN5/P4) ─────────────
+  //
+  // The capacity tier is PER-USER and SERVER-PERSISTED (User.PhysicalCapacityTier), so it roams across
+  // devices like the default view — NOT localStorage. It arrives on every equity payload as
+  // `callerCapacityTier` (null ⇒ Full); no separate GET (M7). The PATCH writes ONLY the caller's own row
+  // (MN5 — no way to set another member's tier). On success we invalidate the equity cache so the
+  // per-member EXPECTED references recompute with the new weighting (the fresh tier rides the reload).
+
+  /**
+   * Set the current user's OWN physical-capacity tier (PATCH /api/chores/me/capacity). Self-set only —
+   * never another member's (MN5). On success: invalidate the cached equity so the expected references
+   * recompute (and reload now if the equity lens is open). On an ApiError we surface a non-blocking toast;
+   * the previously rendered tier stays until the next equity reload reconciles.
+   */
+  async saveCapacity(tier: CapacityTier): Promise<void> {
+    if (this.savingCapacity) return;
+    // No-op if it's already the caller's current tier (null ⇒ Full).
+    if ((this.equity?.callerCapacityTier ?? 'Full') === tier) return;
+    this.savingCapacity = true;
+    try {
+      await setCapacity(tier);
+      // The new tier rides the next equity payload as `callerCapacityTier`; recompute expected refs.
+      this.invalidateEquity();
+    } catch (e) {
+      const msg =
+        e instanceof ApiError
+          ? "Couldn't update your capacity right now — please try again."
+          : "Couldn't update your capacity right now.";
+      showToast({ message: msg, kind: 'info' });
+    } finally {
+      this.savingCapacity = false;
     }
   }
 

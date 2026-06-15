@@ -13,7 +13,8 @@
       "pictureUrl": "https://example.com/alice.png",
       "points": 5,
       "completions": 2,
-      "sharePct": 41.7
+      "sharePct": 41.7,
+      "expectedSharePct": 60.60606060606061
     },
     {
       "userId": 2,
@@ -22,7 +23,8 @@
       "pictureUrl": null,
       "points": 4,
       "completions": 1,
-      "sharePct": 33.3
+      "sharePct": 33.3,
+      "expectedSharePct": 30.303030303030305
     },
     {
       "userId": 3,
@@ -31,7 +33,35 @@
       "pictureUrl": null,
       "points": 3,
       "completions": 1,
-      "sharePct": 25
+      "sharePct": 25,
+      "expectedSharePct": 9.090909090909092
     }
-  ]
+  ],
+  "planning": [
+    {
+      "userId": 1,
+      "displayName": "Alice",
+      "choresSetUp": 19,
+      "recipesAdded": 6,
+      "listItemsCurated": 28,
+      "handOffs": 4
+    },
+    {
+      "userId": 2,
+      "displayName": "Bob",
+      "choresSetUp": 3,
+      "recipesAdded": 2,
+      "listItemsCurated": 5,
+      "handOffs": 1
+    },
+    {
+      "userId": 3,
+      "displayName": "Carol",
+      "choresSetUp": 0,
+      "recipesAdded": 0,
+      "listItemsCurated": 0,
+      "handOffs": 0
+    }
+  ],
+  "callerCapacityTier": "Full"
 }

@@ -287,6 +287,138 @@ public class ChoreEquityCalculatorTests
             m.SharePct.Should().BeInRange(0.0, 100.0, "sharePct is PERCENT not fraction"));
     }
 
+    // ---- Capacity weighting → ExpectedSharePct (Phase 15 WP-05, D3) --------------------------------
+
+    private static IReadOnlyDictionary<int, string?> Tiers(params (int UserId, string? Tier)[] entries) =>
+        entries.ToDictionary(e => e.UserId, e => e.Tier);
+
+    [Fact]
+    public void Compute_ExpectedSharePct_WorkedExample_FullFullMinimal()
+    {
+        // D3 worked example: members {Full, Full, Minimal} → weights {1.0, 1.0, 0.15}, Σ = 2.15.
+        //   Alice: 100 * 1.0  / 2.15 ≈ 46.5
+        //   Bob:   100 * 1.0  / 2.15 ≈ 46.5
+        //   Carol: 100 * 0.15 / 2.15 ≈ 7.0
+        // Unrounded doubles — assert ±0.1. Completions are irrelevant to ExpectedSharePct (it's
+        // capacity-only), so use any.
+        var now = Utc0(2026, 6, 15, 12);
+        var completions = new[]
+        {
+            Completion(userId: 1, Utc0(2026, 6, 15, 10), effortPoints: 4),
+        };
+        var members = new[] { Member(1, "Alice"), Member(2, "Bob"), Member(3, "Carol") };
+        var tiers = Tiers((1, "Full"), (2, "Full"), (3, "Minimal"));
+
+        var result = _calc.Compute(completions, members, EquityWindow.Week, now, Utc, tiers);
+
+        var alice = result.Members.Single(m => m.UserId == 1);
+        var bob = result.Members.Single(m => m.UserId == 2);
+        var carol = result.Members.Single(m => m.UserId == 3);
+
+        alice.ExpectedSharePct.Should().BeApproximately(46.5, 0.1);
+        bob.ExpectedSharePct.Should().BeApproximately(46.5, 0.1);
+        carol.ExpectedSharePct.Should().BeApproximately(7.0, 0.1);
+
+        // ExpectedSharePct is a closed distribution — sums to ~100.
+        result.Members.Sum(m => m.ExpectedSharePct).Should().BeApproximately(100.0, 0.01);
+    }
+
+    [Fact]
+    public void Compute_ExpectedSharePct_AbsentTierMap_FallsBackToFlatDistribution()
+    {
+        // No tiers passed (the digest call site path) ⇒ every member Full ⇒ flat 100/N each.
+        var now = Utc0(2026, 6, 15, 12);
+        var completions = new[]
+        {
+            Completion(userId: 1, Utc0(2026, 6, 15, 10), effortPoints: 5),
+            Completion(userId: 2, Utc0(2026, 6, 15, 11), effortPoints: 1),
+        };
+        var members = new[] { Member(1, "Alice"), Member(2, "Bob"), Member(3, "Carol") };
+
+        var result = _calc.Compute(completions, members, EquityWindow.Week, now, Utc);
+
+        result.Members.Should().AllSatisfy(m =>
+            m.ExpectedSharePct.Should().BeApproximately(100.0 / 3.0, 0.0001,
+                "absent tier map ⇒ all Full ⇒ flat distribution (mirrors EqualSharePct's even split)"));
+    }
+
+    [Fact]
+    public void Compute_ExpectedSharePct_NullAndUnrecognizedTiers_TreatedAsFull()
+    {
+        // A null tier and an unrecognized string both weight as Full (1.0). With one explicit Full,
+        // all three are Full ⇒ flat distribution.
+        var now = Utc0(2026, 6, 15, 12);
+        var members = new[] { Member(1, "Alice"), Member(2, "Bob"), Member(3, "Carol") };
+        var tiers = Tiers((1, "Full"), (2, null), (3, "bogus-tier"));
+
+        var result = _calc.Compute(Array.Empty<ChoreCompletion>(), members, EquityWindow.Week, now, Utc, tiers);
+
+        result.Members.Should().AllSatisfy(m =>
+            m.ExpectedSharePct.Should().BeApproximately(100.0 / 3.0, 0.0001));
+    }
+
+    [Fact]
+    public void Compute_ExpectedSharePct_AllMinimal_NoDivideByZero_EqualDistribution()
+    {
+        // All-Minimal household: weights {0.15, 0.15} → Σ = 0.30 > 0, normalizes to equal 50/50.
+        // No divide-by-zero, no NaN (the D3 Σ==0 guard is belt-and-suspenders since Minimal=0.15>0).
+        var now = Utc0(2026, 6, 15, 12);
+        var members = new[] { Member(1, "Alice"), Member(2, "Bob") };
+        var tiers = Tiers((1, "Minimal"), (2, "Minimal"));
+
+        var result = _calc.Compute(Array.Empty<ChoreCompletion>(), members, EquityWindow.Week, now, Utc, tiers);
+
+        result.Members.Should().AllSatisfy(m =>
+        {
+            m.ExpectedSharePct.Should().BeApproximately(50.0, 0.0001);
+            double.IsNaN(m.ExpectedSharePct).Should().BeFalse("ExpectedSharePct must never be NaN");
+        });
+    }
+
+    [Fact]
+    public void Compute_ExpectedSharePct_EmptyHousehold_NoThrow()
+    {
+        // Empty member list with a (non-empty but irrelevant) tier map ⇒ no members, no throw, no NaN.
+        var now = Utc0(2026, 6, 15, 12);
+        var tiers = Tiers((99, "Minimal"));
+
+        var act = () => _calc.Compute(
+            Array.Empty<ChoreCompletion>(), Array.Empty<MemberDto>(), EquityWindow.Week, now, Utc, tiers);
+
+        act.Should().NotThrow();
+        act().Members.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Compute_AddingTierMap_DoesNotChangeRawSharePctOrEqualSharePct()
+    {
+        // V1 invariant: capacity weighting touches ONLY ExpectedSharePct. SharePct / EqualSharePct are
+        // byte-identical whether or not a tier map is supplied (D1 — raw shares stay raw).
+        var now = Utc0(2026, 6, 15, 12);
+        var completions = new[]
+        {
+            Completion(userId: 1, Utc0(2026, 6, 15, 9), effortPoints: 3),
+            Completion(userId: 1, Utc0(2026, 6, 15, 10), effortPoints: 2),
+            Completion(userId: 2, Utc0(2026, 6, 15, 11), effortPoints: 4),
+            Completion(userId: 3, Utc0(2026, 6, 15, 12), effortPoints: 3),
+        };
+        var members = new[] { Member(1, "Alice"), Member(2, "Bob"), Member(3, "Carol") };
+        var tiers = Tiers((1, "Full"), (2, "Reduced"), (3, "Minimal"));
+
+        var withoutTiers = _calc.Compute(completions, members, EquityWindow.Week, now, Utc);
+        var withTiers = _calc.Compute(completions, members, EquityWindow.Week, now, Utc, tiers);
+
+        withTiers.EqualSharePct.Should().Be(withoutTiers.EqualSharePct);
+        foreach (var m in withTiers.Members)
+        {
+            var baseline = withoutTiers.Members.Single(b => b.UserId == m.UserId);
+            m.SharePct.Should().Be(baseline.SharePct, "capacity weighting must not change the RAW share (D1)");
+        }
+        // But ExpectedSharePct DID change away from flat for the non-Full members.
+        withTiers.Members.Single(m => m.UserId == 3).ExpectedSharePct
+            .Should().BeLessThan(100.0 / 3.0, "a Minimal member's expected reference is below the even split");
+    }
+
     // ---- Determinism — no DateTime.UtcNow inside (V1) -----------------------------------------------
 
     [Fact]

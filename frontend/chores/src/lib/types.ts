@@ -176,6 +176,12 @@ export const CHORE_LENSES: readonly ChoreLensId[] = [
 /** The equity reporting window. Plain string on the DTO. */
 export type EquityWindow = 'week' | 'all';
 
+/**
+ * A member's physical-capacity tier (Phase 15). Mirrors the C# `CapacityTier.All` casing EXACTLY
+ * (PascalCase strings — NOT enum-converted). `null` on the DTO ⇒ Full (the pre-migration default).
+ */
+export type CapacityTier = 'Full' | 'Reduced' | 'Minimal';
+
 /** Per-member share of the household's completion load over the window. */
 export interface MemberShareDto {
   userId: number;
@@ -186,6 +192,27 @@ export interface MemberShareDto {
   completions: number;
   /** PERCENT 0..100 (e.g. 41.7). Render directly — no client `* 100`. */
   sharePct: number;
+  /**
+   * The member's capacity-WEIGHTED expected share (PERCENT 0..100, UNROUNDED — format for display; Phase 15
+   * WP-05). The island draws THIS as each member's per-member reference line instead of the single flat
+   * equal-share marker. `sharePct` stays the RAW actual bar. Render directly — no client `* 100`.
+   */
+  expectedSharePct: number;
+}
+
+/**
+ * Per-member planning/coordination footprint (Phase 15). ALL-TIME, un-blended labeled tallies — the
+ * server computes them all-time regardless of `window` (D5). Plain integer COUNTS (no percent, no weight);
+ * NEVER summed into a blended score (MN4). Mirrors the C# `MemberPlanningDto` and the `planning` array in
+ * equity.json EXACTLY (M5 lockstep).
+ */
+export interface MemberPlanningDto {
+  userId: number;
+  displayName: string;
+  choresSetUp: number;
+  recipesAdded: number;
+  listItemsCurated: number;
+  handOffs: number;
 }
 
 export interface ChoreEquityDto {
@@ -197,6 +224,17 @@ export interface ChoreEquityDto {
   fallingBehindCount: number;
   upForGrabsCount: number;
   members: MemberShareDto[];
+  /**
+   * All-time planning footprint per member (Phase 15). Always present (defaults to [] server-side) —
+   * INDEPENDENT of `window`. Render as neutral labeled tallies; never sum/blend with physical points (MN4).
+   */
+  planning: MemberPlanningDto[];
+  /**
+   * The REQUESTING user's own physical-capacity tier (Phase 15 WP-05, P4); `null` ⇒ Full (the pre-migration
+   * default). Rides the equity payload so the self-only capacity selector reflects state without a separate
+   * GET (M7). The selector writes via PATCH /me/capacity (caller-scoped only — MN5).
+   */
+  callerCapacityTier: CapacityTier | null;
 }
 
 // ─── Digest settings (WP-11 — mirrors WP-06 frozen contract EXACTLY) ─────────

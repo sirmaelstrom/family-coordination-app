@@ -108,6 +108,7 @@ builder.Services.AddSingleton(ResolveChoresTimeZone(builder.Configuration));
 // builder are pure/stateless singletons (mirroring ChoreStatusCalculator); the settings service (webhook
 // encryption) + run orchestration + sender are scoped. TimeProvider.System is already registered above.
 builder.Services.AddSingleton<ChoreEquityCalculator>();
+builder.Services.AddSingleton<ChorePlanningCalculator>();
 builder.Services.AddSingleton<DigestBuilder>();
 builder.Services.AddScoped<IDigestSettingsService, DigestSettingsService>();
 builder.Services.AddScoped<IDigestService, DigestService>();
