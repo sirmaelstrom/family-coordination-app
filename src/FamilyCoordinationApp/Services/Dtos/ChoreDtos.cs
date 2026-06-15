@@ -62,13 +62,16 @@ public sealed record ChoreDto(
     uint Version,
     int RequiredCount,                    // 1 = normal; >1 = multi-person
     int CompletedCount,                   // distinct DONE toward the CURRENT occurrence (0..RequiredCount) — the gate
-    IReadOnlyList<RosterMemberDto> Roster // named roster + per-member state; [] = open / single-person unassigned
+    IReadOnlyList<RosterMemberDto> Roster, // named roster + per-member state; [] = open / single-person unassigned
+    // Lightweight per-chore checklist (Phase 14); a momentum aid that never gates completion; resets on a
+    // recurring chore's satisfying completion. Last field ⇒ serializes after `roster` (matches the fixture).
+    IReadOnlyList<ChoreSubtaskDto> Subtasks
     );
 
 /// <summary>
 /// A lightweight checklist item on a chore (Phase 14). Wire shape camelCase: <c>{ id, title, isDone,
-/// sortOrder }</c>. Versionless / last-write-wins — there is no concurrency token on this DTO. NOT yet
-/// embedded in <see cref="ChoreDto"/> (that is Phase-14 Unit #2).
+/// sortOrder }</c>. Versionless / last-write-wins — there is no concurrency token on this DTO. Embedded as
+/// <see cref="ChoreDto.Subtasks"/> on the board payload (Phase-14 Unit #2).
 /// </summary>
 public sealed record ChoreSubtaskDto(int Id, string Title, bool IsDone, int SortOrder);
 

@@ -569,7 +569,12 @@ public class ChoreService(
 
     private static async Task<Chore> LoadChoreAsync(ApplicationDbContext context, int householdId, int choreId, CancellationToken cancellationToken)
     {
+        // Include the checklist so every mutation response (claim/drop/complete/handoff/edit/roster) projects
+        // the chore's actual — and post-reset — subtasks, preventing a blank-checklist flash in the island's
+        // optimistic apply. The Unit-1 completion reset mutates these same tracked entities (IsDone=false), so a
+        // completion response reflects the unchecked state.
         return await context.Chores
+            .Include(c => c.Subtasks)
             .FirstOrDefaultAsync(c => c.HouseholdId == householdId && c.ChoreId == choreId, cancellationToken)
             ?? throw new ChoreNotFoundException($"Chore {choreId} not found for household {householdId}.");
     }

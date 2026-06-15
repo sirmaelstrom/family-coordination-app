@@ -44,6 +44,17 @@ export interface RosterMemberDto {
 /** camelCase — enum via JsonStringEnumConverter(CamelCase). Room rollup dirtiness. */
 export type RoomRollupStatus = 'clean' | 'attention' | 'needsWork';
 
+/**
+ * A lightweight per-chore checklist item (Phase 14). Versionless / last-write-wins (no concurrency token).
+ * A momentum aid only — never gates completion; resets on a recurring chore's satisfying completion.
+ */
+export interface ChoreSubtaskDto {
+  id: number;
+  title: string;
+  isDone: boolean;
+  sortOrder: number;
+}
+
 export interface ChoreDto {
   id: number;
   name: string;
@@ -81,6 +92,8 @@ export interface ChoreDto {
   completedCount: number;
   /** Named roster + per-member state (assigned/in/done), ascending by userId. [] = open / single-person. */
   roster: RosterMemberDto[];
+  /** Per-chore checklist (Phase 14); momentum aid, never gates completion. Ordered by sortOrder; [] = none. */
+  subtasks: ChoreSubtaskDto[];
 }
 
 export interface RoomRollupDto {
