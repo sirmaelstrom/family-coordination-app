@@ -7,8 +7,6 @@
   import ViewSwitcher from './lib/components/ViewSwitcher.svelte';
   import NeedsAttentionBoard from './lib/components/NeedsAttentionBoard.svelte';
   import RoomsDashboard from './lib/components/RoomsDashboard.svelte';
-  import UpForGrabsLane from './lib/components/UpForGrabsLane.svelte';
-  import MineView from './lib/components/MineView.svelte';
   import EquityBoard from './lib/components/EquityBoard.svelte';
   import QuickAddSheet, { type QuickAddValue } from './lib/components/QuickAddSheet.svelte';
   import EditChoreSheet from './lib/components/EditChoreSheet.svelte';
@@ -20,18 +18,19 @@
 
   // ───────────────────────────────────────────────────────────────────────
   // Root of the chores island. Fetches the ONE board payload into the shared
-  // store, then renders the lens switcher + the four lenses (Needs attention /
-  // Rooms / Up for grabs / Mine). Every lens is a CLIENT-SIDE grouping of that
-  // one payload (M11) — switching lenses never refetches. All dueness/decay is
-  // SERVER-computed (M5/M6): this component never derives dueness and never
-  // builds a Date from 'YYYY-MM-DD'.
+  // store, then renders the view control + the active view. Model A board IA
+  // (Phase 14): a single attention-sectioned board with a PRIMARY filter
+  // (Up for grabs / Mine / All — lens ids up-for-grabs / mine / needs-attention)
+  // plus two on-demand ORGANIZERS (Rooms / Equity). Every view is a CLIENT-SIDE
+  // grouping of that one payload (M11) — switching never refetches. All
+  // dueness/decay is SERVER-computed (M5/M6): this component never derives
+  // dueness and never builds a Date from 'YYYY-MM-DD'.
   //
-  // WP-11 wired the mutation handlers (shared by every lens via ChoreCard).
-  // WP-12 added the Rooms / Up-for-grabs / Mine lens UIs (off the store's
-  // existing groupings) + the roaming per-user default view: the store opens
-  // onto `board.userDefaultView` on first load (null ⇒ Needs attention) and
-  // persists changes via PATCH /api/chores/me/default-view (server-stored on
-  // User.ChoresDefaultView so it roams across devices — NOT localStorage).
+  // WP-11 wired the mutation handlers (shared by every view via ChoreCard).
+  // The roaming per-user default view: the store opens onto `board.userDefaultView`
+  // on first load (null ⇒ Up for grabs) and persists changes via PATCH
+  // /api/chores/me/default-view (server-stored on User.ChoresDefaultView so it
+  // roams across devices — NOT localStorage).
   // ───────────────────────────────────────────────────────────────────────
 
   interface Props {
@@ -237,7 +236,7 @@
   <div class="ch-toolbar">
     <ViewSwitcher
       active={store.lens}
-      defaultLens={store.defaultView ?? 'needs-attention'}
+      defaultLens={store.defaultView ?? 'up-for-grabs'}
       saving={store.savingDefaultView}
       onSelect={(l) => store.setLens(l)}
       onSetDefault={(l) => store.saveDefaultView(l)}
@@ -255,18 +254,19 @@
     <div class="ch-loading">Loading the board…</div>
   {:else if store.board}
     <!--
-      Lens routing. Every lens is a CLIENT-SIDE grouping of the ONE board
-      payload (store.needsAttentionSections / roomGroups / upForGrabsChores /
-      mineChores) — switching `store.lens` NEVER refetches (M11). All share the
-      same optimistic card handlers.
+      View routing (Model A board IA). The PRIMARY filters (Up for grabs / Mine /
+      All) all render the SAME unified attention-sectioned board — only the
+      filtered chore set differs (store.boardSections, driven by store.lens). The
+      two ORGANIZERS (Rooms / Equity) render their own surfaces. Every view is a
+      CLIENT-SIDE grouping of the ONE board payload — switching `store.lens` NEVER
+      refetches (M11). All share the same optimistic card handlers.
     -->
-    {#if store.lens === 'needs-attention'}
+    {#if store.lens === 'up-for-grabs' || store.lens === 'mine' || store.lens === 'needs-attention'}
       <NeedsAttentionBoard
-        sections={store.needsAttentionSections}
-        filter={store.attentionFilter}
-        onFilter={(f) => store.setAttentionFilter(f)}
+        sections={store.boardSections}
+        filterLens={store.lens}
         currentUserId={store.currentUserId}
-        totalChores={store.needsAttentionChores.length}
+        totalChores={store.boardTotalCount}
         isPending={(id) => store.isPending(id)}
         onClaim={handleClaim}
         onDrop={handleDrop}
@@ -281,37 +281,6 @@
     {:else if store.lens === 'rooms'}
       <RoomsDashboard
         groups={store.roomGroups}
-        currentUserId={store.currentUserId}
-        isPending={(id) => store.isPending(id)}
-        onClaim={handleClaim}
-        onDrop={handleDrop}
-        onComplete={handleComplete}
-        onHandOff={handleHandOff}
-        onTake={handleTake}
-        onAssign={handleAssign}
-        onCommit={handleCommit}
-        onLeave={handleLeave}
-        onEdit={handleEdit}
-      />
-    {:else if store.lens === 'up-for-grabs'}
-      <UpForGrabsLane
-        chores={store.upForGrabsChores}
-        currentUserId={store.currentUserId}
-        isPending={(id) => store.isPending(id)}
-        onClaim={handleClaim}
-        onDrop={handleDrop}
-        onComplete={handleComplete}
-        onHandOff={handleHandOff}
-        onTake={handleTake}
-        onAssign={handleAssign}
-        onCommit={handleCommit}
-        onLeave={handleLeave}
-        onEdit={handleEdit}
-      />
-    {:else if store.lens === 'mine'}
-      <MineView
-        chores={store.mineChores}
-        loads={store.memberLoads}
         currentUserId={store.currentUserId}
         isPending={(id) => store.isPending(id)}
         onClaim={handleClaim}
