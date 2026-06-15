@@ -18,6 +18,10 @@ public class User
     // Chores: the user's preferred default board lens id (null => Needs-attention). D18 / approved E2 exception.
     public string? ChoresDefaultView { get; set; }
 
+    // Chores: the user's self-set physical-capacity tier (Full|Reduced|Minimal). Nullable scalar; null => Full
+    // (the pre-migration default — no backfill, M9). Self-set only via PATCH /api/chores/me/capacity (D2/MN5).
+    public string? PhysicalCapacityTier { get; set; }
+
     // Navigation
     public Household Household { get; set; } = default!;
 }

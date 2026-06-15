@@ -132,3 +132,24 @@ public static class ChoreLens
         Equity
     };
 }
+
+/// <summary>
+/// Canonical physical-capacity tier constants (D2) — the single source of truth for the
+/// <c>PATCH /api/chores/me/capacity</c> allowlist (mirrors <see cref="ChoreLens"/>). No ad-hoc casings
+/// anywhere else. <c>null</c> and <see cref="Full"/> both mean Full (the pre-migration default); there is
+/// no clear-to-null client path.
+/// </summary>
+public static class CapacityTier
+{
+    public const string Full = "Full";
+    public const string Reduced = "Reduced";
+    public const string Minimal = "Minimal";
+
+    /// <summary>All valid capacity tiers, for allowlist validation.</summary>
+    public static readonly IReadOnlyList<string> All = new[]
+    {
+        Full,
+        Reduced,
+        Minimal
+    };
+}

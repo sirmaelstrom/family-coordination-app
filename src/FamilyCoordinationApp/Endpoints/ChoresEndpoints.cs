@@ -53,6 +53,7 @@ public static class ChoresEndpoints
         group.MapDelete("/{choreId:int}/subtasks/{subtaskId:int}", DeleteSubtask);
 
         group.MapPatch("/me/default-view", SetDefaultView);
+        group.MapPatch("/me/capacity", SetCapacity);
 
         // v1.1 (WP-06): equity distribution lens + digest settings + dev backfill — all cookie-authed,
         // household-scoped via UserContextResolver (M1).
@@ -490,6 +491,57 @@ public static class ChoresEndpoints
         return (DefaultViewOutcome.Ok, view);
     }
 
+    // ─── Per-user physical-capacity tier (Phase 15 WP-04, D2/MN5) ────────────────────
+
+    private static async Task<IResult> SetCapacity(
+        CapacityRequest req,
+        ClaimsPrincipal principal,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
+        if (user is null) return Results.Unauthorized();
+
+        var (outcome, normalized) = await ApplyCapacityAsync(dbFactory, user.UserId, req.Tier, ct);
+        return outcome switch
+        {
+            CapacityOutcome.Ok => Results.Ok(new { tier = normalized }),
+            CapacityOutcome.InvalidTier => Results.BadRequest(new { message = "Invalid capacity tier." }),
+            _ => Results.Unauthorized()
+        };
+    }
+
+    internal enum CapacityOutcome { Ok, InvalidTier, UserMissing }
+
+    /// <summary>
+    /// Core of <see cref="SetCapacity"/>, extracted so it is unit-testable without a WebApplicationFactory
+    /// (mirrors <see cref="ApplyDefaultViewAsync"/>). A non-null tier MUST be a canonical
+    /// <see cref="CapacityTier"/> value — anything else is rejected, never coerced (D2). <c>null</c> is the
+    /// pre-migration default (treated as Full) and there is no client clear-to-null path. The write is scoped
+    /// to <paramref name="userId"/> only (the resolved caller, MN5).
+    /// </summary>
+    internal static async Task<(CapacityOutcome Outcome, string? Normalized)> ApplyCapacityAsync(
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        int userId,
+        string? requestedTier,
+        CancellationToken ct)
+    {
+        string? tier = string.IsNullOrWhiteSpace(requestedTier) ? null : requestedTier.Trim();
+        if (tier is not null && !CapacityTier.All.Contains(tier))
+        {
+            return (CapacityOutcome.InvalidTier, null);
+        }
+
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
+        var entity = await context.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (entity is null) return (CapacityOutcome.UserMissing, null);
+
+        entity.PhysicalCapacityTier = tier;
+        await context.SaveChangesAsync(ct);
+
+        return (CapacityOutcome.Ok, tier);
+    }
+
     // ─── Equity distribution lens (v1.1 WP-06) ──────────────────────────────────────
 
     /// <summary>
@@ -780,6 +832,13 @@ public static class ChoresEndpoints
     public sealed record LeaveRosterRequest(int? SubjectUserId, uint Version);
 
     public sealed record DefaultViewRequest(string? View);
+
+    /// <summary>
+    /// PATCH /me/capacity request body (Phase 15 WP-04, D2). The UI always sends one of
+    /// <c>{Full, Reduced, Minimal}</c>; a non-null tier outside <see cref="CapacityTier.All"/> is rejected
+    /// (400, never coerced). There is no clear-to-null client path.
+    /// </summary>
+    public sealed record CapacityRequest(string? Tier);
 
     /// <summary>
     /// PUT /digest-settings request body (v1.1 WP-06). Enums bind/serialize camelCase via the global
