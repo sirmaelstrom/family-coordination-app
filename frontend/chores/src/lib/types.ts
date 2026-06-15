@@ -188,6 +188,21 @@ export interface MemberShareDto {
   sharePct: number;
 }
 
+/**
+ * Per-member planning/coordination footprint (Phase 15). ALL-TIME, un-blended labeled tallies — the
+ * server computes them all-time regardless of `window` (D5). Plain integer COUNTS (no percent, no weight);
+ * NEVER summed into a blended score (MN4). Mirrors the C# `MemberPlanningDto` and the `planning` array in
+ * equity.json EXACTLY (M5 lockstep).
+ */
+export interface MemberPlanningDto {
+  userId: number;
+  displayName: string;
+  choresSetUp: number;
+  recipesAdded: number;
+  listItemsCurated: number;
+  handOffs: number;
+}
+
 export interface ChoreEquityDto {
   window: EquityWindow;
   totalPoints: number;
@@ -197,6 +212,11 @@ export interface ChoreEquityDto {
   fallingBehindCount: number;
   upForGrabsCount: number;
   members: MemberShareDto[];
+  /**
+   * All-time planning footprint per member (Phase 15). Always present (defaults to [] server-side) —
+   * INDEPENDENT of `window`. Render as neutral labeled tallies; never sum/blend with physical points (MN4).
+   */
+  planning: MemberPlanningDto[];
 }
 
 // ─── Digest settings (WP-11 — mirrors WP-06 frozen contract EXACTLY) ─────────

@@ -51,6 +51,28 @@
   let hasDistribution = $derived(
     equity != null && equity.members.length > 0 && equity.totalCompletions > 0,
   );
+
+  // ── Planning footprint (Phase 15) ────────────────────────────────────────
+  // The four planning lanes (chores set up / recipes / list items / hand-offs)
+  // are ALL-TIME, un-blended labeled tallies riding `equity.planning` (no new
+  // fetch — M7). They show INDEPENDENTLY of the physical distribution gate above:
+  // a low-physical, high-planning member (the founding case) must still surface,
+  // so this section renders whenever there is ANY planning signal even if
+  // `totalCompletions` is 0. NEVER sum the lanes, NEVER blend with points (MN4);
+  // neutral framing only — no winner/loser, no ranking (M6). Order by display
+  // name (stable, neutral — mirrors the physical rows).
+  let planning = $derived(equity?.planning ?? []);
+
+  let hasPlanningSignal = $derived(
+    planning.some(
+      (m) =>
+        m.choresSetUp + m.recipesAdded + m.listItemsCurated + m.handOffs > 0,
+    ),
+  );
+
+  let planningRows = $derived(
+    [...planning].sort((a, b) => a.displayName.localeCompare(b.displayName)),
+  );
 </script>
 
 <div class="ch-equity">
@@ -149,6 +171,53 @@
       <p class="ch-equity-empty-head">Nothing logged yet.</p>
       <p>No completions in this window — the load picture fills in as chores get done.</p>
     </div>
+  {/if}
+
+  <!-- ── Planning footprint (Phase 15) ─────────────────────────────────────
+       All-time system-building & coordination labor, as neutral labeled
+       tallies per member. Gated on its OWN `hasPlanningSignal` — independent of
+       the physical distribution above — so a low-physical, high-planning member
+       still shows even when this window has zero completions. NO summed total,
+       NO blended score (MN4); descriptive only, ordered by name (M6). Rides
+       `equity.planning` — no new fetch (M7). -->
+  {#if equity != null && hasPlanningSignal}
+    <section class="ch-plan" aria-label="System-building and coordination, all time">
+      <header class="ch-plan-head">
+        <h3 class="ch-plan-title">System-building &amp; coordination — all time</h3>
+        <p class="ch-plan-sub">
+          Setup and coordination work, counted across all time — separate from the
+          physical load above, never blended into a single score.
+        </p>
+      </header>
+      <ul class="ch-plan-rows">
+        {#each planningRows as member (member.userId)}
+          <li class="ch-plan-row">
+            <span class="ch-plan-name">{member.displayName}</span>
+            <span class="ch-plan-tallies">
+              <span class="ch-plan-tally">
+                {member.choresSetUp}
+                {member.choresSetUp === 1 ? 'chore set up' : 'chores set up'}
+              </span>
+              <span class="ch-plan-dot" aria-hidden="true">·</span>
+              <span class="ch-plan-tally">
+                {member.recipesAdded}
+                {member.recipesAdded === 1 ? 'recipe' : 'recipes'}
+              </span>
+              <span class="ch-plan-dot" aria-hidden="true">·</span>
+              <span class="ch-plan-tally">
+                {member.listItemsCurated}
+                {member.listItemsCurated === 1 ? 'list item' : 'list items'}
+              </span>
+              <span class="ch-plan-dot" aria-hidden="true">·</span>
+              <span class="ch-plan-tally">
+                {member.handOffs}
+                {member.handOffs === 1 ? 'hand-off' : 'hand-offs'}
+              </span>
+            </span>
+          </li>
+        {/each}
+      </ul>
+    </section>
   {/if}
 </div>
 
@@ -349,6 +418,67 @@
   .ch-equity-stat-label {
     font-size: 0.8125rem;
     color: var(--color-text-muted);
+  }
+
+  /* ── Planning footprint (Phase 15) ────────────────────────────────────── */
+  /* Neutral labeled tallies — plain source nouns, no bars, no ranking, no
+     summed total. Visually a quiet block beneath the physical distribution. */
+  .ch-plan {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    background: var(--color-action-hover);
+    border-radius: var(--radius-md);
+  }
+  .ch-plan-head {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ch-plan-title {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+  .ch-plan-sub {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+  }
+  .ch-plan-rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .ch-plan-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ch-plan-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-text);
+  }
+  .ch-plan-tallies {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+  }
+  .ch-plan-tally {
+    font-variant-numeric: tabular-nums;
+  }
+  .ch-plan-dot {
+    color: var(--color-text-muted);
+    opacity: 0.6;
   }
 
   /* ── Loading / empty / error states ───────────────────────────────────── */
