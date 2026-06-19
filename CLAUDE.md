@@ -27,90 +27,22 @@ dotnet format src/FamilyCoordinationApp/FamilyCoordinationApp.csproj --verify-no
 dotnet run --project src/FamilyCoordinationApp/FamilyCoordinationApp.csproj
 ```
 
-### Docker Build
+> No `.sln` file — build/test the `.csproj` directly (the commands above do).
+> Docker build (MSB3552 workaround) + the prod deploy pipeline auto-load via `.claude/rules/deployment.md`. Adding an EF migration auto-loads via `.claude/rules/architecture.md`.
 
-There is a known .NET SDK 10.0 bug (MSB3552) that breaks multi-stage Docker builds. See `DOCKER-BUILD-WORKAROUND.md`. Use the workaround script:
+## Architecture (keystones)
 
-```bash
-./docker-build.sh          # Build with 'latest' tag
-./docker-build.sh v1.0.0   # Build with specific tag
-```
+**Stack**: .NET 10 / Blazor Server / PostgreSQL / MudBlazor / EF Core / Docker.
 
-### EF Core Migrations
+Load-bearing invariants — the full project layout + architectural patterns auto-load via `.claude/rules/architecture.md` when you open app source (`src/FamilyCoordinationApp/**`):
+- **Multi-tenant isolation** — every entity has a composite key (`HouseholdId` + entity id) and **every query filters by `HouseholdId`**. It's a security boundary, not a convention.
+- **DbContextFactory** — Blazor Server circuits are long-lived, so inject `IDbContextFactory<ApplicationDbContext>` (never `DbContext`) and create short-lived contexts via `dbFactory.CreateDbContextAsync()`.
 
-Migrations auto-apply on startup via `context.Database.MigrateAsync()`. To add a new migration:
+Deployment + environment configuration detail auto-loads via `.claude/rules/deployment.md` when you open CI / Docker / deploy files.
 
-```bash
-dotnet ef migrations add MigrationName --project src/FamilyCoordinationApp/FamilyCoordinationApp.csproj
-```
+## Roadmap
 
-## Architecture
-
-**Stack**: .NET 10 / Blazor Server / PostgreSQL / MudBlazor / EF Core / Docker
-
-### Project Layout
-
-```
-src/FamilyCoordinationApp/
-  Program.cs              # Startup: DI, auth, middleware pipeline
-  Data/
-    ApplicationDbContext.cs
-    Entities/              # EF entities (composite keys: HouseholdId + EntityId)
-    Configurations/        # EF fluent config (IEntityTypeConfiguration<T>)
-    SeedData.cs            # Dev seed data
-  Services/
-    Interfaces/            # Service contracts (IRecipeService, IMealPlanService, etc.)
-    *Service.cs            # Business logic (scoped per-request)
-  Components/
-    Layout/                # MainLayout, NavMenu, ReconnectModal
-    Pages/                 # Routable pages (Recipes, MealPlan, ShoppingList, Settings/*)
-    Recipe/                # Recipe-specific components (RecipeCard, IngredientEntry, etc.)
-    MealPlan/              # MealSlot, WeeklyCalendarView, WeeklyListView, RecipePickerDialog
-    ShoppingList/          # ShoppingListItemRow, CategorySection, AddItemDialog, etc.
-    Shared/                # Cross-cutting (UserAvatar, SyncStatusIndicator, FeedbackDialog)
-  Authorization/           # WhitelistedEmailRequirement + handler
-  Migrations/              # EF Core migrations
-  Constants/               # CategoryDefaults
-  Models/SchemaOrg/        # RecipeSchema POCO for JSON-LD import
-
-tests/FamilyCoordinationApp.Tests/
-  Services/                # Unit tests (InMemory EF provider)
-  Security/                # Security-focused tests
-```
-
-### Key Architectural Patterns
-
-**Multi-tenant isolation**: All entities use composite primary keys (`HouseholdId` + entity-specific ID). Every query filters by `HouseholdId`. There are no `.sln` files — build the `.csproj` directly.
-
-**DbContextFactory**: Blazor Server requires `IDbContextFactory<ApplicationDbContext>` (not `DbContext` injection) because SignalR circuits are long-lived and share the DI scope. Every service creates short-lived contexts via `dbFactory.CreateDbContextAsync()`.
-
-**Collaboration infrastructure**: Three singletons coordinate multi-user state:
-- `DataNotifier` — pub/sub for cross-component change notifications
-- `PresenceService` — tracks online users via heartbeats
-- `PollingService` — background service polling for changes from other users
-
-**Authentication**: Google OAuth with cookie auth. Access controlled by email whitelist stored in the database (`WhitelistedEmailHandler`). Site admins configured via `SITE_ADMIN_EMAILS` env var.
-
-**Recipe import pipeline**: `RecipeScraperService` (HTTP + AngleSharp for HTML parsing) → `RecipeImportService` (JSON-LD schema.org extraction) → `IngredientParser` (natural language parsing). Polly resilience on HTTP calls.
-
-**Household connections**: Households can connect via invite codes to share recipes bidirectionally. `HouseholdConnectionService` manages invites, connections, and recipe copying.
-
-### Deployment
-
-Push to `master` triggers GitHub Actions:
-1. **CI** (`ci.yml`): Build, test, format check, Docker build validation (GitHub-hosted runners)
-2. **Deploy** (`deploy.yml`): Self-hosted runner pulls code, builds Docker image, deploys via `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`
-
-Production traffic flow: `Internet → Cloudflare → <server-hostname> (host nginx) → app container`
-
-### Environment Configuration
-
-Required env vars (set via `.env` on the server, generated from a secrets manager during deploy):
-- `ConnectionStrings__DefaultConnection` — PostgreSQL connection string
-- `Authentication__Google__ClientId` — Google OAuth client ID
-- `Authentication__Google__ClientSecret` — Google OAuth client secret
-- `SITE_ADMIN_EMAILS` — comma-separated admin emails
-- `DATAPROTECTION_CERT` — optional base64 PFX for key encryption
+`.planning/ROADMAP.md` is the authoritative phase list + status. Forward (not-yet-built) work is also tracked in the Spine campaign **"Family Coordination App"** (`spine_map` to see the frontier). As of 2026-06-18 the open phases are **13 — multi-room chores (M:N)** and **15 — equity rework / invisible labor**, both spec-first and not started; core app Phases 1–7 and chores Phases 10–12 + 14 are shipped (8–9 deprecated).
 
 ## Corrections
 <!-- Also see global corrections: D:\Development\data\memory\CORRECTIONS.md -->
@@ -118,11 +50,3 @@ Required env vars (set via `.env` on the server, generated from a secrets manage
 - [2026-04-16 UTC] PREPEND `sudo` to docker commands on the production host over SSH. Reason: docker socket not in user group.
 
 <!-- /reflect completed 2026-04-16 UTC -->
-
-## Remaining Planned Work
-
-See `.planning/ROADMAP.md` for the authoritative phase list and status. Summary:
-
-**Core app (meal planning / recipes / shopping):** Phases 1–7 complete. Phases 8–9 were deprecated — the gaps are minor and not worth the effort given the app works well as-is.
-
-**Chores track:** Phase 10 (v1.0 — board, claim/hand-off/complete, recurrence, rooms), Phase 11 (v1.1 — equity view + weekly Discord digest), and Phase 12 (v1.2 — icons, home-page card, photo display, room manager) are all shipped and in production use. Phase 13 (multi-room chores, M:N — feedback #6) is **planned, spec-first** — not yet started.
