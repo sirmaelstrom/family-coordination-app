@@ -26,6 +26,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 12: Chores v1.2 — Finish the Surface** - COMPLETE (2026-05-31): icons, home card, photo display/capture, room manager
 - [ ] **Phase 13: Chores v1.3 — Multi-room chores** - PLANNED (from prod feedback #6): one chore belonging to multiple rooms (M:N) — needs a spec
 - [x] **Phase 14: Chores v1.4 — Board simplification + subtask checklist** - COMPLETE (2026-06-14, PRs #41–42): collapse the lens/sub-chip duplication into a single filter axis (Up for grabs / Mine / All) with always-on attention sectioning + on-demand organizers (Rooms kept, Equity demoted); plus a per-chore subtask checklist (last-write-wins, never gates completion, resets on recurrence completion). Spec: `workshops/chores-v1.4-views-subtasks`
+- [ ] **Phase 16: Chores v1.6 — Snooze & set-next-due** - BUILT (2026-06-22, this branch): a tz-resolved `Chore.SnoozedUntil` floor under next-due (the "not today" lever) — suppresses a chore until its date, skips a Fixed cadence slot it precedes, reschedules a OneOff, and gives recurring chores a first-due-on-create (the burst fix). Excluded from all four attention surfaces (board/home/equity/digest). `PATCH /api/chores/{id}/snooze` + island snooze menu/chip + edit-sheet "next due" / add-sheet "first due". Spec: `workshops/chores-snooze-and-reschedule`. Automated gates green (632 tests); V15 browser-verify is the remaining manual step.
 - [ ] **Phase 15: Chores v1.5 — Equity rework (invisible labor)** - GRILLED → BUILD (2026-06-14). Reframe: be plain about what numbers mean + credit planning/coordination labor the DB ALREADY attributes (no new user logging). A read-only prod probe proved the case: Natalie set up 49% of the board + most shopping curation, yet the physical-points lens ranks her ~3%. Plan = un-blended labeled tallies (no exchange rate), capacity-aware physical share, on-demand prominence. Slice stack: (1) rename→"Physical board-load (this week)"+demote, (2) capacity-aware physical share, (3) planning footprint lanes [spec target]; (4) capacity-aware suggestion mechanism [follow-up]. Probe deferred the MealPlanEntry creator migration (no meal-plan signal). KB: `chores-equity-rework-phase-15-grill-resolved-prod-probe-verdict-build`.
 
 ## Phase Details
@@ -223,6 +224,19 @@ Phases 8 and 9 were deprecated 2026-02-08. The identified gaps (attribution trac
   - **Subtask checklist** — new `ChoreSubtask` entity (composite key `HouseholdId+ChoreId+SubtaskId`), **last-write-wins (no xmin, never bumps `Chore.Version`)** dedicated endpoints, **never gates completion**, **resets on the satisfying completion** of a recurring chore. Rides the one board payload → M9 contract lockstep (DTO + `board.json` + frozen key list + island `types.ts`).
 **Execution**: roadmap-guided, gated autonomous build — small ordered stack, each unit ending in a local validation gate (build + targeted tests; browser-verify for UI), auto-continuing on green.
 
+### Phase 16: Chores v1.6 — Snooze & set-next-due (BUILT — pending merge + V15)
+**Goal**: Give a recurring chore a "not today" lever and a "set the next due date" lever without faking a completion (which pollutes equity) or deleting (which loses the schedule). Motivating prod case: "always Monday" mowing that doesn't always need doing; and a burst of new recurring chores all reading due-immediately on creation.
+**Source**: production feedback / Spine quest "Update/Snooze when item not ready" (`bf9770c6-04bc-4141-ae8f-2064ba1ebff7`). Deep `/spec` pipeline (workshop `chores-snooze-and-reschedule`, validated 0 errors / 14 passed).
+**Design**: ONE new field `Chore.SnoozedUntil` (`DateOnly?`, PascalCase column) = a tz-resolved **floor under next-due**. It never touches `DaysOfWeek`/`AnchorDate`/`IntervalDays` (so the weekday-conflict worry is structurally impossible). The computed `ChoreDuenessResult.IsSnoozed` is the single source of truth read by all four attention surfaces; cleared only by a satisfying completion (never on expiry).
+**Delivered (6 WPs, gated-autonomous, this branch)**:
+  - **Calculator** — universal suppression gate + Fixed skip-rule (`covered = … || s > slot`) + OneOff effective-due + `IsSnoozed` init-prop.
+  - **Migration** — additive nullable `SnoozedUntil` `date` column.
+  - **DTO** — `isSnoozed` + `snoozedUntil` across the M9 four-way lockstep (DTO + `board.json` + frozen key list + island `types.ts`).
+  - **Service + endpoint** — `SnoozeAsync` + `PATCH /api/chores/{id}/snooze` (`{days|until|null, version}`, xmin/409, tz-resolved floor) + first-due/next-due on create/update + clear-on-complete.
+  - **Attention guards** — snoozed chores excluded from board needs-attention / home counts / equity counts / weekly digest (single computed `IsSnoozed`).
+  - **Island UI** — board snooze menu (Tomorrow / 3 days / 1 week / pick-a-date) + "Snoozed · due {resume}" chip + un-snooze; edit-sheet "Next due date"; add-sheet "First due".
+**Status**: Automated gates green — `dotnet build` + full suite (632 tests) + island `svelte-check`/`vite build`. V15 browser-verify (manual, `CHORES_USE_ISLAND=true` + dev seed) is the remaining review-needed step before merge.
+
 ### Phase 15: Chores v1.5 — Equity rework / invisible labor (CAPTURED)
 **Goal**: Make the equity model measure the *real* distribution of household labor, including invisible/planning work, and actively help move toward equity.
 **Source**: prod feedback 2026-06-14 (split out of the Phase 14 discussion). KB: "Chores Equity Rework — invisible/planning labor".
@@ -250,7 +264,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 (8 & 9 de
 | 13. Chores v1.3 (Multi-room chores) | - | Planned | from prod feedback #6 — needs a spec |
 | 14. Chores v1.4 (Board simplification + subtasks) | - | Complete | PRs #41–42 (2026-06-14) — Model A IA + subtask checklist |
 | 15. Chores v1.5 (Equity rework / invisible labor) | - | Captured | from prod feedback 2026-06-14 — spec-first when prioritized |
+| 16. Chores v1.6 (Snooze & set-next-due) | 6 WPs | Built — pending merge + V15 | 2026-06-22 (this branch) |
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-06-14 (Phase 14 — Model A board simplification + subtask checklist — COMPLETE, merged via PRs #41–42; Phase 15 — equity rework / invisible labor — captured, spec-first when prioritized)*
+*Last updated: 2026-06-22 (Phase 16 — Snooze & set-next-due — BUILT this branch via the 6-WP `chores-snooze-and-reschedule` spec; automated gates green / V15 browser-verify pending before merge)*
