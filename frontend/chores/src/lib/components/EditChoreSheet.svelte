@@ -49,6 +49,12 @@
   let selectedDays = $state(new Set<string>());
   /** "YYYY-MM-DD" for the "Just once" due date; '' = none. Passed straight as anchorDate. */
   let dueDate = $state('');
+  /**
+   * "YYYY-MM-DD" next-due floor (snooze) for a RECURRING chore; '' = no floor. Pre-filled from the chore's
+   * snoozedUntil; sent as `snoozedUntil` in the PUT (MN4 — passed straight through, no Date construction). Only
+   * surfaced for recurring cadences; for a OneOff the due-date field is the reschedule lever instead.
+   */
+  let nextDueDate = $state('');
   let effort = $state<EffortTier>('Standard');
   let roomId = $state<number | null>(null);
   let ownerUserId = $state<number | null>(null);
@@ -209,6 +215,8 @@
     // One-off due date (anchorDate "YYYY-MM-DD"). Pre-filled unconditionally so it
     // survives toggling cadence away from and back to "Just once" within an edit.
     dueDate = c.anchorDate ?? '';
+    // Next-due floor (snooze) for a recurring chore — pre-filled from the server snoozedUntil.
+    nextDueDate = c.snoozedUntil ?? '';
 
     // Map recurrenceMode → cadence (D4-B; no monthly-on-day). The DTO now echoes
     // intervalDays + daysOfWeek (camelCase CSV) + anchorDate so we pre-fill the
@@ -371,6 +379,10 @@
         requiredCount,
         version: chore.version,
         photoPath: resolvedPhotoPath,
+        // Next-due floor (snooze). For a recurring chore it's the "Next due date" field above (blank ⇒ clear);
+        // for a OneOff (no field shown) preserve the chore's existing floor so an unrelated edit never drops it.
+        snoozedUntil:
+          recurrence.mode === 'OneOff' ? (chore.snoozedUntil ?? null) : nextDueDate || null,
       };
 
       // Snapshot the roster BEFORE the save so the multi-person reconcile diffs
@@ -513,6 +525,22 @@
               </button>
             {/each}
           </div>
+        {/if}
+
+        {#if cadence === 'everyN' || cadence === 'days'}
+          <!--
+            Next due date (snooze floor). Recurring-only: a OneOff uses its Due date
+            above. Sent as snoozedUntil in the PUT; the date input's "YYYY-MM-DD" is
+            passed straight through (MN4 — no Date construction). Clearing it un-snoozes.
+          -->
+          <label class="ch-subfield">
+            <span class="ch-subfield-label">Next due date (optional)</span>
+            <input type="date" bind:value={nextDueDate} aria-label="Next due date" />
+          </label>
+          <p class="ch-hint">
+            Setting a next-due date doesn't change the schedule — this chore will still come due on its normal
+            recurring day(s) from then on.
+          </p>
         {/if}
       </fieldset>
 

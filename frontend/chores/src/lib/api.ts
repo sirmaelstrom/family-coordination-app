@@ -99,6 +99,8 @@ export interface CreateChoreRequest {
   requiredCount?: number;
   /** Initial named roster for a multi-person chore (X>1) — each seeded as Assigned. Ignored for X=1. */
   assignedUserIds?: number[];
+  /** ISO date "YYYY-MM-DD" — first-due floor at creation (null/omitted = due now). No client date math (MN4). */
+  snoozedUntil?: string | null;
 }
 
 /** No assignee — assignment never moves via edit. Carries the version. */
@@ -120,7 +122,18 @@ export interface UpdateChoreRequest {
   icon?: string;
   /** Number of distinct contributors required to satisfy the chore (WP-05). Omit or 1 = normal. */
   requiredCount?: number;
+  /** ISO date "YYYY-MM-DD" — the next-due floor (snooze); null = no floor. Carried on the edit PUT (MN4). */
+  snoozedUntil?: string | null;
 }
+
+/**
+ * Body for PATCH /{id}/snooze — supply EXACTLY one of {days} / {until} (or {until:null} to un-snooze), plus
+ * the xmin `version`. `version` MUST be in the body (the server binds it from JSON; omitting it binds 0 → a
+ * spurious 409). The server resolves the floor date in the household timezone (MN4 — never client date math).
+ */
+export type SnoozeRequestBody =
+  | { days: number; version: number }
+  | { until: string | null; version: number };
 
 export interface SeedStarterResponse {
   seeded: boolean;
@@ -244,6 +257,19 @@ export async function completeChore(
 ): Promise<ChoreDto> {
   return request<ChoreDto>(`${CHORES_BASE}/${choreId}/complete`, {
     method: 'POST',
+    ...jsonBody(body),
+  });
+}
+
+/**
+ * Set or clear a chore's next-due floor (snooze). `{days}` snoozes N days from today; `{until}` is an explicit
+ * "YYYY-MM-DD" (server validates it is > today); `{until:null}` un-snoozes. Returns the projected ChoreDto
+ * (carrying the fresh `snoozedUntil` + `isSnoozed` + recomputed `dueState`/`nextDueAt`). Same ApiError/409
+ * handling as the sibling mutations.
+ */
+export async function snoozeChore(choreId: number, body: SnoozeRequestBody): Promise<ChoreDto> {
+  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/snooze`, {
+    method: 'PATCH',
     ...jsonBody(body),
   });
 }

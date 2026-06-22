@@ -46,6 +46,9 @@
     onLeave?: (chore: ChoreDto) => void;
     /** Open the edit sheet for this chore. */
     onEdit?: (chore: ChoreDto) => void;
+    /** Snooze / un-snooze this chore. `request.days` = N days from today; `request.until` = explicit
+     *  "YYYY-MM-DD"; both omitted ⇒ un-snooze. The server resolves the floor (MN4 — no client date math). */
+    onSnooze?: (chore: ChoreDto, request: { days?: number; until?: string | null }) => void;
   }
 
   let {
@@ -62,6 +65,7 @@
     onCommit,
     onLeave,
     onEdit,
+    onSnooze,
   }: Props = $props();
 
   // ── Named effort tiers (P3 — never the raw points number as primary) ─────
@@ -186,6 +190,25 @@
     boardStore.addSubtask(chore.id, title);
     newItemTitle = '';
   }
+
+  // ── Snooze / set-next-due (board quick-snooze) ───────────────────────────
+  // The "Snooze" button reveals a small preset row; a preset or a picked date
+  // calls onSnooze with the RAW request — the server resolves the floor date in
+  // the household timezone (MN4 — NO client date math, no min/default computed
+  // here). The chip (when isSnoozed) binds the server `nextDueAt` (the
+  // schedule-aware RESUME date), never snoozedUntil.
+  let snoozeOpen = $state(false);
+
+  function doSnooze(request: { days?: number; until?: string | null }) {
+    onSnooze?.(chore, request);
+    snoozeOpen = false;
+  }
+
+  function onPickDate(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const value = input.value; // raw "YYYY-MM-DD" — sent unchanged; server validates > today
+    if (value) doSnooze({ until: value });
+  }
 </script>
 
 <article
@@ -299,7 +322,16 @@
         {recurrenceHint}
       </span>
 
-      {#if nextDueLabel}
+      {#if chore.isSnoozed}
+        <!--
+          Snoozed chip — the date binds to the server `nextDueAt` (the schedule-aware
+          RESUME date), NOT snoozedUntil: for a Fixed chore the two differ (the floor
+          skips a slot; the resume lands on the next cadence day). Server value only (MN4).
+        -->
+        <span class="ch-tag ch-tag-snoozed" title="Snoozed — resumes {nextDueLabel ?? 'on its next day'}">
+          💤 Snoozed{#if nextDueLabel} · due {nextDueLabel}{/if}
+        </span>
+      {:else if nextDueLabel}
         <span class="ch-tag ch-tag-due" title="Next due {nextDueLabel}">
           Next: {nextDueLabel}
         </span>
@@ -610,6 +642,37 @@
             Done
           </button>
         {/if}
+        {#if onSnooze}
+          <!--
+            Snooze / un-snooze — available on any chore regardless of claim state (a
+            chore-level "not today" lever). Snooze opens an inline preset row below;
+            Un-snooze clears the floor in one tap. Server resolves the date (MN4).
+          -->
+          {#if chore.isSnoozed}
+            <button
+              type="button"
+              class="ch-btn ch-btn-ghost"
+              data-action="unsnooze"
+              onclick={() => doSnooze({ until: null })}
+              disabled={pending}
+              title="Un-snooze — make this active again now"
+            >
+              Un-snooze
+            </button>
+          {:else}
+            <button
+              type="button"
+              class="ch-btn ch-btn-ghost"
+              data-action="snooze"
+              onclick={() => (snoozeOpen = !snoozeOpen)}
+              disabled={pending}
+              aria-expanded={snoozeOpen}
+              title="Snooze — not today"
+            >
+              Snooze
+            </button>
+          {/if}
+        {/if}
         {#if onEdit}
           <button
             type="button"
@@ -630,6 +693,30 @@
         {/if}
       </div>
     </div>
+
+    {#if onSnooze && snoozeOpen && !chore.isSnoozed}
+      <!--
+        Snooze preset row. Presets send {days} (server adds them to today in the
+        household tz); "Pick a date" sends the RAW <input type="date"> value as
+        {until} unchanged and relies on server validation for > today — no client
+        min/default (MN4). The chip/date everywhere come from the server, never math.
+      -->
+      <div class="ch-snooze-menu" role="group" aria-label="Snooze until">
+        <button type="button" class="ch-snooze-preset" onclick={() => doSnooze({ days: 1 })} disabled={pending}>
+          Tomorrow
+        </button>
+        <button type="button" class="ch-snooze-preset" onclick={() => doSnooze({ days: 3 })} disabled={pending}>
+          3 days
+        </button>
+        <button type="button" class="ch-snooze-preset" onclick={() => doSnooze({ days: 7 })} disabled={pending}>
+          1 week
+        </button>
+        <label class="ch-snooze-pick">
+          <span>Pick a date</span>
+          <input type="date" onchange={onPickDate} disabled={pending} aria-label="Snooze until a date" />
+        </label>
+      </div>
+    {/if}
   </div>
 </article>
 
@@ -1138,5 +1225,62 @@
   .ch-btn-icon:hover:not(:disabled) {
     background: var(--color-action-hover);
     color: var(--color-text);
+  }
+
+  /* ── Snoozed chip — a quiet "resting" cue, distinct from the dueness tags. ── */
+  .ch-tag-snoozed {
+    color: var(--color-text);
+    background: transparent;
+    border: 1px solid var(--color-line-strong);
+    font-weight: 500;
+  }
+
+  /* ── Snooze preset row (revealed under the actions when "Snooze" is tapped) ── */
+  .ch-snooze-menu {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--color-line);
+  }
+  .ch-snooze-preset {
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-primary);
+    background: transparent;
+    border: 1px solid var(--color-line-strong);
+    border-radius: 18px;
+    padding: 6px 14px;
+    min-height: 34px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .ch-snooze-preset:hover:not(:disabled) {
+    background: var(--color-action-hover);
+  }
+  .ch-snooze-preset:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .ch-snooze-pick {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+  }
+  .ch-snooze-pick input[type='date'] {
+    font: inherit;
+    font-size: 0.8125rem;
+    color: inherit;
+    padding: 6px 8px;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    min-height: 34px;
   }
 </style>

@@ -30,6 +30,7 @@
     onCommit: (chore: ChoreDto) => void;
     onLeave: (chore: ChoreDto) => void;
     onEdit: (chore: ChoreDto) => void;
+    onSnooze: (chore: ChoreDto, request: { days?: number; until?: string | null }) => void;
   }
 
   let {
@@ -45,6 +46,7 @@
     onCommit,
     onLeave,
     onEdit,
+    onSnooze,
   }: Props = $props();
 
   // The drilled-into room (by roomId; null = the General group; undefined = the
@@ -193,6 +195,7 @@
             {onCommit}
             {onLeave}
             {onEdit}
+            {onSnooze}
           />
         {/each}
       </div>
