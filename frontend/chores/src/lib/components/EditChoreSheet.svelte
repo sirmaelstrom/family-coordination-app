@@ -22,6 +22,7 @@
   import { boardStore } from '../state.svelte';
   import { uploadChorePhoto, createRoom, uploadRoomPhoto } from '../api';
   import { showToast } from '../toasts.svelte';
+  import { minFloorDate } from '../dates';
   import IconPicker from './IconPicker.svelte';
 
   interface Props {
@@ -215,8 +216,10 @@
     // One-off due date (anchorDate "YYYY-MM-DD"). Pre-filled unconditionally so it
     // survives toggling cadence away from and back to "Just once" within an edit.
     dueDate = c.anchorDate ?? '';
-    // Next-due floor (snooze) for a recurring chore — pre-filled from the server snoozedUntil.
-    nextDueDate = c.snoozedUntil ?? '';
+    // Next-due floor (snooze) for a recurring chore — pre-filled ONLY when the floor is ACTIVE
+    // (server-computed `isSnoozed` = today < snoozedUntil; NO client date math). An expired floor reads
+    // blank so an unrelated edit never re-sends a past date — which the server now rejects (ValidateFloor).
+    nextDueDate = c.isSnoozed ? (c.snoozedUntil ?? '') : '';
 
     // Map recurrenceMode → cadence (D4-B; no monthly-on-day). The DTO now echoes
     // intervalDays + daysOfWeek (camelCase CSV) + anchorDate so we pre-fill the
@@ -379,10 +382,16 @@
         requiredCount,
         version: chore.version,
         photoPath: resolvedPhotoPath,
-        // Next-due floor (snooze). For a recurring chore it's the "Next due date" field above (blank ⇒ clear);
-        // for a OneOff (no field shown) preserve the chore's existing floor so an unrelated edit never drops it.
+        // Next-due floor (snooze). For a recurring chore it's the "Next due date" field above (blank ⇒ clear).
+        // For a OneOff there is no floor field — the "Due date" (anchorDate) IS the reschedule lever (sheet
+        // header note): so when the user CHANGES the due date, clear any existing floor so the new date is
+        // authoritative (the calculator uses SnoozedUntil ?? AnchorDate — a stale floor would otherwise silently
+        // override the edit). When the due date is untouched, preserve the floor so an unrelated edit (e.g. a
+        // rename) never drops a card-set snooze. Plain string compare of the date inputs — no Date math (MN4).
         snoozedUntil:
-          recurrence.mode === 'OneOff' ? (chore.snoozedUntil ?? null) : nextDueDate || null,
+          recurrence.mode === 'OneOff'
+            ? (dueDate !== (chore.anchorDate ?? '') ? null : (chore.snoozedUntil ?? null))
+            : nextDueDate || null,
       };
 
       // Snapshot the roster BEFORE the save so the multi-person reconcile diffs
@@ -535,7 +544,7 @@
           -->
           <label class="ch-subfield">
             <span class="ch-subfield-label">Next due date (optional)</span>
-            <input type="date" bind:value={nextDueDate} aria-label="Next due date" />
+            <input type="date" bind:value={nextDueDate} aria-label="Next due date" min={minFloorDate()} />
           </label>
           <p class="ch-hint">
             Setting a next-due date doesn't change the schedule — this chore will still come due on its normal

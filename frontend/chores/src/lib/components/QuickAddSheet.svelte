@@ -27,6 +27,7 @@
   import type { CreateChoreRequest } from '../api';
   import { createRoom, uploadRoomPhoto } from '../api';
   import { showToast } from '../toasts.svelte';
+  import { minFloorDate } from '../dates';
   import IconPicker from './IconPicker.svelte';
 
   /** What the parent needs to create the chore + (optionally) attach a photo. */
@@ -408,7 +409,7 @@
           -->
           <label class="ch-subfield">
             <span class="ch-subfield-label">First due (optional)</span>
-            <input type="date" bind:value={firstDueDate} aria-label="First due date" />
+            <input type="date" bind:value={firstDueDate} aria-label="First due date" min={minFloorDate()} />
           </label>
         {/if}
       </fieldset>

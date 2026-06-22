@@ -102,6 +102,13 @@ public static class ChoresEndpoints
         var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (user is null) return Results.Unauthorized();
 
+        // A "first due" floor (Chore.SnoozedUntil) must be in the future — same rule as the quick-snooze
+        // endpoint (ResolveSnooze). Resolve today in the household tz (MN4 — never client date math).
+        var today = DateOnly.FromDateTime(
+            TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, timeZone));
+        var (floorOk, floorError) = ValidateFloor(req.SnoozedUntil, today);
+        if (!floorOk) return Results.BadRequest(new { message = floorError });
+
         try
         {
             var chore = await svc.CreateChoreAsync(user.HouseholdId, user.UserId, req.ToCommand(), ct);
@@ -126,6 +133,13 @@ public static class ChoresEndpoints
     {
         var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (user is null) return Results.Unauthorized();
+
+        // A "next due" floor (Chore.SnoozedUntil) must be in the future — same rule as the quick-snooze
+        // endpoint (ResolveSnooze). Resolve today in the household tz (MN4 — never client date math).
+        var today = DateOnly.FromDateTime(
+            TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, timeZone));
+        var (floorOk, floorError) = ValidateFloor(req.SnoozedUntil, today);
+        if (!floorOk) return Results.BadRequest(new { message = floorError });
 
         try
         {
@@ -356,6 +370,24 @@ public static class ChoresEndpoints
         // Neither supplied ⇒ clear the floor (un-snooze).
         return (true, null, null);
     }
+
+    /// <summary>
+    /// Validate a next-due FLOOR supplied through the create ("first due") / edit ("next due") write paths
+    /// (<see cref="Chore.SnoozedUntil"/>) against the tz-resolved <paramref name="today"/>. A floor must be in
+    /// the FUTURE (<c>today &lt; floor</c>) — the SAME rule <see cref="ResolveSnooze"/> enforces for the
+    /// quick-snooze endpoint, so the two write paths cannot diverge: previously create/update persisted the
+    /// floor unvalidated, so a non-future date the PATCH path rejects could still be saved here — inert
+    /// (<c>IsSnoozed</c> computes false ⇒ no chip) yet, for a Fixed chore, enough to silently skip a slot
+    /// (the skip rule keys on <c>SnoozedUntil &gt; slot</c>, not on the snooze being active). <c>null</c> ⇒ ok
+    /// (no floor / cleared). Extracted <c>internal static</c> so it is unit-testable without a
+    /// WebApplicationFactory (mirrors <see cref="ResolveSnooze"/>, P3). The island never re-sends an expired
+    /// floor (its "next due" field pre-fills only when <c>isSnoozed</c>), so this rejects only a genuinely
+    /// new non-future value, never an unrelated edit preserving an already-passed floor.
+    /// </summary>
+    internal static (bool Ok, string? Error) ValidateFloor(DateOnly? floor, DateOnly today)
+        => floor is { } f && f <= today
+            ? (false, "The next-due date must be in the future.")
+            : (true, null);
 
     // ─── Roster (multi-person named soft roster, rework) ────────────────────────────
 
