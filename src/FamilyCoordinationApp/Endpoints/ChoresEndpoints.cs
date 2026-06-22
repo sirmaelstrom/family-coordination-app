@@ -704,6 +704,14 @@ public static class ChoresEndpoints
         foreach (var chore in activeChores)
         {
             var dueness = statusCalculator.Compute(ChoreRecurrenceSnapshot.FromChore(chore), now, timeZone);
+
+            // A snoozed chore is suppressed from BOTH attention counts (WP-04). It already reads Scheduled (so
+            // falling-behind is moot), and this also drops it from up-for-grabs even when unclaimed.
+            if (dueness.IsSnoozed)
+            {
+                continue;
+            }
+
             if (ChoreAttention.IsFallingBehind(dueness.DueState))
             {
                 fallingBehindCount++;

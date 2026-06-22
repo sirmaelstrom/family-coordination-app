@@ -175,6 +175,15 @@ public class DigestService(
         foreach (var chore in chores)
         {
             var dueness = status.Compute(ChoreRecurrenceSnapshot.FromChore(chore), now, tz);
+
+            // Exclude snoozed chores from the digest entirely (WP-04) — both the falling-behind line list AND the
+            // up-for-grabs count. A snoozed chore reads Scheduled, so it carries no pressure worth reporting. The
+            // guard lives HERE (the projection loop), not in DigestBuilder, which only sees {Name, DueState}.
+            if (dueness.IsSnoozed)
+            {
+                continue;
+            }
+
             choreDueness.Add(new DigestChoreLine(chore.Name, dueness.DueState));
 
             var isClaimStale = status.IsClaimStale(chore.AssignmentKind, chore.ClaimedAt, now);

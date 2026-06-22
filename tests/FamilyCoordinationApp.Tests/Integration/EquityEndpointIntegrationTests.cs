@@ -30,6 +30,32 @@ public sealed class EquityEndpointIntegrationTests(PostgresContainerFixture post
     private sealed record Equity(
         string window, int totalPoints, int totalCompletions, double equalSharePct,
         int fallingBehindCount, int upForGrabsCount, List<MemberShare> members, List<MemberPlanning> planning);
+    private sealed record BoardChore(int id, uint version);
+    private sealed record Board(List<BoardChore> chores);
+
+    [Fact]
+    public async Task Equity_ExcludesSnoozedChore_FromAttentionCounts()
+    {
+        // V11 (equity surface). Household A's only chore (Flexible, never-completed, unclaimed) is both
+        // falling-behind (DueToday) and up-for-grabs. Snoozing it must drop BOTH counts to zero. The pre-snooze
+        // counts are the cleared-snooze control.
+        var client = _factory.CreateClientAs(ChoresWebAppFactory.UserAEmail);
+
+        var before = await client.GetFromJsonAsync<Equity>("/api/chores/equity?window=week", Json);
+        before!.fallingBehindCount.Should().Be(1, "the unclaimed, never-completed pile chore reads DueToday");
+        before.upForGrabsCount.Should().Be(1, "and it is unassigned");
+
+        // Snooze it via the dedicated PATCH endpoint (reads the current version from the board).
+        var board = await client.GetFromJsonAsync<Board>("/api/chores/board", Json);
+        var pile = board!.chores.Single(c => c.id == ChoresWebAppFactory.PileChoreAId);
+        var snooze = await client.PatchAsync($"/api/chores/{ChoresWebAppFactory.PileChoreAId}/snooze",
+            JsonContent.Create(new { days = 5, version = pile.version }, options: Json));
+        snooze.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var after = await client.GetFromJsonAsync<Equity>("/api/chores/equity?window=week", Json);
+        after!.fallingBehindCount.Should().Be(0, "a snoozed chore is excluded from falling-behind");
+        after.upForGrabsCount.Should().Be(0, "a snoozed chore is excluded from up-for-grabs");
+    }
 
     [Fact]
     public async Task Equity_AsUserA_SumsOnlyHouseholdA()

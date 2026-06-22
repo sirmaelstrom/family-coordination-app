@@ -32,6 +32,35 @@ public sealed class DigestRunIntegrationTests(PostgresContainerFixture postgres)
     private const string TokenHeader = "X-Digest-Trigger-Token";
 
     private sealed record RunSummary(int sent, int skipped, int failed);
+    private sealed record BoardChore(int id, uint version);
+    private sealed record Board(List<BoardChore> chores);
+
+    [Fact]
+    public async Task Run_ExcludesSnoozedChore_FromDigestModel()
+    {
+        // V11 (digest surface). Snooze household A's only chore, then run the digest: A's captured model must
+        // exclude it from FallingBehind AND UpForGrabsCount. Household B (un-snoozed) is the in-test control —
+        // its unclaimed chore still counts as up-for-grabs.
+        var userClient = _factory.CreateClientAs(ChoresWebAppFactory.UserAEmail);
+        var board = await userClient.GetFromJsonAsync<Board>("/api/chores/board", Json);
+        var pile = board!.chores.Single(c => c.id == ChoresWebAppFactory.PileChoreAId);
+        var snooze = await userClient.PatchAsync($"/api/chores/{ChoresWebAppFactory.PileChoreAId}/snooze",
+            JsonContent.Create(new { days = 5, version = pile.version }, options: Json));
+        snooze.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var runClient = _factory.CreateAnonymousClient();
+        var resp = await PostRunAsync(runClient, ChoresWebAppFactory.DigestTriggerToken);
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var aSend = _factory.DigestSender.Invocations.Single(i => i.WebhookUrl == ChoresWebAppFactory.WebhookUrlA);
+        aSend.Model.FallingBehind.Should().NotContain("Pile chore (race target)",
+            "a snoozed chore is excluded from the digest's falling-behind list");
+        aSend.Model.UpForGrabsCount.Should().Be(0, "a snoozed chore is excluded from the digest up-for-grabs count");
+
+        // Control: household B's chore was NOT snoozed, so it still surfaces as up-for-grabs.
+        var bSend = _factory.DigestSender.Invocations.Single(i => i.WebhookUrl == ChoresWebAppFactory.WebhookUrlB);
+        bSend.Model.UpForGrabsCount.Should().Be(1, "the un-snoozed household-B chore is still up-for-grabs (control)");
+    }
 
     /// <summary>POST /api/chores/digest/run with an optional trigger-token header (no cookie; not authed).</summary>
     private async Task<HttpResponseMessage> PostRunAsync(HttpClient client, string? token)
