@@ -29,6 +29,12 @@ public class Chore
     public ChoreDaysOfWeek? DaysOfWeek { get; set; }
     public int? DayOfMonth { get; set; }
 
+    // Snooze / set-next-due floor (local date; null = no floor). A tz-resolved minimum under the next-due:
+    // while today's local date is before it the chore is suppressed (reads Scheduled), and a Fixed chore
+    // skips any cadence slot it strictly precedes. Never mutates AnchorDate/DaysOfWeek/IntervalDays — it is
+    // the ONLY new recurrence state. Cleared only by a satisfying completion (WP-03), never on expiry.
+    public DateOnly? SnoozedUntil { get; set; }
+
     // Denormalized convenience (P2 — the only deliberate denormalization on Chore).
     public DateTime? LastCompletedAt { get; set; }  // UTC
 
