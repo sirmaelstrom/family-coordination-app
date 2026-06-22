@@ -28,7 +28,10 @@ public record CreateChoreCommand(
     string? PhotoPath,
     string Icon = "",
     int RequiredCount = 1,
-    IReadOnlyList<int>? AssignedUserIds = null);
+    IReadOnlyList<int>? AssignedUserIds = null,
+    // First-due floor at creation (null = due now). Persisted to Chore.SnoozedUntil; trailing + defaulted so
+    // existing positional callers compile.
+    DateOnly? SnoozedUntil = null);
 
 /// <summary>
 /// Command to update a chore's editable fields (council M11) — the same editable subset as
@@ -48,4 +51,7 @@ public record UpdateChoreCommand(
     int? OwnerUserId,
     string? PhotoPath,
     string Icon = "",
-    int RequiredCount = 1);
+    int RequiredCount = 1,
+    // Next-due floor from the edit sheet (null = no floor). Persisted to Chore.SnoozedUntil; trailing +
+    // defaulted so existing positional callers compile.
+    DateOnly? SnoozedUntil = null);
