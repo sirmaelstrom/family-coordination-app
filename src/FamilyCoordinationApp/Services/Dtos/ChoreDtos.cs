@@ -50,6 +50,12 @@ public sealed record ChoreDto(
     DueState DueState,
     ColorTier ColorTier,
     DateTime? NextDueAt,
+    // Snooze / set-next-due floor echoed for the edit-sheet pre-fill + the chip (mirrors AnchorDate's ISO-date
+    // serialization, e.g. "2026-07-01"; null = no floor). IsSnoozed is the SERVER-computed gate
+    // (today < SnoozedUntil), copied from ChoreDuenessResult.IsSnoozed — the single source the island filter +
+    // Home count read (M5). The chip binds nextDueAt (the resume date), NOT snoozedUntil (WP-06).
+    DateOnly? SnoozedUntil,
+    bool IsSnoozed,
     bool IsClaimStale,
     string EffortTier,
     int EffortPoints,

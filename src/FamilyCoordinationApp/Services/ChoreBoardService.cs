@@ -193,6 +193,8 @@ public class ChoreBoardService(
         dueness.DueState,
         dueness.ColorTier,
         dueness.NextDueAt,
+        chore.SnoozedUntil,
+        dueness.IsSnoozed,   // server-computed gate (today < SnoozedUntil), NOT just "column set"
         isClaimStale,
         chore.EffortTier.ToString(),
         chore.EffortPoints,
