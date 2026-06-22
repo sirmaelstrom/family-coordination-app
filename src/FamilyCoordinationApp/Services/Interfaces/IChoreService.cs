@@ -113,6 +113,16 @@ public interface IChoreService
     Task<Chore> CompleteAsync(int householdId, int choreId, int actorUserId, string? note, string? photoPath, IReadOnlyList<int>? participantUserIds, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Sets or clears the chore's <see cref="Chore.SnoozedUntil"/> floor under optimistic concurrency (M3/xmin).
+    /// <paramref name="until"/> null clears it (un-snooze). The ONLY field changed — never the assignment trio
+    /// (D11) or any recurrence field (MN1). Writes no <see cref="ChoreCompletion"/> and does not advance
+    /// <c>LastCompletedAt</c> (M6 — a snooze is not a completion).
+    /// </summary>
+    /// <exception cref="ChoreNotFoundException">No such chore in the household.</exception>
+    /// <exception cref="ChoreConflictException">The client <paramref name="version"/> is stale.</exception>
+    Task<Chore> SnoozeAsync(int householdId, int choreId, DateOnly? until, uint version, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Adds a named member to a multi-person chore's roster as <b>Assigned</b> (a pre-opt-in by
     /// <paramref name="actorUserId"/>; declinable, never binding — rework D8). Appends a
     /// <c>ChoreParticipationEvent{Assigned}</c> and forces the xmin touch (M3). X=1 ⇒ rejected.

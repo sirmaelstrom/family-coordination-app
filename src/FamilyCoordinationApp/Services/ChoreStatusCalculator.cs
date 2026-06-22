@@ -38,7 +38,16 @@ public enum ColorTier
 /// stored <see cref="ChoreStatus"/> enum). The island renders <see cref="ColorTier"/> / <see cref="DueState"/>
 /// directly (M5/M6) — it does no date math of its own.
 /// </summary>
-public record ChoreDuenessResult(DueState DueState, ColorTier ColorTier, DateTime? NextDueAt);
+public record ChoreDuenessResult(DueState DueState, ColorTier ColorTier, DateTime? NextDueAt)
+{
+    /// <summary>
+    /// True iff a snooze floor is active (set AND today's local date is strictly before it). The single
+    /// computed source of truth all attention surfaces (board/home/equity/digest) read (WP-04); copied onto
+    /// the board DTO (WP-05). Init-only (not positional) so existing construction/deconstruction sites are
+    /// untouched.
+    /// </summary>
+    public bool IsSnoozed { get; init; }
+}
 
 /// <summary>
 /// Pure, dependency-free input snapshot of a chore's recurrence fields (WP-02). Decouples the
@@ -51,7 +60,10 @@ public readonly record struct ChoreRecurrenceSnapshot(
     DateOnly? AnchorDate,
     ChoreDaysOfWeek? DaysOfWeek,
     int? DayOfMonth,
-    DateTime? LastCompletedAt)
+    DateTime? LastCompletedAt,
+    // Local-date snooze floor (null = no floor). Trailing + defaulted so existing 6-arg positional
+    // construction sites keep compiling. See <see cref="Chore.SnoozedUntil"/>.
+    DateOnly? SnoozedUntil = null)
 {
     /// <summary>Project a <see cref="Chore"/> entity into a recurrence snapshot.</summary>
     public static ChoreRecurrenceSnapshot FromChore(Chore chore) => new(
@@ -60,7 +72,8 @@ public readonly record struct ChoreRecurrenceSnapshot(
         chore.AnchorDate,
         chore.DaysOfWeek,
         chore.DayOfMonth,
-        chore.LastCompletedAt);
+        chore.LastCompletedAt,
+        chore.SnoozedUntil);
 }
 
 /// <summary>
@@ -91,15 +104,34 @@ public class ChoreStatusCalculator
     {
         var today = LocalDate(now, tz);
 
-        return chore.RecurrenceMode switch
+        var natural = chore.RecurrenceMode switch
         {
             // Flexible/OneOff derive their next-due independently of the dueness branch; Fixed computes its
             // state and next-due together (completion-aware slot logic), so it is fully self-contained.
+            // Fixed's covered-test and OneOff's effective-due already fold in SnoozedUntil (the skip rule /
+            // reschedule); the gate below adds the universal suppression on top.
             RecurrenceMode.Flexible => ComputeFlexible(chore, now, tz, NextDueForFlexible(chore, today, tz)),
             RecurrenceMode.Fixed => ComputeFixed(chore, now, tz),
             RecurrenceMode.OneOff => ComputeOneOff(chore, now, tz, NextDueForOneOff(chore, tz)),
             _ => new ChoreDuenessResult(DueState.NotDue, ColorTier.Fresh, NextDueAt: null)
         };
+
+        // Universal suppression gate: while today's local date is before the snooze floor, the chore is held
+        // in a pressure-free Scheduled/Fresh state with IsSnoozed=true, and its public next-due is floored at
+        // the snooze date (never earlier than the natural skip-aware next-due — the later of the two). On/after
+        // the floor the natural result passes through unchanged with IsSnoozed=false.
+        if (chore.SnoozedUntil is { } s && today < s)
+        {
+            return natural with
+            {
+                DueState = DueState.Scheduled,
+                ColorTier = ColorTier.Fresh,
+                NextDueAt = FloorAtSnooze(natural.NextDueAt, s, tz),
+                IsSnoozed = true
+            };
+        }
+
+        return natural;
     }
 
     /// <summary>
@@ -111,15 +143,24 @@ public class ChoreStatusCalculator
     {
         var today = LocalDate(now, tz);
 
-        return chore.RecurrenceMode switch
+        var natural = chore.RecurrenceMode switch
         {
             RecurrenceMode.Flexible => NextDueForFlexible(chore, today, tz),
             // Delegate to the unified Fixed logic so the public next-due never diverges from the dueness it
-            // reports (e.g. a covered slot rolls forward; an overdue slot points at the missed date).
+            // reports (e.g. a covered slot rolls forward; an overdue slot points at the missed date). Fixed's
+            // skip-rule already folds SnoozedUntil into the slot; OneOff's effective-due likewise.
             RecurrenceMode.Fixed => ComputeFixed(chore, now, tz).NextDueAt,
             RecurrenceMode.OneOff => NextDueForOneOff(chore, tz),
             _ => null
         };
+
+        // Mirror Compute's gate so the public next-due never diverges from the gated dueness.
+        if (chore.SnoozedUntil is { } s && today < s)
+        {
+            return FloorAtSnooze(natural, s, tz);
+        }
+
+        return natural;
     }
 
     /// <summary>
@@ -239,8 +280,11 @@ public class ChoreStatusCalculator
 
         // Has the current slot already been satisfied? A completion on or after the slot's LOCAL date covers
         // it — and because we only ever test the CURRENT slot, one completion clears however many slots have
-        // elapsed since the last one (the catch-up property).
-        var covered = chore.LastCompletedAt is { } last && LocalDate(last, tz) >= slot;
+        // elapsed since the last one (the catch-up property). A snooze floor STRICTLY past the slot also
+        // covers it (the skip rule: "not this Monday") — keyed on s > slot so snoozing to the slot's own date
+        // is a no-op. SnoozedUntil is never cleared here.
+        var covered = (chore.LastCompletedAt is { } last && LocalDate(last, tz) >= slot)
+            || (chore.SnoozedUntil is { } s && s > slot);
         if (covered)
         {
             return new ChoreDuenessResult(DueState.Scheduled, ColorTier.Fresh, AsUtc(nextSlot));
@@ -328,8 +372,13 @@ public class ChoreStatusCalculator
             return new ChoreDuenessResult(DueState.NotDue, ColorTier.Fresh, NextDueAt: null);
         }
 
+        // Snooze floor REPLACES the anchor for OneOff dueness when set (one effective-due source of truth —
+        // the universal gate handles only the today < s suppression; == s ⇒ DueToday, > s ⇒ Overdue fall out
+        // of comparing today to effDue). Preserves the null-anchor early return when both are null.
+        var effDue = chore.SnoozedUntil ?? chore.AnchorDate;
+
         // No due date => never overdue, no NextDueAt advance.
-        if (chore.AnchorDate is not { } due)
+        if (effDue is not { } due)
         {
             return new ChoreDuenessResult(DueState.NotDue, ColorTier.Fresh, NextDueAt: null);
         }
@@ -360,7 +409,9 @@ public class ChoreStatusCalculator
             return null;
         }
 
-        return chore.AnchorDate is { } due ? LocalMidnightUtc(due, tz) : null;
+        // Mirror ComputeOneOff: the snooze floor replaces the anchor as the effective due date.
+        var effDue = chore.SnoozedUntil ?? chore.AnchorDate;
+        return effDue is { } due ? LocalMidnightUtc(due, tz) : null;
     }
 
     // ---- Date helpers (all day-boundary math is timezone-aware) --------------------------------------
@@ -378,6 +429,17 @@ public class ChoreStatusCalculator
     {
         var localMidnight = localDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
         return TimeZoneInfo.ConvertTimeToUtc(localMidnight, tz);
+    }
+
+    /// <summary>
+    /// The snooze-aware next-due: the later of the natural (skip-aware) next-due and local-midnight of the
+    /// snooze floor. Shared by <see cref="Compute"/> and <see cref="ComputeNextDueAt"/> so the two never
+    /// diverge. When the natural next-due is null (e.g. an under-specified recurrence), the floor is used.
+    /// </summary>
+    private static DateTime FloorAtSnooze(DateTime? naturalNextDue, DateOnly snoozedUntil, TimeZoneInfo tz)
+    {
+        var resumeFloor = LocalMidnightUtc(snoozedUntil, tz);
+        return naturalNextDue is { } nd && nd > resumeFloor ? nd : resumeFloor;
     }
 
     /// <summary>Map a <see cref="System.DayOfWeek"/> to the project's custom <see cref="ChoreDaysOfWeek"/> flag.</summary>

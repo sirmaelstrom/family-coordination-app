@@ -193,6 +193,8 @@ public class ChoreBoardService(
         dueness.DueState,
         dueness.ColorTier,
         dueness.NextDueAt,
+        chore.SnoozedUntil,
+        dueness.IsSnoozed,   // server-computed gate (today < SnoozedUntil), NOT just "column set"
         isClaimStale,
         chore.EffortTier.ToString(),
         chore.EffortPoints,
@@ -297,9 +299,11 @@ public class ChoreBoardService(
     // ------------------------------------------------------------------ needs-attention selection
 
     // Needs-attention = anything carrying dueness pressure (due today or overdue) PLUS unclaimed pile chores
-    // (AssignmentKind.None) — the "someone should grab this" set (V6). Ordered dirtiest-first (D17).
+    // (AssignmentKind.None) — the "someone should grab this" set (V6). Ordered dirtiest-first (D17). A snoozed
+    // chore is excluded outright: it already reads Scheduled (so the due/overdue arm is moot), and the
+    // !IsSnoozed gate also drops it from the unclaimed-pile arm — closing the snoozed-unclaimed leak (WP-04).
     private static bool IsNeedsAttention(Chore chore, ChoreDuenessResult dueness) =>
-        IsDueOrOverdue(dueness.DueState) || chore.AssignmentKind == AssignmentKind.None;
+        !dueness.IsSnoozed && (IsDueOrOverdue(dueness.DueState) || chore.AssignmentKind == AssignmentKind.None);
 
     private static bool IsDueOrOverdue(DueState state) =>
         state is DueState.Overdue or DueState.DueToday;

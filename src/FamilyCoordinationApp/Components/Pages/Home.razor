@@ -370,14 +370,16 @@
 
     private async Task LoadChoreStats(int userId)
     {
-        // Household-level, collective framing (never a per-person leaderboard). The board's
-        // SERVER-computed dueState + assignment drive the counts — no client-side date math (M5).
+        // Household-level, collective framing (never a per-person leaderboard). The board's SERVER-computed
+        // dueState + assignment + snooze drive the counts — no client-side date math (M5). The count logic
+        // (incl. the snooze guard on up-for-grabs) lives in the unit-tested ChoreHomeStats helper, since a
+        // private Razor method has no test harness.
         var board = await ChoreBoardService.GetBoardAsync(_householdId, userId);
-        _choreActiveTotal = board.Chores.Count;
-        _choreOverdue = board.Chores.Count(c => c.DueState == DueState.Overdue);
-        _choreDueToday = board.Chores.Count(c => c.DueState == DueState.DueToday);
-        // Up for grabs = unassigned pile OR a self-claim gone stale (mirrors ChoreAttention.IsUpForGrabs).
-        _choreUpForGrabs = board.Chores.Count(c => c.AssignmentKind == AssignmentKind.None || c.IsClaimStale);
+        var stats = ChoreHomeStats.Compute(board.Chores);
+        _choreActiveTotal = stats.Total;
+        _choreOverdue = stats.Overdue;
+        _choreDueToday = stats.DueToday;
+        _choreUpForGrabs = stats.UpForGrabs;
     }
 
     private static string GetMealTypeIcon(MealType mealType) => mealType switch

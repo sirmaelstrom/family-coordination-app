@@ -535,4 +535,146 @@ public class ChoreStatusCalculatorTests
     {
         ChoreStatusCalculator.StalenessThreshold.Should().Be(TimeSpan.FromHours(48));
     }
+
+    // ---- Snooze / set-next-due floor (WP-01) --------------------------------------------------------
+    //
+    // SnoozedUntil is a local-date floor: while today < s the chore is suppressed (Scheduled/Fresh,
+    // IsSnoozed=true) and its public next-due is floored at s. A Fixed chore additionally SKIPS any cadence
+    // slot it strictly precedes (covered = s > slot). For OneOff the floor REPLACES the anchor as the
+    // effective due date. Flexible has no skip rule — its decay clock keeps running (D5). The gate is a clean
+    // no-op when SnoozedUntil is null, so every test above passes unchanged (V13).
+
+    [Fact]
+    public void FixedWeekly_SnoozePastThisMonday_SkipsToNextMonday_ResumesDueTodayNoOverdue()
+    {
+        // V1. Mondays; 2026-06-15 is a Monday. Snooze strictly past it (to Tue Jun 16): this Monday is
+        // skipped (Scheduled/IsSnoozed, NextDueAt = next Monday Jun 22). At expiry on Jun 22 it resumes
+        // DueToday — never reading Overdue at the snooze boundary.
+        var chore = FixedWeekly(ChoreDaysOfWeek.Monday) with { SnoozedUntil = new DateOnly(2026, 6, 16) };
+
+        var snoozed = _calc.Compute(chore, Utc0(2026, 6, 15, 9), Utc); // this Monday, under the floor
+        snoozed.DueState.Should().Be(DueState.Scheduled);
+        snoozed.IsSnoozed.Should().BeTrue();
+        snoozed.NextDueAt.Should().Be(Utc0(2026, 6, 22)); // this Monday skipped, points at next Monday
+
+        var resumed = _calc.Compute(chore, Utc0(2026, 6, 22, 9), Utc); // next Monday
+        resumed.DueState.Should().Be(DueState.DueToday); // resumes due, NOT overdue
+        resumed.IsSnoozed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void FixedWeekly_SnoozeNotPastCurrentSlot_DoesNotSkip()
+    {
+        // V2. The skip keys STRICTLY on s > currentSlot. Snoozing to the current slot's own date (today, a
+        // Monday) does not skip it — the slot is unchanged and still reads DueToday.
+        var chore = FixedWeekly(ChoreDaysOfWeek.Monday) with { SnoozedUntil = new DateOnly(2026, 6, 15) };
+
+        var result = _calc.Compute(chore, Utc0(2026, 6, 15, 9), Utc); // Monday, current slot = Jun 15
+
+        result.DueState.Should().Be(DueState.DueToday); // slot unchanged
+        result.IsSnoozed.Should().BeFalse();            // today < s is false (s == today)
+    }
+
+    [Fact]
+    public void FixedEveryN_SnoozePastCadencePoint_RollsToNextMultiple()
+    {
+        // V3. Cadence Jun 1, 6, 11, 16. Today Jun 11 (a cadence slot). Snooze past it (to Jun 13) covers the
+        // Jun 11 slot (s > slot) and rolls forward to the next multiple, Jun 16.
+        var anchor = new DateOnly(2026, 6, 1);
+        var chore = FixedEveryN(5, anchor) with { SnoozedUntil = new DateOnly(2026, 6, 13) };
+
+        var result = _calc.Compute(chore, Utc0(2026, 6, 11, 9), Utc);
+
+        result.DueState.Should().Be(DueState.Scheduled);
+        result.IsSnoozed.Should().BeTrue();
+        result.NextDueAt.Should().Be(Utc0(2026, 6, 16)); // rolled to next cadence multiple
+    }
+
+    [Fact]
+    public void Flexible_NeverCompleted_SnoozedSevenDays_SuppressedThenDueOnExpiry()
+    {
+        // V4 (the burst fix). A brand-new Flexible chore reads DueToday immediately; snoozing 7 days holds it
+        // Scheduled/IsSnoozed through day 6, then it reads DueToday exactly on day 7.
+        var chore = Flexible(intervalDays: 7, lastCompletedAt: null) with { SnoozedUntil = new DateOnly(2026, 6, 22) };
+
+        foreach (var now in new[] { Utc0(2026, 6, 15, 9), Utc0(2026, 6, 18, 9), Utc0(2026, 6, 21, 9) })
+        {
+            var r = _calc.Compute(chore, now, Utc);
+            r.DueState.Should().Be(DueState.Scheduled);
+            r.IsSnoozed.Should().BeTrue();
+        }
+
+        var expired = _calc.Compute(chore, Utc0(2026, 6, 22, 9), Utc); // Jun 22 == s
+        expired.DueState.Should().Be(DueState.DueToday);
+        expired.IsSnoozed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Flexible_AlreadyOverdue_Snoozed_ResumesNaturalDecayNotReanchored()
+    {
+        // V5 (pins D5). Decay clock keeps running while snoozed. Last done Jun 5 (interval 7) => overdue by
+        // Jun 15. Snooze +3 (to Jun 18) suppresses until Jun 18, then it resumes its NATURAL decay — Overdue
+        // (13 days old), NOT re-anchored to Fresh.
+        var chore = Flexible(intervalDays: 7, Utc0(2026, 6, 5, 12)) with { SnoozedUntil = new DateOnly(2026, 6, 18) };
+
+        var during = _calc.Compute(chore, Utc0(2026, 6, 15, 9), Utc);
+        during.DueState.Should().Be(DueState.Scheduled);
+        during.ColorTier.Should().Be(ColorTier.Fresh);
+        during.IsSnoozed.Should().BeTrue();
+
+        var resumed = _calc.Compute(chore, Utc0(2026, 6, 18, 9), Utc);
+        resumed.DueState.Should().Be(DueState.Overdue);   // natural decay, not re-anchored
+        resumed.ColorTier.Should().Be(ColorTier.Overdue);
+        resumed.IsSnoozed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void OneOff_PastAnchor_SnoozedToFuture_RescheduledToSnoozeDate()
+    {
+        // V6. OneOff originally due Jun 10 (past). Snooze to Jun 20 REPLACES the anchor for dueness:
+        // Scheduled before, DueToday on Jun 20, Overdue after.
+        var chore = OneOff(new DateOnly(2026, 6, 10)) with { SnoozedUntil = new DateOnly(2026, 6, 20) };
+
+        var before = _calc.Compute(chore, Utc0(2026, 6, 15, 9), Utc);
+        before.DueState.Should().Be(DueState.Scheduled);
+        before.IsSnoozed.Should().BeTrue();
+        before.NextDueAt.Should().Be(Utc0(2026, 6, 20)); // rescheduled to the snooze date
+
+        var on = _calc.Compute(chore, Utc0(2026, 6, 20, 9), Utc);
+        on.DueState.Should().Be(DueState.DueToday);
+        on.IsSnoozed.Should().BeFalse();
+
+        var after = _calc.Compute(chore, Utc0(2026, 6, 21, 9), Utc);
+        after.DueState.Should().Be(DueState.Overdue);
+        after.IsSnoozed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsSnoozed_TrueOnlyWhileBeforeSnoozeDate()
+    {
+        // V7. IsSnoozed is true iff SnoozedUntil is set AND today < s; false on/after s and when null.
+        var chore = Flexible(intervalDays: 7, lastCompletedAt: null) with { SnoozedUntil = new DateOnly(2026, 6, 20) };
+
+        _calc.Compute(chore, Utc0(2026, 6, 19, 9), Utc).IsSnoozed.Should().BeTrue();   // before
+        _calc.Compute(chore, Utc0(2026, 6, 20, 9), Utc).IsSnoozed.Should().BeFalse();  // on (today == s)
+        _calc.Compute(chore, Utc0(2026, 6, 21, 9), Utc).IsSnoozed.Should().BeFalse();  // after
+
+        var noSnooze = Flexible(intervalDays: 7, lastCompletedAt: null);
+        _calc.Compute(noSnooze, Utc0(2026, 6, 19, 9), Utc).IsSnoozed.Should().BeFalse(); // null floor
+    }
+
+    [Fact]
+    public void IsSnoozed_TzBoundary_EndsTodayChicago_StillSuppressedBeforeLocalMidnight()
+    {
+        // V7 (tz boundary). Snooze ends "today" (Jun 16) in Chicago. Evaluate at 2026-06-16 03:00 UTC =
+        // 2026-06-15 22:00 local Chicago — still the 15th locally, BEFORE the floor, so still suppressed. A
+        // naive UTC read (already the 16th) would wrongly expire it (CORRECTIONS date footgun).
+        var chore = Flexible(intervalDays: 7, lastCompletedAt: null) with { SnoozedUntil = new DateOnly(2026, 6, 16) };
+        var nowUtc = Utc0(2026, 6, 16, 3, 0); // local Chicago: 2026-06-15 22:00
+
+        var result = _calc.Compute(chore, nowUtc, Chicago);
+
+        result.IsSnoozed.Should().BeTrue();              // today (Chicago) = Jun 15 < Jun 16
+        result.DueState.Should().Be(DueState.Scheduled);
+    }
 }

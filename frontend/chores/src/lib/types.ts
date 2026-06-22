@@ -75,6 +75,10 @@ export interface ChoreDto {
   colorTier: ColorTier;
   /** ISO-8601 UTC (Z). Server-computed; render only — do not derive dueness from it. */
   nextDueAt: string | null;
+  /** ISO date "YYYY-MM-DD" — the snooze / set-next-due floor; null = no floor. For the edit-sheet pre-fill. */
+  snoozedUntil: string | null;
+  /** Server-computed gate (today < snoozedUntil). The filter + Home read THIS — never date-math snoozedUntil. */
+  isSnoozed: boolean;
   isClaimStale: boolean;
   effortTier: EffortTier;
   effortPoints: number;

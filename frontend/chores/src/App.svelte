@@ -143,6 +143,16 @@
     editOpen = true;
   }
 
+  /**
+   * Snooze / un-snooze a chore (board quick-snooze). Thin pass-through to the
+   * store's optimistic snooze; the server resolves the floor date in the household
+   * timezone (MN4). `request.days` = N days from today; `request.until` = explicit
+   * "YYYY-MM-DD"; both omitted ⇒ un-snooze.
+   */
+  function handleSnooze(chore: ChoreDto, request: { days?: number; until?: string | null }) {
+    store.snooze(chore.id, request);
+  }
+
   /** Seed the starter set (shown only when the board is empty). */
   async function handleSeedStarter() {
     await store.seedStarter();
@@ -289,6 +299,7 @@
         onCommit={handleCommit}
         onLeave={handleLeave}
         onEdit={handleEdit}
+        onSnooze={handleSnooze}
       />
     {:else if store.lens === 'rooms'}
       <RoomsDashboard
@@ -304,6 +315,7 @@
         onCommit={handleCommit}
         onLeave={handleLeave}
         onEdit={handleEdit}
+        onSnooze={handleSnooze}
       />
     {:else if store.lens === 'equity'}
       <!--

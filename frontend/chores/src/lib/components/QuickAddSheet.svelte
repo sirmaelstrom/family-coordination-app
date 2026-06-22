@@ -27,6 +27,7 @@
   import type { CreateChoreRequest } from '../api';
   import { createRoom, uploadRoomPhoto } from '../api';
   import { showToast } from '../toasts.svelte';
+  import { minFloorDate } from '../dates';
   import IconPicker from './IconPicker.svelte';
 
   /** What the parent needs to create the chore + (optionally) attach a photo. */
@@ -61,6 +62,11 @@
   let selectedDays = $state(new Set<string>());
   /** "YYYY-MM-DD" for the "Just once" due date; '' = none. Passed straight as anchorDate. */
   let dueDate = $state('');
+  /**
+   * "YYYY-MM-DD" first-due floor for a RECURRING chore; '' = due now (the burst fix — a new recurring chore
+   * otherwise reads due immediately). Sent as `snoozedUntil` on create (MN4 — passed straight through).
+   */
+  let firstDueDate = $state('');
   let effort = $state<EffortTier>('Standard');
   /** null ⇒ General (roomless). */
   let roomId = $state<number | null>(null);
@@ -192,6 +198,7 @@
     intervalDays = '3';
     selectedDays = new Set<string>();
     dueDate = '';
+    firstDueDate = '';
     effort = 'Standard';
     roomId = null;
     assigneeUserId = null;
@@ -298,6 +305,8 @@
       assigneeUserId: requiredCount > 1 ? null : assigneeUserId,
       requiredCount,
       assignedUserIds: requiredCount > 1 ? assignedUserIds : undefined,
+      // First-due floor (recurring only; OneOff uses anchorDate). Blank ⇒ due now.
+      snoozedUntil: cadence === 'once' ? null : firstDueDate || null,
       // Photo is NEVER in the create JSON (council C2) — the parent uploads it
       // separately to /api/chores/{id}/photo after the create returns an id.
       photoPath: null,
@@ -390,6 +399,18 @@
               </button>
             {/each}
           </div>
+        {/if}
+
+        {#if cadence === 'everyN' || cadence === 'days'}
+          <!--
+            First-due date (recurring only). Blank = due now; a future date holds the
+            new chore as Scheduled until then (the burst fix). Sent as snoozedUntil on
+            create; the date input's "YYYY-MM-DD" is passed straight through (MN4).
+          -->
+          <label class="ch-subfield">
+            <span class="ch-subfield-label">First due (optional)</span>
+            <input type="date" bind:value={firstDueDate} aria-label="First due date" min={minFloorDate()} />
+          </label>
         {/if}
       </fieldset>
 

@@ -255,6 +255,31 @@ public class ChoreBoardServiceTests
         board.NeedsAttentionChoreIds.Should().Contain(1);
     }
 
+    [Fact]
+    public async Task NeedsAttention_ExcludesSnoozedUnclaimedChore_WithClearedControl()
+    {
+        // V11 (board surface). A snoozed unclaimed chore (None, SnoozedUntil = today+5) must be ABSENT from
+        // needs-attention — the !IsSnoozed gate closes the up-for-grabs leak. Un-snoozed, it returns.
+        var snoozed = OneOff(1, H1, null, new DateOnly(2026, 7, 1));  // future OneOff, unclaimed pile
+        snoozed.SnoozedUntil = new DateOnly(2026, 6, 4);              // Now is 2026-05-30 => today < s => snoozed
+        Seed(snoozed);
+
+        var board = await CreateService().GetBoardAsync(H1, Alice, Now);
+        board.Chores.Single(c => c.Id == 1).IsSnoozed.Should().BeTrue();
+        board.NeedsAttentionChoreIds.Should().NotContain(1, "a snoozed unclaimed chore is excluded from needs-attention");
+
+        // Control: clear the floor => the unclaimed pile chore is up-for-grabs again.
+        using (var ctx = new ApplicationDbContext(_options))
+        {
+            ctx.Chores.Single(c => c.HouseholdId == H1 && c.ChoreId == 1).SnoozedUntil = null;
+            ctx.SaveChanges();
+        }
+
+        var control = await CreateService().GetBoardAsync(H1, Alice, Now);
+        control.Chores.Single(c => c.Id == 1).IsSnoozed.Should().BeFalse();
+        control.NeedsAttentionChoreIds.Should().Contain(1, "un-snoozed, it returns to needs-attention");
+    }
+
     // ------------------------------------------------------------------ isolation + exclusion
 
     [Fact]

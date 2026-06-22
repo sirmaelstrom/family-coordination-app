@@ -42,6 +42,7 @@ public static class ChoresEndpoints
         group.MapPost("/{choreId:int}/drop", DropChore);
         group.MapPost("/{choreId:int}/handoff", HandOffChore);
         group.MapPost("/{choreId:int}/complete", CompleteChore);
+        group.MapPatch("/{choreId:int}/snooze", SnoozeChore);
         group.MapPost("/{choreId:int}/roster/assign", AssignRoster);
         group.MapPost("/{choreId:int}/roster/commit", CommitRoster);
         group.MapPost("/{choreId:int}/roster/leave", LeaveRoster);
@@ -101,6 +102,13 @@ public static class ChoresEndpoints
         var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (user is null) return Results.Unauthorized();
 
+        // A "first due" floor (Chore.SnoozedUntil) must be in the future — same rule as the quick-snooze
+        // endpoint (ResolveSnooze). Resolve today in the household tz (MN4 — never client date math).
+        var today = DateOnly.FromDateTime(
+            TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, timeZone));
+        var (floorOk, floorError) = ValidateFloor(req.SnoozedUntil, today);
+        if (!floorOk) return Results.BadRequest(new { message = floorError });
+
         try
         {
             var chore = await svc.CreateChoreAsync(user.HouseholdId, user.UserId, req.ToCommand(), ct);
@@ -125,6 +133,13 @@ public static class ChoresEndpoints
     {
         var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (user is null) return Results.Unauthorized();
+
+        // A "next due" floor (Chore.SnoozedUntil) must be in the future — same rule as the quick-snooze
+        // endpoint (ResolveSnooze). Resolve today in the household tz (MN4 — never client date math).
+        var today = DateOnly.FromDateTime(
+            TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, timeZone));
+        var (floorOk, floorError) = ValidateFloor(req.SnoozedUntil, today);
+        if (!floorOk) return Results.BadRequest(new { message = floorError });
 
         try
         {
@@ -278,6 +293,101 @@ public static class ChoresEndpoints
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
         catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
     }
+
+    // ─── Snooze / set-next-due (the board quick-snooze path) ────────────────────────
+
+    /// <summary>
+    /// PATCH /api/chores/{id}/snooze — set or clear the chore's next-due floor (M1, household-scoped). The body
+    /// carries EXACTLY one of <c>days</c> / <c>until</c> (or NEITHER, to un-snooze) plus the xmin
+    /// <c>version</c>. The floor date is resolved SERVER-side in the household timezone via
+    /// <see cref="ResolveSnooze"/> (MN4 — never client date math). Invalid input → 400 with a non-empty body
+    /// (the <c>UseStatusCodePagesWithReExecute</c> quirk — never <c>Results.BadRequest()</c>).
+    /// </summary>
+    private static async Task<IResult> SnoozeChore(
+        int choreId,
+        SnoozeRequest req,
+        ClaimsPrincipal principal,
+        IChoreService svc,
+        IChoreBoardService boardService,
+        TimeProvider timeProvider,
+        TimeZoneInfo timeZone,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
+        if (user is null) return Results.Unauthorized();
+
+        var today = DateOnly.FromDateTime(
+            TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, timeZone));
+
+        var (ok, until, error) = ResolveSnooze(req.Days, req.Until, today);
+        if (!ok)
+        {
+            return Results.BadRequest(new { message = error });
+        }
+
+        try
+        {
+            var chore = await svc.SnoozeAsync(user.HouseholdId, choreId, until, req.Version, ct);
+            return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
+        }
+        catch (ChoreNotFoundException) { return Results.NotFound(); }
+        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
+        catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+    }
+
+    /// <summary>
+    /// Resolve a snooze request into the floor date to persist, server-side against the tz-resolved
+    /// <paramref name="today"/> (MN4 — never client relative-date math). Three VALID cases, in order:
+    /// (1) <paramref name="days"/> set AND <paramref name="until"/> null ⇒ <c>today + days</c> (requires
+    /// <c>days ≥ 1</c>); (2) <paramref name="until"/> set (and days null) ⇒ that date (requires
+    /// <c>until &gt; today</c>); (3) BOTH null ⇒ clear / un-snooze (NOT an error). Rejected (→ non-empty
+    /// message): days AND a non-null until together (ambiguous); <c>days &lt; 1</c>; a resolved/explicit
+    /// <c>until ≤ today</c>. Extracted <c>internal static</c> so it is unit-testable without a
+    /// WebApplicationFactory (P3).
+    /// </summary>
+    internal static (bool Ok, DateOnly? Until, string? Error) ResolveSnooze(int? days, DateOnly? until, DateOnly today)
+    {
+        if (days is not null && until is not null)
+        {
+            return (false, null, "Provide either a number of days or a date, not both.");
+        }
+
+        if (days is { } d)
+        {
+            return d < 1
+                ? (false, null, "Snooze days must be at least 1.")
+                : (true, today.AddDays(d), null);
+        }
+
+        if (until is { } u)
+        {
+            return u <= today
+                ? (false, null, "The next-due date must be in the future.")
+                : (true, u, null);
+        }
+
+        // Neither supplied ⇒ clear the floor (un-snooze).
+        return (true, null, null);
+    }
+
+    /// <summary>
+    /// Validate a next-due FLOOR supplied through the create ("first due") / edit ("next due") write paths
+    /// (<see cref="Chore.SnoozedUntil"/>) against the tz-resolved <paramref name="today"/>. A floor must be in
+    /// the FUTURE (<c>today &lt; floor</c>) — the SAME rule <see cref="ResolveSnooze"/> enforces for the
+    /// quick-snooze endpoint, so the two write paths cannot diverge: previously create/update persisted the
+    /// floor unvalidated, so a non-future date the PATCH path rejects could still be saved here — inert
+    /// (<c>IsSnoozed</c> computes false ⇒ no chip) yet, for a Fixed chore, enough to silently skip a slot
+    /// (the skip rule keys on <c>SnoozedUntil &gt; slot</c>, not on the snooze being active). <c>null</c> ⇒ ok
+    /// (no floor / cleared). Extracted <c>internal static</c> so it is unit-testable without a
+    /// WebApplicationFactory (mirrors <see cref="ResolveSnooze"/>, P3). The island never re-sends an expired
+    /// floor (its "next due" field pre-fills only when <c>isSnoozed</c>), so this rejects only a genuinely
+    /// new non-future value, never an unrelated edit preserving an already-passed floor.
+    /// </summary>
+    internal static (bool Ok, string? Error) ValidateFloor(DateOnly? floor, DateOnly today)
+        => floor is { } f && f <= today
+            ? (false, "The next-due date must be in the future.")
+            : (true, null);
 
     // ─── Roster (multi-person named soft roster, rework) ────────────────────────────
 
@@ -626,6 +736,14 @@ public static class ChoresEndpoints
         foreach (var chore in activeChores)
         {
             var dueness = statusCalculator.Compute(ChoreRecurrenceSnapshot.FromChore(chore), now, timeZone);
+
+            // A snoozed chore is suppressed from BOTH attention counts (WP-04). It already reads Scheduled (so
+            // falling-behind is moot), and this also drops it from up-for-grabs even when unclaimed.
+            if (dueness.IsSnoozed)
+            {
+                continue;
+            }
+
             if (ChoreAttention.IsFallingBehind(dueness.DueState))
             {
                 fallingBehindCount++;
@@ -839,6 +957,14 @@ public static class ChoresEndpoints
 
     public sealed record CompleteRequest(string? Note, string? PhotoPath, uint Version, IReadOnlyList<int>? ParticipantUserIds = null);
 
+    /// <summary>
+    /// PATCH /{id}/snooze body. Supply EXACTLY one of <see cref="Days"/> / <see cref="Until"/> — or NEITHER to
+    /// un-snooze; supplying both is rejected (400). The server resolves the floor in the household timezone
+    /// (MN4). <see cref="Version"/> is the xmin token and MUST be in the body (a missing/0 version → spurious
+    /// 409).
+    /// </summary>
+    public sealed record SnoozeRequest(int? Days, DateOnly? Until, uint Version);
+
     /// <summary>Add a named member to a multi-person chore's roster (Assigned). Subject = the member to add.</summary>
     public sealed record AssignRosterRequest(int SubjectUserId, uint Version);
 
@@ -914,7 +1040,8 @@ public static class ChoresEndpoints
         string? PhotoPath,
         string? Icon = null,
         int RequiredCount = 1,
-        IReadOnlyList<int>? AssignedUserIds = null)
+        IReadOnlyList<int>? AssignedUserIds = null,
+        DateOnly? SnoozedUntil = null)
     {
         public CreateChoreCommand ToCommand() => new(
             Name,
@@ -931,7 +1058,8 @@ public static class ChoresEndpoints
             PhotoPath,
             Icon ?? string.Empty,
             RequiredCount,
-            AssignedUserIds);
+            AssignedUserIds,
+            SnoozedUntil);
     }
 
     public sealed record UpdateChoreRequest(
@@ -948,7 +1076,8 @@ public static class ChoresEndpoints
         string? PhotoPath,
         uint Version,
         string? Icon = null,
-        int RequiredCount = 1)
+        int RequiredCount = 1,
+        DateOnly? SnoozedUntil = null)
     {
         public UpdateChoreCommand ToCommand() => new(
             Name,
@@ -963,6 +1092,7 @@ public static class ChoresEndpoints
             OwnerUserId,
             PhotoPath,
             Icon ?? string.Empty,
-            RequiredCount);
+            RequiredCount,
+            SnoozedUntil);
     }
 }

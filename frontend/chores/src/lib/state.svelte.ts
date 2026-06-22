@@ -36,6 +36,7 @@ import {
   takeChore,
   dropChore,
   completeChore,
+  snoozeChore,
   handOffChore,
   assignRoster,
   commitRoster,
@@ -232,6 +233,9 @@ class BoardStore {
     const uid = this.currentUserId;
     return this.chores
       .filter((c) => {
+        // A snoozed chore is NOT up-for-grabs — it carries no pressure until it
+        // resumes (WP-04). Excluded from the pile regardless of assignment/roster.
+        if (c.isSnoozed) return false;
         // Multi-person chores are up-for-grabs to anyone NOT yet on the roster —
         // they can join ("I'm in") or just do their part. Members already on the
         // roster (assigned / in / done) see it in Mine instead.
@@ -297,7 +301,11 @@ class BoardStore {
     const dueNow: ChoreDto[] = [];
     const comingUp: ChoreDto[] = [];
     for (const c of ordered) {
-      if (c.dueState === 'overdue') fallingBehind.push(c);
+      // Snoozed chores are pressure-free: always "Coming up" (with the chip), never
+      // Falling behind / Due now — even if a pre-snooze dueState briefly lingers in
+      // the optimistic window before the server reports Scheduled (WP-04, MN4).
+      if (c.isSnoozed) comingUp.push(c);
+      else if (c.dueState === 'overdue') fallingBehind.push(c);
       else if (c.dueState === 'dueToday') dueNow.push(c);
       else comingUp.push(c); // scheduled / notDue pile chores
     }
@@ -780,6 +788,38 @@ class BoardStore {
     // single-person happy path doesn't refetch the board, so this is its only
     // equity hook; the multi-person path already reconciled via setBoard (which
     // also invalidates), and a 409/4xx reconciled the same way.
+    this.invalidateEquity();
+  }
+
+  /**
+   * Snooze / set-next-due (the board quick-snooze). `request.days` snoozes N days from today; `request.until`
+   * is an explicit "YYYY-MM-DD"; both omitted/null ⇒ un-snooze. The server resolves the floor in the household
+   * timezone (MN4 — no client date math). Optimistic patch is just `{ isSnoozed }`: the section logic keys on
+   * `isSnoozed` so the card moves to "Coming up" / out of the pile at once; the authoritative
+   * `dueState`/`colorTier`/`nextDueAt`/`snoozedUntil` come from the returned DTO (the chip binds `nextDueAt`).
+   * Multi-person chores take the reconcile path (the single-chore response carries no live co-sign progress).
+   */
+  async snooze(choreId: number, request: { days?: number; until?: string | null }): Promise<void> {
+    const call = (c: ChoreDto) =>
+      snoozeChore(
+        c.id,
+        request.days != null
+          ? { days: request.days, version: c.version }
+          : { until: request.until ?? null, version: c.version },
+      );
+
+    if (this.isMultiPerson(choreId)) {
+      await this.runMultiPersonMutation(choreId, call, 'That chore changed — board refreshed.');
+    } else {
+      const isUnsnooze = request.days == null && (request.until ?? null) === null;
+      await this.runOptimistic(
+        choreId,
+        { isSnoozed: !isUnsnooze },
+        call,
+        'That chore changed — board refreshed.',
+      );
+    }
+    // Snooze shifts the up-for-grabs / falling-behind equity counts (WP-04) — invalidate the cached payload.
     this.invalidateEquity();
   }
 

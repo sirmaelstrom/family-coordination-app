@@ -65,6 +65,7 @@ public class ChoreService(
                     AnchorDate = cmd.AnchorDate,
                     DaysOfWeek = cmd.DaysOfWeek,
                     DayOfMonth = cmd.DayOfMonth,
+                    SnoozedUntil = cmd.SnoozedUntil,   // first-due floor (null = due now)
                     EffortTier = cmd.EffortTier,
                     EffortPoints = ChoreEffort.PointsFor(cmd.EffortTier),
                     RequiredCount = cmd.RequiredCount,
@@ -135,6 +136,7 @@ public class ChoreService(
         chore.AnchorDate = cmd.AnchorDate;
         chore.DaysOfWeek = cmd.DaysOfWeek;
         chore.DayOfMonth = cmd.DayOfMonth;
+        chore.SnoozedUntil = cmd.SnoozedUntil;   // edit-sheet "next due" (omitting this silently drops it on save)
         chore.EffortTier = cmd.EffortTier;
         chore.EffortPoints = ChoreEffort.PointsFor(cmd.EffortTier);
         chore.RequiredCount = cmd.RequiredCount;
@@ -359,6 +361,11 @@ public class ChoreService(
             // SATISFYING completion — run the existing advance logic UNCHANGED.
             chore.LastCompletedAt = now;
 
+            // Clear any snooze floor on a satisfying completion (D9) — BEFORE the OneOff-vs-recurring fork so it
+            // applies to ALL modes (a OneOff completion clears it too). MN3: ONLY a satisfying completion clears
+            // it; snooze expiry never does.
+            chore.SnoozedUntil = null;
+
             if (chore.RecurrenceMode == RecurrenceMode.OneOff)
             {
                 // OneOff: lifecycle terminates. The board (WP-05) excludes Done chores.
@@ -397,6 +404,23 @@ public class ChoreService(
         logger.LogInformation(
             "Chore {ChoreId} contribution by user {UserId} (+{New} contributor(s), {Distinct} of {Required}) (household {HouseholdId})",
             choreId, actorUserId, newContributors.Count, newDistinctCount, chore.RequiredCount, householdId);
+        return chore;
+    }
+
+    public async Task<Chore> SnoozeAsync(int householdId, int choreId, DateOnly? until, uint version, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var chore = await LoadChoreAsync(context, householdId, choreId, cancellationToken);
+
+        // Set or clear the snooze floor (until == null ⇒ un-snooze). The ONLY field changed: no assignment-trio
+        // touch (D11), no recurrence mutation (MN1), no ChoreCompletion written and LastCompletedAt untouched
+        // (M6). The scalar change drives the xmin UPDATE so SaveWithConcurrencyAsync surfaces a stale token as
+        // a 409 (mirrors the rest of the claim machine).
+        chore.SnoozedUntil = until;
+
+        await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
+        logger.LogInformation("Chore {ChoreId} snooze {Action} (household {HouseholdId})",
+            choreId, until is { } u ? $"set to {u:yyyy-MM-dd}" : "cleared", householdId);
         return chore;
     }
 

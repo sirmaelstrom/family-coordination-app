@@ -35,6 +35,7 @@
     onCommit: (chore: ChoreDto) => void;
     onLeave: (chore: ChoreDto) => void;
     onEdit: (chore: ChoreDto) => void;
+    onSnooze: (chore: ChoreDto, request: { days?: number; until?: string | null }) => void;
   }
 
   let {
@@ -52,6 +53,7 @@
     onCommit,
     onLeave,
     onEdit,
+    onSnooze,
   }: Props = $props();
 
   // The active filter's set is empty when its pre-section count is 0 (equivalent
@@ -94,6 +96,7 @@
               {onCommit}
               {onLeave}
               {onEdit}
+              {onSnooze}
             />
           {/each}
         </div>
