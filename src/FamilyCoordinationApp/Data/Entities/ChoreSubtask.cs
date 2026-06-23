@@ -17,5 +17,11 @@ public class ChoreSubtask
     public int SortOrder { get; set; }
     public DateTime CreatedAt { get; set; }  // UTC
 
+    // "Who ticked it" actor stamp (Phase 14 follow-up). Per-occurrence invariant: both are non-null IFF
+    // IsDone == true — set on the false->true tick (the resolved caller), cleared on untick and on the
+    // recurring-chore reset. A plain userId (no FK to User) — resolved client-side via the board's members.
+    public int? CompletedByUserId { get; set; }
+    public DateTime? CompletedAt { get; set; }  // UTC
+
     public Chore Chore { get; set; } = default!;
 }

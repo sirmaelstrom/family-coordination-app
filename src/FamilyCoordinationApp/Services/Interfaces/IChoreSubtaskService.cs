@@ -23,11 +23,20 @@ public interface IChoreSubtaskService
 
     /// <summary>
     /// Updates a checklist item — only the non-null fields are applied (title trimmed + validated if supplied).
-    /// No version check; touches ONLY the subtask row (never the chore).
+    /// No version check; touches ONLY the subtask row (never the chore). When <paramref name="isDone"/> flips
+    /// the item to done, <paramref name="actingUserId"/> is captured as the "who ticked it" actor (with a UTC
+    /// timestamp); un-ticking clears the actor. Per-occurrence invariant: actor set IFF IsDone == true.
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such subtask in the household/chore.</exception>
     /// <exception cref="ChoreValidationException">A supplied title is blank or too long.</exception>
-    Task<ChoreSubtaskDto> UpdateAsync(int householdId, int choreId, int subtaskId, string? title, bool? isDone, int? sortOrder, CancellationToken ct = default);
+    Task<ChoreSubtaskDto> UpdateAsync(int householdId, int choreId, int subtaskId, int actingUserId, string? title, bool? isDone, int? sortOrder, CancellationToken ct = default);
+
+    /// <summary>
+    /// Re-orders a chore's checklist: sets <c>SortOrder = index</c> for each id in <paramref name="orderedSubtaskIds"/>
+    /// in ONE write (mirrors <c>IRoomService.ReorderAsync</c>). Household+chore scoped (M1); ids not belonging
+    /// to the chore are ignored. Versionless — never touches <c>Chore.Version</c>.
+    /// </summary>
+    Task ReorderAsync(int householdId, int choreId, IReadOnlyList<int> orderedSubtaskIds, CancellationToken ct = default);
 
     /// <summary>Deletes a checklist item.</summary>
     /// <exception cref="ChoreNotFoundException">No such subtask in the household/chore.</exception>

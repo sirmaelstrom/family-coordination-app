@@ -94,7 +94,7 @@ public class ChoreBoardService(
             .ToListAsync(cancellationToken))
             .GroupBy(s => s.ChoreId)
             .ToDictionary(g => g.Key, g => g.OrderBy(s => s.SortOrder).ThenBy(s => s.SubtaskId)
-                .Select(s => new ChoreSubtaskDto(s.SubtaskId, s.Title, s.IsDone, s.SortOrder)).ToList());
+                .Select(s => new ChoreSubtaskDto(s.SubtaskId, s.Title, s.IsDone, s.SortOrder, s.CompletedByUserId, s.CompletedAt)).ToList());
 
         // Project each chore once; reuse the computed dueness for both the per-chore DTO and the rollups so
         // a chore's dueness is computed in exactly one place (no divergence between the card and the room
@@ -168,7 +168,7 @@ public class ChoreBoardService(
         // mutations do, so the post-reset unchecked checklist is reflected without a board refetch).
         var subtasks = (chore.Subtasks ?? [])
             .OrderBy(s => s.SortOrder).ThenBy(s => s.SubtaskId)
-            .Select(s => new ChoreSubtaskDto(s.SubtaskId, s.Title, s.IsDone, s.SortOrder)).ToList();
+            .Select(s => new ChoreSubtaskDto(s.SubtaskId, s.Title, s.IsDone, s.SortOrder, s.CompletedByUserId, s.CompletedAt)).ToList();
         return ToDto(chore, dueness, isClaimStale, roster, completedCount: 0, subtasks);
     }
 

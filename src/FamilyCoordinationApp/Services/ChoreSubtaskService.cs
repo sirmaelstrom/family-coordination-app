@@ -67,7 +67,7 @@ public class ChoreSubtaskService(
         return ToDto(subtask);
     }
 
-    public async Task<ChoreSubtaskDto> UpdateAsync(int householdId, int choreId, int subtaskId, string? title, bool? isDone, int? sortOrder, CancellationToken ct = default)
+    public async Task<ChoreSubtaskDto> UpdateAsync(int householdId, int choreId, int subtaskId, int actingUserId, string? title, bool? isDone, int? sortOrder, CancellationToken ct = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(ct);
 
@@ -80,7 +80,22 @@ public class ChoreSubtaskService(
         }
         if (isDone is { } done)
         {
-            subtask.IsDone = done;
+            // Per-occurrence actor invariant (CompletedByUserId/CompletedAt non-null IFF IsDone==true):
+            //  • false->true  ⇒ stamp the acting user + UtcNow.
+            //  • ->false       ⇒ clear the actor.
+            //  • true->true    ⇒ no-op (preserve the original actor/time — re-stamping would churn CompletedAt).
+            if (done && !subtask.IsDone)
+            {
+                subtask.IsDone = true;
+                subtask.CompletedByUserId = actingUserId;
+                subtask.CompletedAt = UtcNow();
+            }
+            else if (!done)
+            {
+                subtask.IsDone = false;
+                subtask.CompletedByUserId = null;
+                subtask.CompletedAt = null;
+            }
         }
         if (sortOrder is { } order)
         {
@@ -90,6 +105,28 @@ public class ChoreSubtaskService(
         await context.SaveChangesAsync(ct);
 
         return ToDto(subtask);
+    }
+
+    public async Task ReorderAsync(int householdId, int choreId, IReadOnlyList<int> orderedSubtaskIds, CancellationToken ct = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
+
+        // Household+chore scoped (M1). Foreign ids in the list simply find no row (ignored), mirroring
+        // RoomService.ReorderAsync. One SaveChanges; never touches Chore.Version (versionless / LWW).
+        var subtasks = await context.ChoreSubtasks
+            .Where(s => s.HouseholdId == householdId && s.ChoreId == choreId && orderedSubtaskIds.Contains(s.SubtaskId))
+            .ToListAsync(ct);
+
+        for (var index = 0; index < orderedSubtaskIds.Count; index++)
+        {
+            var subtask = subtasks.FirstOrDefault(s => s.SubtaskId == orderedSubtaskIds[index]);
+            if (subtask is not null)
+            {
+                subtask.SortOrder = index;
+            }
+        }
+
+        await context.SaveChangesAsync(ct);
     }
 
     public async Task DeleteAsync(int householdId, int choreId, int subtaskId, CancellationToken ct = default)
@@ -126,5 +163,5 @@ public class ChoreSubtaskService(
     }
 
     private static ChoreSubtaskDto ToDto(ChoreSubtask s) =>
-        new(s.SubtaskId, s.Title, s.IsDone, s.SortOrder);
+        new(s.SubtaskId, s.Title, s.IsDone, s.SortOrder, s.CompletedByUserId, s.CompletedAt);
 }

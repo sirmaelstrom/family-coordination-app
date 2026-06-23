@@ -1,8 +1,9 @@
 <script lang="ts">
-  import type { ChoreDto, ColorTier, DueState, EffortTier, RecurrenceMode, RosterState } from '../types';
+  import type { ChoreDto, ChoreSubtaskDto, ColorTier, DueState, EffortTier, RecurrenceMode, RosterState } from '../types';
   import { boardStore, memberFor, roomFor } from '../state.svelte';
   import { showPhoto } from '../lightbox.svelte';
   import MemberAvatar from './MemberAvatar.svelte';
+  import { dndzone, type DndEvent } from 'svelte-dnd-action';
 
   // ───────────────────────────────────────────────────────────────────────
   // The shared chore card — used across every lens.
@@ -191,6 +192,42 @@
     newItemTitle = '';
   }
 
+  // ── Drag-reorder (svelte-dnd-action — the room-manager house pattern) ──────
+  // A local working list re-synced from the chore's subtasks except while a drag
+  // is in flight (a guard so a mid-drag board reload can't clobber the order). On
+  // drop we persist the new order via the versionless bulk reorder store path.
+  let checkRows = $state<ChoreSubtaskDto[]>([]);
+  let draggingChecklist = $state(false);
+  $effect(() => {
+    if (!draggingChecklist) checkRows = [...subtasks];
+  });
+
+  function handleChecklistConsider(e: CustomEvent<DndEvent<ChoreSubtaskDto>>) {
+    draggingChecklist = true;
+    checkRows = e.detail.items;
+  }
+  async function handleChecklistFinalize(e: CustomEvent<DndEvent<ChoreSubtaskDto>>) {
+    checkRows = e.detail.items;
+    const ordered = checkRows.map((s) => s.id);
+    try {
+      await boardStore.reorderSubtasks(chore.id, ordered);
+    } finally {
+      // Release the guard last so the resync lands on the persisted order.
+      draggingChecklist = false;
+    }
+  }
+
+  /** "Who ticked it" label for a done item — the member's initials (tooltip = name + when). */
+  function actorLabel(s: ChoreSubtaskDto): { initials: string; tooltip: string } | null {
+    if (!s.isDone || s.completedByUserId == null) return null;
+    const member = memberFor(s.completedByUserId);
+    if (!member) return null;
+    const when = formatDay(s.completedAt);
+    const you = s.completedByUserId === currentUserId;
+    const name = you ? 'you' : member.displayName;
+    return { initials: member.initials, tooltip: when ? `Done by ${name} · ${when}` : `Done by ${name}` };
+  }
+
   // ── Snooze / set-next-due (board quick-snooze) ───────────────────────────
   // The "Snooze" button reveals a small preset row; a preset or a picked date
   // calls onSnooze with the RAW request — the server resolves the floor date in
@@ -370,11 +407,26 @@
       <!--
         Per-chore checklist (Phase 14). Each row is a tappable checkbox + title;
         tapping toggles via the versionless store path. A subtle "×" removes the
-        item. The bottom row adds a new item (Enter or the + button). Subtasks are
-        a momentum aid only — they never gate the Done/Complete button.
+        item, and a done item shows "who ticked it". Rows drag to reorder
+        (svelte-dnd-action; persisted via the bulk reorder path). The add row sits
+        OUTSIDE the drag zone (every dndzone child is a draggable item). Subtasks
+        are a momentum aid only — they never gate the Done/Complete button.
       -->
-      <ul class="ch-checklist" aria-label="Checklist for {chore.name}">
-        {#each subtasks as s (s.id)}
+      <ul
+        class="ch-checklist"
+        aria-label="Checklist for {chore.name}"
+        use:dndzone={{
+          items: checkRows,
+          type: `subtasks-${chore.id}`,
+          flipDurationMs: 150,
+          dropTargetStyle: {},
+          delayTouchStart: 250,
+        }}
+        onconsider={handleChecklistConsider}
+        onfinalize={handleChecklistFinalize}
+      >
+        {#each checkRows as s (s.id)}
+          {@const actor = actorLabel(s)}
           <li class="ch-checkitem" class:ch-checkitem-done={s.isDone}>
             <button
               type="button"
@@ -387,6 +439,9 @@
               <span class="ch-check-box" aria-hidden="true">{s.isDone ? '✓' : ''}</span>
               <span class="ch-check-title">{s.title}</span>
             </button>
+            {#if actor}
+              <span class="ch-check-actor" title={actor.tooltip}>{actor.initials}</span>
+            {/if}
             <button
               type="button"
               class="ch-check-del"
@@ -399,34 +454,34 @@
             </button>
           </li>
         {/each}
-        <li class="ch-checkadd">
-          <input
-            type="text"
-            class="ch-checkadd-input"
-            bind:value={newItemTitle}
-            autocomplete="off"
-            placeholder="Add an item…"
-            aria-label="Add a checklist item"
-            onkeydown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                submitNewItem();
-              }
-            }}
-          />
-          <button
-            type="button"
-            class="ch-checkadd-btn"
-            data-action="subtask-add"
-            onclick={submitNewItem}
-            disabled={!newItemTitle.trim()}
-            title="Add item"
-            aria-label="Add checklist item"
-          >
-            ＋
-          </button>
-        </li>
       </ul>
+      <div class="ch-checkadd">
+        <input
+          type="text"
+          class="ch-checkadd-input"
+          bind:value={newItemTitle}
+          autocomplete="off"
+          placeholder="Add an item…"
+          aria-label="Add a checklist item"
+          onkeydown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              submitNewItem();
+            }
+          }}
+        />
+        <button
+          type="button"
+          class="ch-checkadd-btn"
+          data-action="subtask-add"
+          onclick={submitNewItem}
+          disabled={!newItemTitle.trim()}
+          title="Add item"
+          aria-label="Add checklist item"
+        >
+          ＋
+        </button>
+      </div>
     {/if}
 
     <div class="ch-card-foot">
@@ -1106,6 +1161,23 @@
   .ch-check-del:hover {
     background: var(--color-action-hover);
     color: var(--color-error);
+  }
+  /* "Who ticked it" tag — the actor's initials beside a done item. */
+  .ch-check-actor {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--color-text-muted);
+    background: var(--color-action-hover);
+    border-radius: 999px;
+    cursor: default;
   }
   .ch-checkadd {
     display: flex;

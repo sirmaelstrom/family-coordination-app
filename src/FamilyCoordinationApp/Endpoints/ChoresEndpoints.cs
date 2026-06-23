@@ -50,6 +50,7 @@ public static class ChoresEndpoints
 
         // Phase-14 checklist (subtasks): versionless / last-write-wins — NO version field on any of these.
         group.MapPost("/{choreId:int}/subtasks", CreateSubtask);
+        group.MapPut("/{choreId:int}/subtasks/reorder", ReorderSubtasks);
         group.MapPut("/{choreId:int}/subtasks/{subtaskId:int}", UpdateSubtask);
         group.MapDelete("/{choreId:int}/subtasks/{subtaskId:int}", DeleteSubtask);
 
@@ -526,11 +527,36 @@ public static class ChoresEndpoints
 
         try
         {
-            var dto = await svc.UpdateAsync(user.HouseholdId, choreId, subtaskId, req.Title, req.IsDone, req.SortOrder, ct);
+            // user.UserId is the "who ticked it" actor captured when this flips the item to done (M1).
+            var dto = await svc.UpdateAsync(user.HouseholdId, choreId, subtaskId, user.UserId, req.Title, req.IsDone, req.SortOrder, ct);
             return Results.Ok(dto);
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
+    }
+
+    private static async Task<IResult> ReorderSubtasks(
+        int choreId,
+        ReorderSubtasksRequest req,
+        ClaimsPrincipal principal,
+        IChoreSubtaskService svc,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
+        if (user is null) return Results.Unauthorized();
+
+        // The chore must exist in the household (else 404). Mirrors the subtask CRUD scoping (M1).
+        bool choreExists;
+        await using (var context = await dbFactory.CreateDbContextAsync(ct))
+        {
+            choreExists = await context.Chores
+                .AnyAsync(c => c.HouseholdId == user.HouseholdId && c.ChoreId == choreId, ct);
+        }
+        if (!choreExists) return Results.NotFound();
+
+        await svc.ReorderAsync(user.HouseholdId, choreId, req.OrderedSubtaskIds ?? new List<int>(), ct);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> DeleteSubtask(
@@ -977,6 +1003,9 @@ public static class ChoresEndpoints
 
     /// <summary>Patch a checklist item (Phase 14). Only the non-null fields apply. Versionless.</summary>
     public sealed record UpdateSubtaskRequest(string? Title, bool? IsDone, int? SortOrder);
+
+    /// <summary>Re-order a chore's checklist — the new order as a full list of subtask ids. Versionless.</summary>
+    public sealed record ReorderSubtasksRequest(List<int> OrderedSubtaskIds);
 
     public sealed record HandOffRequest(int? TargetUserId, uint Version);
 

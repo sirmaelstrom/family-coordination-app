@@ -361,6 +361,17 @@ export async function deleteSubtask(choreId: number, subtaskId: number): Promise
   await request<void>(`${CHORES_BASE}/${choreId}/subtasks/${subtaskId}`, { method: 'DELETE' });
 }
 
+/**
+ * Re-order a chore's checklist — the full new order as a list of subtask ids. PUT → 204.
+ * Versionless / atomic on the server (mirrors reorderRooms); SortOrder is set by list position.
+ */
+export async function reorderSubtasks(choreId: number, orderedSubtaskIds: number[]): Promise<void> {
+  await request<void>(`${CHORES_BASE}/${choreId}/subtasks/reorder`, {
+    method: 'PUT',
+    ...jsonBody({ orderedSubtaskIds }),
+  });
+}
+
 /** Upload a chore photo (multipart field name `file`) → { photoPath } to pass in create/complete. */
 export async function uploadChorePhoto(
   choreId: number,
