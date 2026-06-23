@@ -45,12 +45,13 @@
     mine: 'Mine',
     'needs-attention': 'All',
     rooms: 'Rooms',
+    recap: 'Recap',
     equity: 'Board load',
   };
 
   // The primary segmented filters (board filters) vs the secondary organizers.
   const PRIMARY: ChoreLensId[] = ['up-for-grabs', 'mine', 'needs-attention'];
-  const SECONDARY: ChoreLensId[] = ['rooms', 'equity'];
+  const SECONDARY: ChoreLensId[] = ['rooms', 'recap', 'equity'];
 
   let isActiveDefault = $derived(active === defaultLens);
 </script>

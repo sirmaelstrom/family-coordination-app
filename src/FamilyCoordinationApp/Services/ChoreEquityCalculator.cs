@@ -203,6 +203,19 @@ public class ChoreEquityCalculator
             return null;
         }
 
+        return WeekStartUtc(now, tz);
+    }
+
+    /// <summary>
+    /// The UTC instant of local-Monday 00:00 of the week CONTAINING <paramref name="now"/> (Monday-start week,
+    /// all math in the injected <paramref name="tz"/>; mirrors <c>MealPlanService.GetWeekStartDate</c>). Public
+    /// static so the weekly-recap trend can window arbitrary past weeks WITHOUT re-deriving the boundary math —
+    /// shift <paramref name="now"/> by ±7-day multiples and the result is each week's local Monday in UTC. This
+    /// is the SAME lower bound the <see cref="EquityWindow.Week"/> path uses, so recap weeks and the equity week
+    /// never diverge.
+    /// </summary>
+    public static DateTime WeekStartUtc(DateTime now, TimeZoneInfo tz)
+    {
         // Convert now to local calendar date in the injected timezone.
         var asUtc = DateTime.SpecifyKind(now, DateTimeKind.Utc);
         var localNow = TimeZoneInfo.ConvertTimeFromUtc(asUtc, tz);

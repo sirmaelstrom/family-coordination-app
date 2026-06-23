@@ -59,6 +59,8 @@ public static class ChoresEndpoints
         // v1.1 (WP-06): equity distribution lens + digest settings + dev backfill — all cookie-authed,
         // household-scoped via UserContextResolver (M1).
         group.MapGet("/equity", GetEquity);
+        // In-app weekly recap lens (digest content + week-over-week trend). Cookie-authed, household-scoped.
+        group.MapGet("/recap", GetRecap);
         group.MapGet("/digest-settings", GetDigestSettings);
         group.MapPut("/digest-settings", UpdateDigestSettings);
         group.MapPost("/seed-starter", SeedStarter);
@@ -806,6 +808,29 @@ public static class ChoresEndpoints
                 parsed = EquityWindow.Week;
                 return false;
         }
+    }
+
+    // ─── Weekly recap lens (in-app digest view + week-over-week trend) ────────────────
+
+    /// <summary>
+    /// GET /api/chores/recap?weeks=N — the in-app weekly recap (M1, household-scoped). Returns the SAME
+    /// current-week content the Discord digest posts (reusing <see cref="ChoreRecapService"/> over the shared
+    /// <c>DigestBuilder</c>/equity/status pieces) plus a week-over-week completion/point trend. Read-only — it
+    /// never sends to Discord or touches a webhook. <c>weeks</c> defaults to 8 and is clamped 1–26 by the service.
+    /// </summary>
+    private static async Task<IResult> GetRecap(
+        [FromQuery] int? weeks,
+        ClaimsPrincipal principal,
+        IChoreRecapService recapService,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
+        if (user is null) return Results.Unauthorized();
+
+        // HouseholdId comes from the resolved caller, never the client (M1). weeks is clamped in the service.
+        var dto = await recapService.GetRecapAsync(user.HouseholdId, weeks ?? 8, now: null, ct);
+        return Results.Ok(dto);
     }
 
     // ─── Digest settings (v1.1 WP-06) ────────────────────────────────────────────────

@@ -21,6 +21,7 @@ import type {
   ChoreDto,
   ChoreSubtaskDto,
   ChoreEquityDto,
+  ChoreRecapDto,
   EquityWindow,
   CapacityTier,
   RoomRollupDto,
@@ -51,6 +52,7 @@ import {
   setDefaultView,
   setCapacity,
   getEquity,
+  getRecap,
   type CreateChoreRequest,
   type UpdateChoreRequest,
   type CompleteRequest,
@@ -159,6 +161,24 @@ class BoardStore {
    *  App effect loads when `lens === 'equity' && !equityLoaded`; invalidation
    *  flips this back to false so the next view (or the active lens) reloads. */
   equityLoaded = $state(false);
+
+  // ── Recap lens (the second non-board fetcher — like equity, its own endpoint) ─
+  //
+  // The Recap lens reads a SEPARATE cached payload (GET /api/chores/recap): the
+  // current week's digest content + the week-over-week trend. Same lifecycle as
+  // equity — fetch-on-open (App.svelte $effect), and invalidated whenever a
+  // completion/snooze/edit shifts the underlying data (folded into
+  // `invalidateEquity`, since both caches go stale on the same events). All values
+  // are server-computed; NO client date math (MN9).
+
+  /** The cached recap payload. null until first loaded (or after invalidation+reload). */
+  recap = $state<ChoreRecapDto | null>(null);
+  /** True while a `loadRecap()` fetch is in flight. */
+  recapLoading = $state(false);
+  /** Human-readable recap error; null when healthy. */
+  recapError = $state<string | null>(null);
+  /** True once a recap fetch has resolved; invalidation flips it back so the App effect reloads. */
+  recapLoaded = $state(false);
 
   /**
    * The board refetch hook, wired by App.svelte (`store.setRefresh(loadBoard)`).
@@ -393,6 +413,41 @@ class BoardStore {
     this.equityLoaded = false;
     if (this.lens === 'equity') {
       void this.loadEquity();
+    }
+    // The recap reads the same completion-derived data, so it goes stale on the
+    // exact same events — cascade the invalidation (reloads now if recap is open).
+    this.invalidateRecap();
+  }
+
+  // ── Recap lens fetch + invalidation (mirrors equity) ──────────────────────
+
+  /**
+   * Fetch the recap payload (current week + week-over-week trend). Called by
+   * App.svelte's $effect when the recap lens is open and the cache is stale.
+   * Sets `recapLoaded` on success so the effect doesn't refetch every tick.
+   */
+  async loadRecap(): Promise<void> {
+    if (this.recapLoading) return;
+    this.recapLoading = true;
+    this.recapError = null;
+    try {
+      this.recap = await getRecap();
+      this.recapLoaded = true;
+    } catch (e) {
+      this.recapError =
+        e instanceof ApiError
+          ? `Couldn't load the recap (HTTP ${e.status}).`
+          : "Couldn't load the recap right now.";
+    } finally {
+      this.recapLoading = false;
+    }
+  }
+
+  /** Drop the cached recap; reload immediately if the recap lens is open. */
+  invalidateRecap(): void {
+    this.recapLoaded = false;
+    if (this.lens === 'recap') {
+      void this.loadRecap();
     }
   }
 
