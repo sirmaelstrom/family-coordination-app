@@ -111,19 +111,44 @@ public class ChoreSubtaskService(
     {
         await using var context = await dbFactory.CreateDbContextAsync(ct);
 
-        // Household+chore scoped (M1). Foreign ids in the list simply find no row (ignored), mirroring
-        // RoomService.ReorderAsync. One SaveChanges; never touches Chore.Version (versionless / LWW).
+        // Load ALL of the chore's subtasks (household+chore scoped, M1) and normalize to a CONTIGUOUS 0..N-1
+        // SortOrder over the full set — so a partial / duplicate-bearing / foreign-id client list can never
+        // leave duplicate or gapped SortOrder values (the server does not trust the client to send a clean
+        // permutation). The provided ids that belong to the chore come first (de-duplicated, in the given
+        // order), then any omitted subtasks in their current stable order; then renumber. O(N); one
+        // SaveChanges; never touches Chore.Version (versionless / LWW).
         var subtasks = await context.ChoreSubtasks
-            .Where(s => s.HouseholdId == householdId && s.ChoreId == choreId && orderedSubtaskIds.Contains(s.SubtaskId))
+            .Where(s => s.HouseholdId == householdId && s.ChoreId == choreId)
             .ToListAsync(ct);
-
-        for (var index = 0; index < orderedSubtaskIds.Count; index++)
+        if (subtasks.Count == 0)
         {
-            var subtask = subtasks.FirstOrDefault(s => s.SubtaskId == orderedSubtaskIds[index]);
-            if (subtask is not null)
+            return;
+        }
+
+        var byId = subtasks.ToDictionary(s => s.SubtaskId);
+        var ordered = new List<ChoreSubtask>(subtasks.Count);
+        var seen = new HashSet<int>();
+
+        foreach (var id in orderedSubtaskIds)
+        {
+            if (byId.TryGetValue(id, out var subtask) && seen.Add(id))
             {
-                subtask.SortOrder = index;
+                ordered.Add(subtask);
             }
+        }
+        // Any subtask the client omitted is appended in its current stable order, so `ordered` is always a
+        // full permutation of the chore's subtasks.
+        foreach (var subtask in subtasks.OrderBy(s => s.SortOrder).ThenBy(s => s.SubtaskId))
+        {
+            if (seen.Add(subtask.SubtaskId))
+            {
+                ordered.Add(subtask);
+            }
+        }
+
+        for (var index = 0; index < ordered.Count; index++)
+        {
+            ordered[index].SortOrder = index;
         }
 
         await context.SaveChangesAsync(ct);

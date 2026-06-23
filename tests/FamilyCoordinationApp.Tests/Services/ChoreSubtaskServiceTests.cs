@@ -299,17 +299,39 @@ public class ChoreSubtaskServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Reorder_IgnoresForeignIds()
+    public async Task Reorder_IgnoresForeignIds_AndRenumbersContiguously()
     {
         var a = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "A");
         var b = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "B");
 
-        // 9999 is not a subtask of this chore — it is skipped, and the present ids re-index by position.
+        // 9999 is not a subtask of this chore — it is skipped, and the present ids renumber CONTIGUOUSLY
+        // (no gap left by the foreign id).
         var act = async () => await _service.ReorderAsync(HouseholdId, _choreInHouseholdId, new[] { b.Id, 9999, a.Id });
         await act.Should().NotThrowAsync();
 
         (await ReloadAsync(b.Id))!.SortOrder.Should().Be(0);
-        (await ReloadAsync(a.Id))!.SortOrder.Should().Be(2);
+        (await ReloadAsync(a.Id))!.SortOrder.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Reorder_PartialList_AppendsOmitted_AndRenumbersWithoutDuplicates()
+    {
+        var a = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "A"); // sortOrder 0
+        var b = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "B"); // sortOrder 1
+        var c = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "C"); // sortOrder 2
+
+        // A buggy/partial client list with only one id (and a duplicate of it) must NOT leave duplicate
+        // SortOrders: the provided id goes first, the omitted ones append in current order, all renumbered.
+        await _service.ReorderAsync(HouseholdId, _choreInHouseholdId, new[] { c.Id, c.Id });
+
+        var orders = new[]
+        {
+            (await ReloadAsync(c.Id))!.SortOrder, // provided → 0
+            (await ReloadAsync(a.Id))!.SortOrder, // omitted, current order → 1
+            (await ReloadAsync(b.Id))!.SortOrder, // omitted, current order → 2
+        };
+        orders.Should().Equal(0, 1, 2);
+        orders.Should().OnlyHaveUniqueItems("normalization guarantees a contiguous, duplicate-free SortOrder");
     }
 
     // ---- DELETE -------------------------------------------------------------

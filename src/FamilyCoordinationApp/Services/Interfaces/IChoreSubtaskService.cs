@@ -32,9 +32,12 @@ public interface IChoreSubtaskService
     Task<ChoreSubtaskDto> UpdateAsync(int householdId, int choreId, int subtaskId, int actingUserId, string? title, bool? isDone, int? sortOrder, CancellationToken ct = default);
 
     /// <summary>
-    /// Re-orders a chore's checklist: sets <c>SortOrder = index</c> for each id in <paramref name="orderedSubtaskIds"/>
-    /// in ONE write (mirrors <c>IRoomService.ReorderAsync</c>). Household+chore scoped (M1); ids not belonging
-    /// to the chore are ignored. Versionless — never touches <c>Chore.Version</c>.
+    /// Re-orders a chore's checklist to a CONTIGUOUS 0..N-1 <c>SortOrder</c> in ONE write. The result is always
+    /// a full permutation of the chore's subtasks: the provided ids that belong to the chore are placed first
+    /// (de-duplicated, in the given order), then any OMITTED subtasks are appended in their current stable
+    /// order, and all rows are renumbered — so a partial / duplicate / foreign-id list can never leave
+    /// duplicate or gapped SortOrder. Household+chore scoped (M1); foreign ids are ignored. Versionless —
+    /// never touches <c>Chore.Version</c>.
     /// </summary>
     Task ReorderAsync(int householdId, int choreId, IReadOnlyList<int> orderedSubtaskIds, CancellationToken ct = default);
 
