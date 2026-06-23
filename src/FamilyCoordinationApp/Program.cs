@@ -113,6 +113,9 @@ builder.Services.AddSingleton<DigestBuilder>();
 builder.Services.AddScoped<IDigestSettingsService, DigestSettingsService>();
 builder.Services.AddScoped<IDigestService, DigestService>();
 builder.Services.AddScoped<IDigestSender, DiscordWebhookDigestSender>();
+// In-app weekly recap lens: read-only sibling of the digest (same DigestBuilder/equity/status pieces),
+// adds the week-over-week trend. No webhook, no send — just GET /api/chores/recap.
+builder.Services.AddScoped<IChoreRecapService, ChoreRecapService>();
 
 // Chore/Room HTTP endpoints serialize enum DTOs (colorTier/dueState/assignmentKind/rollup status) as
 // camelCase strings so responses match the island TS unions + the WP-05 board.json fixture (council M5/M11).

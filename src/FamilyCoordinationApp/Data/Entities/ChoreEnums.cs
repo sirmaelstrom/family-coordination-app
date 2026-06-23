@@ -122,6 +122,13 @@ public static class ChoreLens
     /// </summary>
     public const string Equity = "equity";
 
+    /// <summary>
+    /// The weekly-recap lens (in-app view of the Discord digest content + week-over-week trend). Canonical id
+    /// mirrored by the island <c>types.ts</c>/<c>CHORE_LENSES</c>. Including it in <see cref="All"/> lets a user
+    /// default their board onto Recap via <c>PATCH /api/chores/me/default-view</c>.
+    /// </summary>
+    public const string Recap = "recap";
+
     /// <summary>All valid lens ids, for allowlist validation.</summary>
     public static readonly IReadOnlyList<string> All = new[]
     {
@@ -129,7 +136,8 @@ public static class ChoreLens
         Rooms,
         UpForGrabs,
         Mine,
-        Equity
+        Equity,
+        Recap
     };
 }
 

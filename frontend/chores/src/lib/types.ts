@@ -157,7 +157,8 @@ export type ChoreLensId =
   | 'mine'
   | 'needs-attention'
   | 'rooms'
-  | 'equity';
+  | 'equity'
+  | 'recap';
 
 export const CHORE_LENSES: readonly ChoreLensId[] = [
   'up-for-grabs',
@@ -165,6 +166,7 @@ export const CHORE_LENSES: readonly ChoreLensId[] = [
   'needs-attention',
   'rooms',
   'equity',
+  'recap',
 ] as const;
 
 // ─── Equity lens DTO (FROZEN — mirrors WP-02 ChoreEquityDto EXACTLY) ─────────
@@ -239,6 +241,53 @@ export interface ChoreEquityDto {
    * GET (M7). The selector writes via PATCH /me/capacity (caller-scoped only — MN5).
    */
   callerCapacityTier: CapacityTier | null;
+}
+
+// ─── Weekly recap lens DTO (mirrors ChoreRecapDtos.cs EXACTLY) ───────────────
+// Served at GET /api/chores/recap?weeks=N. JSON keys are camelCase. The `current`
+// week is the SAME content the Discord digest posts (same headline/distribution/
+// falling-behind/up-for-grabs). `trend` is week-over-week totals, oldest→newest.
+//
+// ⚠ MN9: `weekStartLocal` is a date-only string ("YYYY-MM-DD") already resolved in
+//   the household timezone server-side. NEVER `new Date('YYYY-MM-DD')` on it — render
+//   the string, or parse parts manually. `sharePct` is PERCENT 0..100 (render direct).
+
+/** One member's line in the current-week distribution (no userId/mention — neutral). */
+export interface RecapMemberLineDto {
+  displayName: string;
+  points: number;
+  /** PERCENT 0..100 (e.g. 41.7). Render directly — no client `* 100`. */
+  sharePct: number;
+}
+
+/** The current week's assembled recap — identical to the Discord digest content. */
+export interface RecapWeekDto {
+  /** Local Monday of the week, "YYYY-MM-DD" (household tz; MN9 — do not Date-parse). */
+  weekStartLocal: string;
+  /** Collective, non-punitive headline. */
+  headline: string;
+  totalCompletions: number;
+  totalPoints: number;
+  distribution: RecapMemberLineDto[];
+  /** Names of chores Overdue/DueToday (attention list, not blame). */
+  fallingBehind: string[];
+  upForGrabsCount: number;
+}
+
+/** One week's totals in the week-over-week trend (totals only — no per-member split). */
+export interface RecapTrendPointDto {
+  /** Local Monday of the week, "YYYY-MM-DD" (household tz; MN9 — do not Date-parse). */
+  weekStartLocal: string;
+  totalCompletions: number;
+  totalPoints: number;
+  /** True for the in-progress current week (the last, partial bar). */
+  isCurrent: boolean;
+}
+
+/** Full recap payload: the current week + the week-over-week trend (oldest→newest). */
+export interface ChoreRecapDto {
+  current: RecapWeekDto;
+  trend: RecapTrendPointDto[];
 }
 
 // ─── Digest settings (WP-11 — mirrors WP-06 frozen contract EXACTLY) ─────────

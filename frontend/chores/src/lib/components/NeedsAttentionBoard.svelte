@@ -66,9 +66,10 @@
     'up-for-grabs': { head: 'Nothing up for grabs.', body: 'Every chore has someone on it. Nice.' },
     mine: { head: 'Nothing on your plate.', body: "You're not holding any chores right now." },
     'needs-attention': { head: 'All clear.', body: 'No active chores right now.' },
-    // The two organizers never render this board, but the map must be total.
+    // The organizers (rooms/equity/recap) never render this board, but the map must be total.
     rooms: { head: 'All clear.', body: 'No active chores right now.' },
     equity: { head: 'All clear.', body: 'No active chores right now.' },
+    recap: { head: 'All clear.', body: 'No active chores right now.' },
   };
   let emptyCopy = $derived(EMPTY_COPY[filterLens] ?? EMPTY_COPY['needs-attention']);
 </script>

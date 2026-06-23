@@ -8,6 +8,7 @@
   import NeedsAttentionBoard from './lib/components/NeedsAttentionBoard.svelte';
   import RoomsDashboard from './lib/components/RoomsDashboard.svelte';
   import EquityBoard from './lib/components/EquityBoard.svelte';
+  import RecapBoard from './lib/components/RecapBoard.svelte';
   import QuickAddSheet, { type QuickAddValue } from './lib/components/QuickAddSheet.svelte';
   import EditChoreSheet from './lib/components/EditChoreSheet.svelte';
   import HandOffPicker from './lib/components/HandOffPicker.svelte';
@@ -228,8 +229,33 @@
     // Track the window so a switch re-runs this effect.
     const _window = store.equityWindow;
     void _window;
-    if (store.lens === 'equity' && !store.equityLoaded && !store.equityLoading) {
+    // Guard on `!equityError` so a FAILED load does not auto-retry forever: on error
+    // `equityLoaded` stays false, so without this the effect would re-fire the moment
+    // `equityLoading` clears. The explicit Retry (and a window switch) clears the error.
+    if (
+      store.lens === 'equity' &&
+      !store.equityLoaded &&
+      !store.equityLoading &&
+      !store.equityError
+    ) {
       store.loadEquity();
+    }
+  });
+
+  // ── Recap fetch-on-open (a second cached fetcher, like equity — M11) ──────
+  // Load the recap payload when the Recap lens is open and the cache is stale.
+  // A user who defaulted onto Recap lands here on mount and loads it the same way.
+  // The store guards re-entrancy; invalidation (completions/snooze/edit) reloads it.
+  // `!recapError` guard: don't auto-retry a failed load in a loop — the Retry button
+  // (which clears the error) is the re-attempt path.
+  $effect(() => {
+    if (
+      store.lens === 'recap' &&
+      !store.recapLoaded &&
+      !store.recapLoading &&
+      !store.recapError
+    ) {
+      store.loadRecap();
     }
   });
 </script>
@@ -333,6 +359,19 @@
         onRetry={() => store.loadEquity()}
         onCapacity={(t) => store.saveCapacity(t)}
         savingCapacity={store.savingCapacity}
+      />
+    {:else if store.lens === 'recap'}
+      <!--
+        Recap lens — the in-app weekly recap (GET /api/chores/recap). The $effect
+        above fetches it on open; completions/snooze/edit invalidate it (folded into
+        invalidateEquity). Shows the SAME content the Discord digest posts plus the
+        week-over-week trend. Server values only; NO client date math (MN9).
+      -->
+      <RecapBoard
+        recap={store.recap}
+        loading={store.recapLoading}
+        error={store.recapError}
+        onRetry={() => store.loadRecap()}
       />
     {/if}
   {:else if !store.loading}

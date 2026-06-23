@@ -3,6 +3,7 @@ import type {
   ChoreDto,
   ChoreSubtaskDto,
   ChoreEquityDto,
+  ChoreRecapDto,
   EquityWindow,
   CapacityTier,
   RoomDto,
@@ -197,6 +198,14 @@ export async function getEquity(
   window: EquityWindow = 'week',
 ): Promise<ChoreEquityDto> {
   return request<ChoreEquityDto>(`${CHORES_BASE}/equity?window=${window}`);
+}
+
+// ─── Recap read (separate cached payload — like equity, its own endpoint) ─────
+// The in-app weekly recap (current-week digest content + week-over-week trend).
+// Read-only; `weeks` is the trend length (server clamps 1..26).
+
+export async function getRecap(weeks = 8): Promise<ChoreRecapDto> {
+  return request<ChoreRecapDto>(`${CHORES_BASE}/recap?weeks=${weeks}`);
 }
 
 // ─── Chore mutations (WP-11 wires these to optimistic UI + 409 retry) ───────
