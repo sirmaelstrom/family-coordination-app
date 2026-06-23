@@ -23,11 +23,23 @@ public interface IChoreSubtaskService
 
     /// <summary>
     /// Updates a checklist item — only the non-null fields are applied (title trimmed + validated if supplied).
-    /// No version check; touches ONLY the subtask row (never the chore).
+    /// No version check; touches ONLY the subtask row (never the chore). When <paramref name="isDone"/> flips
+    /// the item to done, <paramref name="actingUserId"/> is captured as the "who ticked it" actor (with a UTC
+    /// timestamp); un-ticking clears the actor. Per-occurrence invariant: actor set IFF IsDone == true.
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such subtask in the household/chore.</exception>
     /// <exception cref="ChoreValidationException">A supplied title is blank or too long.</exception>
-    Task<ChoreSubtaskDto> UpdateAsync(int householdId, int choreId, int subtaskId, string? title, bool? isDone, int? sortOrder, CancellationToken ct = default);
+    Task<ChoreSubtaskDto> UpdateAsync(int householdId, int choreId, int subtaskId, int actingUserId, string? title, bool? isDone, int? sortOrder, CancellationToken ct = default);
+
+    /// <summary>
+    /// Re-orders a chore's checklist to a CONTIGUOUS 0..N-1 <c>SortOrder</c> in ONE write. The result is always
+    /// a full permutation of the chore's subtasks: the provided ids that belong to the chore are placed first
+    /// (de-duplicated, in the given order), then any OMITTED subtasks are appended in their current stable
+    /// order, and all rows are renumbered — so a partial / duplicate / foreign-id list can never leave
+    /// duplicate or gapped SortOrder. Household+chore scoped (M1); foreign ids are ignored. Versionless —
+    /// never touches <c>Chore.Version</c>.
+    /// </summary>
+    Task ReorderAsync(int householdId, int choreId, IReadOnlyList<int> orderedSubtaskIds, CancellationToken ct = default);
 
     /// <summary>Deletes a checklist item.</summary>
     /// <exception cref="ChoreNotFoundException">No such subtask in the household/chore.</exception>

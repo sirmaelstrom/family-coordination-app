@@ -71,7 +71,10 @@ public class ChoreBoardDtoContractTests
                 RequiredCount: 1,
                 CompletedCount: 0,
                 Roster: [new RosterMemberDto(101, RosterState.In)],
-                Subtasks: [new ChoreSubtaskDto(1, "Sweep first", true, 0), new ChoreSubtaskDto(2, "Mop", false, 1)]),
+                Subtasks: [
+                    // A done item carries the actor stamp; an open item carries nulls (per-occurrence invariant).
+                    new ChoreSubtaskDto(1, "Sweep first", true, 0, 100, new DateTime(2026, 5, 27, 9, 0, 0, DateTimeKind.Utc)),
+                    new ChoreSubtaskDto(2, "Mop", false, 1, null, null)]),
 
             // Due today, assigned (sticky), in the Kitchen room.
             new(
@@ -264,11 +267,17 @@ public class ChoreBoardDtoContractTests
         // Roster member state serializes as a camelCase enum string ("assigned" | "in" | "done").
         firstChore["roster"]!.AsArray()[0]!.AsObject()["state"]!.GetValue<string>().Should().Be("in");
 
-        // Subtasks: a per-chore checklist item is { id, title, isDone, sortOrder } (camelCase), and an empty
-        // checklist serializes as []. Chore 1 carries two items; chore 2 carries none.
+        // Subtasks: a per-chore checklist item is { id, title, isDone, sortOrder, completedByUserId,
+        // completedAt } (camelCase), and an empty checklist serializes as []. Chore 1 carries two items;
+        // chore 2 carries none. The actor stamp is non-null IFF isDone is true (per-occurrence invariant).
         var firstSubtask = firstChore["subtasks"]!.AsArray()[0]!.AsObject();
-        firstSubtask.Select(kvp => kvp.Key).Should().BeEquivalentTo("id", "title", "isDone", "sortOrder");
+        firstSubtask.Select(kvp => kvp.Key).Should().BeEquivalentTo(
+            "id", "title", "isDone", "sortOrder", "completedByUserId", "completedAt");
         firstSubtask["isDone"]!.GetValue<bool>().Should().BeTrue();
+        firstSubtask["completedByUserId"]!.GetValue<int>().Should().Be(100);
+        var openSubtask = firstChore["subtasks"]!.AsArray()[1]!.AsObject();
+        openSubtask["completedByUserId"].Should().BeNull();
+        openSubtask["completedAt"].Should().BeNull();
 
         var assignedChore = root["chores"]!.AsArray()[1]!.AsObject();
         assignedChore["dueState"]!.GetValue<string>().Should().Be("dueToday");

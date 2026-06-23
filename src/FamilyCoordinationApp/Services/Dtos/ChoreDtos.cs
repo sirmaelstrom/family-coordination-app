@@ -76,10 +76,13 @@ public sealed record ChoreDto(
 
 /// <summary>
 /// A lightweight checklist item on a chore (Phase 14). Wire shape camelCase: <c>{ id, title, isDone,
-/// sortOrder }</c>. Versionless / last-write-wins — there is no concurrency token on this DTO. Embedded as
-/// <see cref="ChoreDto.Subtasks"/> on the board payload (Phase-14 Unit #2).
+/// sortOrder, completedByUserId, completedAt }</c>. Versionless / last-write-wins — there is no concurrency
+/// token on this DTO. Embedded as <see cref="ChoreDto.Subtasks"/> on the board payload (Phase-14 Unit #2).
+/// <para><see cref="CompletedByUserId"/> / <see cref="CompletedAt"/> are the "who ticked it" actor stamp
+/// (Phase-14 follow-up): non-null IFF <see cref="IsDone"/> is true (per-occurrence; cleared on untick + on the
+/// recurring reset). The userId resolves to a member client-side via the board's members list (no FK).</para>
 /// </summary>
-public sealed record ChoreSubtaskDto(int Id, string Title, bool IsDone, int SortOrder);
+public sealed record ChoreSubtaskDto(int Id, string Title, bool IsDone, int SortOrder, int? CompletedByUserId, DateTime? CompletedAt);
 
 /// <summary>
 /// A member's DERIVED state on a multi-person chore's named roster, for the current occurrence (rework).

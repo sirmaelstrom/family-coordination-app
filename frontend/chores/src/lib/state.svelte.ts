@@ -48,6 +48,7 @@ import {
   createSubtask,
   updateSubtask,
   deleteSubtask,
+  reorderSubtasks,
   seedStarter as apiSeedStarter,
   setDefaultView,
   setCapacity,
@@ -1136,16 +1137,54 @@ class BoardStore {
     const item = chore.subtasks.find((s) => s.id === subtaskId);
     if (!item) return;
     const previous = item.isDone;
-    item.isDone = isDone; // optimistic — must feel instant
+    const previousActor = item.completedByUserId;
+    const previousAt = item.completedAt;
+    // Optimistic — must feel instant. Show ME as the actor immediately on a tick; clear on untick.
+    // completedAt stays null until the authoritative DTO swaps in (the store builds NO Date — MN).
+    item.isDone = isDone;
+    item.completedByUserId = isDone ? this.currentUserId : null;
+    item.completedAt = null;
     try {
       const updated = await updateSubtask(choreId, subtaskId, { isDone });
       this.replaceSubtask(choreId, updated);
     } catch {
-      // Roll back the optimistic flip, then resync to be safe.
+      // Roll back the optimistic flip + actor, then resync to be safe.
       const cur = this.choreById(choreId)?.subtasks.find((s) => s.id === subtaskId);
-      if (cur) cur.isDone = previous;
+      if (cur) {
+        cur.isDone = previous;
+        cur.completedByUserId = previousActor;
+        cur.completedAt = previousAt;
+      }
       await this.reconcile();
       showToast({ message: "Couldn't update that item — the list was refreshed.", kind: 'info' });
+    }
+  }
+
+  /**
+   * Re-order a chore's checklist (versionless). Apply the new order in place (set each
+   * sortOrder to its index so the row order is stable), persist via the bulk reorder
+   * endpoint, and reconcile + calm toast on error. Does NOT touch pendingChoreIds.
+   */
+  async reorderSubtasks(choreId: number, orderedIds: number[]): Promise<void> {
+    if (!this.board) return;
+    const chore = this.choreById(choreId);
+    if (!chore) return;
+    const byId = new Map(chore.subtasks.map((s) => [s.id, s]));
+    const reordered = orderedIds
+      .map((id) => byId.get(id))
+      .filter((s): s is ChoreSubtaskDto => s !== undefined);
+    // Guard: if the id set doesn't line up (stale), just resync rather than risk dropping items.
+    if (reordered.length !== chore.subtasks.length) {
+      await this.reconcile();
+      return;
+    }
+    reordered.forEach((s, i) => (s.sortOrder = i)); // optimistic in-place
+    chore.subtasks = reordered;
+    try {
+      await reorderSubtasks(choreId, orderedIds);
+    } catch {
+      await this.reconcile();
+      showToast({ message: "Couldn't save the new order — the list was refreshed.", kind: 'info' });
     }
   }
 

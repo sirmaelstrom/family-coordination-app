@@ -102,11 +102,25 @@ public class ChoreSubtaskResetTests : IDisposable
                 Title = $"Item {order}",
                 IsDone = done,
                 SortOrder = order,
-                CreatedAt = NowBase
+                CreatedAt = NowBase,
+                // A done item carries the actor stamp (invariant: actor non-null IFF IsDone) so the reset
+                // assertions can verify it is cleared alongside IsDone.
+                CompletedByUserId = done ? Alice : null,
+                CompletedAt = done ? NowBase : null
             });
             order++;
         }
         await ctx.SaveChangesAsync();
+    }
+
+    private async Task<List<int?>> LoadActorsAsync(int choreId)
+    {
+        await using var ctx = new ApplicationDbContext(_options);
+        return await ctx.ChoreSubtasks
+            .Where(s => s.HouseholdId == HouseholdId && s.ChoreId == choreId)
+            .OrderBy(s => s.SortOrder)
+            .Select(s => s.CompletedByUserId)
+            .ToListAsync();
     }
 
     private async Task<List<bool>> LoadDoneFlagsAsync(int choreId)
@@ -145,6 +159,10 @@ public class ChoreSubtaskResetTests : IDisposable
 
         var flags = await LoadDoneFlagsAsync(created.ChoreId);
         flags.Should().AllBeEquivalentTo(false, "a satisfying completion of a recurring chore resets the checklist");
+
+        // The actor stamp clears alongside IsDone — a fresh occurrence has no "who ticked it" (invariant).
+        var actors = await LoadActorsAsync(created.ChoreId);
+        actors.Should().AllBeEquivalentTo((int?)null, "the reset clears the per-occurrence actor stamp");
     }
 
     // (b) Multi-person chore (RequiredCount=2): first (partial) contribution leaves subtasks untouched; the

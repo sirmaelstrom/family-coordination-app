@@ -67,7 +67,7 @@ public class ChoreSubtaskService(
         return ToDto(subtask);
     }
 
-    public async Task<ChoreSubtaskDto> UpdateAsync(int householdId, int choreId, int subtaskId, string? title, bool? isDone, int? sortOrder, CancellationToken ct = default)
+    public async Task<ChoreSubtaskDto> UpdateAsync(int householdId, int choreId, int subtaskId, int actingUserId, string? title, bool? isDone, int? sortOrder, CancellationToken ct = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(ct);
 
@@ -80,7 +80,22 @@ public class ChoreSubtaskService(
         }
         if (isDone is { } done)
         {
-            subtask.IsDone = done;
+            // Per-occurrence actor invariant (CompletedByUserId/CompletedAt non-null IFF IsDone==true):
+            //  • false->true  ⇒ stamp the acting user + UtcNow.
+            //  • ->false       ⇒ clear the actor.
+            //  • true->true    ⇒ no-op (preserve the original actor/time — re-stamping would churn CompletedAt).
+            if (done && !subtask.IsDone)
+            {
+                subtask.IsDone = true;
+                subtask.CompletedByUserId = actingUserId;
+                subtask.CompletedAt = UtcNow();
+            }
+            else if (!done)
+            {
+                subtask.IsDone = false;
+                subtask.CompletedByUserId = null;
+                subtask.CompletedAt = null;
+            }
         }
         if (sortOrder is { } order)
         {
@@ -90,6 +105,53 @@ public class ChoreSubtaskService(
         await context.SaveChangesAsync(ct);
 
         return ToDto(subtask);
+    }
+
+    public async Task ReorderAsync(int householdId, int choreId, IReadOnlyList<int> orderedSubtaskIds, CancellationToken ct = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
+
+        // Load ALL of the chore's subtasks (household+chore scoped, M1) and normalize to a CONTIGUOUS 0..N-1
+        // SortOrder over the full set — so a partial / duplicate-bearing / foreign-id client list can never
+        // leave duplicate or gapped SortOrder values (the server does not trust the client to send a clean
+        // permutation). The provided ids that belong to the chore come first (de-duplicated, in the given
+        // order), then any omitted subtasks in their current stable order; then renumber. O(N); one
+        // SaveChanges; never touches Chore.Version (versionless / LWW).
+        var subtasks = await context.ChoreSubtasks
+            .Where(s => s.HouseholdId == householdId && s.ChoreId == choreId)
+            .ToListAsync(ct);
+        if (subtasks.Count == 0)
+        {
+            return;
+        }
+
+        var byId = subtasks.ToDictionary(s => s.SubtaskId);
+        var ordered = new List<ChoreSubtask>(subtasks.Count);
+        var seen = new HashSet<int>();
+
+        foreach (var id in orderedSubtaskIds)
+        {
+            if (byId.TryGetValue(id, out var subtask) && seen.Add(id))
+            {
+                ordered.Add(subtask);
+            }
+        }
+        // Any subtask the client omitted is appended in its current stable order, so `ordered` is always a
+        // full permutation of the chore's subtasks.
+        foreach (var subtask in subtasks.OrderBy(s => s.SortOrder).ThenBy(s => s.SubtaskId))
+        {
+            if (seen.Add(subtask.SubtaskId))
+            {
+                ordered.Add(subtask);
+            }
+        }
+
+        for (var index = 0; index < ordered.Count; index++)
+        {
+            ordered[index].SortOrder = index;
+        }
+
+        await context.SaveChangesAsync(ct);
     }
 
     public async Task DeleteAsync(int householdId, int choreId, int subtaskId, CancellationToken ct = default)
@@ -126,5 +188,5 @@ public class ChoreSubtaskService(
     }
 
     private static ChoreSubtaskDto ToDto(ChoreSubtask s) =>
-        new(s.SubtaskId, s.Title, s.IsDone, s.SortOrder);
+        new(s.SubtaskId, s.Title, s.IsDone, s.SortOrder, s.CompletedByUserId, s.CompletedAt);
 }

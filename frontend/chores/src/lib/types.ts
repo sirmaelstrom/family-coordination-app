@@ -53,6 +53,10 @@ export interface ChoreSubtaskDto {
   title: string;
   isDone: boolean;
   sortOrder: number;
+  /** "Who ticked it" actor — non-null IFF isDone (per-occurrence). Resolve via membersById/memberFor. */
+  completedByUserId: number | null;
+  /** ISO-8601 UTC (Z) when it was ticked; null when not done. Server-stamped — build no Date client-side. */
+  completedAt: string | null;
 }
 
 export interface ChoreDto {

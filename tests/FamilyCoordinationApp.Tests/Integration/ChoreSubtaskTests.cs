@@ -24,8 +24,10 @@ public sealed class ChoreSubtaskTests(PostgresContainerFixture postgres) : IAsyn
     public async Task DisposeAsync() => await _factory.DisposeAsync();
 
     private sealed record Chore(int id, string name, uint version);
-    private sealed record Subtask(int id, string title, bool isDone, int sortOrder);
+    private sealed record Subtask(int id, string title, bool isDone, int sortOrder, int? completedByUserId, string? completedAt);
+    private sealed record ChoreWithSubtasks(int id, List<Subtask> subtasks);
     private sealed record Board(List<Chore> chores);
+    private sealed record BoardWithSubtasks(List<ChoreWithSubtasks> chores);
 
     private HttpClient ClientA => _factory.CreateClientAs(ChoresWebAppFactory.UserAEmail);
     private HttpClient ClientB => _factory.CreateClientAs(ChoresWebAppFactory.UserBEmail);
@@ -89,6 +91,56 @@ public sealed class ChoreSubtaskTests(PostgresContainerFixture postgres) : IAsyn
         // DELETE → 204.
         var del = await client.DeleteAsync($"/api/chores/{chore.id}/subtasks/{created.id}");
         del.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task Subtask_Tick_CapturesActor_ThenUntick_ClearsIt_ThroughHttp()
+    {
+        var client = ClientA;
+        var chore = await CreateFlexibleChoreAsync(client, "Actor checklist chore");
+
+        var createResp = await client.PostAsJsonAsync($"/api/chores/{chore.id}/subtasks", new { title = "Who ticks" }, Json);
+        var created = await createResp.Content.ReadFromJsonAsync<Subtask>(Json);
+        created!.completedByUserId.Should().BeNull("a freshly created item has no actor");
+
+        // Tick → the resolved caller is captured as the actor with a timestamp (invariant: actor IFF isDone).
+        var tick = await client.PutAsJsonAsync($"/api/chores/{chore.id}/subtasks/{created.id}", new { isDone = true }, Json);
+        tick.StatusCode.Should().Be(HttpStatusCode.OK);
+        var ticked = await tick.Content.ReadFromJsonAsync<Subtask>(Json);
+        ticked!.completedByUserId.Should().NotBeNull("ticking captures the acting user");
+        ticked.completedAt.Should().NotBeNullOrEmpty("ticking stamps a UTC time");
+
+        // Untick → the actor clears.
+        var untick = await client.PutAsJsonAsync($"/api/chores/{chore.id}/subtasks/{created.id}", new { isDone = false }, Json);
+        var unticked = await untick.Content.ReadFromJsonAsync<Subtask>(Json);
+        unticked!.completedByUserId.Should().BeNull("unticking clears the actor");
+        unticked.completedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Subtask_Reorder_PersistsNewOrder_ThroughHttp()
+    {
+        var client = ClientA;
+        var chore = await CreateFlexibleChoreAsync(client, "Reorder checklist chore");
+
+        var ids = new List<int>();
+        foreach (var title in new[] { "First", "Second", "Third" })
+        {
+            var resp = await client.PostAsJsonAsync($"/api/chores/{chore.id}/subtasks", new { title }, Json);
+            ids.Add((await resp.Content.ReadFromJsonAsync<Subtask>(Json))!.id);
+        }
+
+        // New order: Third, First, Second.
+        var reordered = new[] { ids[2], ids[0], ids[1] };
+        var reorder = await client.PutAsJsonAsync(
+            $"/api/chores/{chore.id}/subtasks/reorder", new { orderedSubtaskIds = reordered }, Json);
+        reorder.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // The board reflects the new SortOrder (ascending) — the projection orders by it.
+        var board = await client.GetFromJsonAsync<BoardWithSubtasks>("/api/chores/board", Json);
+        var onBoard = board!.chores.Single(c => c.id == chore.id);
+        onBoard.subtasks.OrderBy(s => s.sortOrder).Select(s => s.id)
+            .Should().Equal(reordered, "reorder persists SortOrder by list position");
     }
 
     [Fact]

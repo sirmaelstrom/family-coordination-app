@@ -393,7 +393,11 @@ public class ChoreService(
                     .ToListAsync(cancellationToken);
                 foreach (var subtask in doneSubtasks)
                 {
+                    // A fresh occurrence ⇒ clear the done flag AND the "who ticked it" actor stamp
+                    // (per-occurrence invariant: actor non-null IFF IsDone==true).
                     subtask.IsDone = false;
+                    subtask.CompletedByUserId = null;
+                    subtask.CompletedAt = null;
                 }
             }
         }

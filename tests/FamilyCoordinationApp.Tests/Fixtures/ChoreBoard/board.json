@@ -38,13 +38,17 @@
           "id": 1,
           "title": "Sweep first",
           "isDone": true,
-          "sortOrder": 0
+          "sortOrder": 0,
+          "completedByUserId": 100,
+          "completedAt": "2026-05-27T09:00:00Z"
         },
         {
           "id": 2,
           "title": "Mop",
           "isDone": false,
-          "sortOrder": 1
+          "sortOrder": 1,
+          "completedByUserId": null,
+          "completedAt": null
         }
       ]
     },

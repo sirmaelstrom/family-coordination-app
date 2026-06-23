@@ -18,6 +18,7 @@ public class ChoreSubtaskServiceTests : IDisposable
     private const int HouseholdId = 1;
     private const int OtherHouseholdId = 2;
     private const int Alice = 1;
+    private const int Bob = 2;
 
     private static readonly DateTime NowBase = new(2026, 6, 1, 12, 0, 0, DateTimeKind.Utc);
 
@@ -189,12 +190,58 @@ public class ChoreSubtaskServiceTests : IDisposable
     {
         var created = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "Toggle me");
 
-        var updated = await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, created.Id, title: null, isDone: true, sortOrder: null);
+        var updated = await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, created.Id, Alice, title: null, isDone: true, sortOrder: null);
         updated.IsDone.Should().BeTrue();
         (await ReloadAsync(created.Id))!.IsDone.Should().BeTrue();
 
-        var back = await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, created.Id, title: null, isDone: false, sortOrder: null);
+        var back = await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, created.Id, Alice, title: null, isDone: false, sortOrder: null);
         back.IsDone.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Update_Ticking_CapturesActor_AndUnticking_ClearsIt()
+    {
+        var created = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "Who did it");
+
+        // false -> true: stamp the acting user + UtcNow.
+        var ticked = await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, created.Id, Alice, title: null, isDone: true, sortOrder: null);
+        ticked.CompletedByUserId.Should().Be(Alice);
+        ticked.CompletedAt.Should().Be(NowBase);
+        var afterTick = await ReloadAsync(created.Id);
+        afterTick!.CompletedByUserId.Should().Be(Alice);
+        afterTick.CompletedAt.Should().Be(NowBase);
+
+        // -> false: clear the actor (per-occurrence invariant: actor set IFF IsDone).
+        var unticked = await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, created.Id, Alice, title: null, isDone: false, sortOrder: null);
+        unticked.CompletedByUserId.Should().BeNull();
+        unticked.CompletedAt.Should().BeNull();
+        var afterUntick = await ReloadAsync(created.Id);
+        afterUntick!.CompletedByUserId.Should().BeNull();
+        afterUntick.CompletedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Update_RetickingAlreadyDone_PreservesOriginalActor()
+    {
+        var created = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "Stable actor");
+        await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, created.Id, Alice, title: null, isDone: true, sortOrder: null);
+
+        // A second isDone:true write by a different user must NOT re-stamp (true->true is a no-op for the actor).
+        var again = await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, created.Id, Bob, title: null, isDone: true, sortOrder: null);
+        again.CompletedByUserId.Should().Be(Alice, "re-ticking an already-done item preserves the original actor");
+        again.CompletedAt.Should().Be(NowBase);
+    }
+
+    [Fact]
+    public async Task Update_RenameOnly_DoesNotTouchActor()
+    {
+        var created = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "Done item");
+        await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, created.Id, Alice, title: null, isDone: true, sortOrder: null);
+
+        // A title-only update (isDone == null) leaves the actor stamp intact.
+        var renamed = await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, created.Id, Bob, title: "Renamed", isDone: null, sortOrder: null);
+        renamed.CompletedByUserId.Should().Be(Alice);
+        renamed.CompletedAt.Should().Be(NowBase);
     }
 
     [Fact]
@@ -202,7 +249,7 @@ public class ChoreSubtaskServiceTests : IDisposable
     {
         var created = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "Old name");
 
-        var updated = await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, created.Id, title: "  New name  ", isDone: null, sortOrder: null);
+        var updated = await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, created.Id, Alice, title: "  New name  ", isDone: null, sortOrder: null);
         updated.Title.Should().Be("New name", "title is trimmed on update");
         (await ReloadAsync(created.Id))!.Title.Should().Be("New name");
     }
@@ -211,7 +258,7 @@ public class ChoreSubtaskServiceTests : IDisposable
     public async Task Update_BlankTitle_Throws()
     {
         var created = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "Valid");
-        var act = async () => await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, created.Id, title: "   ", isDone: null, sortOrder: null);
+        var act = async () => await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, created.Id, Alice, title: "   ", isDone: null, sortOrder: null);
         await act.Should().ThrowAsync<ChoreValidationException>();
     }
 
@@ -219,7 +266,7 @@ public class ChoreSubtaskServiceTests : IDisposable
     public async Task Update_OnlyAppliesNonNullFields()
     {
         var created = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "Keep title");
-        await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, created.Id, title: null, isDone: true, sortOrder: 5);
+        await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, created.Id, Alice, title: null, isDone: true, sortOrder: 5);
 
         var reloaded = await ReloadAsync(created.Id);
         reloaded!.Title.Should().Be("Keep title", "a null title leaves the field unchanged");
@@ -230,8 +277,61 @@ public class ChoreSubtaskServiceTests : IDisposable
     [Fact]
     public async Task Update_MissingSubtask_ThrowsNotFound()
     {
-        var act = async () => await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, subtaskId: 9999, title: "X", isDone: null, sortOrder: null);
+        var act = async () => await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, subtaskId: 9999, actingUserId: Alice, title: "X", isDone: null, sortOrder: null);
         await act.Should().ThrowAsync<ChoreNotFoundException>();
+    }
+
+    // ---- REORDER ------------------------------------------------------------
+
+    [Fact]
+    public async Task Reorder_ReassignsSortOrderByPosition()
+    {
+        var a = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "A"); // sortOrder 0
+        var b = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "B"); // sortOrder 1
+        var c = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "C"); // sortOrder 2
+
+        // New order: C, A, B.
+        await _service.ReorderAsync(HouseholdId, _choreInHouseholdId, new[] { c.Id, a.Id, b.Id });
+
+        (await ReloadAsync(c.Id))!.SortOrder.Should().Be(0);
+        (await ReloadAsync(a.Id))!.SortOrder.Should().Be(1);
+        (await ReloadAsync(b.Id))!.SortOrder.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Reorder_IgnoresForeignIds_AndRenumbersContiguously()
+    {
+        var a = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "A");
+        var b = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "B");
+
+        // 9999 is not a subtask of this chore — it is skipped, and the present ids renumber CONTIGUOUSLY
+        // (no gap left by the foreign id).
+        var act = async () => await _service.ReorderAsync(HouseholdId, _choreInHouseholdId, new[] { b.Id, 9999, a.Id });
+        await act.Should().NotThrowAsync();
+
+        (await ReloadAsync(b.Id))!.SortOrder.Should().Be(0);
+        (await ReloadAsync(a.Id))!.SortOrder.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Reorder_PartialList_AppendsOmitted_AndRenumbersWithoutDuplicates()
+    {
+        var a = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "A"); // sortOrder 0
+        var b = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "B"); // sortOrder 1
+        var c = await _service.CreateAsync(HouseholdId, _choreInHouseholdId, "C"); // sortOrder 2
+
+        // A buggy/partial client list with only one id (and a duplicate of it) must NOT leave duplicate
+        // SortOrders: the provided id goes first, the omitted ones append in current order, all renumbered.
+        await _service.ReorderAsync(HouseholdId, _choreInHouseholdId, new[] { c.Id, c.Id });
+
+        var orders = new[]
+        {
+            (await ReloadAsync(c.Id))!.SortOrder, // provided → 0
+            (await ReloadAsync(a.Id))!.SortOrder, // omitted, current order → 1
+            (await ReloadAsync(b.Id))!.SortOrder, // omitted, current order → 2
+        };
+        orders.Should().Equal(0, 1, 2);
+        orders.Should().OnlyHaveUniqueItems("normalization guarantees a contiguous, duplicate-free SortOrder");
     }
 
     // ---- DELETE -------------------------------------------------------------
