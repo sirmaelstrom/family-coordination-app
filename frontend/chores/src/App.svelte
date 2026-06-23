@@ -229,7 +229,15 @@
     // Track the window so a switch re-runs this effect.
     const _window = store.equityWindow;
     void _window;
-    if (store.lens === 'equity' && !store.equityLoaded && !store.equityLoading) {
+    // Guard on `!equityError` so a FAILED load does not auto-retry forever: on error
+    // `equityLoaded` stays false, so without this the effect would re-fire the moment
+    // `equityLoading` clears. The explicit Retry (and a window switch) clears the error.
+    if (
+      store.lens === 'equity' &&
+      !store.equityLoaded &&
+      !store.equityLoading &&
+      !store.equityError
+    ) {
       store.loadEquity();
     }
   });
@@ -238,8 +246,15 @@
   // Load the recap payload when the Recap lens is open and the cache is stale.
   // A user who defaulted onto Recap lands here on mount and loads it the same way.
   // The store guards re-entrancy; invalidation (completions/snooze/edit) reloads it.
+  // `!recapError` guard: don't auto-retry a failed load in a loop — the Retry button
+  // (which clears the error) is the re-attempt path.
   $effect(() => {
-    if (store.lens === 'recap' && !store.recapLoaded && !store.recapLoading) {
+    if (
+      store.lens === 'recap' &&
+      !store.recapLoaded &&
+      !store.recapLoading &&
+      !store.recapError
+    ) {
       store.loadRecap();
     }
   });

@@ -371,6 +371,9 @@ class BoardStore {
     if (this.equityWindow === next) return;
     this.equityWindow = next;
     this.equityLoaded = false;
+    // A window switch is a fresh attempt — clear any prior error so the App effect
+    // (now guarded on `!equityError`) loads the new window instead of staying stuck.
+    this.equityError = null;
   }
 
   /**

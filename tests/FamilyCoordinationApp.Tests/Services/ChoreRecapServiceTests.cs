@@ -84,6 +84,31 @@ public class ChoreRecapServiceTests
             EffortPointsSnapshot = effortPoints,
         };
 
+    private void SeedChores(params Chore[] chores)
+    {
+        using var ctx = new ApplicationDbContext(_options);
+        ctx.Chores.AddRange(chores);
+        ctx.SaveChanges();
+    }
+
+    // An active, unassigned (up-for-grabs), OneOff chore due in the past (Overdue) unless snoozed forward.
+    private static Chore OverdueChore(int id, string name, DateOnly? snoozedUntil = null) =>
+        new()
+        {
+            HouseholdId = H1,
+            ChoreId = id,
+            Name = name,
+            RecurrenceMode = RecurrenceMode.OneOff,
+            AnchorDate = new DateOnly(2026, 6, 9),
+            SnoozedUntil = snoozedUntil,
+            EffortTier = EffortTier.Standard,
+            EffortPoints = 2,
+            Status = ChoreStatus.Active,
+            EnteredByUserId = Alice,
+            AssignmentKind = AssignmentKind.None,
+            CreatedAt = Utc0(2026, 6, 1),
+        };
+
     // ── WeekStartUtc (pure boundary math) ────────────────────────────────────────────
 
     [Fact]
@@ -211,5 +236,25 @@ public class ChoreRecapServiceTests
 
         (await svc.GetRecapAsync(H1, weeks: 0, now: Utc0(2026, 6, 17, 12))).Trend.Should().HaveCount(1);
         (await svc.GetRecapAsync(H1, weeks: 999, now: Utc0(2026, 6, 17, 12))).Trend.Should().HaveCount(26);
+    }
+
+    // ── Snoozed-chore exclusion (mirrors the digest, WP-04) ──────────────────────────
+
+    [Fact]
+    public async Task Current_ExcludesSnoozedChores_FromAttention()
+    {
+        // Two overdue, unassigned (up-for-grabs) chores; one is snoozed into the future. now = 2026-06-17, so
+        // SnoozedUntil 2026-06-30 makes the second chore read Scheduled/IsSnoozed (no pressure).
+        SeedChores(
+            OverdueChore(1, "Visible overdue"),
+            OverdueChore(2, "Snoozed overdue", snoozedUntil: new DateOnly(2026, 6, 30)));
+
+        var svc = CreateService(Utc);
+        var recap = await svc.GetRecapAsync(H1, weeks: 1, now: Utc0(2026, 6, 17, 12));
+
+        // The snoozed chore is excluded from BOTH the falling-behind list and the up-for-grabs count, exactly
+        // as the digest does — only the non-snoozed overdue chore is reported.
+        recap.Current.FallingBehind.Should().ContainSingle().Which.Should().Be("Visible overdue");
+        recap.Current.UpForGrabsCount.Should().Be(1);
     }
 }
