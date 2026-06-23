@@ -14,9 +14,10 @@
 @inject ISnackbar Snackbar
 @inject IJSRuntime JSRuntime
 @inject ISiteAdminService SiteAdminService
+@inject IHttpContextAccessor HttpContextAccessor
 @inject ILogger<MainLayout> Logger
 
-<MudThemeProvider @bind-IsDarkMode="@_isDarkMode" Theme="@_theme" />
+<MudThemeProvider @bind-IsDarkMode="@IsDarkMode" Theme="@_theme" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
@@ -24,12 +25,12 @@
 <MudLayout>
     <!-- Collapsible Drawer - hidden on mobile -->
     <MudHidden Breakpoint="Breakpoint.SmAndDown">
-        <MudDrawer @bind-Open="_drawerOpen" 
-                   ClipMode="DrawerClipMode.Always" 
+        <MudDrawer @bind-Open="DrawerOpen"
+                   ClipMode="DrawerClipMode.Always"
                    Elevation="2"
                    Variant="@DrawerVariant.Mini"
                    OpenMiniOnHover="false">
-            <NavMenu IsExpanded="_drawerOpen" />
+            <NavMenu IsExpanded="DrawerOpen" />
         </MudDrawer>
     </MudHidden>
 
@@ -54,10 +55,10 @@
                         <OnlineUsers CurrentUserId="@CurrentUserId" />
                     </MudHidden>
                     <SyncStatusIndicator />
-                    <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
+                    <MudIconButton Icon="@(IsDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
                                    Color="Color.Inherit"
                                    OnClick="ToggleDarkMode"
-                                   Title="@(_isDarkMode ? "Switch to light mode" : "Switch to dark mode")" />
+                                   Title="@(IsDarkMode ? "Switch to light mode" : "Switch to dark mode")" />
                     @if (IsSiteAdmin)
                     {
                         <MudHidden Breakpoint="Breakpoint.SmAndDown">
@@ -201,11 +202,18 @@
     
     [PersistentState(AllowUpdates = true)]
     public bool IsSiteAdmin { get; set; }
-    
+
+    // Theme/layout prefs: seeded server-side from cookies during the initial HTTP
+    // request and round-tripped via [PersistentState] so the prerendered DOM and the
+    // interactive circuit agree on the first paint — no post-hydration correction flash.
+    [PersistentState(AllowUpdates = true)]
+    public bool IsDarkMode { get; set; }
+
+    [PersistentState(AllowUpdates = true)]
+    public bool DrawerOpen { get; set; } = true;
+
     // Non-persisted state
     private System.Timers.Timer? _heartbeatTimer;
-    private bool _isDarkMode = false;
-    private bool _drawerOpen = true;
 
     private MudTheme _theme = new()
     {
@@ -258,42 +266,40 @@
 
     protected override async Task OnInitializedAsync()
     {
+        SeedPreferencesFromCookies();
         await LoadCurrentUser();
         StartHeartbeat();
         NavigationManager.LocationChanged += OnLocationChanged;
         PollingService.OnStatusChanged += OnSyncStatusChanged;
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    // Seed theme/drawer prefs from cookies during the initial HTTP request / prerender,
+    // BEFORE the first render, so the server paints the user's actual preference and the
+    // value survives into the interactive circuit via [PersistentState]. HttpContext is
+    // only non-null on that initial request; on interactive reconnect it's null, so we
+    // return early and the persisted value carries through — no flash either way.
+    private void SeedPreferencesFromCookies()
     {
-        if (firstRender)
+        var cookies = HttpContextAccessor.HttpContext?.Request.Cookies;
+        if (cookies is null)
         {
-            try
-            {
-                var darkMode = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "darkMode");
-                if (!string.IsNullOrEmpty(darkMode) && bool.TryParse(darkMode, out var isDark))
-                {
-                    _isDarkMode = isDark;
-                }
-                
-                var drawerOpen = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "drawerOpen");
-                if (!string.IsNullOrEmpty(drawerOpen) && bool.TryParse(drawerOpen, out var isOpen))
-                {
-                    _drawerOpen = isOpen;
-                }
-                
-                StateHasChanged();
-            }
-            catch
-            {
-                // localStorage not available
-            }
+            return;
+        }
+
+        if (cookies.TryGetValue("darkMode", out var darkMode) && bool.TryParse(darkMode, out var isDark))
+        {
+            IsDarkMode = isDark;
+        }
+
+        if (cookies.TryGetValue("drawerOpen", out var drawerOpen) && bool.TryParse(drawerOpen, out var isOpen))
+        {
+            DrawerOpen = isOpen;
         }
     }
 
     private void ToggleDrawer()
     {
-        _drawerOpen = !_drawerOpen;
+        DrawerOpen = !DrawerOpen;
         _ = SaveDrawerState();
     }
 
@@ -309,28 +315,36 @@
 
     private async Task SaveDrawerState()
     {
+        var value = DrawerOpen.ToString().ToLower();
         try
         {
-            await JSRuntime.InvokeVoidAsync("localStorage.setItem", "drawerOpen", _drawerOpen.ToString().ToLower());
+            // localStorage keeps the <head> pre-paint script working; the cookie is the
+            // new SSR/server-seed source of truth read by SeedPreferencesFromCookies().
+            await JSRuntime.InvokeVoidAsync("localStorage.setItem", "drawerOpen", value);
+            await JSRuntime.InvokeVoidAsync("setPrefCookie", "drawerOpen", value);
         }
         catch (Exception ex)
         {
             // JS interop can fail during prerendering or if JS is unavailable
-            Logger.LogDebug(ex, "Failed to save drawer state to localStorage");
+            Logger.LogDebug(ex, "Failed to save drawer state");
         }
     }
 
     private async Task ToggleDarkMode()
     {
-        _isDarkMode = !_isDarkMode;
+        IsDarkMode = !IsDarkMode;
+        var value = IsDarkMode.ToString().ToLower();
         try
         {
-            await JSRuntime.InvokeVoidAsync("localStorage.setItem", "darkMode", _isDarkMode.ToString().ToLower());
+            // localStorage keeps the <head> pre-paint script working; the cookie is the
+            // new SSR/server-seed source of truth read by SeedPreferencesFromCookies().
+            await JSRuntime.InvokeVoidAsync("localStorage.setItem", "darkMode", value);
+            await JSRuntime.InvokeVoidAsync("setPrefCookie", "darkMode", value);
         }
         catch (Exception ex)
         {
             // JS interop can fail during prerendering or if JS is unavailable
-            Logger.LogDebug(ex, "Failed to save dark mode preference to localStorage");
+            Logger.LogDebug(ex, "Failed to save dark mode preference");
         }
     }
 
