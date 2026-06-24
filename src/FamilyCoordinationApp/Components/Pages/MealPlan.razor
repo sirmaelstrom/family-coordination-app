@@ -1,217 +1,125 @@
 @page "/meal-plan"
 @using FamilyCoordinationApp.Data
-@using FamilyCoordinationApp.Data.Entities
-@using FamilyCoordinationApp.Services
 @using FamilyCoordinationApp.Components.MealPlan
+@using Microsoft.AspNetCore.Components.Web
 @using Microsoft.EntityFrameworkCore
-@using MudBlazor
+@using Microsoft.JSInterop
+@using System.Security.Claims
 @attribute [Authorize]
-@implements IDisposable
+@implements IAsyncDisposable
 
-@inject IMealPlanService MealPlanService
-@inject IDialogService DialogService
+@inject IConfiguration Config
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
-@inject DataNotifier Notifier
+@inject IJSRuntime JS
+@inject IWebHostEnvironment HostEnv
 
-<PageTitle>Meal Plan - Family Kitchen</PageTitle>
+@*
+    Thin island host (strangler). Flag ON (MEAL_PLAN_USE_ISLAND=true) → mount the Svelte island; flag OFF →
+    the existing Blazor UI (<MealPlanBlazor/>) as the zero-regression fallback. Mirrors ShoppingList.razor /
+    Chores.razor. Flip the flag to switch; delete MealPlanBlazor once the island is the only path.
+*@
 
-<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
-    <MudText Typo="Typo.h4" Class="mb-4">Meal Plan</MudText>
+@if (_useIsland && _shell is not null)
+{
+    <PageTitle>Meal Plan - Family Kitchen</PageTitle>
 
-    <!-- IMPORTANT: Use explicit event handler, NOT @bind-WeekStartDate -->
-    <!-- @bind uses WeekStartDateChanged internally but doesn't trigger our reload logic -->
-    <MealPlanNavigation WeekStartDate="@_weekStartDate"
-                        WeekStartDateChanged="@HandleWeekChanged" />
+    <HeadContent>
+        <link rel="stylesheet" href="/islands/meal-plan/index.css?v=@IslandVersion" />
+    </HeadContent>
 
-    @if (_loading)
-    {
-        <MudProgressLinear Indeterminate="true" Class="my-4" />
-    }
-    else
-    {
-        <!-- Desktop: Calendar Grid (md and up) -->
-        <MudHidden Breakpoint="Breakpoint.SmAndDown">
-            <WeeklyCalendarView WeekStartDate="@_weekStartDate"
-                                Entries="@_entries"
-                                OnSlotClick="HandleSlotClick"
-                                OnRemoveEntry="HandleRemoveEntry"
-                                OnViewRecipe="HandleViewRecipe"
-                                OnViewCustomMeal="HandleViewCustomMeal" />
-        </MudHidden>
-
-        <!-- Mobile: List View (sm and down) -->
-        <MudHidden Breakpoint="Breakpoint.MdAndUp">
-            <WeeklyListView WeekStartDate="@_weekStartDate"
-                            Entries="@_entries"
-                            OnSlotClick="HandleSlotClick"
-                            OnRemoveEntry="HandleRemoveEntry"
-                            OnViewRecipe="HandleViewRecipe"
-                            OnViewCustomMeal="HandleViewCustomMeal" />
-        </MudHidden>
-    }
-</MudContainer>
+    <div id="meal-plan-root"
+         data-household-id="@_shell.HouseholdId"
+         data-user-id="@_shell.UserId"
+         data-user-name="@_shell.UserName"></div>
+}
+else
+{
+    <MealPlanBlazor />
+}
 
 @code {
-    private DateOnly _weekStartDate;
-    private List<MealPlanEntry> _entries = new();
-    private bool _loading = true;
-    private int _householdId;
-    private int _userId;
+    private bool _useIsland;
+    private ShellData? _shell;
+    private IJSObjectReference? _islandModule;
 
     protected override async Task OnInitializedAsync()
     {
-        Notifier.OnMealPlanChanged += OnDataChanged;
+        _useIsland = IsIslandEnabled();
+        if (!_useIsland) return;
 
-        // Get current week's Monday
-        var today = DateOnly.FromDateTime(DateTime.Today);
-        _weekStartDate = MealPlanService.GetWeekStartDate(today);
-
-        // Get user context
-        await LoadUserContextAsync();
-
-        await LoadMealPlanAsync();
-    }
-
-    private async Task LoadUserContextAsync()
-    {
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var email = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+        var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+        var userName = authState.User.FindFirst(ClaimTypes.Name)?.Value ?? string.Empty;
 
         await using var context = await DbFactory.CreateDbContextAsync();
         var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
-        if (user == null)
+        if (user is null)
         {
             throw new InvalidOperationException("User not found. Please log in again.");
         }
-        _householdId = user.HouseholdId;
-        _userId = user.Id;
+
+        _shell = new ShellData(user.HouseholdId, user.Id, userName);
     }
 
-    private void OnDataChanged(int householdId)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        // Security: Only respond to changes for our household
-        if (householdId != _householdId)
-            return;
-            
-        InvokeAsync(async () =>
-        {
-            await LoadMealPlanAsync();
-            StateHasChanged();
-        });
+        if (!firstRender || !_useIsland || _shell is null) return;
+
+        // Blazor enhanced navigation does not apply this page's <HeadContent>, so the island stylesheet is
+        // missing on in-app navigation. (Re)inject it here (idempotent) — OnAfterRender runs for both full
+        // loads and enhanced nav, so the island is styled either way.
+        await JS.InvokeVoidAsync("ensureIslandStylesheet", $"/islands/meal-plan/index.css?v={IslandVersion}");
+
+        // Load the Svelte bundle as an ES module, then call its exposed mounter. mountRoot is idempotent and
+        // re-mounts against the fresh <div id="meal-plan-root">.
+        _islandModule = await JS.InvokeAsync<IJSObjectReference>(
+            "import", $"/islands/meal-plan/index.js?v={IslandVersion}");
+        await JS.InvokeVoidAsync("MealPlanIsland.mount", "meal-plan-root");
     }
 
-    private async Task LoadMealPlanAsync()
-    {
-        _loading = true;
-        StateHasChanged();
+    // Cache-bust the island URLs per deploy via the published bundle's mtime (mirrors ShoppingList.razor).
+    private static string? _islandVersion;
+    private string IslandVersion => _islandVersion ??= ComputeIslandVersion();
 
+    private string ComputeIslandVersion()
+    {
         try
         {
-            var mealPlan = await MealPlanService.GetOrCreateMealPlanAsync(_householdId, _weekStartDate);
-            _entries = mealPlan.Entries.ToList();
+            var path = Path.Combine(HostEnv.WebRootPath, "islands", "meal-plan", "index.js");
+            return new DateTimeOffset(File.GetLastWriteTimeUtc(path)).ToUnixTimeSeconds().ToString();
         }
-        finally
+        catch
         {
-            _loading = false;
-            StateHasChanged();
-        }
-    }
-
-    // CRITICAL: This handler updates the week AND reloads data
-    // Called explicitly via WeekStartDateChanged="@HandleWeekChanged"
-    private async Task HandleWeekChanged(DateOnly newWeekStart)
-    {
-        _weekStartDate = newWeekStart;
-        await LoadMealPlanAsync();
-    }
-
-    private async Task HandleSlotClick((DateOnly Date, MealType MealType) slot)
-    {
-        var parameters = new DialogParameters<RecipePickerDialog>
-        {
-            { x => x.HouseholdId, _householdId },
-            { x => x.UserId, _userId }
-        };
-
-        var options = new DialogOptions
-        {
-            CloseOnEscapeKey = true,
-            BackdropClick = false,
-            MaxWidth = MaxWidth.Small,
-            FullWidth = true
-        };
-
-        var dialog = await DialogService.ShowAsync<RecipePickerDialog>("Select Meal", parameters, options);
-        var result = await dialog.Result;
-
-        if (result != null && !result.Canceled && result.Data is RecipePickerDialog.MealSelection selection)
-        {
-            await MealPlanService.AddMealAsync(
-                _householdId,
-                slot.Date,
-                slot.MealType,
-                selection.RecipeId,
-                selection.CustomMealName,
-                selection.Notes,
-                _userId);
-
-            await LoadMealPlanAsync();
+            return "0";
         }
     }
 
-    private async Task HandleRemoveEntry(MealPlanEntry entry)
+    private bool IsIslandEnabled()
     {
-        var confirmed = await DialogService.ShowMessageBox(
-            "Remove Meal",
-            $"Remove this meal from {entry.Date:MMM d}?",
-            yesText: "Remove",
-            cancelText: "Cancel");
-
-        if (confirmed == true)
+        var configValue = Config["MEAL_PLAN_USE_ISLAND"];
+        if (!string.IsNullOrEmpty(configValue))
         {
-            await MealPlanService.RemoveMealAsync(_householdId, entry.MealPlanId, entry.EntryId);
-            await LoadMealPlanAsync();
+            return configValue.Equals("true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        var envValue = Environment.GetEnvironmentVariable("MEAL_PLAN_USE_ISLAND");
+        return string.Equals(envValue, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_islandModule is null) return;
+        try
+        {
+            await JS.InvokeVoidAsync("MealPlanIsland.destroy", "meal-plan-root");
+            await _islandModule.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit already gone (user navigated away after disconnect) — nothing to clean up.
         }
     }
 
-    private async Task HandleViewRecipe(Recipe recipe)
-    {
-        var parameters = new DialogParameters<RecipeDetailDialog>
-        {
-            { x => x.Recipe, recipe }
-        };
-
-        var options = new DialogOptions
-        {
-            CloseOnEscapeKey = true,
-            MaxWidth = MaxWidth.Medium,
-            FullWidth = true
-        };
-
-        await DialogService.ShowAsync<RecipeDetailDialog>(recipe.Name, parameters, options);
-    }
-
-    private async Task HandleViewCustomMeal(MealPlanEntry entry)
-    {
-        var content = new List<string> { $"**{entry.CustomMealName}**" };
-        
-        if (!string.IsNullOrWhiteSpace(entry.Notes))
-        {
-            content.Add($"\n📝 Notes:\n{entry.Notes}");
-        }
-
-        content.Add($"\n📅 {entry.Date:dddd, MMMM d}");
-        content.Add($"🍽️ {entry.MealType}");
-
-        await DialogService.ShowMessageBox(
-            "Custom Meal",
-            (MarkupString)MarkdownHelper.ToSafeHtml(string.Join("\n", content)),
-            yesText: "Close");
-    }
-
-    public void Dispose()
-    {
-        Notifier.OnMealPlanChanged -= OnDataChanged;
-    }
+    private sealed record ShellData(int HouseholdId, int UserId, string UserName);
 }
