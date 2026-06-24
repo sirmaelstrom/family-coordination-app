@@ -1,0 +1,48 @@
+{
+  "recipeId": 10,
+  "name": "Overnight Oats",
+  "recipeType": "breakfast",
+  "description": "Creamy make-ahead oats.",
+  "instructions": "1. Combine oats and milk.\n2. Chill overnight.",
+  "instructionsHtml": "<ol><li>Combine oats and milk.</li><li>Chill overnight.</li></ol>",
+  "imagePath": "/uploads/1/oats.jpg",
+  "sourceUrl": "https://example.test/oats",
+  "prepTimeMinutes": 10,
+  "cookTimeMinutes": null,
+  "servings": 4,
+  "createdByName": "Alice A",
+  "createdByPictureUrl": "https://pic.test/alice.jpg",
+  "sharedFromHouseholdName": null,
+  "ingredients": [
+    {
+      "ingredientId": 1,
+      "quantity": 0.5,
+      "unit": "cup",
+      "name": "Rolled oats",
+      "category": "Pantry",
+      "notes": null,
+      "groupName": null,
+      "sortOrder": 0
+    },
+    {
+      "ingredientId": 2,
+      "quantity": 1,
+      "unit": "cup",
+      "name": "Milk",
+      "category": "Dairy",
+      "notes": "any kind",
+      "groupName": "For the base",
+      "sortOrder": 1
+    },
+    {
+      "ingredientId": 3,
+      "quantity": null,
+      "unit": null,
+      "name": "Pinch of salt",
+      "category": "Pantry",
+      "notes": null,
+      "groupName": null,
+      "sortOrder": 2
+    }
+  ]
+}

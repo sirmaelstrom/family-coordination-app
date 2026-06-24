@@ -1,0 +1,38 @@
+{
+  "recipes": [
+    {
+      "recipeId": 10,
+      "name": "Overnight Oats",
+      "recipeType": "breakfast",
+      "imagePath": "/uploads/1/oats.jpg",
+      "hasSourceUrl": true,
+      "createdByName": "Alice A",
+      "createdByPictureUrl": "https://pic.test/alice.jpg",
+      "ingredientPreview": ["Rolled oats", "Milk", "Honey"],
+      "ingredientCount": 5
+    },
+    {
+      "recipeId": 11,
+      "name": "Spaghetti Bolognese",
+      "recipeType": "main",
+      "imagePath": null,
+      "hasSourceUrl": false,
+      "createdByName": null,
+      "createdByPictureUrl": null,
+      "ingredientPreview": ["Spaghetti", "Beef", "Tomato"],
+      "ingredientCount": 8
+    },
+    {
+      "recipeId": 12,
+      "name": "Lemon Tart",
+      "recipeType": "dessert",
+      "imagePath": "/uploads/1/tart.jpg",
+      "hasSourceUrl": true,
+      "createdByName": "Amy A",
+      "createdByPictureUrl": null,
+      "ingredientPreview": [],
+      "ingredientCount": 0
+    }
+  ],
+  "favoriteRecipeIds": [10, 12]
+}
