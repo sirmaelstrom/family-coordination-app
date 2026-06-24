@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import type { MealPlanEntryDto, MealType, ShellContext } from './lib/types';
   import { mealPlanStore } from './lib/state.svelte';
   import { startLiveness, type LivenessHandle } from './lib/liveness';
@@ -118,17 +119,25 @@
   }
 
   $effect(() => {
-    store.init(ctx);
-    store.setRefresh(loadBoard);
+    // One-time mount setup. MUST run exactly once — `loadBoard()` synchronously
+    // reads `store.board`/`store.weekStart` (the spinner-on-first-load check), and
+    // its async `setBoard` REWRITES them, so WITHOUT untrack the effect would
+    // subscribe to the very state it updates → an infinite fetch→setBoard→re-run
+    // loop (~tens of req/s). `untrack` gives the body no reactive deps, so it runs
+    // once; liveness + the matchMedia listener drive all later refreshes.
+    untrack(() => {
+      store.init(ctx);
+      store.setRefresh(loadBoard);
 
-    mediaQuery = window.matchMedia('(min-width: 960px)');
-    syncMedia();
-    mediaQuery.addEventListener('change', syncMedia);
+      mediaQuery = window.matchMedia('(min-width: 960px)');
+      syncMedia();
+      mediaQuery.addEventListener('change', syncMedia);
 
-    loadBoard();
-    // Liveness: ~20s poll while visible + immediate refetch on refocus; pauses
-    // while hidden. NOT Blazor DataNotifier/PollingService (MN2).
-    liveness = startLiveness(() => store.reconcile());
+      loadBoard();
+      // Liveness: ~20s poll while visible + immediate refetch on refocus; pauses
+      // while hidden. NOT Blazor DataNotifier/PollingService (MN2).
+      liveness = startLiveness(() => store.reconcile());
+    });
 
     return () => {
       liveness?.stop();
