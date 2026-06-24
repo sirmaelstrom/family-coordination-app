@@ -87,6 +87,8 @@ builder.Services.AddScoped<IRecipeService, RecipeService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IDraftService, DraftService>();
 builder.Services.AddScoped<IMealPlanService, MealPlanService>();
+// Meal-plan island (strangler): read-only board + entry/recipe projection (mirrors IChoreBoardService).
+builder.Services.AddScoped<IMealPlanBoardService, MealPlanBoardService>();
 builder.Services.AddScoped<IShoppingListService, ShoppingListService>();
 builder.Services.AddScoped<UnitConverter>();
 builder.Services.AddScoped<IShoppingListGenerator, ShoppingListGenerator>();
@@ -396,6 +398,7 @@ app.MapRazorComponents<App>()
 app.MapShoppingListEndpoints();
 app.MapChoresEndpoints();
 app.MapRoomsEndpoints();
+app.MapMealPlanEndpoints();
 
 // Health check endpoint for Docker
 app.MapGet("/health", () => Results.Ok("healthy"));

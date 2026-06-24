@@ -1,0 +1,43 @@
+{
+  "weekStartDate": "2026-06-01",
+  "mealPlanId": 5,
+  "entries": [
+    {
+      "mealPlanId": 5,
+      "entryId": 1,
+      "date": "2026-06-01",
+      "mealType": "breakfast",
+      "recipe": {
+        "recipeId": 10,
+        "name": "Overnight Oats",
+        "imagePath": "/uploads/1/oats.jpg",
+        "recipeType": "breakfast"
+      },
+      "customMealName": null,
+      "notes": null
+    },
+    {
+      "mealPlanId": 5,
+      "entryId": 2,
+      "date": "2026-06-01",
+      "mealType": "dinner",
+      "recipe": {
+        "recipeId": 11,
+        "name": "Spaghetti Bolognese",
+        "imagePath": null,
+        "recipeType": "main"
+      },
+      "customMealName": null,
+      "notes": "Double batch for leftovers"
+    },
+    {
+      "mealPlanId": 5,
+      "entryId": 3,
+      "date": "2026-06-02",
+      "mealType": "lunch",
+      "recipe": null,
+      "customMealName": "Leftovers",
+      "notes": "Sunday's roast"
+    }
+  ]
+}

@@ -17,6 +17,15 @@ RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-f
 COPY frontend/chores/ ./
 RUN npm run build
 
+# Stage 1c: Build the Svelte meal-plan island (strangler; parallel to the others).
+# Emits ./dist/ which the .NET stage copies into wwwroot/islands/meal-plan/.
+FROM node:20-alpine AS mealplan-node-build
+WORKDIR /frontend
+COPY frontend/meal-plan/package.json frontend/meal-plan/package-lock.json* ./
+RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
+COPY frontend/meal-plan/ ./
+RUN npm run build
+
 # Stage 2: Build the .NET app.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
@@ -29,6 +38,7 @@ RUN dotnet restore FamilyCoordinationApp/FamilyCoordinationApp.csproj
 COPY src/FamilyCoordinationApp/ ./FamilyCoordinationApp/
 COPY --from=node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/shopping-list/
 COPY --from=chores-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/chores/
+COPY --from=mealplan-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/meal-plan/
 
 # Explicitly set working directory to project folder before publish
 WORKDIR /src/FamilyCoordinationApp

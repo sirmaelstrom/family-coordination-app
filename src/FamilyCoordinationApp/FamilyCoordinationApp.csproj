@@ -53,6 +53,23 @@
           SkipUnchangedFiles="true" />
   </Target>
 
+  <!--
+    Copy the built meal-plan island into wwwroot before build (strangler). Run `npm run build` in
+    frontend/meal-plan/ first (or let the Docker build do it via the mealplan-node-build stage). If dist/
+    doesn't exist, the target is skipped silently and the island endpoint 404s — MealPlan.razor renders the
+    Blazor fallback via the MEAL_PLAN_USE_ISLAND toggle. Parallel to CopyChoresIsland.
+  -->
+  <Target Name="CopyMealPlanIsland"
+          BeforeTargets="AssignTargetPaths"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\meal-plan\dist')">
+    <ItemGroup>
+      <_MealPlanIslandFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\meal-plan\dist\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_MealPlanIslandFiles)"
+          DestinationFiles="@(_MealPlanIslandFiles->'$(MSBuildThisFileDirectory)wwwroot\islands\meal-plan\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.4.0" />
     <PackageReference Include="blazor-dragdrop" Version="2.6.1" />
