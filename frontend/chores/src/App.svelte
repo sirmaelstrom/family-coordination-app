@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import type { ChoreDto, ShellContext } from './lib/types';
   import { getBoard, uploadChorePhoto, createSubtask, ApiError } from './lib/api';
   import { boardStore } from './lib/state.svelte';
@@ -203,15 +204,22 @@
   }
 
   $effect(() => {
-    // Seed the viewing user's id once mounted (drives the Mine lens + "You").
-    store.currentUserId = ctx.userId;
-    // Wire the board refetch so the mutation layer can reconcile after a 409 /
-    // other 4xx (shares the SAME loader as liveness).
-    store.setRefresh(loadBoard);
-    loadBoard();
-    // Liveness: ~20s poll while visible + immediate refetch on refocus; pauses
-    // while hidden. NOT Blazor DataNotifier/PollingService (MN2).
-    liveness = startLiveness(loadBoard);
+    // One-time mount setup. MUST run exactly once — `loadBoard()` synchronously
+    // reads `store.board` (the spinner-on-first-load check) and its async
+    // `setBoard` REWRITES it, so WITHOUT untrack the effect would subscribe to the
+    // very state it updates → an infinite fetch→setBoard→re-run loop (~tens of
+    // req/s). `untrack` gives the body no reactive deps; liveness drives refreshes.
+    untrack(() => {
+      // Seed the viewing user's id once mounted (drives the Mine lens + "You").
+      store.currentUserId = ctx.userId;
+      // Wire the board refetch so the mutation layer can reconcile after a 409 /
+      // other 4xx (shares the SAME loader as liveness).
+      store.setRefresh(loadBoard);
+      loadBoard();
+      // Liveness: ~20s poll while visible + immediate refetch on refocus; pauses
+      // while hidden. NOT Blazor DataNotifier/PollingService (MN2).
+      liveness = startLiveness(loadBoard);
+    });
     return () => {
       liveness?.stop();
       liveness = null;
