@@ -89,6 +89,10 @@
   let hasTimeMeta = $derived(
     detail != null && (detail.prepTimeMinutes != null || detail.cookTimeMinutes != null),
   );
+  // Sort once when the detail changes (not on every render — e.g. each servings tick).
+  let sortedIngredients = $derived(
+    detail ? detail.ingredients.slice().sort((a, b) => a.sortOrder - b.sortOrder) : [],
+  );
 
   function ingredientLine(ing: RecipeIngredientFullDto): string {
     const parts: string[] = [];
@@ -214,7 +218,7 @@
       {#if detail.ingredients.length > 0}
         <h3 class="rc-detail-subhead">Ingredients</h3>
         <ul class="rc-detail-ingredients">
-          {#each [...detail.ingredients].sort((a, b) => a.sortOrder - b.sortOrder) as ing (ing.ingredientId)}
+          {#each sortedIngredients as ing (ing.ingredientId)}
             <li>{ingredientLine(ing)}</li>
           {/each}
         </ul>

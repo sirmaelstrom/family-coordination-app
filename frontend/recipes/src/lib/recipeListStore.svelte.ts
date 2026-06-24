@@ -49,6 +49,9 @@ class RecipeListStore {
 
   /** True once the first load has resolved — gates the skeleton so search/liveness don't reflash it. */
   private hasLoaded = false;
+  /** Monotonic load id — search / connected-switch / liveness / reconcile all call load(); a slower
+   *  older response must NOT overwrite a newer one, so each load only applies if it's still the latest. */
+  private loadSeq = 0;
   /** The list refetch hook (ListApp's loader), shared by liveness + error reconcile. */
   private refresh: (() => Promise<void>) | null = null;
 
@@ -89,20 +92,24 @@ class RecipeListStore {
    * refresh in place (no skeleton reflash).
    */
   async load(): Promise<void> {
+    const seq = ++this.loadSeq;
     try {
       if (!this.hasLoaded) this.loading = true;
       this.error = null;
       if (this.selectedConnectedId == null) {
         const dto = await listRecipes(this.query);
+        if (seq !== this.loadSeq) return; // a newer load superseded this one
         this.recipes = dto.recipes;
         this.favoriteIds = new Set(dto.favoriteRecipeIds);
       } else {
         const dto = await listConnectedRecipes(this.selectedConnectedId, this.query);
+        if (seq !== this.loadSeq) return;
         this.recipes = dto.recipes;
         this.favoriteIds = new Set();
       }
       this.hasLoaded = true;
     } catch (e) {
+      if (seq !== this.loadSeq) return; // don't surface an error from a superseded load
       this.error =
         e instanceof ApiError
           ? `Failed to load recipes (HTTP ${e.status}).`
@@ -110,7 +117,7 @@ class RecipeListStore {
             ? e.message
             : String(e);
     } finally {
-      this.loading = false;
+      if (seq === this.loadSeq) this.loading = false;
     }
   }
 

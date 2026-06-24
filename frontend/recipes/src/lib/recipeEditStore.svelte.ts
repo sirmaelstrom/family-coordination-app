@@ -110,6 +110,9 @@ class RecipeEditStore {
   private uidSeq = 1;
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedClearTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The in-flight draft-save (if any) — save()/delete() await it before deleteDraft so a late
+   *  autosave can't re-create the draft we just cleared (council race fix). */
+  private autosaveInFlight: Promise<void> | null = null;
 
   init(ctx: ShellContext): void {
     this.currentUserId = ctx.userId;
@@ -238,22 +241,46 @@ class RecipeEditStore {
   }
 
   private async runAutosave(): Promise<void> {
-    // The draft endpoint requires a non-blank name — skip until the recipe is named.
-    if (!this.form.name.trim()) {
+    // Skip if: the draft endpoint requires a non-blank name, OR a save/delete is underway (that path
+    // owns the draft lifecycle and will deleteDraft — autosaving now would resurrect it).
+    if (!this.form.name.trim() || this.saving || this.deleting) {
       this.autosaveStatus = 'none';
       return;
     }
     this.autosaveStatus = 'saving';
-    try {
-      await saveDraft(this.buildDraftBody());
-      this.autosaveStatus = 'saved';
-      if (this.savedClearTimer) clearTimeout(this.savedClearTimer);
-      this.savedClearTimer = setTimeout(() => {
-        if (this.autosaveStatus === 'saved') this.autosaveStatus = 'none';
-      }, SAVED_CLEAR_MS);
-    } catch {
-      this.autosaveStatus = 'none';
-      showToast({ message: "Couldn't save draft.", kind: 'info' });
+    const inFlight = (async () => {
+      try {
+        await saveDraft(this.buildDraftBody());
+        this.autosaveStatus = 'saved';
+        if (this.savedClearTimer) clearTimeout(this.savedClearTimer);
+        this.savedClearTimer = setTimeout(() => {
+          if (this.autosaveStatus === 'saved') this.autosaveStatus = 'none';
+        }, SAVED_CLEAR_MS);
+      } catch {
+        this.autosaveStatus = 'none';
+        showToast({ message: "Couldn't save draft.", kind: 'info' });
+      }
+    })();
+    this.autosaveInFlight = inFlight;
+    await inFlight;
+    if (this.autosaveInFlight === inFlight) this.autosaveInFlight = null;
+  }
+
+  /**
+   * Cancel a pending autosave timer and wait out any in-flight draft save. save()/delete() call this
+   * before deleteDraft so a late autosave PUT can't land after the delete and re-create the draft.
+   */
+  private async flushAutosave(): Promise<void> {
+    if (this.autosaveTimer) {
+      clearTimeout(this.autosaveTimer);
+      this.autosaveTimer = null;
+    }
+    if (this.autosaveInFlight) {
+      try {
+        await this.autosaveInFlight;
+      } catch {
+        /* the autosave handles its own errors */
+      }
     }
   }
 
@@ -367,7 +394,8 @@ class RecipeEditStore {
       showToast({ message: 'Recipe name is required.', kind: 'error' });
       return;
     }
-    this.saving = true;
+    this.saving = true; // set first: a timer-fired autosave now bails on the saving guard
+    await this.flushAutosave(); // wait out any in-flight draft save before we deleteDraft
     this.error = null;
     try {
       const body = this.buildWriteRequest();
@@ -396,7 +424,8 @@ class RecipeEditStore {
 
   async delete(): Promise<void> {
     if (this.recipeId == null) return;
-    this.deleting = true;
+    this.deleting = true; // set first: a timer-fired autosave now bails on the deleting guard
+    await this.flushAutosave(); // wait out any in-flight draft save before we deleteDraft
     try {
       await deleteRecipe(this.recipeId);
       await this.safeDeleteDraft();
