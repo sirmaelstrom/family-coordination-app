@@ -26,9 +26,29 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
         .Build();
 
     /// <summary>
-    /// The Npgsql connection string for the running throwaway database (the default <c>family_test</c> DB).
+    /// The Npgsql connection string for the running throwaway database (the default <c>family_test</c> DB),
+    /// with BOUNDED pooling applied (see <see cref="ApplyPoolLimits"/>). Per-DB strings from
+    /// <see cref="CreateDatabaseConnectionStringAsync"/> inherit these limits (they are built from this string).
     /// </summary>
-    public string ConnectionString => _container.GetConnectionString();
+    public string ConnectionString => ApplyPoolLimits(_container.GetConnectionString());
+
+    /// <summary>
+    /// Cap pool size and prune idle connections aggressively. The whole integration collection shares ONE
+    /// container, but each test class boots its own WebApplicationFactory against its own database — i.e. its
+    /// own Npgsql pool keyed by the connection string. With the defaults (100 max per pool, 300s idle lifetime)
+    /// the per-class pools accumulate idle connections across the suite and can blow past Postgres
+    /// <c>max_connections</c> (100) → <c>53300: sorry, too many clients already</c>. A small per-pool cap plus
+    /// fast idle pruning keeps the suite well under the cap (tests are sequential + low-concurrency, so a small
+    /// pool is ample — the 2-writer concurrency tests need only a couple of connections). Pruning only ever
+    /// closes IDLE connections, never in-use ones, so it cannot affect a running operation.
+    /// </summary>
+    private static string ApplyPoolLimits(string raw) =>
+        new NpgsqlConnectionStringBuilder(raw)
+        {
+            MaxPoolSize = 10,
+            ConnectionIdleLifetime = 2,
+            ConnectionPruningInterval = 1,
+        }.ConnectionString;
 
     /// <summary>
     /// Create a brand-new, uniquely-named database on the shared container and return its connection string.
