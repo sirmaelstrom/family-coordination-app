@@ -70,6 +70,24 @@
           SkipUnchangedFiles="true" />
   </Target>
 
+  <!--
+    Copy the built recipes island into wwwroot before build (strangler). Run `npm run build` in
+    frontend/recipes/ first (or let the Docker build do it via the recipes-node-build stage). If dist/
+    doesn't exist, the target is skipped silently and the island endpoint 404s — Recipes.razor /
+    RecipeEdit.razor render the Blazor fallback via the RECIPES_USE_ISLAND toggle. Parallel to
+    CopyMealPlanIsland (one bundle serves both the list and edit host pages).
+  -->
+  <Target Name="CopyRecipesIsland"
+          BeforeTargets="AssignTargetPaths"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\recipes\dist')">
+    <ItemGroup>
+      <_RecipesIslandFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\recipes\dist\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_RecipesIslandFiles)"
+          DestinationFiles="@(_RecipesIslandFiles->'$(MSBuildThisFileDirectory)wwwroot\islands\recipes\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.4.0" />
     <PackageReference Include="blazor-dragdrop" Version="2.6.1" />
