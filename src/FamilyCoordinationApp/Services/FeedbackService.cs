@@ -19,7 +19,8 @@ public sealed class FeedbackService(
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        IQueryable<Feedback> query = context.Feedbacks.Include(f => f.User);
+        // Read-only projection ⇒ AsNoTracking (council R6).
+        IQueryable<Feedback> query = context.Feedbacks.AsNoTracking().Include(f => f.User);
 
         // Dual-mode: site admin → all households; regular user → own household only (R-C1, server-scoped). A
         // non-admin with no resolved household sees nothing rather than everything.

@@ -20,14 +20,16 @@ public sealed class HouseholdRequestService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         // Pending-first, then newest (parity HouseholdAdmin.LoadData :196-199). Global read — no HouseholdId on the
-        // entity, gated by the endpoint's site-admin 403 (R-C8).
+        // entity, gated by the endpoint's site-admin 403 (R-C8). Read-only ⇒ AsNoTracking (council R6).
         var requests = await context.HouseholdRequests
+            .AsNoTracking()
             .OrderByDescending(r => r.Status == HouseholdRequestStatus.Pending)
             .ThenByDescending(r => r.RequestedAt)
             .ToListAsync(cancellationToken);
 
         // Include Users so the endpoint can project MemberCount = Users.Count (R-C8).
         var households = await context.Households
+            .AsNoTracking()
             .Include(h => h.Users)
             .OrderBy(h => h.Name)
             .ToListAsync(cancellationToken);
@@ -87,8 +89,21 @@ public sealed class HouseholdRequestService(
         // separate-context SeedDefaultCategoriesAsync, which committed independently.
         SeedData.AddDefaultCategories(context, household.Id);
 
-        await context.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            // The request's email is already a user (stale data, or a concurrent approve that created the user
+            // first). The transaction is NOT committed; returning here disposes `transaction` → full rollback (no
+            // orphan household), so the caller gets a clean 409 instead of an opaque 500 (council R1). The R-C3
+            // status guard already closes the common stale-poll race; this closes the true-concurrent-approve one.
+            logger.LogWarning(ex,
+                "Approve {RequestId} blocked: email {Email} already in use — rolled back", requestId, request.Email);
+            return new ApproveResult(ReviewOutcome.EmailInUse, null);
+        }
 
         logger.LogInformation(
             "Approved household request {RequestId}: {HouseholdName} for {Email} by {Admin}",
@@ -96,6 +111,10 @@ public sealed class HouseholdRequestService(
 
         return new ApproveResult(ReviewOutcome.Ok, household);
     }
+
+    /// <summary>True when an EF save failure is a PostgreSQL unique-constraint violation (SQLSTATE 23505).</summary>
+    private static bool IsUniqueViolation(DbUpdateException ex) =>
+        ex.InnerException is Npgsql.PostgresException { SqlState: "23505" };
 
     public async Task<ReviewOutcome> RejectAsync(int requestId, string? reason, string reviewerEmail, CancellationToken cancellationToken = default)
     {

@@ -186,24 +186,37 @@ public sealed class SettingsAdminEndpointTests(PostgresContainerFixture postgres
     }
 
     [Fact]
-    public async Task Approve_ForcedMidTransactionFailure_RollsBackFully_NoOrphanHousehold(/* R-C2 */)
+    public async Task Approve_ForcedMidTransactionFailure_RollsBackFully_NoOrphanHousehold_Returns409(/* R-C2 + council R1 */)
     {
         // Seed a pending request whose email is ALREADY a user (alice). Approve creates the household (1st
         // SaveChanges) then the user — which violates the unique Users.Email index on the 2nd SaveChanges, inside
-        // the same transaction. The whole unit of work must roll back: no orphan household, request still pending.
+        // the same transaction. The whole unit of work must roll back (R-C2 atomicity: no orphan household, request
+        // still pending) AND surface as a clean 409, not an opaque 500 (council R1).
         var requestId = await SeedRequestAsync("Rollback Household", ChoresWebAppFactory.UserAEmail, "Dup Owner");
 
-        using var scope = _factory.Services.CreateScope();
-        var service = scope.ServiceProvider.GetRequiredService<IHouseholdRequestService>();
-
-        var act = async () => await service.ApproveAsync(requestId, ChoresWebAppFactory.UserAEmail);
-        await act.Should().ThrowAsync<DbUpdateException>("the duplicate email violates the unique index mid-transaction");
+        var resp = await AdminClient.PostAsync($"{RequestsUrl}/{requestId}/approve", null);
+        resp.StatusCode.Should().Be(HttpStatusCode.Conflict, "a duplicate email is a clean 409, not a 500");
+        (await resp.Content.ReadAsStringAsync()).Should().Contain("already exists");
 
         await using var ctx = await DbFactory.CreateDbContextAsync();
         (await ctx.Households.AnyAsync(h => h.Name == "Rollback Household"))
             .Should().BeFalse("the household INSERT must roll back with the failed user INSERT (R-C2 atomicity)");
         (await ctx.HouseholdRequests.FindAsync(requestId))!.Status
             .Should().Be(HouseholdRequestStatus.Pending, "a fully-rolled-back approve leaves the request pending");
+    }
+
+    [Fact]
+    public async Task Reject_WithOversizedReason_Returns400(/* council R4: guard the 500-char column limit */)
+    {
+        var requestId = await SeedRequestAsync("Too Long Co", "tl@example.com", "TL Owner");
+
+        var resp = await AdminClient.PostAsJsonAsync($"{RequestsUrl}/{requestId}/reject",
+            new { reason = new string('x', 501) }, Json);
+        resp.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        (await ctx.HouseholdRequests.FindAsync(requestId))!.Status
+            .Should().Be(HouseholdRequestStatus.Pending, "a rejected (400) reject must not change the request");
     }
 
     [Fact]

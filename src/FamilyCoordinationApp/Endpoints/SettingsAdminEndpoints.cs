@@ -88,6 +88,8 @@ public static class SettingsAdminEndpoints
         {
             ReviewOutcome.NotFound => Results.NotFound(new { message = "Household request not found." }),
             ReviewOutcome.AlreadyReviewed => Results.Conflict(new { message = "This request has already been reviewed." }),
+            // Email already a user (stale data / concurrent approve) — a clean 409, not a 500 (council R1).
+            ReviewOutcome.EmailInUse => Results.Conflict(new { message = "Could not approve — a user with that email already exists." }),
             // Member count is exactly 1 (the request's user, just created in the transaction).
             _ => Results.Created("/api/settings/household-requests", new HouseholdSummaryDto(
                 result.CreatedHousehold!.Id, result.CreatedHousehold.Name, 1, ToIso(result.CreatedHousehold.CreatedAt))),
@@ -105,8 +107,14 @@ public static class SettingsAdminEndpoints
     {
         if (RequireSiteAdmin(principal, siteAdmin) is { } forbidden) return forbidden;
 
+        // Reason is optional (R-C7): a missing body / empty reason is fine. But guard the column's 500-char limit
+        // server-side so an oversized direct-API reason is a clean 400, not a varchar-overflow 500 (council R4).
+        if (req?.Reason is { Length: > 500 })
+        {
+            return Results.BadRequest(new { message = "Rejection reason must be 500 characters or fewer." });
+        }
+
         var reviewerEmail = principal.FindFirst(ClaimTypes.Email)?.Value ?? "";
-        // Reason is optional: a missing body (req null) or empty/whitespace reason is fine — do NOT 400 (R-C7).
         var outcome = await requestService.RejectAsync(id, req?.Reason, reviewerEmail, ct);
         return outcome switch
         {

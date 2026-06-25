@@ -46,12 +46,20 @@ public sealed record HouseholdAdminData(
     IReadOnlyList<HouseholdRequest> Requests,
     IReadOnlyList<Household> Households);
 
-/// <summary>Outcome of an approve/reject — maps to HTTP in the endpoint (NotFound ⇒ 404, AlreadyReviewed ⇒ 409).</summary>
+/// <summary>Outcome of an approve/reject — maps to HTTP in the endpoint (NotFound ⇒ 404, AlreadyReviewed/EmailInUse ⇒ 409).</summary>
 public enum ReviewOutcome
 {
     Ok,
     NotFound,
     AlreadyReviewed,
+
+    /// <summary>
+    /// Approve hit the unique <c>Users.Email</c> constraint: the request's email is already a user (a stale
+    /// data state, or a concurrent approve that won the race and created the user first). The transaction rolled
+    /// back fully — no orphan household. Maps to a clean 409 rather than letting the <c>DbUpdateException</c>
+    /// surface as a 500 (council R1). Only approve can produce this.
+    /// </summary>
+    EmailInUse,
 }
 
 /// <summary>The result of an approve: the <see cref="Outcome"/> plus the created household (only when Ok).</summary>
