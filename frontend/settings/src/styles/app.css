@@ -1,0 +1,38 @@
+@import './tokens.css';
+
+/*
+ * The island renders inside the host page, which also loads Bootstrap + MudBlazor.
+ * Bootstrap defines .row / .container globally, and those names collide with
+ * ambient island styles. We avoid the collision by prefixing all island class
+ * names with `rc-` (recipes) rather than overriding globals here.
+ */
+
+#settings-categories-root,
+#settings-users-root {
+  font-family: var(--font-family);
+  color: var(--color-text);
+  background: var(--color-background);
+  min-height: 100%;
+}
+
+#settings-categories-root,
+#settings-categories-root *,
+#settings-categories-root *::before,
+#settings-categories-root *::after,
+#settings-users-root,
+#settings-users-root *,
+#settings-users-root *::before,
+#settings-users-root *::after {
+  box-sizing: border-box;
+}
+
+/*
+ * Suppress the outer Blazor ReconnectModal while the island is on the page.
+ * It's a showModal() <dialog>, which blocks all interaction behind it —
+ * including our HTTP-driven island that doesn't need the circuit to work.
+ * This CSS only ships on the recipes pages (via <HeadContent>), so other
+ * pages still get the normal reconnect UX.
+ */
+#components-reconnect-modal {
+  display: none !important;
+}
