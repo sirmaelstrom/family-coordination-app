@@ -61,6 +61,7 @@ build_island() {
 build_island "./frontend/shopping-list" "shopping-list"
 build_island "./frontend/chores" "chores"
 build_island "./frontend/meal-plan" "meal-plan"
+build_island "./frontend/recipes" "recipes"
 echo ""
 
 # Step 3: Publish locally

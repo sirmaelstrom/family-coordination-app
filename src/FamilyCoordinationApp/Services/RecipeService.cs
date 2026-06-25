@@ -100,6 +100,7 @@ public class RecipeService(
         existing.Servings = recipe.Servings;
         existing.PrepTimeMinutes = recipe.PrepTimeMinutes;
         existing.CookTimeMinutes = recipe.CookTimeMinutes;
+        existing.RecipeType = recipe.RecipeType; // was silently dropped — fixed for the recipes island (spec D12)
         existing.UpdatedAt = DateTime.UtcNow;
         existing.UpdatedByUserId = recipe.UpdatedByUserId;
 
