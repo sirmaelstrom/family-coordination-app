@@ -36,7 +36,17 @@ Production traffic flow: `Internet → Cloudflare → <server-hostname> (host ng
 
 ## Environment Configuration
 
-Required env vars (set via `.env` on the server, generated from a secrets manager during deploy):
+### ⚠️ `.env` is regenerated on every deploy — never edit it directly
+
+`deploy.sh` rebuilds `.env` from scratch each run (`deploy.sh:107`): it does `cp .env.local .env`, then appends BWS secrets. **Any manual edit to `.env` on the host is silently wiped on the next deploy.** This has caused two confirmed prod incidents — the Shopping List feature flag (2026-04-16) and the `CHORES_DIGEST_TRIGGER_TOKEN` 503 (2026-06-23) — both re-fixed from memory, never encoded. This is the durable encoding.
+
+Durable env vars belong in one of two places:
+- **Non-secret values** (feature flags, app-specific tokens, `POSTGRES_DATA_PATH`) → `.env.local` (gitignored, host-only template that survives deploys).
+- **Secrets** (API keys, OAuth, certs) → injected via BWS in `deploy.sh` (`get_secret` + appended to `.env`).
+
+Never put a durable value directly in `.env`.
+
+Required env vars (assembled into `.env` on the server during deploy — `.env.local` template + BWS secrets):
 - `ConnectionStrings__DefaultConnection` — PostgreSQL connection string
 - `Authentication__Google__ClientId` — Google OAuth client ID
 - `Authentication__Google__ClientSecret` — Google OAuth client secret
