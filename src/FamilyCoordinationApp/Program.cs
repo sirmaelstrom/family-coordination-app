@@ -91,6 +91,8 @@ builder.Services.AddScoped<IMealPlanService, MealPlanService>();
 builder.Services.AddScoped<IMealPlanBoardService, MealPlanBoardService>();
 // Recipes island (strangler): the single recipe→DTO projection (list card / full detail / parsed ingredient).
 builder.Services.AddScoped<IRecipeProjectionService, RecipeProjectionService>();
+// Dashboard island (strangler): the read-only aggregate (chore summary + shopping summary + today's meals).
+builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IShoppingListService, ShoppingListService>();
 builder.Services.AddScoped<UnitConverter>();
 builder.Services.AddScoped<IShoppingListGenerator, ShoppingListGenerator>();
@@ -402,6 +404,7 @@ app.MapChoresEndpoints();
 app.MapRoomsEndpoints();
 app.MapMealPlanEndpoints();
 app.MapRecipesEndpoints();
+app.MapDashboardEndpoints();
 
 // Health check endpoint for Docker
 app.MapGet("/health", () => Results.Ok("healthy"));

@@ -1,0 +1,30 @@
+{
+  "greetingName": "Alex",
+  "householdName": "The Smiths",
+  "today": "2026-06-24",
+  "chores": {
+    "activeTotal": 7,
+    "overdue": 2,
+    "dueToday": 1,
+    "upForGrabs": 3
+  },
+  "shopping": {
+    "remaining": 5,
+    "checked": 3,
+    "total": 8
+  },
+  "todaysMeals": [
+    {
+      "mealType": "breakfast",
+      "displayName": "Overnight Oats"
+    },
+    {
+      "mealType": "lunch",
+      "displayName": "Leftovers"
+    },
+    {
+      "mealType": "dinner",
+      "displayName": "Unnamed meal"
+    }
+  ]
+}
