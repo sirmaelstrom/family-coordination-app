@@ -409,6 +409,7 @@ app.MapMealPlanEndpoints();
 app.MapRecipesEndpoints();
 app.MapDashboardEndpoints();
 app.MapSettingsEndpoints();
+app.MapSettingsConnectionsEndpoints();
 
 // Health check endpoint for Docker
 app.MapGet("/health", () => Results.Ok("healthy"));

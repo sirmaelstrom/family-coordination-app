@@ -123,6 +123,24 @@
           SkipUnchangedFiles="true" />
   </Target>
 
+  <!--
+    Copy the built connections island (cluster B: the household-connection invite flow) into wwwroot before build
+    (strangler). Run `npm run build` in frontend/connections/ first (or let the Docker build do it via the
+    connections-node-build stage). If dist/ doesn't exist, the target is skipped silently and the island endpoint
+    404s — Connections.razor renders the Blazor fallback via the SETTINGS_CONNECTIONS_USE_ISLAND toggle. Parallel
+    to CopySettingsIsland.
+  -->
+  <Target Name="CopyConnectionsIsland"
+          BeforeTargets="AssignTargetPaths"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\connections\dist')">
+    <ItemGroup>
+      <_ConnectionsIslandFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\connections\dist\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ConnectionsIslandFiles)"
+          DestinationFiles="@(_ConnectionsIslandFiles->'$(MSBuildThisFileDirectory)wwwroot\islands\connections\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.4.0" />
     <PackageReference Include="blazor-dragdrop" Version="2.6.1" />
