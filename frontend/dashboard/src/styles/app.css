@@ -1,0 +1,273 @@
+@import './tokens.css';
+
+/*
+ * The island renders inside the host page, which also loads Bootstrap + MudBlazor.
+ * Bootstrap defines .row / .container globally, and those names collide with
+ * ambient island styles. We avoid the collision by prefixing all island class
+ * names with `db-` (dashboard) rather than overriding globals here.
+ */
+
+#dashboard-root {
+  font-family: var(--font-family);
+  color: var(--color-text);
+  background: var(--color-background);
+  min-height: 100%;
+}
+
+#dashboard-root,
+#dashboard-root *,
+#dashboard-root *::before,
+#dashboard-root *::after {
+  box-sizing: border-box;
+}
+
+/*
+ * Suppress the outer Blazor ReconnectModal while the island is on the page.
+ * It's a showModal() <dialog>, which blocks all interaction behind it —
+ * including our HTTP-driven island that doesn't need the circuit to work.
+ * This CSS only ships on the dashboard page (via <HeadContent>), so other
+ * pages still get the normal reconnect UX.
+ */
+#components-reconnect-modal {
+  display: none !important;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * Dashboard layout — ported from Home.razor's inline <style> + the MudGrid/
+ * MudCard structure, re-scoped to `db-`. Kept in app.css (not a component
+ * <style>) so Svelte's unused-selector pruning can't drop a shared class.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+.db-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+/* Welcome banner */
+.db-welcome {
+  padding: 16px 0;
+  margin-bottom: 24px;
+}
+.db-welcome-title {
+  font-size: 1.5rem;
+  font-weight: 500;
+  margin: 0 0 4px;
+}
+.db-welcome-sub {
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+/* Card grid: 1 col mobile, 2 cols desktop (cards are md=6 in the Blazor grid). */
+.db-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+@media (min-width: 960px) {
+  .db-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Card shell (MudCard Elevation=2 / .dashboard-card) */
+.db-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 200px;
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+}
+.db-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+}
+.db-card-avatar {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--color-line-strong);
+  display: grid;
+  place-items: center;
+  font-size: 1.25rem;
+}
+.db-card-headings {
+  flex: 1;
+  min-width: 0;
+}
+.db-card-title {
+  font-size: 1.125rem;
+  font-weight: 500;
+  margin: 0;
+}
+.db-card-status {
+  margin: 2px 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+.db-card-arrow {
+  flex-shrink: 0;
+  padding: 8px;
+  border-radius: 50%;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.db-card-arrow:hover {
+  background: var(--color-action-hover);
+}
+.db-card-body {
+  flex: 1;
+  padding: 0 16px 16px;
+}
+
+/* Empty states + text link buttons */
+.db-empty {
+  padding: 16px 0;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+.db-empty-action {
+  text-align: center;
+}
+.db-link {
+  display: inline-block;
+  padding: 6px 8px;
+  color: var(--color-primary);
+  background: none;
+  border: none;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.db-link:hover {
+  text-decoration: underline;
+}
+
+/* Chore stats rows */
+.db-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.db-stat-icon {
+  font-size: 1rem;
+}
+.db-stat-overdue {
+  color: var(--color-error);
+}
+.db-stat-due {
+  color: var(--color-warning);
+}
+
+/* Shopping progress */
+.db-progress {
+  height: 8px;
+  margin: 12px 0;
+  border-radius: 999px;
+  background: var(--color-divider);
+  overflow: hidden;
+}
+.db-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-success);
+  transition: width 0.3s ease;
+}
+.db-progress-caption {
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+/* Today's meals groups */
+.db-meal-group {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-divider);
+}
+.db-meal-group:last-child {
+  border-bottom: none;
+}
+.db-meal-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.db-meal-item {
+  padding: 2px 0 2px 28px;
+}
+
+/* Quick actions */
+.db-quick {
+  margin-top: 24px;
+}
+.db-quick-title {
+  font-size: 1.125rem;
+  font-weight: 500;
+  margin: 0 0 12px;
+}
+.db-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+@media (min-width: 600px) {
+  .db-quick-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+.db-quick-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 56px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  color: var(--color-primary);
+  background: transparent;
+  text-decoration: none;
+  font-size: 0.9rem;
+  text-align: center;
+}
+.db-quick-btn:hover {
+  background: var(--color-action-hover);
+}
+
+/* Inline error + loading (mirrors the other islands) */
+.db-inline-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  color: var(--color-error);
+}
+.db-retry {
+  margin-left: auto;
+  padding: 4px 12px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.db-loading {
+  padding: 48px 0;
+  text-align: center;
+  color: var(--color-text-muted);
+}

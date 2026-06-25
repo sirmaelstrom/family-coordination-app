@@ -88,6 +88,23 @@
           SkipUnchangedFiles="true" />
   </Target>
 
+  <!--
+    Copy the built dashboard island into wwwroot before build (strangler). Run `npm run build` in
+    frontend/dashboard/ first (or let the Docker build do it via the dashboard-node-build stage). If dist/
+    doesn't exist, the target is skipped silently and the island endpoint 404s — Home.razor renders the
+    Blazor fallback (<HomeBlazor/>) via the DASHBOARD_USE_ISLAND toggle. Parallel to CopyRecipesIsland.
+  -->
+  <Target Name="CopyDashboardIsland"
+          BeforeTargets="AssignTargetPaths"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\dashboard\dist')">
+    <ItemGroup>
+      <_DashboardIslandFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\dashboard\dist\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_DashboardIslandFiles)"
+          DestinationFiles="@(_DashboardIslandFiles->'$(MSBuildThisFileDirectory)wwwroot\islands\dashboard\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.4.0" />
     <PackageReference Include="blazor-dragdrop" Version="2.6.1" />
