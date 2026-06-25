@@ -100,6 +100,11 @@ builder.Services.AddScoped<IHouseholdConnectionService, HouseholdConnectionServi
 // Settings island A (strangler): household member management lifted out of WhitelistAdmin.razor's direct EF
 // (the self / last-active / last-user guards are enforced here, server-side, and unit-testable).
 builder.Services.AddScoped<IHouseholdMemberService, HouseholdMemberService>();
+// Settings island C (strangler): household-request + feedback administration lifted out of HouseholdAdmin.razor /
+// FeedbackAdmin.razor's direct EF. The load-bearing parts are server-enforced here: the atomic approval
+// transaction (R-C2), the already-reviewed 409 guard (R-C3), and the feedback IDOR scope (R-C1).
+builder.Services.AddScoped<IHouseholdRequestService, HouseholdRequestService>();
+builder.Services.AddScoped<IFeedbackService, FeedbackService>();
 
 // Chores (Phase 10): room CRUD, chore writes/state-machine, and the board read model. Date math is
 // timezone-aware: the calculator is a stateless singleton; the household timezone (default America/Chicago,
@@ -410,6 +415,7 @@ app.MapRecipesEndpoints();
 app.MapDashboardEndpoints();
 app.MapSettingsEndpoints();
 app.MapSettingsConnectionsEndpoints();
+app.MapSettingsAdminEndpoints();
 
 // Health check endpoint for Docker
 app.MapGet("/health", () => Results.Ok("healthy"));

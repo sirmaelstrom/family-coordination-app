@@ -1,0 +1,51 @@
+{
+  "requests": [
+    {
+      "id": 3,
+      "householdName": "The Greens",
+      "displayName": "Pat Green",
+      "email": "pat@example.com",
+      "status": "pending",
+      "requestedAt": "2026-06-24T18:30:00Z",
+      "reviewedAt": null,
+      "reviewedBy": null,
+      "rejectionReason": null
+    },
+    {
+      "id": 2,
+      "householdName": "The Blues",
+      "displayName": "Sam Blue",
+      "email": "sam@example.com",
+      "status": "approved",
+      "requestedAt": "2026-06-20T09:15:00Z",
+      "reviewedAt": "2026-06-21T10:00:00Z",
+      "reviewedBy": "admin@example.com",
+      "rejectionReason": null
+    },
+    {
+      "id": 1,
+      "householdName": "The Reds",
+      "displayName": "Alex Red",
+      "email": "alex@example.com",
+      "status": "rejected",
+      "requestedAt": "2026-06-18T12:00:00Z",
+      "reviewedAt": "2026-06-19T08:30:00Z",
+      "reviewedBy": "admin@example.com",
+      "rejectionReason": "Duplicate of an existing household."
+    }
+  ],
+  "households": [
+    {
+      "householdId": 1,
+      "name": "La Familia",
+      "memberCount": 4,
+      "createdAt": "2026-01-15T00:00:00Z"
+    },
+    {
+      "householdId": 2,
+      "name": "The Blues",
+      "memberCount": 1,
+      "createdAt": "2026-06-21T10:00:00Z"
+    }
+  ]
+}

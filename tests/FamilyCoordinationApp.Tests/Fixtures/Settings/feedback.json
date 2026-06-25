@@ -1,0 +1,38 @@
+{
+  "isSiteAdmin": true,
+  "items": [
+    {
+      "id": 5,
+      "type": "bug",
+      "message": "The button doesn't work.",
+      "currentPage": "/recipes",
+      "isRead": false,
+      "isResolved": false,
+      "createdAt": "2026-06-24T20:00:00Z",
+      "authorName": "Jamie",
+      "authorDeleted": false
+    },
+    {
+      "id": 4,
+      "type": "featureRequest",
+      "message": "Please add dark mode.",
+      "currentPage": null,
+      "isRead": true,
+      "isResolved": false,
+      "createdAt": "2026-06-23T14:30:00Z",
+      "authorName": null,
+      "authorDeleted": true
+    },
+    {
+      "id": 3,
+      "type": "general",
+      "message": "Love the app!",
+      "currentPage": "/",
+      "isRead": true,
+      "isResolved": true,
+      "createdAt": "2026-06-22T08:00:00Z",
+      "authorName": null,
+      "authorDeleted": false
+    }
+  ]
+}
