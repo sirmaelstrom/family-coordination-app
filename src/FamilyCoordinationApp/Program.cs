@@ -97,6 +97,9 @@ builder.Services.AddScoped<IShoppingListService, ShoppingListService>();
 builder.Services.AddScoped<UnitConverter>();
 builder.Services.AddScoped<IShoppingListGenerator, ShoppingListGenerator>();
 builder.Services.AddScoped<IHouseholdConnectionService, HouseholdConnectionService>();
+// Settings island A (strangler): household member management lifted out of WhitelistAdmin.razor's direct EF
+// (the self / last-active / last-user guards are enforced here, server-side, and unit-testable).
+builder.Services.AddScoped<IHouseholdMemberService, HouseholdMemberService>();
 
 // Chores (Phase 10): room CRUD, chore writes/state-machine, and the board read model. Date math is
 // timezone-aware: the calculator is a stateless singleton; the household timezone (default America/Chicago,
@@ -405,6 +408,7 @@ app.MapRoomsEndpoints();
 app.MapMealPlanEndpoints();
 app.MapRecipesEndpoints();
 app.MapDashboardEndpoints();
+app.MapSettingsEndpoints();
 
 // Health check endpoint for Docker
 app.MapGet("/health", () => Results.Ok("healthy"));

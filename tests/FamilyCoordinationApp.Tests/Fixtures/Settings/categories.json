@@ -1,0 +1,33 @@
+{
+  "active": [
+    {
+      "categoryId": 1,
+      "name": "Produce",
+      "iconEmoji": "leafy_green",
+      "color": "#4CAF50",
+      "isDefault": true,
+      "sortOrder": 1,
+      "deletedAt": null
+    },
+    {
+      "categoryId": 2,
+      "name": "Snacks",
+      "iconEmoji": null,
+      "color": "#FF9800",
+      "isDefault": false,
+      "sortOrder": 2,
+      "deletedAt": null
+    }
+  ],
+  "deleted": [
+    {
+      "categoryId": 3,
+      "name": "Old Aisle",
+      "iconEmoji": null,
+      "color": "#808080",
+      "isDefault": false,
+      "sortOrder": 3,
+      "deletedAt": "2026-06-20T14:30:00Z"
+    }
+  ]
+}

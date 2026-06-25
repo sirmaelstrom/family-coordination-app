@@ -307,6 +307,16 @@ public class ChoresWebAppFactory(PostgresContainerFixture postgres) : WebApplica
 
         await context.SaveChangesAsync();
 
+        // The Households/Users above were inserted with EXPLICIT identity ids (1,2 / 1,2,3) for deterministic
+        // fixtures, which does NOT advance PostgreSQL's identity sequence. Any test that then creates a
+        // Household/User through the app (e.g. the settings add-member endpoint, or cluster-C's approve flow)
+        // would get a generated id colliding with a seeded one → PK violation. Resync both sequences to MAX(id)
+        // so generated ids continue past the seed. Harmless for tests that never create these rows.
+        await context.Database.ExecuteSqlRawAsync(
+            "SELECT setval(pg_get_serial_sequence('\"Users\"', 'Id'), (SELECT MAX(\"Id\") FROM \"Users\"))");
+        await context.Database.ExecuteSqlRawAsync(
+            "SELECT setval(pg_get_serial_sequence('\"Households\"', 'Id'), (SELECT MAX(\"Id\") FROM \"Households\"))");
+
         // ── v1.1 (WP-08): both households' digest settings — enabled, due at FixedNowUtc, distinct webhooks.
         // Seeded THROUGH the real settings service so the webhook ciphertext is encrypted with the host's
         // DataProtection keys (DigestService.GetDecryptedWebhookAsync must round-trip it at send time).

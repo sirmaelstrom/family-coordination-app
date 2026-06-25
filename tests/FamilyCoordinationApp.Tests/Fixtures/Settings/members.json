@@ -1,0 +1,17 @@
+{
+  "currentUserId": 1,
+  "members": [
+    {
+      "userId": 1,
+      "email": "alice@example.com",
+      "displayName": "Alice",
+      "isWhitelisted": true
+    },
+    {
+      "userId": 2,
+      "email": "bob@example.com",
+      "displayName": null,
+      "isWhitelisted": false
+    }
+  ]
+}
