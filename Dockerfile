@@ -62,6 +62,15 @@ RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-f
 COPY frontend/connections/ ./
 RUN npm run build
 
+# Stage 1h: Build the Svelte admin island (settings cluster C; parallel to the others).
+# Emits ./dist/ which the .NET stage copies into wwwroot/islands/admin/.
+FROM node:20-alpine AS admin-node-build
+WORKDIR /frontend
+COPY frontend/admin/package.json frontend/admin/package-lock.json* ./
+RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
+COPY frontend/admin/ ./
+RUN npm run build
+
 # Stage 2: Build the .NET app.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
@@ -79,6 +88,7 @@ COPY --from=recipes-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/i
 COPY --from=dashboard-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/dashboard/
 COPY --from=settings-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/settings/
 COPY --from=connections-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/connections/
+COPY --from=admin-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/admin/
 
 # Explicitly set working directory to project folder before publish
 WORKDIR /src/FamilyCoordinationApp

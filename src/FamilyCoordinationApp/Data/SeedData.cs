@@ -455,8 +455,19 @@ public static class SeedData
 
         if (existingCount > 0) return;
 
-        var defaultCategories = new[]
-        {
+        AddDefaultCategories(context, householdId);
+        await context.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Stages the nine default categories for a household on the GIVEN context, WITHOUT saving — so a caller can
+    /// fold them into a larger unit of work (cluster-C's atomic household-approval transaction, review R-C2:
+    /// household + user + request-status + categories must commit or roll back together). The household is assumed
+    /// brand-new/empty here; the "already seeded?" guard lives in <see cref="SeedDefaultCategoriesAsync"/>.
+    /// </summary>
+    public static void AddDefaultCategories(ApplicationDbContext context, int householdId)
+    {
+        context.Categories.AddRange(
             new Category { HouseholdId = householdId, CategoryId = 1, Name = "Meat", IconEmoji = "meat_on_bone", Color = "#b71c1c", SortOrder = 1, IsDefault = true },
             new Category { HouseholdId = householdId, CategoryId = 2, Name = "Produce", IconEmoji = "leafy_green", Color = "#2e7d32", SortOrder = 2, IsDefault = true },
             new Category { HouseholdId = householdId, CategoryId = 3, Name = "Dairy", IconEmoji = "cheese_wedge", Color = "#ffc107", SortOrder = 3, IsDefault = true },
@@ -465,10 +476,6 @@ public static class SeedData
             new Category { HouseholdId = householdId, CategoryId = 6, Name = "Frozen", IconEmoji = "snowflake", Color = "#03a9f4", SortOrder = 6, IsDefault = true },
             new Category { HouseholdId = householdId, CategoryId = 7, Name = "Bakery", IconEmoji = "bread", Color = "#8d6e63", SortOrder = 7, IsDefault = true },
             new Category { HouseholdId = householdId, CategoryId = 8, Name = "Beverages", IconEmoji = "cup_with_straw", Color = "#9c27b0", SortOrder = 8, IsDefault = true },
-            new Category { HouseholdId = householdId, CategoryId = 9, Name = "Other", IconEmoji = "package", Color = "#607d8b", SortOrder = 9, IsDefault = true }
-        };
-
-        context.Categories.AddRange(defaultCategories);
-        await context.SaveChangesAsync();
+            new Category { HouseholdId = householdId, CategoryId = 9, Name = "Other", IconEmoji = "package", Color = "#607d8b", SortOrder = 9, IsDefault = true });
     }
 }

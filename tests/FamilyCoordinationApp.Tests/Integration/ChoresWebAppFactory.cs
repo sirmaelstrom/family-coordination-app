@@ -118,6 +118,11 @@ public class ChoresWebAppFactory(PostgresContainerFixture postgres) : WebApplica
         builder.UseSetting("Authentication:Google:ClientId", "test-client-id");
         builder.UseSetting("Authentication:Google:ClientSecret", "test-client-secret");
 
+        // Settings island C: make Alice (household A) the site admin so the cluster-C tests can exercise the
+        // site-admin 403 gate (household-requests) + dual-mode feedback visibility. ISiteAdminService reads this
+        // from config; no existing test exercises site-admin behavior, so this is inert for everything else.
+        builder.UseSetting("SITE_ADMIN_EMAILS", UserAEmail);
+
         // The digest-run endpoint refuses (503) unless this is configured; tests assert valid/missing/wrong
         // token against this known value. The unconfigured-token (503) variant is exercised by
         // UnconfiguredDigestWebAppFactory, which overrides ConfiguredTriggerToken to "" (treated as unset).
