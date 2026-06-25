@@ -43,6 +43,7 @@ services:
       MEAL_PLAN_USE_ISLAND: ${MEAL_PLAN_USE_ISLAND:-false}
       RECIPES_USE_ISLAND: ${RECIPES_USE_ISLAND:-false}
       DASHBOARD_USE_ISLAND: ${DASHBOARD_USE_ISLAND:-false}
+      SETTINGS_HOUSEHOLD_USE_ISLAND: ${SETTINGS_HOUSEHOLD_USE_ISLAND:-false}
       # Chores v1.1 digest. The token gates POST /api/chores/digest/run (cron trigger); unset ⇒ endpoint
       # returns 503 (feature off). MUST be mapped here — .env is only used for ${VAR} substitution, not
       # auto-injected, so the documented go-live step (set CHORES_DIGEST_TRIGGER_TOKEN) is inert without this.

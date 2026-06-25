@@ -105,6 +105,24 @@
           SkipUnchangedFiles="true" />
   </Target>
 
+  <!--
+    Copy the built settings island (cluster A: Categories + Manage Users) into wwwroot before build
+    (strangler). Run `npm run build` in frontend/settings/ first (or let the Docker build do it via the
+    settings-node-build stage). If dist/ doesn't exist, the target is skipped silently and the island endpoint
+    404s — Categories.razor / WhitelistAdmin.razor render the Blazor fallback via the SETTINGS_HOUSEHOLD_USE_ISLAND
+    toggle. Parallel to CopyDashboardIsland (one bundle serves both host pages).
+  -->
+  <Target Name="CopySettingsIsland"
+          BeforeTargets="AssignTargetPaths"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\settings\dist')">
+    <ItemGroup>
+      <_SettingsIslandFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\settings\dist\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_SettingsIslandFiles)"
+          DestinationFiles="@(_SettingsIslandFiles->'$(MSBuildThisFileDirectory)wwwroot\islands\settings\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.4.0" />
     <PackageReference Include="blazor-dragdrop" Version="2.6.1" />
