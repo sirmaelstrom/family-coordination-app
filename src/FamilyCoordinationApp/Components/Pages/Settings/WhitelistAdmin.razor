@@ -1,290 +1,127 @@
 @page "/settings/users"
 @attribute [Authorize]
-@using Microsoft.EntityFrameworkCore
-@using System.Security.Claims
 @using FamilyCoordinationApp.Data
-@using FamilyCoordinationApp.Data.Entities
-@inject IDbContextFactory<ApplicationDbContext> DbFactory
-@inject ISnackbar Snackbar
-@inject AuthenticationStateProvider AuthStateProvider
-@inject IDialogService DialogService
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
+@using System.Security.Claims
 @implements IAsyncDisposable
 
-<PageTitle>Manage Users - Family Kitchen</PageTitle>
+@inject IConfiguration Config
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IJSRuntime JS
+@inject IWebHostEnvironment HostEnv
 
-<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-4">
-    <MudText Typo="Typo.h4" Class="mb-4">Manage Family Members</MudText>
+@*
+    Thin island host (strangler). Flag ON (SETTINGS_HOUSEHOLD_USE_ISLAND=true) → mount the Svelte settings
+    island (users view); flag OFF → the existing Blazor page (<WhitelistAdminBlazor/>) as the zero-regression
+    fallback. Mirrors Categories.razor — same bundle (/islands/settings), data-view="users".
+*@
 
-    @if (_isLoading)
+@* When the flag is ON we never render the Blazor fallback — not even during the brief async gap before
+   _shell resolves — because WhitelistAdminBlazor holds a long-lived DbContext that crashes if it's mounted
+   then disposed mid-load. The island-div condition is unchanged, so mounting is unaffected. *@
+@if (_useIsland)
+{
+    @if (_shell is not null)
     {
-        <MudProgressLinear Indeterminate="true" />
+        <PageTitle>Manage Users - Family Kitchen</PageTitle>
+
+        <HeadContent>
+            <link rel="stylesheet" href="/islands/settings/index.css?v=@IslandVersion" />
+        </HeadContent>
+
+        <div id="settings-users-root"
+             data-household-id="@_shell.HouseholdId"
+             data-user-id="@_shell.UserId"
+             data-user-name="@_shell.UserName"
+             data-view="users"></div>
     }
-    else
-    {
-        <MudPaper Class="pa-4 mb-4" Elevation="1">
-            <MudText Typo="Typo.h6" Class="mb-3">Add Family Member</MudText>
-
-            <MudGrid>
-                <MudItem xs="12" sm="9">
-                    <MudTextField @bind-Value="_newEmail"
-                                  Label="Email Address"
-                                  Placeholder="email@example.com"
-                                  Variant="Variant.Outlined"
-                                  InputType="InputType.Email" />
-                </MudItem>
-                <MudItem xs="12" sm="3">
-                    <MudButton Variant="Variant.Filled"
-                               Color="Color.Primary"
-                               Disabled="_isSubmitting"
-                               FullWidth="true"
-                               Style="height: 56px;"
-                               OnClick="AddUser">
-                        @if (_isSubmitting)
-                        {
-                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
-                        }
-                        Add
-                    </MudButton>
-                </MudItem>
-            </MudGrid>
-        </MudPaper>
-
-        <MudPaper Class="pa-4" Elevation="1">
-            <MudText Typo="Typo.h6" Class="mb-3">Current Members</MudText>
-
-            <MudTable Items="_users" Hover="true" Breakpoint="Breakpoint.Sm">
-                <HeaderContent>
-                    <MudTh>Email</MudTh>
-                    <MudTh>Name</MudTh>
-                    <MudTh>Status</MudTh>
-                    <MudTh Style="text-align: right;">Actions</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Email">
-                        @context.Email
-                        @if (context.Id == _currentUserId)
-                        {
-                            <MudChip T="string" Size="Size.Small" Color="Color.Info" Class="ml-2">You</MudChip>
-                        }
-                    </MudTd>
-                    <MudTd DataLabel="Name">@context.DisplayName</MudTd>
-                    <MudTd DataLabel="Status">
-                        @if (context.IsWhitelisted)
-                        {
-                            <MudChip T="string" Color="Color.Success" Size="Size.Small">Active</MudChip>
-                        }
-                        else
-                        {
-                            <MudChip T="string" Color="Color.Default" Size="Size.Small">Disabled</MudChip>
-                        }
-                    </MudTd>
-                    <MudTd DataLabel="Actions" Style="text-align: right;">
-                        <div class="d-flex justify-end gap-1">
-                            @if (context.Id != _currentUserId)
-                            {
-                                @if (context.IsWhitelisted && _users.Count(u => u.IsWhitelisted) > 1)
-                                {
-                                    <MudButton Variant="Variant.Text"
-                                               Color="Color.Warning"
-                                               Size="Size.Small"
-                                               OnClick="() => ToggleUser(context)">
-                                        Disable
-                                    </MudButton>
-                                }
-                                else if (!context.IsWhitelisted)
-                                {
-                                    <MudButton Variant="Variant.Text"
-                                               Color="Color.Success"
-                                               Size="Size.Small"
-                                               OnClick="() => ToggleUser(context)">
-                                        Enable
-                                    </MudButton>
-                                }
-                                
-                                @if (_users.Count > 1)
-                                {
-                                    <MudButton Variant="Variant.Text"
-                                               Color="Color.Error"
-                                               Size="Size.Small"
-                                               OnClick="() => DeleteUser(context)">
-                                        Delete
-                                    </MudButton>
-                                }
-                            }
-                            else
-                            {
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">Cannot modify self</MudText>
-                            }
-                        </div>
-                    </MudTd>
-                </RowTemplate>
-            </MudTable>
-        </MudPaper>
-    }
-</MudContainer>
+}
+else
+{
+    <WhitelistAdminBlazor />
+}
 
 @code {
-    private ApplicationDbContext _context = default!;
-    private List<User> _users = new();
-    private string _newEmail = "";
-    private bool _isLoading = true;
-    private bool _isSubmitting;
-    private int _householdId;
-    private int _currentUserId;
+    private bool _useIsland;
+    private ShellData? _shell;
+    private IJSObjectReference? _islandModule;
+
+    private const string RootId = "settings-users-root";
 
     protected override async Task OnInitializedAsync()
     {
-        _context = DbFactory.CreateDbContext();
-        await LoadUsers();
-    }
+        _useIsland = IsIslandEnabled();
+        if (!_useIsland) return;
 
-    private async Task LoadUsers()
-    {
-        _isLoading = true;
-        
-        // Get current user's household
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
         var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
-        
-        var currentUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
-        if (currentUser != null)
+        var userName = authState.User.FindFirst(ClaimTypes.Name)?.Value ?? string.Empty;
+
+        await using var context = await DbFactory.CreateDbContextAsync();
+        var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
+        if (user is null)
         {
-            _householdId = currentUser.HouseholdId;
-            _currentUserId = currentUser.Id;
-            _users = await _context.Users
-                .Where(u => u.HouseholdId == _householdId)
-                .OrderBy(u => u.Email)
-                .ToListAsync();
+            throw new InvalidOperationException("User not found. Please log in again.");
         }
-        _isLoading = false;
+
+        _shell = new ShellData(user.HouseholdId, user.Id, userName);
     }
 
-    private async Task AddUser()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (string.IsNullOrWhiteSpace(_newEmail))
-            return;
+        if (!firstRender || !_useIsland || _shell is null) return;
 
-        _isSubmitting = true;
+        await JS.InvokeVoidAsync("ensureIslandStylesheet", $"/islands/settings/index.css?v={IslandVersion}");
 
+        _islandModule = await JS.InvokeAsync<IJSObjectReference>(
+            "import", $"/islands/settings/index.js?v={IslandVersion}");
+        await JS.InvokeVoidAsync("SettingsIsland.mount", RootId);
+    }
+
+    private static string? _islandVersion;
+    private string IslandVersion => _islandVersion ??= ComputeIslandVersion();
+
+    private string ComputeIslandVersion()
+    {
         try
         {
-            var email = _newEmail.Trim().ToLowerInvariant();
-
-            // Check if user exists in THIS household (for re-enabling)
-            var existingUserInHousehold = await _context.Users
-                .FirstOrDefaultAsync(u => u.Email == email && u.HouseholdId == _householdId);
-
-            // Check if user exists in ANY other household (security check)
-            var existingUserElsewhere = await _context.Users
-                .FirstOrDefaultAsync(u => u.Email == email && u.HouseholdId != _householdId);
-
-            if (existingUserElsewhere != null)
-            {
-                // User belongs to another household - cannot add them
-                Snackbar.Add("This email is already associated with another household", Severity.Error);
-                return;
-            }
-
-            if (existingUserInHousehold != null)
-            {
-                if (!existingUserInHousehold.IsWhitelisted)
-                {
-                    existingUserInHousehold.IsWhitelisted = true;
-                    await _context.SaveChangesAsync();
-                    Snackbar.Add($"Re-enabled {email}", Severity.Success);
-                }
-                else
-                {
-                    Snackbar.Add("User already has access", Severity.Warning);
-                }
-            }
-            else
-            {
-                var newUser = new User
-                {
-                    HouseholdId = _householdId,
-                    Email = email,
-                    DisplayName = email.Split('@')[0],
-                    GoogleId = null,  // Set when user first logs in with Google
-                    IsWhitelisted = true,
-                    CreatedAt = DateTime.UtcNow
-                };
-                _context.Users.Add(newUser);
-                await _context.SaveChangesAsync();
-                Snackbar.Add($"Added {email} to whitelist", Severity.Success);
-            }
-
-            _newEmail = "";
-            await LoadUsers();
+            var path = Path.Combine(HostEnv.WebRootPath, "islands", "settings", "index.js");
+            return new DateTimeOffset(File.GetLastWriteTimeUtc(path)).ToUnixTimeSeconds().ToString();
         }
-        catch (Exception ex)
+        catch
         {
-            Snackbar.Add($"Failed to add user: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _isSubmitting = false;
+            return "0";
         }
     }
 
-    private async Task ToggleUser(User user)
+    private bool IsIslandEnabled()
     {
-        user.IsWhitelisted = !user.IsWhitelisted;
-        await _context.SaveChangesAsync();
-
-        var message = user.IsWhitelisted
-            ? $"Enabled {user.Email}"
-            : $"Disabled {user.Email}";
-        Snackbar.Add(message, Severity.Success);
-    }
-
-    private async Task DeleteUser(User user)
-    {
-        // Safety checks
-        if (user.Id == _currentUserId)
+        var configValue = Config["SETTINGS_HOUSEHOLD_USE_ISLAND"];
+        if (!string.IsNullOrEmpty(configValue))
         {
-            Snackbar.Add("You cannot delete yourself", Severity.Warning);
-            return;
+            return configValue.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
 
-        if (_users.Count <= 1)
-        {
-            Snackbar.Add("Cannot delete the last user in the household", Severity.Warning);
-            return;
-        }
-
-        // Confirmation dialog
-        var result = await DialogService.ShowMessageBox(
-            "Delete User",
-            $"Are you sure you want to permanently delete {user.DisplayName} ({user.Email})?\n\n" +
-            "This will:\n" +
-            "• Remove their account from the household\n" +
-            "• Keep their recipes (will show \"Deleted user\" as creator)\n" +
-            "• Keep their feedback submissions\n\n" +
-            "This action cannot be undone.",
-            yesText: "Delete",
-            cancelText: "Cancel");
-
-        if (result != true)
-            return;
-
-        try
-        {
-            // Delete the user - FK ON DELETE SET NULL will handle orphaned data
-            _context.Users.Remove(user);
-            await _context.SaveChangesAsync();
-
-            Snackbar.Add($"Deleted {user.Email}", Severity.Success);
-            await LoadUsers();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Failed to delete user: {ex.Message}", Severity.Error);
-        }
+        var envValue = Environment.GetEnvironmentVariable("SETTINGS_HOUSEHOLD_USE_ISLAND");
+        return string.Equals(envValue, "true", StringComparison.OrdinalIgnoreCase);
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _context.DisposeAsync();
+        if (_islandModule is null) return;
+        try
+        {
+            await JS.InvokeVoidAsync("SettingsIsland.destroy", RootId);
+            await _islandModule.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit already gone — nothing to clean up.
+        }
     }
+
+    private sealed record ShellData(int HouseholdId, int UserId, string UserName);
 }

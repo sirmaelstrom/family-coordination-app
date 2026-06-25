@@ -63,6 +63,7 @@ build_island "./frontend/chores" "chores"
 build_island "./frontend/meal-plan" "meal-plan"
 build_island "./frontend/recipes" "recipes"
 build_island "./frontend/dashboard" "dashboard"
+build_island "./frontend/settings" "settings"
 echo ""
 
 # Step 3: Publish locally
