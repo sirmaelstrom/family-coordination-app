@@ -141,6 +141,24 @@
           SkipUnchangedFiles="true" />
   </Target>
 
+  <!--
+    Copy the built admin island (cluster C: Household requests + Feedback) into wwwroot before build (strangler).
+    Run `npm run build` in frontend/admin/ first (or let the Docker build do it via the admin-node-build stage).
+    If dist/ doesn't exist, the target is skipped silently and the island endpoint 404s — HouseholdAdmin.razor /
+    FeedbackAdmin.razor render the Blazor fallback via the SETTINGS_ADMIN_USE_ISLAND toggle. Parallel to
+    CopySettingsIsland (one bundle serves both host pages).
+  -->
+  <Target Name="CopyAdminIsland"
+          BeforeTargets="AssignTargetPaths"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\admin\dist')">
+    <ItemGroup>
+      <_AdminIslandFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\admin\dist\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_AdminIslandFiles)"
+          DestinationFiles="@(_AdminIslandFiles->'$(MSBuildThisFileDirectory)wwwroot\islands\admin\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.4.0" />
     <PackageReference Include="blazor-dragdrop" Version="2.6.1" />

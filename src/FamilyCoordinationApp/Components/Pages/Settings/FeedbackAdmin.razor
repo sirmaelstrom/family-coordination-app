@@ -1,288 +1,129 @@
 @page "/settings/feedback"
 @attribute [Authorize]
 @using FamilyCoordinationApp.Data
-@using FamilyCoordinationApp.Data.Entities
-@using FamilyCoordinationApp.Services
+@using Microsoft.AspNetCore.Components.Web
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
 @using System.Security.Claims
+@implements IAsyncDisposable
 
+@inject IConfiguration Config
+@inject AuthenticationStateProvider AuthStateProvider
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
-@inject ISnackbar Snackbar
-@inject ISiteAdminService SiteAdminService
+@inject IJSRuntime JS
+@inject IWebHostEnvironment HostEnv
 
-<PageTitle>Feedback - Family Kitchen</PageTitle>
+@*
+    Thin island host (strangler, cluster C). Flag ON (SETTINGS_ADMIN_USE_ISLAND=true) → mount the Svelte admin
+    island (feedback view); flag OFF → the existing Blazor page (<FeedbackAdminBlazor/>) as the zero-regression
+    fallback. Mirrors Categories.razor. One bundle (/islands/admin) serves both this and HouseholdAdmin.razor; the
+    data-view attr picks the view. Feedback is DUAL-MODE — the server scopes the list (admin: all; regular: own
+    household, R-C1), so this host mounts the island for everyone.
+*@
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
-    <div class="d-flex justify-space-between align-center mb-4">
-        <MudText Typo="Typo.h4">Feedback & Requests</MudText>
-        <MudToggleGroup T="string" @bind-Value="_filter" Color="Color.Primary" Rounded="true">
-            <MudToggleItem Value="@("all")">All</MudToggleItem>
-            <MudToggleItem Value="@("unread")">Unread</MudToggleItem>
-            <MudToggleItem Value="@("open")">Open</MudToggleItem>
-        </MudToggleGroup>
-    </div>
-
-    @if (_loading)
+@* Flag ON → never render the Blazor fallback, even in the async gap before _shell resolves
+   (memory fca-island-host-prerender-fallback-race). *@
+@if (_useIsland)
+{
+    @if (_shell is not null)
     {
-        <MudProgressLinear Indeterminate="true" />
-    }
-    else if (!_feedbackItems.Any())
-    {
-        <MudAlert Severity="Severity.Info">
-            No feedback yet. The feedback button appears in the bottom-left corner of every page.
-        </MudAlert>
-    }
-    else
-    {
-        <MudStack Spacing="3">
-            @foreach (var item in FilteredItems)
-            {
-                <MudCard Elevation="2" Class="@(item.IsRead ? "" : "unread-card")">
-                    <MudCardHeader>
-                        <CardHeaderAvatar>
-                            <MudAvatar Color="@GetTypeColor(item.Type)" Variant="Variant.Outlined">
-                                <MudIcon Icon="@GetTypeIcon(item.Type)" />
-                            </MudAvatar>
-                        </CardHeaderAvatar>
-                        <CardHeaderContent>
-                            <div class="d-flex align-center gap-2">
-                                <MudChip T="string" Size="Size.Small" Color="@GetTypeColor(item.Type)">
-                                    @item.Type
-                                </MudChip>
-                                @if (!item.IsRead)
-                                {
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Info">New</MudChip>
-                                }
-                                @if (item.IsResolved)
-                                {
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Success">Resolved</MudChip>
-                                }
-                            </div>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                @item.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")
-                                @if (item.User != null)
-                                {
-                                    @: — @item.User.DisplayName
-                                }
-                                else if (item.UserId.HasValue)
-                                {
-                                    @: — <em>Deleted user</em>
-                                }
-                            </MudText>
-                        </CardHeaderContent>
-                        <CardHeaderActions>
-                            <MudMenu Icon="@Icons.Material.Filled.MoreVert">
-                                @if (!item.IsRead)
-                                {
-                                    <MudMenuItem OnClick="@(() => MarkAsRead(item))">
-                                        Mark as Read
-                                    </MudMenuItem>
-                                }
-                                @if (!item.IsResolved)
-                                {
-                                    <MudMenuItem OnClick="@(() => MarkAsResolved(item))">
-                                        Mark as Resolved
-                                    </MudMenuItem>
-                                }
-                                else
-                                {
-                                    <MudMenuItem OnClick="@(() => ReopenItem(item))">
-                                        Reopen
-                                    </MudMenuItem>
-                                }
-                            </MudMenu>
-                        </CardHeaderActions>
-                    </MudCardHeader>
-                    <MudCardContent>
-                        <MudText Style="white-space: pre-wrap;">@item.Message</MudText>
-                        
-                        @if (!string.IsNullOrEmpty(item.CurrentPage))
-                        {
-                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
-                                <MudIcon Icon="@Icons.Material.Filled.Link" Size="Size.Small" Class="mr-1" />
-                                @item.CurrentPage
-                            </MudText>
-                        }
-                    </MudCardContent>
-                </MudCard>
-            }
-        </MudStack>
-    }
-</MudContainer>
+        <PageTitle>Feedback - Family Kitchen</PageTitle>
 
-<style>
-    .unread-card {
-        border-left: 4px solid var(--mud-palette-info);
-    }
-</style>
+        <HeadContent>
+            <link rel="stylesheet" href="/islands/admin/index.css?v=@IslandVersion" />
+        </HeadContent>
 
-@implements IDisposable
+        <div id="admin-feedback-root"
+             data-household-id="@_shell.HouseholdId"
+             data-user-id="@_shell.UserId"
+             data-user-name="@_shell.UserName"
+             data-view="feedback"></div>
+    }
+}
+else
+{
+    <FeedbackAdminBlazor />
+}
 
 @code {
-    [CascadingParameter]
-    private Task<AuthenticationState>? AuthStateTask { get; set; }
+    private bool _useIsland;
+    private ShellData? _shell;
+    private IJSObjectReference? _islandModule;
 
-    private List<Feedback> _feedbackItems = new();
-    private bool _loading = true;
-    private string _filter = "all";
-    private System.Timers.Timer? _refreshTimer;
-    private int _lastCount = 0;
-    private bool _isSiteAdmin = false;
-    private int? _currentHouseholdId;
-
-    private IEnumerable<Feedback> FilteredItems => _filter switch
-    {
-        "unread" => _feedbackItems.Where(f => !f.IsRead),
-        "open" => _feedbackItems.Where(f => !f.IsResolved),
-        _ => _feedbackItems
-    };
+    private const string RootId = "admin-feedback-root";
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadCurrentUser();
-        await LoadFeedback();
-        
-        // Auto-refresh every 15 seconds
-        _refreshTimer = new System.Timers.Timer(15000);
-        _refreshTimer.Elapsed += async (_, _) => await InvokeAsync(RefreshIfChanged);
-        _refreshTimer.Start();
-    }
+        _useIsland = IsIslandEnabled();
+        if (!_useIsland) return;
 
-    private async Task LoadCurrentUser()
-    {
-        if (AuthStateTask == null) return;
-
-        var authState = await AuthStateTask;
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
         var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+        var userName = authState.User.FindFirst(ClaimTypes.Name)?.Value ?? string.Empty;
 
-        if (!string.IsNullOrEmpty(email))
+        await using var context = await DbFactory.CreateDbContextAsync();
+        var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
+        if (user is null)
         {
-            _isSiteAdmin = SiteAdminService.IsSiteAdmin(email);
-
-            if (!_isSiteAdmin)
-            {
-                await using var context = await DbFactory.CreateDbContextAsync();
-                var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email);
-                _currentHouseholdId = user?.HouseholdId;
-            }
+            throw new InvalidOperationException("User not found. Please log in again.");
         }
+
+        _shell = new ShellData(user.HouseholdId, user.Id, userName);
     }
-    
-    private async Task RefreshIfChanged()
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !_useIsland || _shell is null) return;
+
+        await JS.InvokeVoidAsync("ensureIslandStylesheet", $"/islands/admin/index.css?v={IslandVersion}");
+
+        _islandModule = await JS.InvokeAsync<IJSObjectReference>(
+            "import", $"/islands/admin/index.js?v={IslandVersion}");
+        await JS.InvokeVoidAsync("AdminIsland.mount", RootId);
+    }
+
+    // Cache-bust the island URLs per deploy via the published bundle's mtime (mirrors Categories.razor).
+    private static string? _islandVersion;
+    private string IslandVersion => _islandVersion ??= ComputeIslandVersion();
+
+    private string ComputeIslandVersion()
     {
         try
         {
-            await using var context = await DbFactory.CreateDbContextAsync();
-            
-            IQueryable<Feedback> query = context.Feedbacks;
-            if (!_isSiteAdmin && _currentHouseholdId.HasValue)
-            {
-                query = query.Where(f => f.HouseholdId == _currentHouseholdId);
-            }
-            
-            var count = await query.CountAsync();
-            
-            if (count != _lastCount)
-            {
-                await LoadFeedback();
-            }
+            var path = Path.Combine(HostEnv.WebRootPath, "islands", "admin", "index.js");
+            return new DateTimeOffset(File.GetLastWriteTimeUtc(path)).ToUnixTimeSeconds().ToString();
         }
         catch
         {
-            // Ignore refresh errors
+            return "0";
         }
     }
 
-    private async Task LoadFeedback()
+    private bool IsIslandEnabled()
     {
-        _loading = true;
-        StateHasChanged();
+        var configValue = Config["SETTINGS_ADMIN_USE_ISLAND"];
+        if (!string.IsNullOrEmpty(configValue))
+        {
+            return configValue.Equals("true", StringComparison.OrdinalIgnoreCase);
+        }
 
+        var envValue = Environment.GetEnvironmentVariable("SETTINGS_ADMIN_USE_ISLAND");
+        return string.Equals(envValue, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_islandModule is null) return;
         try
         {
-            await using var context = await DbFactory.CreateDbContextAsync();
-            
-            IQueryable<Feedback> query = context.Feedbacks
-                .Include(f => f.User)
-                .Include(f => f.Household);
-
-            // Site admins see all feedback; regular users see only their household's
-            if (!_isSiteAdmin && _currentHouseholdId.HasValue)
-            {
-                query = query.Where(f => f.HouseholdId == _currentHouseholdId);
-            }
-
-            _feedbackItems = await query
-                .OrderByDescending(f => f.CreatedAt)
-                .ToListAsync();
-            _lastCount = _feedbackItems.Count;
+            await JS.InvokeVoidAsync("AdminIsland.destroy", RootId);
+            await _islandModule.DisposeAsync();
         }
-        finally
+        catch (JSDisconnectedException)
         {
-            _loading = false;
-            StateHasChanged();
+            // Circuit already gone (user navigated away after disconnect) — nothing to clean up.
         }
     }
 
-    private async Task MarkAsRead(Feedback item)
-    {
-        await using var context = await DbFactory.CreateDbContextAsync();
-        var feedback = await context.Feedbacks.FindAsync(item.Id);
-        if (feedback != null)
-        {
-            feedback.IsRead = true;
-            await context.SaveChangesAsync();
-            item.IsRead = true;
-            StateHasChanged();
-        }
-    }
-
-    private async Task MarkAsResolved(Feedback item)
-    {
-        await using var context = await DbFactory.CreateDbContextAsync();
-        var feedback = await context.Feedbacks.FindAsync(item.Id);
-        if (feedback != null)
-        {
-            feedback.IsRead = true;
-            feedback.IsResolved = true;
-            await context.SaveChangesAsync();
-            item.IsRead = true;
-            item.IsResolved = true;
-            Snackbar.Add("Marked as resolved", Severity.Success);
-            StateHasChanged();
-        }
-    }
-
-    private async Task ReopenItem(Feedback item)
-    {
-        await using var context = await DbFactory.CreateDbContextAsync();
-        var feedback = await context.Feedbacks.FindAsync(item.Id);
-        if (feedback != null)
-        {
-            feedback.IsResolved = false;
-            await context.SaveChangesAsync();
-            item.IsResolved = false;
-            StateHasChanged();
-        }
-    }
-
-    private static Color GetTypeColor(FeedbackType type) => type switch
-    {
-        FeedbackType.Bug => Color.Error,
-        FeedbackType.FeatureRequest => Color.Info,
-        _ => Color.Default
-    };
-
-    private static string GetTypeIcon(FeedbackType type) => type switch
-    {
-        FeedbackType.Bug => Icons.Material.Filled.BugReport,
-        FeedbackType.FeatureRequest => Icons.Material.Filled.Lightbulb,
-        _ => Icons.Material.Filled.Chat
-    };
-    
-    public void Dispose()
-    {
-        _refreshTimer?.Stop();
-        _refreshTimer?.Dispose();
-    }
+    private sealed record ShellData(int HouseholdId, int UserId, string UserName);
 }

@@ -45,6 +45,12 @@ services:
       DASHBOARD_USE_ISLAND: ${DASHBOARD_USE_ISLAND:-false}
       SETTINGS_HOUSEHOLD_USE_ISLAND: ${SETTINGS_HOUSEHOLD_USE_ISLAND:-false}
       SETTINGS_CONNECTIONS_USE_ISLAND: ${SETTINGS_CONNECTIONS_USE_ISLAND:-false}
+      SETTINGS_ADMIN_USE_ISLAND: ${SETTINGS_ADMIN_USE_ISLAND:-false}
+      # Site-admin allowlist (comma-separated emails) — gates the household-requests + feedback admin views
+      # (SiteAdminService). MUST be mapped here: .env is only used for ${VAR} substitution, not auto-injected,
+      # so the documented SITE_ADMIN_EMAILS go-live value is inert in the container without this line (same
+      # gotcha as CHORES_DIGEST_TRIGGER_TOKEN below). Cluster C is the first feature to exercise it end-to-end.
+      SITE_ADMIN_EMAILS: ${SITE_ADMIN_EMAILS:-}
       # Chores v1.1 digest. The token gates POST /api/chores/digest/run (cron trigger); unset ⇒ endpoint
       # returns 503 (feature off). MUST be mapped here — .env is only used for ${VAR} substitution, not
       # auto-injected, so the documented go-live step (set CHORES_DIGEST_TRIGGER_TOKEN) is inert without this.

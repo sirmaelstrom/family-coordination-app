@@ -65,6 +65,7 @@ build_island "./frontend/recipes" "recipes"
 build_island "./frontend/dashboard" "dashboard"
 build_island "./frontend/settings" "settings"
 build_island "./frontend/connections" "connections"
+build_island "./frontend/admin" "admin"
 echo ""
 
 # Step 3: Publish locally
