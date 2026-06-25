@@ -20,19 +20,25 @@
     the data-view attr picks the view.
 *@
 
-@if (_useIsland && _shell is not null)
+@* When the flag is ON we never render the Blazor fallback — not even during the brief async gap before
+   _shell resolves — to avoid momentarily mounting (then disposing) the Blazor page under the island flag.
+   The island-div condition is unchanged, so mounting is unaffected. *@
+@if (_useIsland)
 {
-    <PageTitle>Manage Categories - Family Kitchen</PageTitle>
+    @if (_shell is not null)
+    {
+        <PageTitle>Manage Categories - Family Kitchen</PageTitle>
 
-    <HeadContent>
-        <link rel="stylesheet" href="/islands/settings/index.css?v=@IslandVersion" />
-    </HeadContent>
+        <HeadContent>
+            <link rel="stylesheet" href="/islands/settings/index.css?v=@IslandVersion" />
+        </HeadContent>
 
-    <div id="settings-categories-root"
-         data-household-id="@_shell.HouseholdId"
-         data-user-id="@_shell.UserId"
-         data-user-name="@_shell.UserName"
-         data-view="categories"></div>
+        <div id="settings-categories-root"
+             data-household-id="@_shell.HouseholdId"
+             data-user-id="@_shell.UserId"
+             data-user-name="@_shell.UserName"
+             data-view="categories"></div>
+    }
 }
 else
 {
