@@ -11,5 +11,8 @@
 !.env.example
 **/node_modules
 frontend/shopping-list/dist
+frontend/app/build
+frontend/app/.svelte-kit
 src/FamilyCoordinationApp/wwwroot/islands
+src/FamilyCoordinationApp/wwwroot/app
 **/.idea

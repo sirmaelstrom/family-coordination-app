@@ -1,0 +1,95 @@
+/*
+ * Design tokens mirrored from the MudBlazor theme used elsewhere in the app.
+ * Light mode = :root. Dark mode = html.mud-theme-dark (set by App.razor).
+ * Island-native names (--color-*). A few MudBlazor aliases are emitted so
+ * that any leaked MudBlazor class names still resolve on the shell page.
+ */
+
+:root {
+  /* brand */
+  --color-primary: rgb(46, 125, 50);
+  --color-primary-hover: rgb(36, 97, 39);
+  --color-primary-soft: rgb(58, 156, 63);
+  --color-secondary: rgb(255, 111, 0);
+
+  /* surfaces */
+  --color-surface: rgb(255, 255, 255);
+  --color-background: rgb(250, 250, 250);
+  --color-appbar: rgb(46, 125, 50);
+  --color-drawer: rgb(245, 245, 245);
+
+  /* text */
+  --color-text: rgb(66, 66, 66);
+  --color-text-muted: rgba(0, 0, 0, 0.54);
+  --color-text-disabled: rgba(0, 0, 0, 0.38);
+
+  /* structure */
+  --color-line: rgba(0, 0, 0, 0.12);
+  --color-line-strong: rgb(189, 189, 189);
+  --color-divider: rgb(224, 224, 224);
+  --color-action-hover: rgba(0, 0, 0, 0.06);
+  --color-action-disabled: rgba(0, 0, 0, 0.26);
+
+  /* semantic */
+  --color-success: rgb(67, 160, 71);
+  --color-error: rgb(229, 57, 53);
+  --color-warning: rgb(251, 140, 0);
+  --color-info: rgb(30, 136, 229);
+
+  /* typography */
+  --font-family: Roboto, Helvetica, Arial, sans-serif;
+
+  /* shape */
+  --radius-sm: 4px;
+  --radius-md: 4px;
+
+  /* elevation (MudBlazor 1, 2, 4) */
+  --shadow-1:
+    0 2px 1px -1px rgba(0, 0, 0, 0.2),
+    0 1px 1px 0 rgba(0, 0, 0, 0.14),
+    0 1px 3px 0 rgba(0, 0, 0, 0.12);
+  --shadow-2:
+    0 3px 1px -2px rgba(0, 0, 0, 0.2),
+    0 2px 2px 0 rgba(0, 0, 0, 0.14),
+    0 1px 5px 0 rgba(0, 0, 0, 0.12);
+  --shadow-4:
+    0 2px 4px -1px rgba(0, 0, 0, 0.2),
+    0 4px 5px 0 rgba(0, 0, 0, 0.14),
+    0 1px 10px 0 rgba(0, 0, 0, 0.12);
+}
+
+/*
+ * Dark-mode override. MudBlazor v8 + the App.razor bootstrap script both
+ * toggle `mud-theme-dark` on <html>, but runtime theme toggles sometimes
+ * land on <body> or deeper. Matching the bare class is a superset that
+ * works regardless of where the ancestor lives.
+ */
+.mud-theme-dark,
+html.mud-theme-dark,
+body.mud-theme-dark,
+#shopping-list-root.sl-dark-mode {
+  --color-primary: rgb(102, 187, 106);
+  --color-primary-hover: rgb(77, 172, 82);
+  --color-primary-soft: rgb(128, 198, 132);
+  --color-secondary: rgb(255, 183, 77);
+
+  --color-surface: rgb(30, 30, 30);
+  --color-background: rgb(18, 18, 18);
+  --color-appbar: rgb(26, 26, 26);
+  --color-drawer: rgb(26, 26, 26);
+
+  --color-text: rgba(255, 255, 255, 0.87);
+  --color-text-muted: rgba(255, 255, 255, 0.6);
+  --color-text-disabled: rgba(255, 255, 255, 0.2);
+
+  --color-line: rgba(255, 255, 255, 0.12);
+  --color-line-strong: rgba(255, 255, 255, 0.3);
+  --color-divider: rgba(255, 255, 255, 0.12);
+  --color-action-hover: rgba(173, 173, 177, 0.06);
+  --color-action-disabled: rgba(255, 255, 255, 0.26);
+
+  --color-success: rgb(102, 187, 106);
+  --color-error: rgb(239, 83, 80);
+  --color-warning: rgb(255, 167, 38);
+  --color-info: rgb(66, 165, 245);
+}
