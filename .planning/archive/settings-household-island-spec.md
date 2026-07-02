@@ -2,7 +2,7 @@
 
 **Quest:** Spine `57544e66-65b7-4680-853b-74aed5b014f7` (campaign "Family Coordination App", horizon `now`). Cluster **A** of the 3-island settings strangler (`dbee5aea` decomposed 2026-06-25; operator chose cluster-into-islands).
 **Decisions (this session, 2026-06-25):** spec-first **focused**; parity-first; **one island, two routes** (`/settings/categories` + `/settings/users`) via the recipes data-view-one-bundle pattern; one flag `SETTINGS_USE_ISLAND`, one PR.
-**Status:** spec (awaiting operator review gate).
+**Status:** SHIPPED — merged PR #55 (2026-06-24, commit 14c3323). Archived 2026-07-01 (doc-health reconciliation). Header below is the original spec. (Note: shipped flag is `SETTINGS_HOUSEHOLD_USE_ISLAND`, not the `SETTINGS_USE_ISLAND` named below.)
 **Template:** mirrors the shipped **recipes island** (`frontend/recipes/`, multi-route bundle + `svelte-dnd-action` drag-reorder) and the **dashboard island** (`frontend/dashboard/`, the freshest light scaffold). Backend mirrors `RecipesEndpoints.cs` (greenfield `/api` over existing/new services, M1).
 
 ---

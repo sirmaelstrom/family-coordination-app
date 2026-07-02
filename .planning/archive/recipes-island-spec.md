@@ -2,7 +2,7 @@
 
 **Quest:** Spine `10d187a0-3bce-43f8-bc09-ada75ac35b43` (campaign "Family Coordination App", horizon `now`).
 **Decisions (operator, 2026-06-23):** **spec-first (deep)**; **combined** — one island bundle serving both `/recipes` (list) and `/recipes/new` + `/recipes/edit/{id}` (edit), one PR, one `RECIPES_USE_ISLAND` flag; **parity-first** — migrate today's surface as-is, harvest enhancements as provisional quests.
-**Status:** spec (awaiting review gate).
+**Status:** SHIPPED — merged PR #53 (2026-06-24, commit 357d34a). Archived 2026-07-01 (doc-health reconciliation). Header below is the original spec.
 **Template:** mirrors the shipped meal-plan island (`frontend/meal-plan/`) + its spec (`.planning/meal-plan-island-spec.md`). The chores island is the secondary reference (it has the `svelte-dnd-action` drag pattern recipes re-uses).
 
 ---
