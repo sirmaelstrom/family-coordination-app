@@ -71,6 +71,16 @@ RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-f
 COPY frontend/admin/ ./
 RUN npm run build
 
+# Stage 1i: Build the SvelteKit SPA shell (de-Blazor keystone spike; frontend/app).
+# Unlike the per-island stages this is a full SvelteKit app (adapter-static) that emits ./build/
+# (SPA fallback index.html + fingerprinted _app/ assets), which the .NET stage copies into wwwroot/app/.
+FROM node:20-alpine AS app-spa-node-build
+WORKDIR /frontend
+COPY frontend/app/package.json frontend/app/package-lock.json* ./
+RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
+COPY frontend/app/ ./
+RUN npm run build
+
 # Stage 2: Build the .NET app.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
@@ -89,6 +99,7 @@ COPY --from=dashboard-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot
 COPY --from=settings-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/settings/
 COPY --from=connections-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/connections/
 COPY --from=admin-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/admin/
+COPY --from=app-spa-node-build /frontend/build/ ./FamilyCoordinationApp/wwwroot/app/
 
 # Explicitly set working directory to project folder before publish
 WORKDIR /src/FamilyCoordinationApp

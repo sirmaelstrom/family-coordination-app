@@ -407,6 +407,7 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
+app.MapMeEndpoints();
 app.MapShoppingListEndpoints();
 app.MapChoresEndpoints();
 app.MapRoomsEndpoints();
@@ -416,6 +417,14 @@ app.MapDashboardEndpoints();
 app.MapSettingsEndpoints();
 app.MapSettingsConnectionsEndpoints();
 app.MapSettingsAdminEndpoints();
+
+// Spike (de-Blazor keystone): SPA fallback for the SvelteKit app served at /app. Client-side routes
+// (e.g. /app/shopping-list) have no server endpoint, so any non-file /app/* request re-serves the SPA
+// shell (wwwroot/app/index.html) and the client router takes over. Real /app/_app/* assets are served
+// first by UseStaticFiles; this fallback only catches the HTML routes. The shell boots anonymously,
+// then calls /api/me (RequireAuthorization) and bounces to /account/login on 401.
+app.MapFallbackToFile("/app/{**slug}", "app/index.html");
+app.MapFallbackToFile("/app", "app/index.html");
 
 // Health check endpoint for Docker
 app.MapGet("/health", () => Results.Ok("healthy"));

@@ -102,3 +102,9 @@ frontend/shopping-list/dist/
 frontend/shopping-list/node_modules/
 frontend/chores/dist/
 frontend/chores/node_modules/
+
+# SvelteKit SPA shell (de-Blazor keystone) — source is frontend/app/src/; artifacts ignored
+src/FamilyCoordinationApp/wwwroot/app/
+frontend/app/build/
+frontend/app/.svelte-kit/
+frontend/app/node_modules/

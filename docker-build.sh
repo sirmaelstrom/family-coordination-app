@@ -66,6 +66,10 @@ build_island "./frontend/dashboard" "dashboard"
 build_island "./frontend/settings" "settings"
 build_island "./frontend/connections" "connections"
 build_island "./frontend/admin" "admin"
+# De-Blazor keystone (spike): the SvelteKit SPA shell. build_island is generic (npm ci + npm run
+# build); SvelteKit emits ./build/ (not dist/), which the CopyAppSpa MSBuild target copies into
+# wwwroot/app/ during the publish step below.
+build_island "./frontend/app" "spa-shell"
 echo ""
 
 # Step 3: Publish locally

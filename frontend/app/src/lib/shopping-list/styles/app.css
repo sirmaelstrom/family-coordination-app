@@ -1,0 +1,33 @@
+@import './tokens.css';
+
+/*
+ * The island renders inside the host page, which also loads Bootstrap + MudBlazor.
+ * Bootstrap defines .row / .container globally, and those names collide with
+ * ambient island styles. We avoid the collision by prefixing all island class
+ * names with `sl-` (shopping list) rather than overriding globals here.
+ */
+
+#shopping-list-root {
+  font-family: var(--font-family);
+  color: var(--color-text);
+  background: var(--color-background);
+  min-height: 100%;
+}
+
+#shopping-list-root,
+#shopping-list-root *,
+#shopping-list-root *::before,
+#shopping-list-root *::after {
+  box-sizing: border-box;
+}
+
+/*
+ * Suppress the outer Blazor ReconnectModal while the island is on the page.
+ * It's a showModal() <dialog>, which blocks all interaction behind it —
+ * including our HTTP-driven island that doesn't need the circuit to work.
+ * This CSS only ships on the shopping-list page (via <HeadContent>), so
+ * other pages still get the normal reconnect UX.
+ */
+#components-reconnect-modal {
+  display: none !important;
+}
