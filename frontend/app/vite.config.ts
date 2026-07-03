@@ -5,12 +5,15 @@ export default defineConfig({
   plugins: [sveltekit()],
   server: {
     port: 5174,
-    // Dev: proxy /api to the running .NET host. NOTE the dev-auth caveat — the FamilyApp.Auth
-    // cookie is bound to the .NET origin (:5000/:8080), so the browser will NOT send it to the
-    // :5174 dev origin. `npm run dev` therefore needs a dev-auth story (documented in the spike
-    // findings). The PROD path (static build served same-origin by .NET) has no such problem.
+    // Dev loop (de-Blazor WP-03): `npm run dev` serves the SPA on :5174 and proxies /api to the .NET host on
+    // :5077 (the HTTP profile in src/FamilyCoordinationApp/Properties/launchSettings.json — the https profile
+    // also exposes :7130; NOTHING binds :5000, so a :5000 target would silently connection-refuse the whole
+    // dev loop). The FamilyApp.Auth cookie is bound to the .NET origin and is NOT sent to the :5174 dev origin,
+    // so the .NET host authenticates the proxied /api calls via the Development-only DevAuthBypassMiddleware
+    // (src/FamilyCoordinationApp/Authorization/DevAuthBypassMiddleware.cs). The PROD path (static build served
+    // same-origin by .NET under /app) uses the real cookie and needs none of this.
     proxy: {
-      '/api': { target: 'http://localhost:5000', changeOrigin: false },
+      '/api': { target: 'http://localhost:5077', changeOrigin: false },
     },
   },
 });

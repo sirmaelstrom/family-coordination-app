@@ -230,6 +230,16 @@ builder.Services.AddAuthentication(options =>
         }
         return Task.CompletedTask;
     };
+
+    // SPA support (de-Blazor WP-03): surface auth failures on /api as 401/403 instead of the 302 redirect the
+    // SvelteKit session store cannot detect. The 401 for an ANONYMOUS /api request actually comes from the
+    // Google handler (DefaultChallengeScheme = Google, see below); these cookie events cover the cookie-scheme
+    // paths — the access-denied (403) forbid path falls back to the cookie scheme, and OnRedirectToLogin is here
+    // as defence-in-depth for any flow that challenges the cookie scheme directly. Additive, /api-only (MN7).
+    options.Events.OnRedirectToLogin = context =>
+        ApiAwareAuthEvents.StatusForApiElseRedirect(context, StatusCodes.Status401Unauthorized);
+    options.Events.OnRedirectToAccessDenied = context =>
+        ApiAwareAuthEvents.StatusForApiElseRedirect(context, StatusCodes.Status403Forbidden);
 })
 .AddGoogle(options =>
 {
@@ -267,6 +277,14 @@ builder.Services.AddAuthentication(options =>
         context.HandleResponse();  // Prevent further processing
         return Task.CompletedTask;
     };
+
+    // SPA support (de-Blazor WP-03): Google is the DefaultChallengeScheme, so an anonymous /api request that
+    // fails RequireAuthorization is challenged HERE. For /api, return a bare 401 instead of the 302 redirect to
+    // Google's OAuth consent — the SPA's session store detects the 401 and routes to /account/login. Browser
+    // page routes still redirect to Google normally. Additive, /api-only; the OAuth challenge itself is
+    // unchanged for pages (MN7).
+    options.Events.OnRedirectToAuthorizationEndpoint = context =>
+        ApiAwareAuthEvents.StatusForApiElseRedirect(context, StatusCodes.Status401Unauthorized);
 });
 
 // Authorization
@@ -295,6 +313,11 @@ builder.Services.AddRazorComponents()
     {
         options.MaximumReceiveMessageSize = 12 * 1024 * 1024; // 12 MB for file uploads
     });
+
+// Fail-closed guard (de-Blazor WP-03): the dev-auth bypass is Development-ONLY. If DEV_AUTH_BYPASS is ever set
+// in a non-Development environment (e.g. a mis-scoped deploy variable), refuse to start rather than risk an auth
+// bypass in production. The bypass middleware itself is also only registered under IsDevelopment() below.
+DevAuthStartupGuard.ThrowIfEnabledOutsideDevelopment(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
 
@@ -361,6 +384,15 @@ app.Use(async (context, next) =>
     }
 });
 app.UseAuthentication();
+
+// Dev-auth bypass (de-Blazor WP-03): Development-ONLY. Runs AFTER UseAuthentication (so it only acts on a still-
+// anonymous request) and BEFORE the first-run-setup middleware + UseAuthorization (so the injected principal is
+// present when authorization + the setup check evaluate it). Inert outside Development (see the middleware and
+// the fail-closed startup guard above).
+if (app.Environment.IsDevelopment())
+{
+    app.UseMiddleware<DevAuthBypassMiddleware>();
+}
 
 // First-run setup redirect middleware (BEFORE authorization)
 app.Use(async (context, next) =>
