@@ -2,7 +2,7 @@
 
 **Quest:** Spine `773aac12-af21-4e9e-8788-f55c3170f10b` (campaign "Family Coordination App", horizon `now`).
 **Decisions (operator, 2026-06-23):** spec-first **focused**; **parity-first** — migrate the current click-slot→picker surface as-is. Drag-to-assign is deferred to quest `1656427f` (provisional, `later`).
-**Status:** spec → build.
+**Status:** SHIPPED — merged PR #51 (2026-06-23, commit 0340a84). Archived 2026-07-01 (doc-health reconciliation). Header below is the original spec.
 
 ---
 

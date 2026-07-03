@@ -24,6 +24,8 @@ There is a known .NET SDK 10.0 bug (MSB3552) that breaks multi-stage Docker buil
 ./docker-build.sh v1.0.0   # Build with specific tag
 ```
 
+The `Dockerfile` also has one `node:20-alpine` build stage per Svelte island (8 stages: shopping-list, chores, meal-plan, recipes, dashboard, settings, connections, admin) that compile `frontend/<name>/` into `wwwroot/islands/<name>/` before the .NET publish stage. See `.claude/rules/architecture.md` § Strangler / Svelte Islands.
+
 ## Deployment
 
 Push to `master` triggers GitHub Actions:
@@ -42,3 +44,4 @@ Required env vars (set via `.env` on the server, generated from a secrets manage
 - `Authentication__Google__ClientSecret` — Google OAuth client secret
 - `SITE_ADMIN_EMAILS` — comma-separated admin emails
 - `DATAPROTECTION_CERT` — optional base64 PFX for key encryption
+- **`*_USE_ISLAND` strangler toggles** (8 flags: `SHOPPING_LIST_USE_ISLAND`, `CHORES_USE_ISLAND`, `MEAL_PLAN_USE_ISLAND`, `RECIPES_USE_ISLAND`, `DASHBOARD_USE_ISLAND`, `SETTINGS_HOUSEHOLD_USE_ISLAND`, `SETTINGS_CONNECTIONS_USE_ISLAND`, `SETTINGS_ADMIN_USE_ISLAND`) — per-surface. Default `false` in `docker-compose.yml`; each `true` swaps the Blazor page for its Svelte island. These decide whether the app serves the island UI or the Blazor fallback, so they're effectively required config for the current UI. Full table: `.claude/rules/architecture.md` § Strangler / Svelte Islands.

@@ -2,7 +2,7 @@
 
 **Quest:** Spine `62fe9326-af6f-43c3-bc0c-ff3031b9d354` (campaign "Family Coordination App", horizon `next` → pull to `now` on build).
 **Decisions (this session, 2026-06-24):** spec-first **focused**; **parity-first** — migrate today's read-only dashboard as-is, no new UX. **One aggregate endpoint** (`GET /api/dashboard`), **Landing.razor stays Blazor**, **read-only island** (no writes). Rationale in §5.
-**Status:** spec (awaiting operator review gate).
+**Status:** SHIPPED — merged PR #54 (2026-06-24, commit ce9b851). Archived 2026-07-01 (doc-health reconciliation). Header below is the original spec.
 **Template:** mirrors the shipped **meal-plan island** (`frontend/meal-plan/`) + its focused spec (`.planning/meal-plan-island-spec.md`) — the closest precedent for a *light* island. Recipes (`frontend/recipes/`, `.planning/recipes-island-spec.md`) is the secondary reference for the freshest scaffold conventions.
 
 ---

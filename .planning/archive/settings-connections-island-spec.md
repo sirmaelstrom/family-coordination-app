@@ -2,7 +2,7 @@
 
 **Quest:** Spine `b60c13cb-c5b3-4d7d-ac59-3d873ac0675d` (campaign "Family Coordination App"). Cluster **B** of the settings strangler (sequenced after A).
 **Decisions (this session, 2026-06-25):** spec-first focused; parity-first; **single-route island** (`/settings/connections` only); flag `SETTINGS_CONNECTIONS_USE_ISLAND` (or reuse a shared settings flag — see Open items); prefix `con-`, port 5179.
-**Status:** first-pass spec — **for the cross-plan review session** to harden alongside A and C. Open questions flagged inline.
+**Status:** SHIPPED — merged PR #56 (2026-06-24, commit 38824da). Archived 2026-07-01 (doc-health reconciliation). Header below is the original first-pass spec.
 **Template:** mirrors the **dashboard island** (single-route, single root) for the scaffold; backend mirrors `RecipesEndpoints.cs` (thin `/api` over the existing service, M1).
 
 ---

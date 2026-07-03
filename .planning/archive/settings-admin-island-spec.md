@@ -2,7 +2,7 @@
 
 **Quest:** Spine `fd629f11-ff18-4539-ace1-6bda47b72fe2` (campaign "Family Coordination App"). Cluster **C** of the settings strangler (sequenced last — most backend net-new).
 **Decisions (this session, 2026-06-25):** spec-first focused; parity-first; **one island, two routes** (`/settings/households` + `/settings/feedback`) via the recipes data-view pattern; prefix `adm-`, port 5180.
-**Status:** first-pass spec — **for the cross-plan review session** to harden alongside A and B. Open questions flagged inline — this cluster has the most net-new backend + a **new auth shape**, so it most needs the review.
+**Status:** SHIPPED — merged PR #57 (2026-06-25, commit a01fc26). Archived 2026-07-01 (doc-health reconciliation). Header below is the original first-pass spec.
 **Template:** scaffold mirrors recipes (two-route bundle) + dashboard; backend introduces **two new services** + a **site-admin authorization gate**.
 
 ---

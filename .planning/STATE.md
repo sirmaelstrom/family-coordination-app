@@ -1,5 +1,7 @@
 # Project State
 
+> ⚠️ **HISTORICAL — SUPERSEDED (do not use as current status).** This file describes the Jan-2026 v1.0 gap-closure position (Phase 8 of 9, ~78%) and has not been maintained since. For current status see `.planning/ROADMAP.md` + the repo `CLAUDE.md`; for live work-state see the Spine campaign **"Family Coordination App"** (`spine_map`). *(banner added 2026-07-01, doc-health reconciliation)*
+
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-01-22)
