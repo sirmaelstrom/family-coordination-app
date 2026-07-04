@@ -50,12 +50,12 @@ public static class PresenceEndpoints
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var user = await db.Users
             .Where(u => u.Email == email)
-            .Select(u => new { u.Id, u.DisplayName, u.Initials, u.PictureUrl })
+            .Select(u => new { u.Id, u.HouseholdId, u.DisplayName, u.Initials, u.PictureUrl })
             .FirstOrDefaultAsync(ct);
 
         if (user is null) return Results.Unauthorized();
 
-        presence.Heartbeat(user.Id, user.DisplayName, user.PictureUrl, user.Initials, request.Page);
+        presence.Heartbeat(user.Id, user.HouseholdId, user.DisplayName, user.PictureUrl, user.Initials, request.Page);
         return Results.NoContent();
     }
 
@@ -72,10 +72,10 @@ public static class PresenceEndpoints
         // users age Online→Away→Offline instead of showing Online forever. Idempotent + cheap (in-memory).
         presence.UpdatePresence();
 
-        // Exclude the caller (they don't need to see themselves in the roster) and project to a typed DTO —
+        // Household-scoped (multi-tenant boundary), caller-excluded, and projected to a typed DTO —
         // never the raw UserPresence, which would leak LastSeen / CurrentPage. Status is the PresenceStatus
         // enum, serialized "online"/"away" by the global camelCase JsonStringEnumConverter (Program.cs).
-        var users = presence.GetAllActiveUsers()
+        var users = presence.GetAllActiveUsers(caller.HouseholdId)
             .Where(p => p.UserId != caller.UserId)
             .Select(p => new PresenceUserDto(p.UserId, p.DisplayName, p.Initials, p.PictureUrl, p.Status))
             .ToList();

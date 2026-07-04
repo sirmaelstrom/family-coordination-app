@@ -40,6 +40,7 @@ interface MeResponse {
 }
 
 const LOGIN_URL = '/account/login';
+const ACCESS_DENIED_URL = '/account/access-denied';
 
 class SessionStore {
   #user = $state<SessionUser | null>(null);
@@ -114,6 +115,16 @@ class SessionStore {
         // Full-page redirect (NOT goto()); NOT base-prefixed (root server route).
         if (typeof window !== 'undefined') {
           window.location.href = LOGIN_URL;
+        }
+        return;
+      }
+
+      if (res.status === 403) {
+        // Authenticated but not authorized (e.g. removed from the whitelist) —
+        // an error screen would dead-end them; the server access-denied page
+        // routes them to request access / sign in as someone else.
+        if (typeof window !== 'undefined') {
+          window.location.href = ACCESS_DENIED_URL;
         }
         return;
       }

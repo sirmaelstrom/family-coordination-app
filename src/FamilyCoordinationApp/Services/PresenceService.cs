@@ -7,6 +7,8 @@ public enum PresenceStatus { Online, Away, Offline }
 public class UserPresence
 {
     public int UserId { get; set; }
+    /// <summary>Multi-tenant boundary: rosters are only ever served household-scoped.</summary>
+    public int HouseholdId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string? PictureUrl { get; set; }
     public string Initials { get; set; } = string.Empty;
@@ -24,13 +26,14 @@ public class PresenceService
     /// <summary>
     /// Called by components to indicate user activity.
     /// </summary>
-    public void Heartbeat(int userId, string displayName, string? pictureUrl, string initials, string? currentPage = null)
+    public void Heartbeat(int userId, int householdId, string displayName, string? pictureUrl, string initials, string? currentPage = null)
     {
         _presence.AddOrUpdate(
             userId,
             new UserPresence
             {
                 UserId = userId,
+                HouseholdId = householdId,
                 DisplayName = displayName,
                 PictureUrl = pictureUrl,
                 Initials = initials,
@@ -43,6 +46,7 @@ public class PresenceService
                 existing.LastSeen = DateTime.UtcNow;
                 existing.Status = PresenceStatus.Online;
                 existing.CurrentPage = currentPage;
+                existing.HouseholdId = householdId;
                 existing.DisplayName = displayName;
                 existing.PictureUrl = pictureUrl;
                 existing.Initials = initials;
@@ -94,8 +98,12 @@ public class PresenceService
     public IEnumerable<UserPresence> GetOnlineUsers() =>
         _presence.Values.Where(p => p.Status == PresenceStatus.Online);
 
-    public IEnumerable<UserPresence> GetAllActiveUsers() =>
-        _presence.Values.Where(p => p.Status != PresenceStatus.Offline);
+    /// <summary>
+    /// Active (non-Offline) users in ONE household. Presence is a cross-household singleton dictionary,
+    /// so every roster read must be household-scoped — an unscoped roster leaks user PII across tenants.
+    /// </summary>
+    public IEnumerable<UserPresence> GetAllActiveUsers(int householdId) =>
+        _presence.Values.Where(p => p.HouseholdId == householdId && p.Status != PresenceStatus.Offline);
 
     public IEnumerable<UserPresence> GetUsersOnPage(string page) =>
         _presence.Values.Where(p => p.Status == PresenceStatus.Online && p.CurrentPage == page);

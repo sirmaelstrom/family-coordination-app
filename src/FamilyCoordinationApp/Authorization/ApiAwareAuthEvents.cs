@@ -35,7 +35,13 @@ public static class ApiAwareAuthEvents
         if (context.Request.Path.StartsWithSegments(ApiPrefix))
         {
             context.Response.StatusCode = apiStatusCode;
-            return Task.CompletedTask;
+            // The body must be non-empty: UseStatusCodePagesWithReExecute re-executes any empty-body 4xx
+            // through the GET-only /not-found page with the ORIGINAL method, so a non-GET /api auth failure
+            // would surface as 405 instead of 401/403 (CORRECTIONS: fca-empty-404-surfaces-as-405-on-delete).
+            return context.Response.WriteAsJsonAsync(new
+            {
+                message = apiStatusCode == StatusCodes.Status403Forbidden ? "Forbidden" : "Unauthorized",
+            });
         }
 
         context.Response.Redirect(context.RedirectUri);

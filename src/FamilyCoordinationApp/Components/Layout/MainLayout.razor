@@ -52,7 +52,7 @@
             <Authorized>
                 <div class="d-flex align-center gap-2 gap-md-4">
                     <MudHidden Breakpoint="Breakpoint.SmAndDown">
-                        <OnlineUsers CurrentUserId="@CurrentUserId" />
+                        <OnlineUsers CurrentUserId="@CurrentUserId" CurrentHouseholdId="@CurrentHouseholdId" />
                     </MudHidden>
                     <SyncStatusIndicator />
                     <MudIconButton Icon="@(IsDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
@@ -190,6 +190,9 @@
     // Persisted state to prevent prerender flash
     [PersistentState(AllowUpdates = true)]
     public int CurrentUserId { get; set; }
+
+    [PersistentState(AllowUpdates = true)]
+    public int CurrentHouseholdId { get; set; }
     
     [PersistentState(AllowUpdates = true)]
     public string? CurrentUserPicture { get; set; }
@@ -373,6 +376,7 @@
             if (user != null)
             {
                 CurrentUserId = user.Id;
+                CurrentHouseholdId = user.HouseholdId;
                 CurrentUserPicture = user.PictureUrl;
                 CurrentUserInitials = user.Initials;
                 CurrentUserName = user.DisplayName;
@@ -396,7 +400,7 @@
         if (CurrentUserId > 0)
         {
             var currentPage = new Uri(NavigationManager.Uri).AbsolutePath;
-            PresenceService.Heartbeat(CurrentUserId, CurrentUserName, CurrentUserPicture, CurrentUserInitials, currentPage);
+            PresenceService.Heartbeat(CurrentUserId, CurrentHouseholdId, CurrentUserName, CurrentUserPicture, CurrentUserInitials, currentPage);
         }
     }
 
