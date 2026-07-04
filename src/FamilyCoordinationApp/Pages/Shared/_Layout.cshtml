@@ -1,0 +1,138 @@
+@*
+    Static shell for the peripheral (login / legal / error / onboarding) pages.
+    De-Blazor WP-10/WP-11: plain HTML + self-contained CSS, no MudBlazor, no InteractiveServer.
+    wwwroot/app.css is coupled to --mud-palette-* variables (dead without MudBlazor), so the theme
+    lives here inline. The SvelteKit SPA at /app owns its own shell/theme; this covers everything
+    outside the SPA that must keep working after the Blazor Server runtime is removed (WP-12).
+*@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@(ViewData["Title"] ?? "Family Kitchen")</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="~/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="~/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="~/apple-touch-icon.png" />
+    <link rel="manifest" href="~/manifest.json" />
+    <meta name="theme-color" content="#2E7D32" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
+        // Pre-paint theme: honor the app's own 'darkMode' localStorage key, else prefers-color-scheme.
+        // Kept in lockstep with the SPA/Blazor darkMode toggle so peripheral pages match the app theme.
+        (function () {
+            try {
+                var d = localStorage.getItem('darkMode');
+                var m = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                if (d === 'true' || (d === null && m)) document.documentElement.classList.add('dark');
+            } catch (e) { }
+        })();
+    </script>
+    <style>
+        :root {
+            --bg: #f5f7f5;
+            --surface: #ffffff;
+            --text: #1a1c1a;
+            --muted: #5f6b60;
+            --border: #e2e6e2;
+            --primary: #2e7d32;
+            --primary-hover: #276b2b;
+            --danger: #c62828;
+            --shadow: 0 1px 3px rgba(0, 0, 0, .08), 0 4px 16px rgba(0, 0, 0, .06);
+        }
+        html.dark {
+            --bg: #121212;
+            --surface: #1e201e;
+            --text: #e6e8e6;
+            --muted: #a2aaa2;
+            --border: #2e332e;
+            --primary: #66bb6a;
+            --primary-hover: #7bc97f;
+            --danger: #ef5350;
+            --shadow: 0 1px 3px rgba(0, 0, 0, .4), 0 4px 16px rgba(0, 0, 0, .3);
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            min-height: 100%;
+            font-family: 'Inter', 'Roboto', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            -webkit-font-smoothing: antialiased;
+        }
+        main.page {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 3rem 1rem;
+        }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            box-shadow: var(--shadow);
+            padding: 2.25rem;
+            width: 100%;
+            max-width: 420px;
+            margin-top: 6vh;
+        }
+        .prose {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            box-shadow: var(--shadow);
+            padding: 2rem 2.5rem;
+            width: 100%;
+            max-width: 760px;
+        }
+        .brand { text-align: center; margin-bottom: 1.75rem; }
+        .brand-mark { font-size: 3.25rem; line-height: 1; }
+        h1 { font-size: 1.9rem; margin: .75rem 0 .25rem; font-weight: 700; }
+        h2 { font-size: 1.35rem; margin: 1.5rem 0 .5rem; font-weight: 600; }
+        h3 { font-size: 1.1rem; margin: 1.25rem 0 .4rem; font-weight: 600; }
+        p { line-height: 1.6; margin: .5rem 0; }
+        ul { line-height: 1.7; padding-left: 1.25rem; }
+        li { margin: .3rem 0; }
+        a { color: var(--primary); }
+        .muted { color: var(--muted); }
+        .center { text-align: center; }
+        .small { font-size: .85rem; }
+        .mt { margin-top: 1.5rem; }
+        .text-danger { color: var(--danger); }
+        code { background: rgba(127, 127, 127, .15); padding: .1rem .35rem; border-radius: 4px; }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: .6rem;
+            padding: .8rem 1.35rem;
+            border-radius: 9px;
+            font-size: 1rem;
+            font-weight: 600;
+            font-family: inherit;
+            text-decoration: none;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: background .12s ease, border-color .12s ease;
+        }
+        .btn-block { width: 100%; }
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-outline { background: transparent; color: var(--text); border-color: var(--border); }
+        .btn-outline:hover { border-color: var(--muted); }
+        .btn-google { background: #ffffff; color: #1f1f1f; border-color: #dadce0; }
+        .btn-google:hover { background: #f7f8f8; }
+        .stack > * + * { margin-top: .75rem; }
+    </style>
+</head>
+<body>
+    <main class="page">
+        @RenderBody()
+    </main>
+</body>
+</html>

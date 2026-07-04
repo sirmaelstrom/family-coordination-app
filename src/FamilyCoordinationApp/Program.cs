@@ -314,6 +314,11 @@ builder.Services.AddRazorComponents()
         options.MaximumReceiveMessageSize = 12 * 1024 * 1024; // 12 MB for file uploads
     });
 
+// De-Blazor WP-10/WP-11: Razor Pages host the static peripheral pages (login/legal/error) and the
+// onboarding flows — no InteractiveServer, no MudBlazor. Coexists with the Blazor Components host
+// until WP-12 removes the latter entirely.
+builder.Services.AddRazorPages();
+
 // Fail-closed guard (de-Blazor WP-03): the dev-auth bypass is Development-ONLY. If DEV_AUTH_BYPASS is ever set
 // in a non-Development environment (e.g. a mis-scoped deploy variable), refuse to start rather than risk an auth
 // bypass in production. The bypass middleware itself is also only registered under IsDevelopment() below.
@@ -438,6 +443,11 @@ app.UseAuthorization();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+// De-Blazor WP-10/WP-11: static Razor Pages (login/legal/error/onboarding). Their explicit @page
+// routes replace the same-route Blazor components, which are deleted in this WP to avoid an
+// ambiguous-route match.
+app.MapRazorPages();
 
 app.MapMeEndpoints();
 app.MapPresenceEndpoints();

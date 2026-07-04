@@ -1,0 +1,35 @@
+@page "/account/access-denied"
+@model FamilyCoordinationApp.Pages.Account.AccessDeniedModel
+@{
+    ViewData["Title"] = "Access Denied - Family Kitchen";
+}
+<div class="card center">
+    <div class="brand-mark">🚫</div>
+    <h1>Access Denied</h1>
+
+    @if (Model.IsAuthenticated && !Model.IsInHousehold)
+    {
+        <p class="muted">You're not part of any household yet. Request one to get started!</p>
+        <div class="stack mt">
+            @if (Model.HasPendingRequest)
+            {
+                <a class="btn btn-primary btn-block" href="/household/pending">Check Request Status</a>
+            }
+            else
+            {
+                <a class="btn btn-primary btn-block" href="/household/request">Request a Household</a>
+            }
+            <a class="btn btn-outline btn-block" href="/account/logout">Sign out and try another account</a>
+        </div>
+    }
+    else
+    {
+        <p class="muted">
+            This app is for family members only. If you should have access, please contact
+            the family administrator to add your email to the whitelist.
+        </p>
+        <div class="mt">
+            <a class="btn btn-primary btn-block" href="/account/logout">Sign out and try another account</a>
+        </div>
+    }
+</div>
