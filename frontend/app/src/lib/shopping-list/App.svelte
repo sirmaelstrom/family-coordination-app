@@ -70,8 +70,29 @@
     'Produce', 'Bakery', 'Meat', 'Dairy', 'Frozen', 'Pantry', 'Spices', 'Beverages', 'Other',
   ];
 
-  let groupedCategories = $derived.by(() => {
-    if (!list) return [];
+  // Categorized view of the list. svelte-dnd-action requires each category zone
+  // to OWN a stable, mutable items array across a drag, so this is $state the
+  // drag handlers mutate per-zone — NOT a $derived off list.items. Re-bucketing
+  // mid-drag (which a $derived, or any cross-zone rebuild, would do the moment an
+  // item's category changes) tears down the dragged DOM node the library is
+  // tracking and silently breaks dragging an item BETWEEN categories (within a
+  // category still worked). Non-drag changes rebuild it via the effect below;
+  // the drag path mutates it directly and never re-buckets until finalize.
+  let categories = $state<{ category: string; items: ShoppingListItemDto[] }[]>([]);
+  // True only while a drag is in flight (first consider → finalize). Gates the
+  // rebuild effect so it can't clobber the zones the drag handlers own.
+  let dragging = $state(false);
+
+  function catRank(c: string): number {
+    const i = CATEGORY_ORDER.indexOf(c);
+    return i === -1 ? 99 : i;
+  }
+
+  function rebuildCategories() {
+    if (!list) {
+      categories = [];
+      return;
+    }
     const groups = new Map<string, ShoppingListItemDto[]>();
     for (const item of list.items) {
       const key = item.category || 'Other';
@@ -84,14 +105,21 @@
         return a.sortOrder - b.sortOrder;
       });
     }
-    return [...groups.entries()].sort(([a], [b]) => {
-      const ai = CATEGORY_ORDER.indexOf(a);
-      const bi = CATEGORY_ORDER.indexOf(b);
-      const ao = ai === -1 ? 99 : ai;
-      const bo = bi === -1 ? 99 : bi;
-      if (ao !== bo) return ao - bo;
-      return a.localeCompare(b);
-    });
+    categories = [...groups.entries()]
+      .sort(([a], [b]) => catRank(a) - catRank(b) || a.localeCompare(b))
+      .map(([category, items]) => ({ category, items }));
+  }
+
+  // Rebuild the categorized view whenever the list data changes (load / add /
+  // edit / delete / check re-sort) — but NEVER mid-drag: while `dragging`, the
+  // handlers own `categories`, and a rebuild would re-bucket the dragged node
+  // and abort a cross-category drop. On finalize the handlers set dragging=false
+  // after resyncing list.items, so this fires once to reconcile. $effect.pre
+  // (runs before the DOM update) so categories is populated in the same frame
+  // list arrives — no empty flash.
+  $effect.pre(() => {
+    if (dragging) return;
+    rebuildCategories();
   });
 
   async function loadLists() {
@@ -397,19 +425,14 @@
   // categorized view stays coherent while dragging. On finalize we POST
   // the new orderings to the server.
 
-  function applyCategoryItems(category: string, reordered: ShoppingListItemDto[]) {
-    if (!list) return;
-    // Give every dragged item the new category + a fresh sortOrder.
-    for (let i = 0; i < reordered.length; i++) {
-      reordered[i].category = category;
-      reordered[i].sortOrder = i;
-    }
-    // Rebuild list.items: keep items not in the destination category, then
-    // append the reordered block for this category.
-    const kept = list.items.filter(
-      (i) => i.category !== category && !reordered.find((r) => r.id === i.id),
-    );
-    list.items = [...kept, ...reordered];
+  // Replace ONE category zone's items array — the per-zone update
+  // svelte-dnd-action hands us on each event. No category mutation and no
+  // cross-zone rebuild here: doing either mid-drag re-buckets the dragged node
+  // and breaks the drop (see the `categories` comment). Reconciliation is
+  // deferred to finalize.
+  function setZoneItems(category: string, items: ShoppingListItemDto[]) {
+    const zone = categories.find((c) => c.category === category);
+    if (zone) zone.items = items;
   }
 
   async function handleDnd(
@@ -417,8 +440,27 @@
     reordered: ShoppingListItemDto[],
     phase: 'consider' | 'finalize',
   ) {
-    applyCategoryItems(category, reordered);
-    if (phase !== 'finalize' || currentListId == null) return;
+    if (phase === 'consider') {
+      // Live drag: reflect the moved item in whichever zone fired, nothing else.
+      // (On a cross-category drag both the source and destination zones fire —
+      // each updates only its own array, so the dragged node is never torn down.)
+      dragging = true;
+      setZoneItems(category, reordered);
+      return;
+    }
+
+    // finalize (drop): commit. Stamp the dropped items with this zone's category
+    // + their new order, resync list.items from every zone, THEN release the
+    // drag guard so the rebuild effect reconciles once from the final state.
+    setZoneItems(category, reordered);
+    reordered.forEach((item, index) => {
+      item.category = category;
+      item.sortOrder = index;
+    });
+    if (list) list.items = categories.flatMap((c) => c.items);
+    dragging = false;
+
+    if (currentListId == null) return;
     const updates: SortOrderUpdate[] = reordered.map((item, index) => ({
       itemId: item.id,
       sortOrder: index,
@@ -485,7 +527,7 @@
         <button type="button" class="sl-btn-primary" onclick={openAdd}>Add the first item</button>
       </div>
     {:else}
-      {#each groupedCategories as [category, items] (category)}
+      {#each categories as { category, items } (category)}
         <CategorySection
           {category}
           {items}
