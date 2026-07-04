@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#2E7D32" />
+    <!-- PWA manifest for the /app SPA (base-pinned in svelte.config.js). -->
+    <link rel="manifest" href="/app/manifest.json" />
+    <script>
+      // Apply dark mode immediately to prevent a flash (ported verbatim from
+      // Components/App.razor:22-37). Toggles the EXACT class `mud-theme-dark`,
+      // which the not-yet-migrated islands also detect. Kept inline here so it
+      // runs before first paint.
+      (function () {
+        var darkMode = localStorage.getItem('darkMode');
+        if (darkMode === 'true') {
+          document.documentElement.classList.add('mud-theme-dark');
+          document.documentElement.style.backgroundColor = '#121212';
+        }
+      })();
+      // Mirror a preference into a cookie so the server can seed it on the next
+      // request. Kept in lockstep with the localStorage writes in theme.svelte.ts.
+      window.setPrefCookie = function (name, value) {
+        document.cookie = name + '=' + value + '; path=/; max-age=31536000; SameSite=Lax';
+      };
+    </script>
+    %sveltekit.head%
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <div style="display: contents">%sveltekit.body%</div>
+    <script>
+      // Register the SPA's OWN service worker, scoped to /app/ so it never
+      // hijacks the root /service-worker.js the still-live Blazor app owns
+      // (coexistence, MN8). Ported from App.razor:73-79, re-scoped.
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker
+            .register('/app/service-worker.js', { scope: '/app/' })
+            .then(function () {
+              console.log('SPA service worker registered');
+            })
+            .catch(function (err) {
+              console.log('SPA service worker registration failed:', err);
+            });
+        });
+      }
+    </script>
+  </body>
+</html>

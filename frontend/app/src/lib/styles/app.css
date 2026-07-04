@@ -1,0 +1,33 @@
+/*
+ * Global base stylesheet for the SvelteKit shell. Imported once in +layout.svelte.
+ * Provides the design tokens + a minimal reset + the shell's body base so every
+ * route inherits the app look (font, colours, dark background).
+ */
+
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* The pre-paint script in app.html sets html.style.backgroundColor to #121212
+     when dark is active, so the very first paint has no light flash. Keep the
+     token-driven background here as the steady-state value. */
+  background: var(--color-background);
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  color: var(--color-text);
+  background: var(--color-background);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+}

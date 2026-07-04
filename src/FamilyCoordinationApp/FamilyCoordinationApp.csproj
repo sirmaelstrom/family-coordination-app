@@ -159,6 +159,23 @@
           SkipUnchangedFiles="true" />
   </Target>
 
+  <!--
+    Spike (de-Blazor keystone): copy the built SvelteKit SPA (frontend/app, adapter-static) into
+    wwwroot/app/ so ASP.NET serves it same-origin under /app. Unlike the per-island dist/ targets, this
+    is a full SvelteKit build (build/ not dist/) with its own fingerprinted _app/ assets + the SPA
+    fallback index.html. Skipped silently if build/ is absent (CI/Docker run `npm run build` first).
+  -->
+  <Target Name="CopyAppSpa"
+          BeforeTargets="AssignTargetPaths"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\app\build')">
+    <ItemGroup>
+      <_AppSpaFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\app\build\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_AppSpaFiles)"
+          DestinationFiles="@(_AppSpaFiles->'$(MSBuildThisFileDirectory)wwwroot\app\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.4.0" />
     <PackageReference Include="blazor-dragdrop" Version="2.6.1" />
