@@ -10,9 +10,10 @@
 **/.env*
 !.env.example
 **/node_modules
-frontend/shopping-list/dist
 frontend/app/build
 frontend/app/.svelte-kit
-src/FamilyCoordinationApp/wwwroot/islands
-src/FamilyCoordinationApp/wwwroot/app
+src/FamilyCoordinationApp/wwwroot/_app
+src/FamilyCoordinationApp/wwwroot/index.html
+src/FamilyCoordinationApp/wwwroot/manifest.json
+src/FamilyCoordinationApp/wwwroot/service-worker.js
 **/.idea

@@ -3,6 +3,7 @@
   "short_name": "Kitchen",
   "description": "Coordinate meals, recipes, and shopping lists for your family",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#FAFAFA",
   "theme_color": "#2E7D32",
