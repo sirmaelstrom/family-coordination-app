@@ -46,6 +46,15 @@
     {/if}
   </button>
 
+  <button
+    type="button"
+    class="sl-body"
+    onclick={() => onToggle(item)}
+    aria-label="Toggle {item.name}"
+  >
+    <span class="sl-name">{item.name}</span>
+  </button>
+
   {#if item.quantity != null}
     <div class="sl-qty" role="group" aria-label="Adjust quantity">
       <button
@@ -72,15 +81,6 @@
       </button>
     </div>
   {/if}
-
-  <button
-    type="button"
-    class="sl-body"
-    onclick={() => onToggle(item)}
-    aria-label="Toggle {item.name}"
-  >
-    <span class="sl-name">{item.name}</span>
-  </button>
 
   {#if item.addedByName}
     <UserAvatar
@@ -209,6 +209,11 @@
     align-items: center;
     gap: 2px;
     flex-shrink: 0;
+    /* Sits on the right, after the (left-aligned) name. A divider separates the
+       quantity stepper from the avatar / edit / delete cluster to its right. */
+    margin-left: 4px;
+    padding-right: 8px;
+    border-right: 1px solid var(--color-line);
   }
   .sl-qty-btn {
     width: 32px;
