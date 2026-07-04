@@ -33,6 +33,7 @@ class PresenceStore {
   #online = $state(true);
   #timer: ReturnType<typeof setInterval> | null = null;
   #started = false;
+  #ticking = false;
 
   /** The active users to show in the header (excludes the caller). */
   get users(): readonly PresenceUser[] {
@@ -64,8 +65,29 @@ class PresenceStore {
   }
 
   async #tick(): Promise<void> {
-    await this.#heartbeat();
-    await this.#loadUsers();
+    // Re-entrancy guard: if a tick's fetches stall past the interval, skip the
+    // overlapping tick instead of racing two writers over #users/#online.
+    if (this.#ticking) return;
+    this.#ticking = true;
+    try {
+      await this.#heartbeat();
+      await this.#loadUsers();
+    } finally {
+      this.#ticking = false;
+    }
+  }
+
+  /**
+   * A 401/403 mid-session means the cookie died (or access was revoked) — the
+   * network is fine and no retry can fix it, so "reconnecting…" would lie
+   * forever. Stop polling and hand the browser to the same server-side pages
+   * the session store bounces to on boot.
+   */
+  #authDied(status: number): void {
+    this.stop();
+    if (typeof window !== 'undefined') {
+      window.location.href = status === 403 ? '/account/access-denied' : '/account/login';
+    }
   }
 
   async #heartbeat(): Promise<void> {
@@ -78,6 +100,10 @@ class PresenceStore {
           page: typeof window !== 'undefined' ? window.location.pathname : null,
         }),
       });
+      if (res.status === 401 || res.status === 403) {
+        this.#authDied(res.status);
+        return;
+      }
       this.#online = res.ok;
     } catch {
       this.#online = false;
@@ -90,6 +116,10 @@ class PresenceStore {
         credentials: 'include',
         headers: { Accept: 'application/json' },
       });
+      if (res.status === 401 || res.status === 403) {
+        this.#authDied(res.status);
+        return;
+      }
       if (!res.ok) {
         this.#online = false;
         return;

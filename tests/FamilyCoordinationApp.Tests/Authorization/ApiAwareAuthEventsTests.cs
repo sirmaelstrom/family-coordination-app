@@ -18,6 +18,7 @@ public sealed class ApiAwareAuthEventsTests
     {
         var http = new DefaultHttpContext();
         http.Request.Path = path;
+        http.Response.Body = new MemoryStream();
         var scheme = new AuthenticationScheme(
             CookieAuthenticationDefaults.AuthenticationScheme, null, typeof(CookieAuthenticationHandler));
         return new RedirectContext<CookieAuthenticationOptions>(
@@ -35,6 +36,8 @@ public sealed class ApiAwareAuthEventsTests
 
         ctx.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
         ctx.Response.Headers.ContainsKey("Location").Should().BeFalse("an /api auth failure must not 302-redirect");
+        ctx.Response.Body.Length.Should().BeGreaterThan(0,
+            "an empty-body 4xx gets re-executed through the GET-only /not-found page — a non-GET /api call would surface as 405");
     }
 
     [Fact]
@@ -45,6 +48,8 @@ public sealed class ApiAwareAuthEventsTests
         await ApiAwareAuthEvents.StatusForApiElseRedirect(ctx, StatusCodes.Status403Forbidden);
 
         ctx.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        ctx.Response.Body.Length.Should().BeGreaterThan(0,
+            "an empty-body 4xx gets re-executed through the GET-only /not-found page — a non-GET /api call would surface as 405");
     }
 
     [Theory]

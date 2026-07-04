@@ -38,6 +38,12 @@
     [Parameter]
     public int CurrentUserId { get; set; }
 
+    /// <summary>
+    /// Caller's household — the roster is household-scoped (multi-tenant boundary).
+    /// </summary>
+    [Parameter]
+    public int CurrentHouseholdId { get; set; }
+
     private List<UserPresence> _onlineUsers = new();
 
     protected override void OnInitialized()
@@ -57,7 +63,7 @@
 
     private void LoadOnlineUsers()
     {
-        _onlineUsers = PresenceService.GetAllActiveUsers()
+        _onlineUsers = PresenceService.GetAllActiveUsers(CurrentHouseholdId)
             .Where(u => u.UserId != CurrentUserId)
             .OrderByDescending(u => u.Status == PresenceStatus.Online)
             .ThenBy(u => u.DisplayName)
