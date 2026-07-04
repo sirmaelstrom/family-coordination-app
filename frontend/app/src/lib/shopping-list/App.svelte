@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { base } from '$app/paths';
+  import type { ShellContext } from '$lib/session.svelte';
   import type {
-    ShellContext,
     ShoppingListDto,
     ShoppingListItemDto,
     ShoppingListSummaryDto,
@@ -24,11 +25,10 @@
   import CategorySection from './lib/components/CategorySection.svelte';
   import HeaderBar, { type MenuAction } from './lib/components/HeaderBar.svelte';
   import ItemDialog, { type ItemFormValue } from './lib/components/ItemDialog.svelte';
-  import PromptDialog from './lib/components/PromptDialog.svelte';
-  import ConfirmDialog from './lib/components/ConfirmDialog.svelte';
+  import PromptDialog from '$lib/shared/PromptDialog.svelte';
+  import ConfirmDialog from '$lib/shared/ConfirmDialog.svelte';
   import GenerateDialog from './lib/components/GenerateDialog.svelte';
-  import Toasts from './lib/components/Toasts.svelte';
-  import { showToast } from './lib/toasts.svelte';
+  import { showToast } from '$lib/shared/toast-store.svelte';
 
   interface Props {
     ctx: ShellContext;
@@ -134,7 +134,10 @@
 
   function syncUrl(listId: number) {
     try {
-      const path = `/shopping-list/${listId}`;
+      // Base-aware shallow URL sync (D6). A history.replaceState — NOT goto() —
+      // so the island keeps its state: goto would remount the route and re-run
+      // the session/ctx init. base is '/app', so the URL stays under /app.
+      const path = `${base}/shopping-list/${listId}`;
       if (location.pathname !== path) {
         history.replaceState(history.state, '', path);
       }
@@ -583,8 +586,6 @@
   onClose={() => (generateOpen = false)}
   onSubmit={handleGenerate}
 />
-
-<Toasts />
 
 <style>
   .sl-container {
