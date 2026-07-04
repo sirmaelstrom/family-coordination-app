@@ -1,10 +1,3 @@
-export interface ShellContext {
-  householdId: number;
-  listId: number | null;
-  userId: number;
-  userName: string;
-}
-
 export interface ShoppingListItemDto {
   id: number;
   name: string;
