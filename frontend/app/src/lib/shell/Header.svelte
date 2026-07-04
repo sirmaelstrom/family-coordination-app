@@ -3,10 +3,19 @@
   // presence (placeholder — wired in WP-02), dark-mode toggle, site-admin chip,
   // user name + avatar, logout. Identity comes from the canonical session store;
   // dark mode from the theme store.
+  import { onMount } from 'svelte';
   import { session } from '$lib/session.svelte';
   import { theme } from '$lib/theme.svelte';
+  import { presence } from '$lib/presence.svelte';
   import Icon from './Icon.svelte';
   import UserAvatar from '$lib/shared/UserAvatar.svelte';
+
+  // The header is the single always-present consumer of presence, so it owns the
+  // poller lifecycle: start the 30s heartbeat + roster poll on mount, stop on teardown.
+  onMount(() => {
+    presence.start();
+    return () => presence.stop();
+  });
 </script>
 
 <header class="sh-header">
@@ -15,8 +24,24 @@
   <div class="sh-header-spacer"></div>
 
   <div class="sh-header-actions">
-    <!-- presence placeholder — online-users pill is wired in WP-02 -->
-    <div class="sh-presence" data-presence-slot aria-hidden="true"></div>
+    <!-- Online-users roster + client-derived sync indicator (WP-02). -->
+    <div class="sh-presence">
+      {#each presence.users.slice(0, 5) as u (u.userId)}
+        <span
+          class="sh-presence-avatar"
+          class:sh-presence-away={u.status === 'away'}
+          title={u.status === 'away' ? `${u.displayName} (away)` : u.displayName}
+        >
+          <UserAvatar name={u.displayName} initials={u.initials} pictureUrl={u.pictureUrl} size={24} />
+        </span>
+      {/each}
+      <span
+        class="sh-sync"
+        class:sh-sync-offline={!presence.online}
+        title={presence.online ? 'Synced' : 'Offline — reconnecting…'}
+        aria-label={presence.online ? 'Synced' : 'Offline'}
+      ></span>
+    </div>
 
     <button
       type="button"
@@ -80,6 +105,30 @@
   .sh-presence {
     display: flex;
     align-items: center;
+    gap: 4px;
+  }
+  .sh-presence-avatar {
+    display: inline-flex;
+    border-radius: 50%;
+    margin-left: -6px;
+    box-shadow: 0 0 0 2px var(--color-appbar);
+  }
+  .sh-presence-avatar:first-child {
+    margin-left: 0;
+  }
+  .sh-presence-away {
+    opacity: 0.5;
+  }
+  .sh-sync {
+    width: 8px;
+    height: 8px;
+    margin-left: 6px;
+    border-radius: 50%;
+    background: var(--color-success, #43a047);
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25);
+  }
+  .sh-sync-offline {
+    background: var(--color-text-disabled, #9e9e9e);
   }
   .sh-icon-btn {
     display: inline-flex;

@@ -440,6 +440,7 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.MapMeEndpoints();
+app.MapPresenceEndpoints();
 app.MapShoppingListEndpoints();
 app.MapChoresEndpoints();
 app.MapRoomsEndpoints();
