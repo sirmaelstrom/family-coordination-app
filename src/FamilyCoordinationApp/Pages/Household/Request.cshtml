@@ -1,0 +1,46 @@
+@page "/household/request"
+@model FamilyCoordinationApp.Pages.Household.RequestModel
+@{
+    ViewData["Title"] = "Request Household - Family Kitchen";
+}
+<div class="card">
+    <div class="brand">
+        <div class="brand-mark">🏠</div>
+        <h1>Request a Household</h1>
+        <p class="muted">Create your family's coordination space</p>
+    </div>
+
+    @if (!Model.IsAuthenticated)
+    {
+        <p class="center muted">First, sign in with Google to request a household.</p>
+        <form method="post" action="/account/login-google" asp-antiforgery="false">
+            <input type="hidden" name="returnUrl" value="/household/request" />
+            <button type="submit" class="btn btn-outline btn-block">Sign in with Google</button>
+        </form>
+    }
+    else if (Model.IsAlreadyInHousehold)
+    {
+        <p class="center">You're already part of a household!</p>
+        <div class="mt"><a class="btn btn-primary btn-block" href="/dashboard">Go to Home</a></div>
+    }
+    else
+    {
+        <p class="muted small">Signed in as <strong>@Model.UserEmail</strong></p>
+
+        <form method="post" asp-antiforgery="false" class="stack">
+            @Html.AntiForgeryToken()
+            <label for="householdName" class="muted small">Household Name</label>
+            <input id="householdName" name="HouseholdName" value="@Model.HouseholdName"
+                   placeholder="The Smith Family" required
+                   style="width:100%;padding:.7rem .8rem;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-family:inherit;font-size:1rem;" />
+
+            @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+            {
+                <p class="text-danger small">@Model.ErrorMessage</p>
+            }
+
+            <p class="muted small">Your request will be reviewed by a site administrator. You'll be notified once approved.</p>
+            <button type="submit" class="btn btn-primary btn-block">Request Household</button>
+        </form>
+    }
+</div>
