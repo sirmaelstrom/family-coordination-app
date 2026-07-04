@@ -123,9 +123,28 @@ log "Secrets generated (.env + secrets/postgres_password)"
 
 # ── Build ───────────────────────────────────────────────────────────
 if $DO_BUILD; then
-  log "Building Docker image..."
-  sudo docker build -t familyapp:latest . 2>&1 | tail -5 | tee -a "$LOG"
-  log "Image built: familyapp:latest"
+  # Tag-pinned rollback (de-Blazor C-c): every deployed image ALSO gets an immutable
+  # git-sha tag, minted by the build itself (`docker build` is NOPASSWD-whitelisted for
+  # the CI runner; `docker tag`/`images`/`rmi` are NOT — do not add bare calls to them
+  # here, they would fail non-interactively and set -e would kill the deploy).
+  # The prune below only removes DANGLING images, so sha tags survive.
+  # Rollback to a prior deploy (interactive, password sudo is fine there):
+  #   sudo docker tag familyapp:<sha> familyapp:latest
+  #   sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate app
+  GIT_SHA=$(git rev-parse --short HEAD)
+  log "Building Docker image (tags: latest, $GIT_SHA)..."
+  sudo docker build -t familyapp:latest -t "familyapp:$GIT_SHA" . 2>&1 | tail -5 | tee -a "$LOG"
+  log "Image built: familyapp:latest (rollback tag: familyapp:$GIT_SHA)"
+
+  # Retention: keep the newest N sha tags. Gracefully no-ops until `docker images` /
+  # `docker rmi` are added to the NOPASSWD whitelist — tags just accumulate until then.
+  KEEP_TAGS=3
+  (sudo -n docker images familyapp --format '{{.Tag}}' 2>/dev/null || true) \
+    | { grep -vx latest || true; } | tail -n +$((KEEP_TAGS + 1)) \
+    | while read -r tag; do
+        log "Rollback retention: untagging familyapp:$tag"
+        sudo -n docker rmi "familyapp:$tag" >/dev/null 2>&1 || true
+      done
 fi
 
 # ── DB safety guard + pre-deploy backup ─────────────────────────────
