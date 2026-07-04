@@ -1,7 +1,10 @@
 @inject NavigationManager Navigation
 
 <CascadingAuthenticationState>
-    <Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+    @* De-Blazor WP-10: NotFound is now a static Razor Page (@page "/not-found"); 404s are served by
+       UseStatusCodePagesWithReExecute("/not-found") at the HTTP layer, so the Blazor Router no longer
+       needs a NotFoundPage. This whole Router is removed in WP-12. *@
+    <Router AppAssembly="typeof(Program).Assembly">
         <Found Context="routeData">
             <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
                 <NotAuthorized>

@@ -1,0 +1,45 @@
+@page "/setup"
+@model FamilyCoordinationApp.Pages.Setup.FirstRunSetupModel
+@{
+    ViewData["Title"] = "Welcome - Family Kitchen Setup";
+}
+<div class="card">
+    <div class="brand">
+        <div class="brand-mark">🏡</div>
+        <h1>Welcome</h1>
+        <p class="muted">Let's set up your household</p>
+    </div>
+
+    @if (Model.IsAlreadySetup)
+    {
+        <p class="center">Setup is already complete!</p>
+        <div class="mt"><a class="btn btn-primary btn-block" href="/dashboard">Go to Home</a></div>
+    }
+    else if (!Model.IsAuthenticated)
+    {
+        <p class="center muted">First, sign in with Google to create your household.</p>
+        <form method="post" action="/account/login-google" asp-antiforgery="false">
+            <input type="hidden" name="returnUrl" value="/setup" />
+            <button type="submit" class="btn btn-outline btn-block">Sign in with Google</button>
+        </form>
+    }
+    else
+    {
+        <p class="muted small">Signed in as <strong>@Model.UserEmail</strong></p>
+
+        <form method="post" asp-antiforgery="false" class="stack">
+            @Html.AntiForgeryToken()
+            <label for="householdName" class="muted small">Household Name</label>
+            <input id="householdName" name="HouseholdName" value="@Model.HouseholdName"
+                   placeholder="The Smith Family" required
+                   style="width:100%;padding:.7rem .8rem;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-family:inherit;font-size:1rem;" />
+
+            @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+            {
+                <p class="text-danger small">@Model.ErrorMessage</p>
+            }
+
+            <button type="submit" class="btn btn-primary btn-block">Create Household</button>
+        </form>
+    }
+</div>

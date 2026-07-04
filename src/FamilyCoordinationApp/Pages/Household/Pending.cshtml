@@ -1,0 +1,59 @@
+@page "/household/pending"
+@using FamilyCoordinationApp.Data.Entities
+@model FamilyCoordinationApp.Pages.Household.PendingModel
+@{
+    ViewData["Title"] = "Request Pending - Family Kitchen";
+}
+<div class="card center">
+    @if (!Model.IsAuthenticated)
+    {
+        <div class="brand-mark">🔒</div>
+        <h1>Please Sign In</h1>
+        <p class="muted">Sign in to check your request status.</p>
+        <form method="post" action="/account/login-google" asp-antiforgery="false" class="mt">
+            <input type="hidden" name="returnUrl" value="/household/pending" />
+            <button type="submit" class="btn btn-outline btn-block">Sign in with Google</button>
+        </form>
+    }
+    else if (Model.RequestRecord == null)
+    {
+        <div class="brand-mark">❓</div>
+        <h1>No Request Found</h1>
+        <p class="muted">You don't have a pending household request.</p>
+        <div class="mt"><a class="btn btn-primary btn-block" href="/household/request">Request a Household</a></div>
+    }
+    else if (Model.RequestRecord.Status == HouseholdRequestStatus.Pending)
+    {
+        <div class="brand-mark">⏳</div>
+        <h1>Request Pending</h1>
+        <p class="muted">Your request is awaiting approval</p>
+        <div style="text-align:left;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:1rem;margin:1.25rem 0;">
+            <p class="muted small" style="margin:0;">Requested household:</p>
+            <p style="margin:.15rem 0 .75rem;font-weight:600;">@Model.RequestRecord.HouseholdName</p>
+            <p class="muted small" style="margin:0;">Submitted:</p>
+            <p style="margin:.15rem 0 0;">@Model.RequestRecord.RequestedAt.ToLocalTime().ToString("MMMM d, yyyy 'at' h:mm tt")</p>
+        </div>
+        <p class="muted small">A site administrator will review your request shortly. You'll be able to access the app once approved. This page checks for updates automatically.</p>
+        <div class="mt"><a class="btn btn-outline btn-block" href="/household/pending">Check Status</a></div>
+        @* Auto-poll for approval — replaces the Blazor 30s timer (WP-11). *@
+        <script>setTimeout(function () { location.reload(); }, 30000);</script>
+    }
+    else if (Model.RequestRecord.Status == HouseholdRequestStatus.Approved)
+    {
+        <div class="brand-mark">✅</div>
+        <h1>Request Approved!</h1>
+        <p class="muted">Welcome to @Model.RequestRecord.HouseholdName</p>
+        <div class="mt"><a class="btn btn-primary btn-block" href="/dashboard">Get Started</a></div>
+    }
+    else
+    {
+        <div class="brand-mark">🚫</div>
+        <h1>Request Declined</h1>
+        <p class="muted">Your household request was not approved</p>
+        @if (!string.IsNullOrEmpty(Model.RequestRecord.RejectionReason))
+        {
+            <p class="small" style="text-align:left;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:1rem;margin:1.25rem 0;"><strong>Reason:</strong> @Model.RequestRecord.RejectionReason</p>
+        }
+        <div class="mt"><a class="btn btn-primary btn-block" href="/household/request">Submit New Request</a></div>
+    }
+</div>
