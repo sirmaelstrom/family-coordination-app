@@ -237,10 +237,12 @@ Phases 8 and 9 were deprecated 2026-02-08. The identified gaps (attribution trac
   - **Island UI** — board snooze menu (Tomorrow / 3 days / 1 week / pick-a-date) + "Snoozed · due {resume}" chip + un-snooze; edit-sheet "Next due date"; add-sheet "First due".
 **Status**: Automated gates green — `dotnet build` + full suite (632 tests) + island `svelte-check`/`vite build`. V15 browser-verify (manual, `CHORES_USE_ISLAND=true` + dev seed) is the remaining review-needed step before merge.
 
-### Phase 15: Chores v1.5 — Equity rework / invisible labor (CAPTURED)
+### Phase 15: Chores v1.5 — Equity rework / invisible labor (CAPTURED) + chore-history surface (BUILT)
 **Goal**: Make the equity model measure the *real* distribution of household labor, including invisible/planning work, and actively help move toward equity.
 **Source**: prod feedback 2026-06-14 (split out of the Phase 14 discussion). KB: "Chores Equity Rework — invisible/planning labor".
-**Why it's a phase**: the current Equity lens counts only physical board completions (`EffortPoints`), which undercounts members whose contribution is planning/coordination/mental-load — invisible to the board. Rework needs (1) **new contribution dimensions** beyond physical completions and (2) **mechanisms that drive toward equity** (capacity-aware assignment, rebalancing nudges), not just a displayed distribution. Brushes `ChoreEquityCalculator` + the digest + possibly the work model. **Spec-first when prioritized** — not started.
+**Why it's a phase**: the current Equity lens counts only physical board completions (`EffortPoints`), which undercounts members whose contribution is planning/coordination/mental-load — invisible to the board. Rework needs (1) **new contribution dimensions** beyond physical completions and (2) **mechanisms that drive toward equity** (capacity-aware assignment, rebalancing nudges), not just a displayed distribution. Brushes `ChoreEquityCalculator` + the digest + possibly the work model. **Spec-first when prioritized** — the equity-measurement rungs (capacity-aware suggestion) are still open.
+
+**Chore-history surface — the TEMPORAL face of Phase 15 (BUILT 2026-07-05, PR #70, this branch)**: a distinct, second face alongside the equity-measurement rungs — the *temporal* record of household labor. A browsable completion **ledger** (C, leads: `GET /api/chores/ledger`) with schedule-vs-completion **ghost rows** + a **gone-quiet** band, plus an evolved **logbook** (A: the digest-mirror recap additively grown with per-week distribution + milestones + kept moments + what-got-tended + the shared gone-quiet band). Collective / non-punitive — the per-person "B" trajectory stays dropped; framing is honest/pride-forward, not nagging. Backed by ONE shared `ChoreHistoryService` (DateOnly-space DST-correct projection, HouseholdId-scoped, window-bounded) feeding both endpoints; the snoozed-vs-slipped ghost reason folds the `ChoreSnoozeEvent` log (Phase-15 substrate, PR #69). Built via the 9-WP council-hardened spec (`data/outputs/workshops/fca-chore-history/`, Spine quest `598a1d49`), commit-per-WP. Full suite **855 green** + full `:8080` browser-verify PASS. No new EF migration (DTO-only; #69 shipped the substrate).
 
 ## Progress
 
@@ -263,9 +265,10 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 (8 & 9 de
 | 12. Chores v1.2 (Finish the Surface) | 6/6 items | Complete | PRs #13–15, #18–21 (2026-05-31) |
 | 13. Chores v1.3 (Multi-room chores) | - | Planned | from prod feedback #6 — needs a spec |
 | 14. Chores v1.4 (Board simplification + subtasks) | - | Complete | PRs #41–42 (2026-06-14) — Model A IA + subtask checklist |
-| 15. Chores v1.5 (Equity rework / invisible labor) | - | Captured | from prod feedback 2026-06-14 — spec-first when prioritized |
+| 15. Chores v1.5 (Equity rework / invisible labor) | - | Captured | equity rungs spec-first; **history surface BUILT — PR #70 (2026-07-05)** |
+| 15h. Chore-history surface (ledger + logbook) | 9 WPs | Built — pending merge | PR #70 (2026-07-05) — Spine `598a1d49`; 855 tests + browser-verify |
 | 16. Chores v1.6 (Snooze & set-next-due) | 6 WPs | Built — pending merge + V15 | 2026-06-22 (this branch) |
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-06-22 (Phase 16 — Snooze & set-next-due — BUILT this branch via the 6-WP `chores-snooze-and-reschedule` spec; automated gates green / V15 browser-verify pending before merge)*
+*Last updated: 2026-07-05 (Phase 15 chore-history surface — ledger + logbook — BUILT this branch via the 9-WP `fca-chore-history` spec, PR #70; full suite 855 green + `:8080` browser-verify PASS. Trust the Spine campaign "Family Coordination App" / quest `598a1d49` over this snapshot for live work-state.)*
