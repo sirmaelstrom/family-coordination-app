@@ -4,6 +4,7 @@
   // list ONCE, then drives the invite state machine via the shared store. No writes
   // happen on load; no liveness/poll (parity — Connections.razor doesn't poll).
   import { untrack } from 'svelte';
+  import './styles/app.css';
   import type { ShellContext } from './lib/types';
   import { connectionsStore as store } from './lib/connectionsStore.svelte';
   import InviteShare from './lib/components/InviteShare.svelte';

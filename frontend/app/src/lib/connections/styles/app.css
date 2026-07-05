@@ -1,0 +1,272 @@
+/*
+ * Connections surface styles. Ported from the original connections island's
+ * app.css (git 2978eb3:frontend/connections/src/styles/app.css) during the
+ * de-Blazor flip — the island copy at $lib/connections/** lost its styles, so
+ * /settings/connections rendered unstyled (same defect as /dashboard).
+ *
+ * Imported (unscoped, global) from App.svelte. Kept as a plain .css file rather
+ * than component <style> blocks so the shared `con-` classes survive Svelte's
+ * per-component scoping + unused-selector pruning — App.svelte + the card/entry/
+ * list components share these structural + button classes (the buttons +
+ * spinner + con-actions base used inside DisconnectDialog come from here too;
+ * only the dialog-specific rules live in that component's scoped <style>).
+ *
+ * All rules use only the shell's design tokens (frontend/app/src/lib/styles/
+ * tokens.css, imported by the shell layout), so dark mode flips automatically
+ * via `.mud-theme-dark` on <html>. No `#connections-root` wrapper exists in the
+ * SPA, so the original root/box-sizing base + the Blazor ReconnectModal hide
+ * were dropped (the shell provides the global reset + body base).
+ *
+ * All class names are prefixed `con-` (connections) to avoid any global collision.
+ */
+
+.con-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px 96px;
+}
+.con-title {
+  margin: 0 0 24px;
+  font-size: 1.5rem;
+  font-weight: 500;
+}
+
+/* Section card (MudPaper Elevation=2 / pa-6 mb-6) */
+.con-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  padding: 24px;
+  margin-bottom: 24px;
+}
+.con-card:last-child {
+  margin-bottom: 0;
+}
+.con-card-title {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+.con-card-sub {
+  margin: 0 0 16px;
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+}
+
+/* ── Share section ── */
+.con-share {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.con-code {
+  font-family: 'Courier New', monospace;
+  font-size: 2.25rem;
+  font-weight: 700;
+  letter-spacing: 0.4em;
+  /* the trailing letter-spacing pushes the glyph block right; pad back so it reads centered */
+  padding-left: 0.4em;
+}
+.con-expiry {
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+}
+
+/* ── Enter-a-code section ── */
+.con-entry-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.con-code-input {
+  font-family: 'Courier New', monospace;
+  font-size: 1.25rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  width: 220px;
+  max-width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.con-code-input:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -1px;
+}
+.con-code-input:disabled {
+  opacity: 0.6;
+}
+
+/* ── Connected-families list ── */
+.con-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.con-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--color-divider);
+}
+.con-row:last-child {
+  border-bottom: none;
+}
+.con-row-name {
+  font-weight: 500;
+}
+.con-row-date {
+  margin-top: 2px;
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+}
+
+/* ── Alerts (MudAlert Warning / Info) ── */
+.con-alert {
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+.con-alert-warning {
+  background: color-mix(in srgb, var(--color-warning) 14%, transparent);
+  border-left: 4px solid var(--color-warning);
+  color: var(--color-text);
+}
+.con-alert-info {
+  background: color-mix(in srgb, var(--color-info) 12%, transparent);
+  border-left: 4px solid var(--color-info);
+  color: var(--color-text);
+}
+.con-alert-error {
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  border-left: 4px solid var(--color-error);
+  color: var(--color-text);
+}
+
+/* ── Buttons ── */
+.con-btn-primary,
+.con-btn-outline,
+.con-btn-text,
+.con-btn-danger,
+.con-btn-danger-filled {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  min-height: 40px;
+  padding: 8px 18px;
+  border: 1px solid transparent;
+}
+.con-btn-primary {
+  background: var(--color-primary);
+  color: #fff;
+}
+.con-btn-primary:hover {
+  background: var(--color-primary-hover);
+}
+.con-btn-outline {
+  background: transparent;
+  color: var(--color-primary);
+  border-color: var(--color-line-strong);
+}
+.con-btn-outline:hover {
+  background: var(--color-action-hover);
+}
+.con-btn-text {
+  background: transparent;
+  color: var(--color-primary);
+  min-height: 36px;
+  padding: 6px 12px;
+}
+.con-btn-text:hover {
+  background: var(--color-action-hover);
+}
+.con-btn-danger {
+  background: transparent;
+  color: var(--color-error);
+  min-height: 36px;
+  padding: 6px 12px;
+}
+.con-btn-danger:hover {
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
+}
+.con-btn-danger-filled {
+  background: var(--color-error);
+  color: #fff;
+}
+.con-btn-danger-filled:hover {
+  filter: brightness(0.95);
+}
+.con-btn-primary:disabled,
+.con-btn-outline:disabled,
+.con-btn-text:disabled,
+.con-btn-danger:disabled,
+.con-btn-danger-filled:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.con-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── Spinner (MudProgressCircular Indeterminate) ── */
+.con-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: con-spin 0.7s linear infinite;
+}
+@keyframes con-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── States ── */
+.con-empty {
+  color: var(--color-text-muted);
+}
+.con-loading {
+  padding: 48px 0;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+.con-inline-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  color: var(--color-error);
+}
+.con-retry {
+  margin-left: auto;
+  padding: 4px 12px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
