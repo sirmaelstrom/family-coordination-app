@@ -59,7 +59,7 @@ The integrated workflow: recipes → meal plan → shopping list. Manual coordin
 
 ## Constraints
 
-- **Tech stack**: Blazor Server (.NET 8), PostgreSQL, Docker — chosen for C# expertise everywhere and built-in SignalR for real-time collaboration
+- **Tech stack**: .NET 10 / ASP.NET Core (`/api`) + SvelteKit SPA (Svelte 5), PostgreSQL, Docker. *(Originally Blazor Server / .NET 8 — chosen for C# expertise everywhere + built-in SignalR; the UI runtime was flipped to a SvelteKit SPA served over `/api` in the de-Blazor migration, 2026-07-04. Real-time collaboration is now `/api` polling + presence, not SignalR. The "Key Decisions" table below is preserved as the original historical record.)*
 - **Deployment**: Must run on [SERVER] (Ubuntu 24.04) via Docker Compose, accessible at your-domain.example.com
 - **Authentication**: Google OAuth only, email whitelist for authorized family members (no public signup)
 - **Real-time**: SignalR over WebSocket for collaborative shopping list editing (must work on mobile with spotty WiFi)
