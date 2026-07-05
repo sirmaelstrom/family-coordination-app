@@ -224,18 +224,18 @@ Phases 8 and 9 were deprecated 2026-02-08. The identified gaps (attribution trac
   - **Subtask checklist** — new `ChoreSubtask` entity (composite key `HouseholdId+ChoreId+SubtaskId`), **last-write-wins (no xmin, never bumps `Chore.Version`)** dedicated endpoints, **never gates completion**, **resets on the satisfying completion** of a recurring chore. Rides the one board payload → M9 contract lockstep (DTO + `board.json` + frozen key list + island `types.ts`).
 **Execution**: roadmap-guided, gated autonomous build — small ordered stack, each unit ending in a local validation gate (build + targeted tests; browser-verify for UI), auto-continuing on green.
 
-### Phase 16: Chores v1.6 — Snooze & set-next-due (BUILT — pending merge + V15)
+### Phase 16: Chores v1.6 — Snooze & set-next-due (SHIPPED)
 **Goal**: Give a recurring chore a "not today" lever and a "set the next due date" lever without faking a completion (which pollutes equity) or deleting (which loses the schedule). Motivating prod case: "always Monday" mowing that doesn't always need doing; and a burst of new recurring chores all reading due-immediately on creation.
 **Source**: production feedback / Spine quest "Update/Snooze when item not ready" (`bf9770c6-04bc-4141-ae8f-2064ba1ebff7`). Deep `/spec` pipeline (workshop `chores-snooze-and-reschedule`, validated 0 errors / 14 passed).
 **Design**: ONE new field `Chore.SnoozedUntil` (`DateOnly?`, PascalCase column) = a tz-resolved **floor under next-due**. It never touches `DaysOfWeek`/`AnchorDate`/`IntervalDays` (so the weekday-conflict worry is structurally impossible). The computed `ChoreDuenessResult.IsSnoozed` is the single source of truth read by all four attention surfaces; cleared only by a satisfying completion (never on expiry).
-**Delivered (6 WPs, gated-autonomous, this branch)**:
+**Delivered (6 WPs, gated-autonomous) — merged via PR #47 (`d53b360`, 2026-06-22)**:
   - **Calculator** — universal suppression gate + Fixed skip-rule (`covered = … || s > slot`) + OneOff effective-due + `IsSnoozed` init-prop.
   - **Migration** — additive nullable `SnoozedUntil` `date` column.
   - **DTO** — `isSnoozed` + `snoozedUntil` across the M9 four-way lockstep (DTO + `board.json` + frozen key list + island `types.ts`).
   - **Service + endpoint** — `SnoozeAsync` + `PATCH /api/chores/{id}/snooze` (`{days|until|null, version}`, xmin/409, tz-resolved floor) + first-due/next-due on create/update + clear-on-complete.
   - **Attention guards** — snoozed chores excluded from board needs-attention / home counts / equity counts / weekly digest (single computed `IsSnoozed`).
-  - **Island UI** — board snooze menu (Tomorrow / 3 days / 1 week / pick-a-date) + "Snoozed · due {resume}" chip + un-snooze; edit-sheet "Next due date"; add-sheet "First due".
-**Status**: Automated gates green — `dotnet build` + full suite (632 tests) + island `svelte-check`/`vite build`. V15 browser-verify (manual, `CHORES_USE_ISLAND=true` + dev seed) is the remaining review-needed step before merge.
+  - **UI** — board snooze menu (Tomorrow / 3 days / 1 week / pick-a-date) + "Snoozed · due {resume}" chip + un-snooze; edit-sheet "Next due date"; add-sheet "First due". Built as the Blazor island; **carried into the SvelteKit SPA by the de-Blazor flip (PR #65)** and now lives in `frontend/app/src/lib/chores/` (`ChoreCard`, `EditChoreSheet`, `QuickAddSheet`, `NeedsAttentionBoard`).
+**Status**: **SHIPPED + prod-confirmed working (2026-07-05).** Merged pre-flip via PR #47 (behind the now-defunct `CHORES_USE_ISLAND` toggle), then the de-Blazor flip (#65) made chores SPA-only — snooze went fully live with that flip. Operator-verified on prod.
 
 ### Phase 15: Chores v1.5 — Equity rework / invisible labor (CAPTURED) + chore-history surface (MERGED)
 **Goal**: Make the equity model measure the *real* distribution of household labor, including invisible/planning work, and actively help move toward equity.
@@ -267,8 +267,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 (8 & 9 de
 | 14. Chores v1.4 (Board simplification + subtasks) | - | Complete | PRs #41–42 (2026-06-14) — Model A IA + subtask checklist |
 | 15. Chores v1.5 (Equity rework / invisible labor) | - | Captured | equity rungs spec-first; **history surface MERGED — PR #70 (2026-07-05)** |
 | 15h. Chore-history surface (ledger + logbook) | 9 WPs | Complete — Merged | PR #70 (2026-07-05, `8d738da`) — Spine `598a1d49`; 855 tests + browser-verify; CI + Deploy green |
-| 16. Chores v1.6 (Snooze & set-next-due) | 6 WPs | Built — pending merge + V15 | 2026-06-22 (this branch) |
+| 16. Chores v1.6 (Snooze & set-next-due) | 6 WPs | Shipped | PR #47 (`d53b360`, 2026-06-22); carried into the SPA by de-Blazor flip #65 — prod-confirmed working 2026-07-05 |
 
 ---
 *Created: 2026-01-22*
-*Last updated: 2026-07-05 (Phase 15 chore-history surface — ledger + logbook — MERGED + DEPLOYED via the 9-WP `fca-chore-history` spec, PR #70 → master `8d738da`; CI + Deploy both green. Full suite 855 green + `:8080` browser-verify PASS at build. Trust the Spine campaign "Family Coordination App" / quest `598a1d49` (now done) over this snapshot for live work-state.)*
+*Last updated: 2026-07-05 (Phase 15 chore-history surface — ledger + logbook — MERGED + DEPLOYED via the 9-WP `fca-chore-history` spec, PR #70 → master `8d738da`; CI + Deploy both green. Also reconciled Phase 16 Snooze to SHIPPED — merged pre-flip via PR #47, carried into the SPA by de-Blazor flip #65, prod-confirmed. Trust the Spine campaign "Family Coordination App" / quest `598a1d49` (now done) over this snapshot for live work-state.)*
