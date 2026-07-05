@@ -45,7 +45,9 @@
     mine: 'Mine',
     'needs-attention': 'All',
     rooms: 'Rooms',
-    recap: 'Recap',
+    // The history lens (Phase 15) — the canonical id stays `recap`; this is a
+    // DISPLAY relabel only (it now opens on the ledger with a logbook sub-toggle).
+    recap: 'Look back',
     equity: 'Board load',
   };
 
