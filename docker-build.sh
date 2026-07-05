@@ -33,14 +33,12 @@ else
 fi
 echo ""
 
-# Step 2: Build the Svelte islands.
-# The MSBuild targets CopyShoppingListIsland / CopyChoresIsland pick up each
-# island's dist output during `dotnet publish` and copy it into
-# wwwroot/islands/<name>/, which then lands in the publish output and gets
-# baked into the runtime image. Every island MUST be built here, or its
-# Copy target is skipped silently and the island endpoint 404s.
-echo "[2/4] Building Svelte islands..."
-build_island() {
+# Step 2: Build the SvelteKit SPA (de-Blazor WP-12: the app's entire UI).
+# SvelteKit emits ./build/, which the CopyAppSpa MSBuild target copies into
+# wwwroot/ (site root) during the publish step below. It MUST be built here,
+# or the Copy target is skipped silently and the app serves no UI.
+echo "[2/4] Building the SvelteKit SPA..."
+build_frontend() {
     local dir="$1"
     local name="$2"
     if [ -d "$dir" ]; then
@@ -55,21 +53,11 @@ build_island() {
         popd > /dev/null
         echo "  ✓ $name built"
     else
-        echo "  ⚠ $dir not found — skipping $name island"
+        echo "  ✗ $dir not found — the app has no UI without it"
+        exit 1
     fi
 }
-build_island "./frontend/shopping-list" "shopping-list"
-build_island "./frontend/chores" "chores"
-build_island "./frontend/meal-plan" "meal-plan"
-build_island "./frontend/recipes" "recipes"
-build_island "./frontend/dashboard" "dashboard"
-build_island "./frontend/settings" "settings"
-build_island "./frontend/connections" "connections"
-build_island "./frontend/admin" "admin"
-# De-Blazor keystone (spike): the SvelteKit SPA shell. build_island is generic (npm ci + npm run
-# build); SvelteKit emits ./build/ (not dist/), which the CopyAppSpa MSBuild target copies into
-# wwwroot/app/ during the publish step below.
-build_island "./frontend/app" "spa-shell"
+build_frontend "./frontend/app" "spa-shell"
 echo ""
 
 # Step 3: Publish locally
@@ -84,10 +72,14 @@ fi
 echo "✓ Published to $PUBLISH_DIR"
 echo ""
 
-# Step 4: Build Docker image
+# Step 4: Build Docker image (sudo only where docker needs it — prod host yes, local Windows no)
+DOCKER="docker"
+if ! docker info >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    DOCKER="sudo docker"
+fi
 echo "[4/4] Building Docker image..."
-echo "Command: docker build -f $DOCKERFILE -t $IMAGE_NAME:$TAG ."
-sudo docker build -f "$DOCKERFILE" -t "$IMAGE_NAME:$TAG" .
+echo "Command: $DOCKER build -f $DOCKERFILE -t $IMAGE_NAME:$TAG ."
+$DOCKER build -f "$DOCKERFILE" -t "$IMAGE_NAME:$TAG" .
 
 if [ $? -ne 0 ]; then
     echo "✗ Docker build failed"

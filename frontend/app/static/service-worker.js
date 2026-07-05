@@ -1,9 +1,7 @@
-// Service worker for the de-Blazored /app SPA shell.
-//
-// Served at /app/service-worker.js and registered with scope /app/ (see
-// app.html) so it ONLY controls the SPA and never intercepts the still-live
-// Blazor app at the site root (coexistence, MN8). A stable-per-deploy cache
-// version is derived from the script URL so install never fails on a stale name.
+// Service worker for the de-Blazored SPA shell — root-scoped since the WP-12 flip
+// (the Blazor app and its root worker are gone; this one owns /).
+// A stable-per-deploy cache version is derived from the script URL so install
+// never fails on a stale name.
 const CACHE_VERSION = (() => {
   try {
     const u = new URL(self.location.href);
@@ -13,9 +11,9 @@ const CACHE_VERSION = (() => {
   }
 })();
 const CACHE_NAME = `family-app-spa-${CACHE_VERSION}`;
-// Pre-cache the app shell so /app works offline. Individual failures must not
+// Pre-cache the app shell so the SPA works offline. Individual failures must not
 // abort install.
-const APP_SHELL = ['/app', '/app/manifest.json'];
+const APP_SHELL = ['/', '/manifest.json'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -50,10 +48,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-first for built SPA assets under /app (js/css/icons/fonts/etc.).
+  // Cache-first ONLY for immutable/fingerprinted SPA assets (/_app/* is content-hashed
+  // per build) and the static icons. Everything else — including the server-rendered
+  // Razor pages (/account/*, /household/*, legal) and their assets — stays network-first
+  // so a deploy is picked up immediately.
   if (
-    url.pathname.startsWith('/app/') &&
-    /\.(js|mjs|css|png|jpe?g|svg|webp|woff2?|json)$/.test(url.pathname)
+    url.pathname.startsWith('/_app/') ||
+    (url.pathname.startsWith('/icons/') && /\.(png|svg|webp)$/.test(url.pathname))
   ) {
     event.respondWith(
       caches.match(req).then(
@@ -71,6 +72,6 @@ self.addEventListener('fetch', (event) => {
 
   // Network-first for navigations; fall back to the cached app shell offline.
   event.respondWith(
-    fetch(req).catch(() => caches.match(req).then((c) => c || caches.match('/app'))),
+    fetch(req).catch(() => caches.match(req).then((c) => c || caches.match('/'))),
   );
 });

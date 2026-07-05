@@ -7,6 +7,7 @@
   import { session } from '$lib/session.svelte';
   import { theme } from '$lib/theme.svelte';
   import { presence } from '$lib/presence.svelte';
+  import { sidebar } from './sidebar.svelte';
   import Icon from './Icon.svelte';
   import UserAvatar from '$lib/shared/UserAvatar.svelte';
 
@@ -19,6 +20,19 @@
 </script>
 
 <header class="sh-header">
+  <!-- Toggles the desktop side-nav mini rail (parity with the old MudDrawer
+       hamburger). Desktop-only — mobile uses the bottom nav, no side rail. -->
+  <button
+    type="button"
+    class="sh-icon-btn sh-nav-toggle"
+    onclick={() => sidebar.toggle()}
+    aria-expanded={!sidebar.collapsed}
+    aria-label={sidebar.collapsed ? 'Expand navigation' : 'Collapse navigation'}
+    title="Toggle menu"
+  >
+    <Icon name="menu" />
+  </button>
+
   <div class="sh-header-brand">Family Kitchen</div>
 
   <div class="sh-header-spacer"></div>
@@ -167,11 +181,13 @@
     font-size: 0.875rem;
     white-space: nowrap;
   }
-  /* Mobile: collapse the presence + admin chip + name to keep the bar tidy. */
+  /* Mobile: collapse the presence + admin chip + name to keep the bar tidy,
+     and drop the nav toggle (no side rail on mobile — the bottom nav owns it). */
   @media (max-width: 960px) {
     .sh-presence,
     .sh-admin-chip,
-    .sh-user-name {
+    .sh-user-name,
+    .sh-nav-toggle {
       display: none;
     }
   }

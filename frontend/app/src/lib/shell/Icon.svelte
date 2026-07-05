@@ -17,7 +17,8 @@
     | 'light'
     | 'dark'
     | 'logout'
-    | 'chevron';
+    | 'chevron'
+    | 'menu';
 
   const PATHS: Record<IconName, string> = {
     home: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
@@ -47,6 +48,8 @@
     logout:
       'M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4z',
     chevron: 'M8.59 16.59 13.17 12 8.59 7.41 10 6l6 6-6 6z',
+    // hamburger — toggles the side-nav mini rail
+    menu: 'M3 18h18v-2H3zm0-5h18v-2H3zm0-7v2h18V6z',
   };
 
   export function iconPath(name: IconName): string {

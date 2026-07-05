@@ -1,79 +1,7 @@
-# Stage 1: Build the Svelte shopping-list island.
-# Emits ./dist/ which the .NET stage copies into wwwroot/islands/shopping-list/.
-FROM node:20-alpine AS node-build
-WORKDIR /frontend
-COPY frontend/shopping-list/package.json frontend/shopping-list/package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
-COPY frontend/shopping-list/ ./
-RUN npm run build
-
-# Stage 1b: Build the Svelte chores island (parallel to node-build; MN7 — added,
-# not modifying the shopping-list stage). Emits ./dist/ which the .NET stage
-# copies into wwwroot/islands/chores/.
-FROM node:20-alpine AS chores-node-build
-WORKDIR /frontend
-COPY frontend/chores/package.json frontend/chores/package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
-COPY frontend/chores/ ./
-RUN npm run build
-
-# Stage 1c: Build the Svelte meal-plan island (strangler; parallel to the others).
-# Emits ./dist/ which the .NET stage copies into wwwroot/islands/meal-plan/.
-FROM node:20-alpine AS mealplan-node-build
-WORKDIR /frontend
-COPY frontend/meal-plan/package.json frontend/meal-plan/package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
-COPY frontend/meal-plan/ ./
-RUN npm run build
-
-# Stage 1d: Build the Svelte recipes island (strangler; parallel to the others).
-# Emits ./dist/ which the .NET stage copies into wwwroot/islands/recipes/.
-FROM node:20-alpine AS recipes-node-build
-WORKDIR /frontend
-COPY frontend/recipes/package.json frontend/recipes/package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
-COPY frontend/recipes/ ./
-RUN npm run build
-
-# Stage 1e: Build the Svelte dashboard island (strangler; parallel to the others).
-# Emits ./dist/ which the .NET stage copies into wwwroot/islands/dashboard/.
-FROM node:20-alpine AS dashboard-node-build
-WORKDIR /frontend
-COPY frontend/dashboard/package.json frontend/dashboard/package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
-COPY frontend/dashboard/ ./
-RUN npm run build
-
-# Stage 1f: Build the Svelte settings island (cluster A; parallel to the others).
-# Emits ./dist/ which the .NET stage copies into wwwroot/islands/settings/.
-FROM node:20-alpine AS settings-node-build
-WORKDIR /frontend
-COPY frontend/settings/package.json frontend/settings/package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
-COPY frontend/settings/ ./
-RUN npm run build
-
-# Stage 1g: Build the Svelte connections island (settings cluster B; parallel to the others).
-# Emits ./dist/ which the .NET stage copies into wwwroot/islands/connections/.
-FROM node:20-alpine AS connections-node-build
-WORKDIR /frontend
-COPY frontend/connections/package.json frontend/connections/package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
-COPY frontend/connections/ ./
-RUN npm run build
-
-# Stage 1h: Build the Svelte admin island (settings cluster C; parallel to the others).
-# Emits ./dist/ which the .NET stage copies into wwwroot/islands/admin/.
-FROM node:20-alpine AS admin-node-build
-WORKDIR /frontend
-COPY frontend/admin/package.json frontend/admin/package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
-COPY frontend/admin/ ./
-RUN npm run build
-
-# Stage 1i: Build the SvelteKit SPA shell (de-Blazor keystone spike; frontend/app).
-# Unlike the per-island stages this is a full SvelteKit app (adapter-static) that emits ./build/
-# (SPA fallback index.html + fingerprinted _app/ assets), which the .NET stage copies into wwwroot/app/.
+# Stage 1: Build the SvelteKit SPA shell (de-Blazor WP-12: the app's entire UI).
+# A full SvelteKit app (adapter-static) that emits ./build/ (SPA fallback index.html +
+# fingerprinted _app/ assets + static/ manifest + service worker), which the .NET stage
+# copies into wwwroot/ so ASP.NET serves it at the site root.
 FROM node:20-alpine AS app-spa-node-build
 WORKDIR /frontend
 COPY frontend/app/package.json frontend/app/package-lock.json* ./
@@ -89,17 +17,9 @@ WORKDIR /src
 COPY src/FamilyCoordinationApp/FamilyCoordinationApp.csproj ./FamilyCoordinationApp/
 RUN dotnet restore FamilyCoordinationApp/FamilyCoordinationApp.csproj
 
-# Copy source and island build output
+# Copy source and the SPA build output (served at root)
 COPY src/FamilyCoordinationApp/ ./FamilyCoordinationApp/
-COPY --from=node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/shopping-list/
-COPY --from=chores-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/chores/
-COPY --from=mealplan-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/meal-plan/
-COPY --from=recipes-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/recipes/
-COPY --from=dashboard-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/dashboard/
-COPY --from=settings-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/settings/
-COPY --from=connections-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/connections/
-COPY --from=admin-node-build /frontend/dist/ ./FamilyCoordinationApp/wwwroot/islands/admin/
-COPY --from=app-spa-node-build /frontend/build/ ./FamilyCoordinationApp/wwwroot/app/
+COPY --from=app-spa-node-build /frontend/build/ ./FamilyCoordinationApp/wwwroot/
 
 # Explicitly set working directory to project folder before publish
 WORKDIR /src/FamilyCoordinationApp
@@ -108,10 +28,9 @@ RUN dotnet publish \
     -o /app/publish
 RUN echo "=== Checking publish output ===" && \
     ls -la /app/publish/wwwroot/ && \
-    echo "=== Checking for _framework ===" && \
-    ls -la /app/publish/wwwroot/_framework/ || echo "WARN: _framework directory not found" && \
-    echo "=== Checking island ===" && \
-    ls -la /app/publish/wwwroot/islands/shopping-list/ || echo "WARN: island not found"
+    echo "=== Checking for the SPA shell ===" && \
+    ls -la /app/publish/wwwroot/_app/ >/dev/null && test -f /app/publish/wwwroot/index.html \
+    || (echo "ERROR: SPA build output missing from wwwroot" && exit 1)
 
 # yt-dlp download stage. Uses alpine so we avoid the Debian base image's
 # apt sources, which have been flaky on the trixie transition (libcurl4t64

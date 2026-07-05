@@ -4,8 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#2E7D32" />
-    <!-- PWA manifest for the /app SPA (base-pinned in svelte.config.js). -->
-    <link rel="manifest" href="/app/manifest.json" />
+    <!-- PWA manifest for the SPA (root-served since the WP-12 flip). -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <script>
       // Apply dark mode immediately to prevent a flash (ported verbatim from
       // Components/App.razor:22-37). Toggles the EXACT class `mud-theme-dark`,
@@ -29,13 +32,13 @@
   <body data-sveltekit-preload-data="hover">
     <div style="display: contents">%sveltekit.body%</div>
     <script>
-      // Register the SPA's OWN service worker, scoped to /app/ so it never
-      // hijacks the root /service-worker.js the still-live Blazor app owns
-      // (coexistence, MN8). Ported from App.razor:73-79, re-scoped.
+      // Register the SPA's service worker at the site root — since the WP-12 flip the
+      // SPA owns / (the Blazor app + its root service worker are gone). Registering the
+      // root scope also supersedes any lingering /app/-scoped worker from pre-flip visits.
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
           navigator.serviceWorker
-            .register('/app/service-worker.js', { scope: '/app/' })
+            .register('/service-worker.js', { scope: '/' })
             .then(function () {
               console.log('SPA service worker registered');
             })

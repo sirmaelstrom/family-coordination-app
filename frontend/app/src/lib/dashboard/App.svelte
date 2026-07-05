@@ -4,6 +4,7 @@
   // refreshes via liveness (20s visible + refocus). No writes — the only state
   // the island mutates is its own loaded `data`.
   import { untrack } from 'svelte';
+  import './styles/app.css';
   import type { ShellContext } from './lib/types';
   import { dashboardStore as store } from './lib/dashboardStore.svelte';
   import { startLiveness, type LivenessHandle } from './lib/liveness';

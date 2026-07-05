@@ -38,14 +38,6 @@ services:
       DATAPROTECTION_CERT: ${DATAPROTECTION_CERT:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
-      SHOPPING_LIST_USE_ISLAND: ${SHOPPING_LIST_USE_ISLAND:-false}
-      CHORES_USE_ISLAND: ${CHORES_USE_ISLAND:-false}
-      MEAL_PLAN_USE_ISLAND: ${MEAL_PLAN_USE_ISLAND:-false}
-      RECIPES_USE_ISLAND: ${RECIPES_USE_ISLAND:-false}
-      DASHBOARD_USE_ISLAND: ${DASHBOARD_USE_ISLAND:-false}
-      SETTINGS_HOUSEHOLD_USE_ISLAND: ${SETTINGS_HOUSEHOLD_USE_ISLAND:-false}
-      SETTINGS_CONNECTIONS_USE_ISLAND: ${SETTINGS_CONNECTIONS_USE_ISLAND:-false}
-      SETTINGS_ADMIN_USE_ISLAND: ${SETTINGS_ADMIN_USE_ISLAND:-false}
       # Site-admin allowlist (comma-separated emails) — gates the household-requests + feedback admin views
       # (SiteAdminService). MUST be mapped here: .env is only used for ${VAR} substitution, not auto-injected,
       # so the documented SITE_ADMIN_EMAILS go-live value is inert in the container without this line (same

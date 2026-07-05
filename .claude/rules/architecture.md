@@ -1,21 +1,22 @@
 ---
 paths:
   - "src/FamilyCoordinationApp/**/*.cs"
-  - "src/FamilyCoordinationApp/**/*.razor"
+  - "src/FamilyCoordinationApp/**/*.cshtml"
+  - "frontend/app/src/**"
   - "tests/FamilyCoordinationApp.Tests/**/*.cs"
 ---
 
-# Architecture — .NET / Blazor Server backend
+# Architecture — .NET API + SvelteKit SPA
 
-*Path-scoped rule — auto-loads when you open app source (`src/FamilyCoordinationApp/**`) or tests. The load-bearing invariants (multi-tenant `HouseholdId` filtering, `IDbContextFactory`) are summarized always-on in `CLAUDE.md`; the full layout + patterns live here. Deployment / env config is a separate rule (`deployment.md`).*
+*Path-scoped rule — auto-loads when you open app source (`src/FamilyCoordinationApp/**`, `frontend/app/src/**`) or tests. The load-bearing invariants (multi-tenant `HouseholdId` filtering, `IDbContextFactory`, per-prefix SPA fallbacks, non-empty /api error bodies) are summarized always-on in `CLAUDE.md`; the full layout + patterns live here. Deployment / env config is a separate rule (`deployment.md`).*
 
-**Stack**: .NET 10 / Blazor Server / PostgreSQL / MudBlazor / EF Core / Docker — **plus Svelte 5 + Vite islands** under `frontend/*` (strangler in progress; see § Strangler / Svelte Islands). Anyone editing `Components/Pages/*.razor` today is editing a thin island *host*, not the primary UI — that's now the fallback path.
+**Stack**: .NET 10 (ASP.NET Core minimal-API `/api` + static Razor Pages) / PostgreSQL / EF Core / Docker — UI is a **SvelteKit SPA (Svelte 5, `adapter-static`)** in `frontend/app/`, served at the site root. Blazor Server, MudBlazor, and the per-surface islands were removed in the de-Blazor flip (WP-12, 2026-07-04, keystone quest `ae67f7dc`).
 
 ## Project Layout
 
 ```
 src/FamilyCoordinationApp/
-  Program.cs              # Startup: DI, auth, middleware pipeline
+  Program.cs              # Startup: DI, auth, middleware pipeline, endpoint maps, SPA fallbacks
   Data/
     ApplicationDbContext.cs
     Entities/              # EF entities (composite keys: HouseholdId + EntityId)
@@ -23,61 +24,55 @@ src/FamilyCoordinationApp/
     SeedData.cs            # Dev seed data
   Services/
     Interfaces/            # Service contracts (IRecipeService, IMealPlanService, etc.)
-    *Service.cs            # Business logic (scoped per-request)
-  Components/
-    Layout/                # MainLayout, NavMenu, ReconnectModal
-    Pages/                 # Routable pages (Recipes, MealPlan, ShoppingList, Settings/*)
-    Recipe/                # Recipe-specific components (RecipeCard, IngredientEntry, etc.)
-    MealPlan/              # MealSlot, WeeklyCalendarView, WeeklyListView, RecipePickerDialog
-    ShoppingList/          # ShoppingListItemRow, CategorySection, AddItemDialog, etc.
-    Shared/                # Cross-cutting (UserAvatar, SyncStatusIndicator, FeedbackDialog)
-  Authorization/           # WhitelistedEmailRequirement + handler
+    *Service.cs            # Business logic (scoped per-request; PresenceService is a singleton)
+  Endpoints/               # Minimal-API groups: Me, Presence, ShoppingList, Chores, Rooms,
+                           # MealPlan, Recipes, Dashboard, Settings{,Connections,Admin}
+  Pages/                   # Static Razor Pages (the only server-rendered UI):
+    Account/               #   Login, AccessDenied
+    Household/             #   Request, Pending (onboarding, antiforgery-validated OnPost)
+    Setup/                 #   FirstRunSetup
+    Shared/_Layout.cshtml  #   self-contained theme-aware layout (no external CSS deps)
+    Error, NotFound, Privacy, Terms
+  Authorization/           # WhitelistedEmailRequirement + handler, DevAuthBypassMiddleware,
+                           # DevAuthStartupGuard, ApiAwareAuthEvents (/api 401/403-with-body)
   Migrations/              # EF Core migrations
   Constants/               # CategoryDefaults
   Models/SchemaOrg/        # RecipeSchema POCO for JSON-LD import
 
+frontend/app/              # The SvelteKit SPA (the app's entire UI)
+  src/routes/              #   dashboard, chores, shopping-list[/listId], meal-plan,
+                           #   recipes{,/new,/import,/edit/[id]}, settings/{5 pages}
+  src/lib/session.svelte.ts  # canonical session store — routes build ctx() from it (M8)
+  src/lib/presence.svelte.ts # 30s heartbeat + roster poller (401/403 → stop + redirect)
+  src/lib/shell/           #   Header/Nav/MobileBottomNav/Footer
+  src/lib/shared/          #   ConfirmDialog, PromptDialog, Toasts, avatars, toast-store
+  src/lib/<surface>/       #   per-surface app + stores (chores, meal-plan, recipes, …)
+  static/                  #   manifest.json + service-worker.js (root-scoped PWA)
+
 tests/FamilyCoordinationApp.Tests/
   Services/                # Unit tests (InMemory EF provider)
   Security/                # Security-focused tests
+  Authorization/           # Dev-auth bypass + ApiAwareAuthEvents tests
+  Integration/             # Testcontainers (anon /api/me → 401 not 302)
 ```
 
 ## Key Architectural Patterns
 
-**Multi-tenant isolation**: All entities use composite primary keys (`HouseholdId` + entity-specific ID). Every query filters by `HouseholdId`.
+**Multi-tenant isolation**: All entities use composite primary keys (`HouseholdId` + entity-specific ID). Every query filters by `HouseholdId` — it's a security boundary. This includes the in-memory presence roster (`PresenceService.GetAllActiveUsers(householdId)`).
 
-**DbContextFactory**: Blazor Server requires `IDbContextFactory<ApplicationDbContext>` (not `DbContext` injection) because SignalR circuits are long-lived and share the DI scope. Every service creates short-lived contexts via `dbFactory.CreateDbContextAsync()`.
+**DbContextFactory**: Services and endpoints inject `IDbContextFactory<ApplicationDbContext>` (not `DbContext`) and create short-lived contexts via `dbFactory.CreateDbContextAsync()`.
 
-**Collaboration infrastructure**: Three singletons coordinate multi-user state:
-- `DataNotifier` — pub/sub for cross-component change notifications
-- `PresenceService` — tracks online users via heartbeats
-- `PollingService` — background service polling for changes from other users
+**SPA serving (Program.cs)**: the SvelteKit build is copied into `wwwroot/` (CopyAppSpa target locally, Docker stage in prod) and served by EXPLICIT per-prefix `MapFallbackToFile("<prefix>/{**slug}", "index.html")` patterns — `/dashboard`, `/chores`, `/shopping-list`, `/meal-plan`, `/recipes`, `/settings`, plus `/`. Never a broad root catch-all: it would shadow the Razor Pages (`/account/*`, `/household/*`, `/setup`, legal, error) and turn unknown URLs into silent SPA loads. **Adding a new top-level SPA route requires adding its fallback prefix.** `/shoppinglists` (old Blazor route) 301s to `/shopping-list`.
 
-**Authentication**: Google OAuth with cookie auth. Access controlled by email whitelist stored in the database (`WhitelistedEmailHandler`). Site admins configured via `SITE_ADMIN_EMAILS` env var.
+**Auth**: Google OAuth challenge + 30-day sliding cookie (`FamilyApp.Auth`, SameSite=Lax), whitelist policy (`WhitelistedEmailHandler`). `/api` auth failures surface as bare 401/403 **with a JSON body** via `ApiAwareAuthEvents` (wired to Google + cookie schemes) — never a 302, and never an empty body (an empty 4xx re-executes through the GET-only `/not-found` page → non-GET calls become 405; CORRECTIONS `fca-empty-404-surfaces-as-405-on-delete`). Site admins via `SITE_ADMIN_EMAILS` env var.
 
-**Recipe import pipeline**: `RecipeScraperService` (HTTP + AngleSharp for HTML parsing) → `RecipeImportService` (JSON-LD schema.org extraction) → `IngredientParser` (natural language parsing). Polly resilience on HTTP calls.
+**Dev-auth bypass (Development only)**: `DevAuthBypassMiddleware` injects a config/first-DB-user identity for anonymous requests — registration is env-gated, the middleware re-checks `IsDevelopment()`, and `DevAuthStartupGuard` fail-closes startup if `DEV_AUTH_BYPASS` is set outside Development.
 
-**Household connections**: Households can connect via invite codes to share recipes bidirectionally. `HouseholdConnectionService` manages invites, connections, and recipe copying.
+**Session contract (M8)**: SPA routes read identity from the canonical `$lib/session` store and build a `ShellContext` via `ctx()` — never per-route `/api/me` fetches. Shared components live only in `$lib/shared/`. Presence decay (Online→Away→Offline) is read-driven: `GET /api/presence/users` runs `PresenceService.UpdatePresence()` before reading.
 
-## Strangler / Svelte Islands
+**Recipe import pipeline**: `RecipeScraperService` (HTTP + AngleSharp) → `RecipeImportService` (JSON-LD schema.org) → `IngredientParser`. Polly resilience on HTTP calls.
 
-The UI is mid-strangler: Blazor Server is now a **shell** hosting Svelte 5 islands. All 8 major interactive surfaces have shipped as islands on `master`, each behind a `*_USE_ISLAND` env flag (default `false` in `docker-compose.yml`, `true` in local `.env`). Flag on → the `.razor` page renders the island; flag off → the original Blazor UI is the fallback.
-
-| Surface | Flag | Island source | Blazor host |
-|---|---|---|---|
-| Shopping list | `SHOPPING_LIST_USE_ISLAND` | `frontend/shopping-list/` | `ShoppingList.razor` |
-| Chores | `CHORES_USE_ISLAND` | `frontend/chores/` | `Chores.razor` |
-| Meal plan | `MEAL_PLAN_USE_ISLAND` | `frontend/meal-plan/` | `MealPlan.razor` |
-| Recipes | `RECIPES_USE_ISLAND` | `frontend/recipes/` | `Recipes.razor` |
-| Dashboard / home | `DASHBOARD_USE_ISLAND` | `frontend/dashboard/` | `Home.razor` |
-| Settings A (categories, users) | `SETTINGS_HOUSEHOLD_USE_ISLAND` | `frontend/settings/` | `Categories.razor`, `WhitelistAdmin.razor` |
-| Settings B (connections) | `SETTINGS_CONNECTIONS_USE_ISLAND` | `frontend/connections/` | `Connections.razor` |
-| Settings C (admin) | `SETTINGS_ADMIN_USE_ISLAND` | `frontend/admin/` | `FeedbackAdmin.razor`, `HouseholdAdmin.razor` |
-
-**Island-host gate (load-bearing):** gate the Blazor fallback with the *nested*-conditional pattern (outer `@if (_useIsland)` chooses island-path vs fallback; inner `@if (_shell is not null)` gates the actual island render) — NOT a single `_useIsland && _shell` condition, which lets a long-lived-context Blazor fallback mount-then-dispose in the prerender gap → `ObjectDisposedException` 500. Backend tests can't catch it; only a live `:8080` browser check does. Full detail: CORRECTIONS.md `fca-island-host-prerender-fallback-race`.
-
-**Build:** each island is an independent Vite build (`frontend/<name>/`, `npm run build`) → `wwwroot/islands/<name>/`. In Docker, one `node:20-alpine` stage per island (see `.claude/rules/deployment.md`). Remaining Blazor-only surfaces (auth/setup/static, reasonably out of scope): Login, Landing, Household/Pending+Request, Setup/FirstRunSetup, Privacy, Terms, Error, NotFound.
-
-**Full de-Blazor (Option A):** an unmerged spike on branch `spike/sveltekit-shell` (`frontend/app/`, adapter-static SvelteKit SPA served over `/api`, `base=/app`) keeps the .NET backend but drops Blazor Server's UI runtime entirely. Spine keystone quest `ae67f7dc`; commit message flags it "not wired for a prod flip."
+**Household connections**: Households connect via invite codes to share recipes bidirectionally (`HouseholdConnectionService`).
 
 ## EF Core Migrations
 

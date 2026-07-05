@@ -2,7 +2,6 @@ using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
 using FamilyCoordinationApp.Authorization;
-using FamilyCoordinationApp.Components;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Endpoints;
 using FamilyCoordinationApp.Services;
@@ -16,8 +15,6 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Http.Resilience;
-using MudBlazor.Services;
-using Plk.Blazor.DragDrop;
 using Polly;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -138,11 +135,9 @@ builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter(
         System.Text.Json.JsonNamingPolicy.CamelCase)));
 
-// Collaboration services - singleton for cross-component communication
-builder.Services.AddSingleton<DataNotifier>();
+// Presence tracker (singleton, in-memory). The Blazor-era DataNotifier/PollingService pub-sub died in
+// WP-12 — staleness decay is now read-driven by GET /api/presence/users (see PresenceEndpoints).
 builder.Services.AddSingleton<PresenceService>();
-builder.Services.AddSingleton<PollingService>();
-builder.Services.AddHostedService<PollingService>(sp => sp.GetRequiredService<PollingService>());
 
 // Site admin service - config-based admin role
 builder.Services.AddSingleton<ISiteAdminService, SiteAdminService>();
@@ -304,19 +299,10 @@ builder.Services.AddAuthorization(options =>
 
 // Add services to the container.
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddCascadingAuthenticationState();
-builder.Services.AddMudServices();
-builder.Services.AddBlazorDragDrop();
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents()
-    .AddHubOptions(options =>
-    {
-        options.MaximumReceiveMessageSize = 12 * 1024 * 1024; // 12 MB for file uploads
-    });
 
-// De-Blazor WP-10/WP-11: Razor Pages host the static peripheral pages (login/legal/error) and the
-// onboarding flows — no InteractiveServer, no MudBlazor. Coexists with the Blazor Components host
-// until WP-12 removes the latter entirely.
+// De-Blazor WP-10/WP-11/WP-12: Razor Pages host the static peripheral pages (login/legal/error) and
+// the onboarding flows. The Blazor Server runtime (Razor Components, InteractiveServer circuit,
+// MudBlazor) was removed entirely in WP-12 — the UI is the SvelteKit SPA at the site root.
 builder.Services.AddRazorPages();
 
 // Fail-closed guard (de-Blazor WP-03): the dev-auth bypass is Development-ONLY. If DEV_AUTH_BYPASS is ever set
@@ -408,9 +394,7 @@ app.Use(async (context, next) =>
     if (path.StartsWith("/setup") ||
         path.StartsWith("/account") ||
         path.StartsWith("/household") ||
-        path.StartsWith("/_framework") ||
-        path.StartsWith("/_blazor") ||
-        path.StartsWith("/_") ||
+        path.StartsWith("/_") ||   // /_app SPA assets (Blazor's /_framework and /_blazor died in WP-12)
         path.StartsWith("/health") ||
         path.StartsWith("/lib") ||
         path.StartsWith("/css") ||
@@ -441,12 +425,8 @@ app.Use(async (context, next) =>
 app.UseAuthorization();
 
 app.MapStaticAssets();
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
 
-// De-Blazor WP-10/WP-11: static Razor Pages (login/legal/error/onboarding). Their explicit @page
-// routes replace the same-route Blazor components, which are deleted in this WP to avoid an
-// ambiguous-route match.
+// De-Blazor WP-10/WP-11: static Razor Pages (login/legal/error/onboarding).
 app.MapRazorPages();
 
 app.MapMeEndpoints();
@@ -461,13 +441,22 @@ app.MapSettingsEndpoints();
 app.MapSettingsConnectionsEndpoints();
 app.MapSettingsAdminEndpoints();
 
-// Spike (de-Blazor keystone): SPA fallback for the SvelteKit app served at /app. Client-side routes
-// (e.g. /app/shopping-list) have no server endpoint, so any non-file /app/* request re-serves the SPA
-// shell (wwwroot/app/index.html) and the client router takes over. Real /app/_app/* assets are served
-// first by UseStaticFiles; this fallback only catches the HTML routes. The shell boots anonymously,
-// then calls /api/me (RequireAuthorization) and bounces to /account/login on 401.
-app.MapFallbackToFile("/app/{**slug}", "app/index.html");
-app.MapFallbackToFile("/app", "app/index.html");
+// De-Blazor WP-12: the SvelteKit SPA owns the site root. EXPLICIT per-prefix fallbacks — NOT a broad
+// root catch-all, which would shadow the Razor Pages (/account/*, /household/*, /setup, /privacy,
+// /terms, /Error, /not-found) and turn unknown URLs into silent SPA loads instead of 404s. Client
+// routes have no server endpoint, so any non-file request under an app prefix re-serves the SPA shell
+// (wwwroot/index.html) and the client router takes over; /_app/* assets are served by static files
+// first. The shell boots anonymously, then calls /api/me and bounces to /account/login on 401.
+app.MapFallbackToFile("/", "index.html");
+app.MapFallbackToFile("/dashboard/{**slug}", "index.html");
+app.MapFallbackToFile("/chores/{**slug}", "index.html");
+app.MapFallbackToFile("/shopping-list/{**slug}", "index.html");
+app.MapFallbackToFile("/meal-plan/{**slug}", "index.html");
+app.MapFallbackToFile("/recipes/{**slug}", "index.html");
+app.MapFallbackToFile("/settings/{**slug}", "index.html");
+
+// Old Blazor route → SPA route, so pre-flip bookmarks don't 404.
+app.MapGet("/shoppinglists", () => Results.Redirect("/shopping-list", permanent: true));
 
 // Health check endpoint for Docker
 app.MapGet("/health", () => Results.Ok("healthy"));

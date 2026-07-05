@@ -4,12 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
     <PublishStaticWebAssets>true</PublishStaticWebAssets>
-    <IncludeBlazorServerFiles>true</IncludeBlazorServerFiles>
-    <!-- Suppress false positive Razor analyzer warning for MudCheckbox -->
-    <!-- See: https://github.com/dotnet/razor/issues/... (known analyzer bug) -->
-    <NoWarn>$(NoWarn);RZ10012</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,153 +12,11 @@
   </ItemGroup>
 
   <!--
-    Copy the built shopping-list island into wwwroot before build.
-    Run `npm run build` in frontend/shopping-list/ first (or let the
-    Docker build do it via the node-build stage). If dist/ doesn't exist,
-    the target is skipped silently and the island endpoint 404s — caller
-    falls back to the Blazor page via SHOPPING_LIST_USE_ISLAND toggle.
-  -->
-  <Target Name="CopyShoppingListIsland"
-          BeforeTargets="AssignTargetPaths"
-          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\shopping-list\dist')">
-    <ItemGroup>
-      <_IslandFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\shopping-list\dist\**\*.*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(_IslandFiles)"
-          DestinationFiles="@(_IslandFiles->'$(MSBuildThisFileDirectory)wwwroot\islands\shopping-list\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-  </Target>
-
-  <!--
-    Copy the built chores island into wwwroot before build.
-    Run `npm run build` in frontend/chores/ first (or let the Docker build do
-    it via the chores-node-build stage). If dist/ doesn't exist, the target is
-    skipped silently and the island endpoint 404s — Chores.razor renders the
-    "not enabled" placeholder via the CHORES_USE_ISLAND toggle. Parallel to
-    CopyShoppingListIsland (MN7 — added, not modifying the existing target).
-  -->
-  <Target Name="CopyChoresIsland"
-          BeforeTargets="AssignTargetPaths"
-          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\chores\dist')">
-    <ItemGroup>
-      <_ChoresIslandFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\chores\dist\**\*.*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(_ChoresIslandFiles)"
-          DestinationFiles="@(_ChoresIslandFiles->'$(MSBuildThisFileDirectory)wwwroot\islands\chores\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-  </Target>
-
-  <!--
-    Copy the built meal-plan island into wwwroot before build (strangler). Run `npm run build` in
-    frontend/meal-plan/ first (or let the Docker build do it via the mealplan-node-build stage). If dist/
-    doesn't exist, the target is skipped silently and the island endpoint 404s — MealPlan.razor renders the
-    Blazor fallback via the MEAL_PLAN_USE_ISLAND toggle. Parallel to CopyChoresIsland.
-  -->
-  <Target Name="CopyMealPlanIsland"
-          BeforeTargets="AssignTargetPaths"
-          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\meal-plan\dist')">
-    <ItemGroup>
-      <_MealPlanIslandFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\meal-plan\dist\**\*.*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(_MealPlanIslandFiles)"
-          DestinationFiles="@(_MealPlanIslandFiles->'$(MSBuildThisFileDirectory)wwwroot\islands\meal-plan\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-  </Target>
-
-  <!--
-    Copy the built recipes island into wwwroot before build (strangler). Run `npm run build` in
-    frontend/recipes/ first (or let the Docker build do it via the recipes-node-build stage). If dist/
-    doesn't exist, the target is skipped silently and the island endpoint 404s — Recipes.razor /
-    RecipeEdit.razor render the Blazor fallback via the RECIPES_USE_ISLAND toggle. Parallel to
-    CopyMealPlanIsland (one bundle serves both the list and edit host pages).
-  -->
-  <Target Name="CopyRecipesIsland"
-          BeforeTargets="AssignTargetPaths"
-          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\recipes\dist')">
-    <ItemGroup>
-      <_RecipesIslandFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\recipes\dist\**\*.*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(_RecipesIslandFiles)"
-          DestinationFiles="@(_RecipesIslandFiles->'$(MSBuildThisFileDirectory)wwwroot\islands\recipes\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-  </Target>
-
-  <!--
-    Copy the built dashboard island into wwwroot before build (strangler). Run `npm run build` in
-    frontend/dashboard/ first (or let the Docker build do it via the dashboard-node-build stage). If dist/
-    doesn't exist, the target is skipped silently and the island endpoint 404s — Home.razor renders the
-    Blazor fallback (<HomeBlazor/>) via the DASHBOARD_USE_ISLAND toggle. Parallel to CopyRecipesIsland.
-  -->
-  <Target Name="CopyDashboardIsland"
-          BeforeTargets="AssignTargetPaths"
-          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\dashboard\dist')">
-    <ItemGroup>
-      <_DashboardIslandFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\dashboard\dist\**\*.*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(_DashboardIslandFiles)"
-          DestinationFiles="@(_DashboardIslandFiles->'$(MSBuildThisFileDirectory)wwwroot\islands\dashboard\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-  </Target>
-
-  <!--
-    Copy the built settings island (cluster A: Categories + Manage Users) into wwwroot before build
-    (strangler). Run `npm run build` in frontend/settings/ first (or let the Docker build do it via the
-    settings-node-build stage). If dist/ doesn't exist, the target is skipped silently and the island endpoint
-    404s — Categories.razor / WhitelistAdmin.razor render the Blazor fallback via the SETTINGS_HOUSEHOLD_USE_ISLAND
-    toggle. Parallel to CopyDashboardIsland (one bundle serves both host pages).
-  -->
-  <Target Name="CopySettingsIsland"
-          BeforeTargets="AssignTargetPaths"
-          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\settings\dist')">
-    <ItemGroup>
-      <_SettingsIslandFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\settings\dist\**\*.*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(_SettingsIslandFiles)"
-          DestinationFiles="@(_SettingsIslandFiles->'$(MSBuildThisFileDirectory)wwwroot\islands\settings\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-  </Target>
-
-  <!--
-    Copy the built connections island (cluster B: the household-connection invite flow) into wwwroot before build
-    (strangler). Run `npm run build` in frontend/connections/ first (or let the Docker build do it via the
-    connections-node-build stage). If dist/ doesn't exist, the target is skipped silently and the island endpoint
-    404s — Connections.razor renders the Blazor fallback via the SETTINGS_CONNECTIONS_USE_ISLAND toggle. Parallel
-    to CopySettingsIsland.
-  -->
-  <Target Name="CopyConnectionsIsland"
-          BeforeTargets="AssignTargetPaths"
-          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\connections\dist')">
-    <ItemGroup>
-      <_ConnectionsIslandFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\connections\dist\**\*.*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(_ConnectionsIslandFiles)"
-          DestinationFiles="@(_ConnectionsIslandFiles->'$(MSBuildThisFileDirectory)wwwroot\islands\connections\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-  </Target>
-
-  <!--
-    Copy the built admin island (cluster C: Household requests + Feedback) into wwwroot before build (strangler).
-    Run `npm run build` in frontend/admin/ first (or let the Docker build do it via the admin-node-build stage).
-    If dist/ doesn't exist, the target is skipped silently and the island endpoint 404s — HouseholdAdmin.razor /
-    FeedbackAdmin.razor render the Blazor fallback via the SETTINGS_ADMIN_USE_ISLAND toggle. Parallel to
-    CopySettingsIsland (one bundle serves both host pages).
-  -->
-  <Target Name="CopyAdminIsland"
-          BeforeTargets="AssignTargetPaths"
-          Condition="Exists('$(MSBuildThisFileDirectory)..\..\frontend\admin\dist')">
-    <ItemGroup>
-      <_AdminIslandFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\admin\dist\**\*.*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(_AdminIslandFiles)"
-          DestinationFiles="@(_AdminIslandFiles->'$(MSBuildThisFileDirectory)wwwroot\islands\admin\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-  </Target>
-
-  <!--
-    Spike (de-Blazor keystone): copy the built SvelteKit SPA (frontend/app, adapter-static) into
-    wwwroot/app/ so ASP.NET serves it same-origin under /app. Unlike the per-island dist/ targets, this
-    is a full SvelteKit build (build/ not dist/) with its own fingerprinted _app/ assets + the SPA
-    fallback index.html. Skipped silently if build/ is absent (CI/Docker run `npm run build` first).
+    De-Blazor WP-12: copy the built SvelteKit SPA (frontend/app, adapter-static) into wwwroot/ so
+    ASP.NET serves it at the site root. A full SvelteKit build (build/ not dist/): fingerprinted
+    _app/ assets, the SPA fallback index.html, and static/ (manifest.json + service-worker.js).
+    These outputs are gitignored (see .gitignore wwwroot entries). Skipped silently if build/ is
+    absent (CI/Docker run `npm run build` first).
   -->
   <Target Name="CopyAppSpa"
           BeforeTargets="AssignTargetPaths"
@@ -172,13 +25,12 @@
       <_AppSpaFiles Include="$(MSBuildThisFileDirectory)..\..\frontend\app\build\**\*.*" />
     </ItemGroup>
     <Copy SourceFiles="@(_AppSpaFiles)"
-          DestinationFiles="@(_AppSpaFiles->'$(MSBuildThisFileDirectory)wwwroot\app\%(RecursiveDir)%(Filename)%(Extension)')"
+          DestinationFiles="@(_AppSpaFiles->'$(MSBuildThisFileDirectory)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
   </Target>
 
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.4.0" />
-    <PackageReference Include="blazor-dragdrop" Version="2.6.1" />
     <PackageReference Include="Fractions" Version="8.3.2" />
     <PackageReference Include="Markdig" Version="0.44.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" Version="10.0.2" />
@@ -187,7 +39,6 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="9.0.0" />
-    <PackageReference Include="MudBlazor" Version="8.15.0" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
     <PackageReference Include="Polly" Version="8.6.5" />
     <PackageReference Include="HtmlSanitizer" Version="8.*" />
