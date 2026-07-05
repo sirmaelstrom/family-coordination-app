@@ -645,4 +645,115 @@ public class ChoreHistoryServiceTests
         history.Ghosts.Should().BeEmpty();
         history.GoneQuiet.Should().BeEmpty();
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════════════
+    // WP-03 — fold the ChoreSnoozeEvent log into the accurate snoozed-vs-slipped reason. Seam-style tests
+    // through GetHistoryAsync with real ChoreSnoozeEvent rows (the new read-path). now = Wed 2026-06-24,
+    // Utc tz (a DateOnly snooze floor's LocalMidnightUtc = its own midnight — keeps interval math legible).
+    // ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+    private static ChoreSnoozeEvent SnoozeEvent(int id, int choreId, DateTime setAtUtc, DateOnly? snoozedUntil) =>
+        new()
+        {
+            HouseholdId = H1,
+            ChoreId = choreId,
+            SnoozeEventId = id,
+            SetByUserId = Alice,
+            SetAt = setAtUtc,
+            SnoozedUntil = snoozedUntil,
+        };
+
+    private static HistoryGhost Ghost(ChoreHistoryResult h, string localDate) =>
+        h.Ghosts.Single(g => g.ExpectedLocalDate == localDate);
+
+    [Fact]
+    public async Task Reason_SetThenClear_SnoozedInsideInterval_SlippedAfterClear()
+    {
+        // Fixed weekly Wed, never completed. Beats Jun 3/10/17/24. SET(until Jun 20) at Jun 8, CLEAR at Jun 15.
+        // Interval [Jun 8, Jun 15) (cut short by the CLEAR before the floor). Current state = cleared (null).
+        Seed(ctx =>
+        {
+            ctx.Chores.Add(WeeklyChore(1, "Trash", ChoreDaysOfWeek.Wednesday, snoozedUntil: null));
+            ctx.ChoreSnoozeEvents.AddRange(
+                SnoozeEvent(1, 1, Utc0(2026, 6, 8, 9), new DateOnly(2026, 6, 20)),  // SET
+                SnoozeEvent(2, 1, Utc0(2026, 6, 15, 9), null));                     // CLEAR
+        });
+
+        var history = await CreateService(Utc).GetHistoryAsync(H1, weeks: 4, now: Utc0(2026, 6, 24, 12));
+
+        Ghost(history, "2026-06-10").Reason.Should().Be("snoozed", "Jun 10 is inside [Jun 8, Jun 15)");
+        Ghost(history, "2026-06-10").ReasonFromLog.Should().BeTrue();
+        Ghost(history, "2026-06-17").Reason.Should().Be("slipped", "the CLEAR cut the interval before Jun 17");
+        Ghost(history, "2026-06-17").ReasonFromLog.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Reason_SetNoClear_IntervalEndsAtFloor_NotOpenForever()
+    {
+        // SET(until Jun 12) at Jun 8, no CLEAR. Interval [Jun 8, Jun 12). A ghost after Jun 12 is 'slipped' —
+        // the interval expired at the floor, it did NOT stay open forever.
+        Seed(ctx =>
+        {
+            ctx.Chores.Add(WeeklyChore(1, "Trash", ChoreDaysOfWeek.Wednesday, snoozedUntil: new DateOnly(2026, 6, 12)));
+            ctx.ChoreSnoozeEvents.Add(SnoozeEvent(1, 1, Utc0(2026, 6, 8, 9), new DateOnly(2026, 6, 12)));
+        });
+
+        var history = await CreateService(Utc).GetHistoryAsync(H1, weeks: 4, now: Utc0(2026, 6, 24, 12));
+
+        Ghost(history, "2026-06-10").Reason.Should().Be("snoozed", "Jun 10 is inside [Jun 8, Jun 12)");
+        Ghost(history, "2026-06-17").Reason.Should().Be("slipped", "the interval ended at the Jun 12 floor");
+        Ghost(history, "2026-06-17").ReasonFromLog.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Reason_PreWindowSeed_SnoozeStartedBeforeWindow_LabelsEarlyGhostSnoozed()
+    {
+        // SET(until Jul 1) at May 20 — BEFORE the window (Mon Jun 1). Without the pre-window seed read, the
+        // early-window ghost Jun 3 would be mislabeled. The seed extends coverage: [May 20, Jul 1) covers Jun 3.
+        Seed(ctx =>
+        {
+            ctx.Chores.Add(WeeklyChore(1, "Trash", ChoreDaysOfWeek.Wednesday, snoozedUntil: new DateOnly(2026, 7, 1)));
+            ctx.ChoreSnoozeEvents.Add(SnoozeEvent(1, 1, Utc0(2026, 5, 20, 9), new DateOnly(2026, 7, 1)));
+        });
+
+        var history = await CreateService(Utc).GetHistoryAsync(H1, weeks: 4, now: Utc0(2026, 6, 24, 12));
+
+        Ghost(history, "2026-06-03").Reason.Should().Be("snoozed", "the pre-window snooze covers the early-window beat");
+        Ghost(history, "2026-06-03").ReasonFromLog.Should().BeTrue("the pre-window seed makes it log-derived, not fallback");
+    }
+
+    [Fact]
+    public async Task Reason_BeforeEarliestEvent_FallsBackToCurrentState_ReasonFromLogFalse()
+    {
+        // Only event is at Jun 15. A ghost on Jun 3 predates all log coverage ⇒ fallback to current
+        // Chore.SnoozedUntil, best-effort (ReasonFromLog=false). Current state here is cleared ⇒ 'slipped'.
+        Seed(ctx =>
+        {
+            ctx.Chores.Add(WeeklyChore(1, "Trash", ChoreDaysOfWeek.Wednesday, snoozedUntil: null));
+            ctx.ChoreSnoozeEvents.Add(SnoozeEvent(1, 1, Utc0(2026, 6, 15, 9), null)); // a CLEAR at Jun 15
+        });
+
+        var history = await CreateService(Utc).GetHistoryAsync(H1, weeks: 4, now: Utc0(2026, 6, 24, 12));
+
+        var g = Ghost(history, "2026-06-03");
+        g.ReasonFromLog.Should().BeFalse("Jun 3 is before the earliest logged event (Jun 15) — fallback path");
+        g.Reason.Should().Be("slipped", "current state is cleared");
+    }
+
+    [Fact]
+    public async Task GoneQuiet_AllTrailingMissesSnoozed_ReadsSnoozed()
+    {
+        // weeks=2 ⇒ window Mon Jun 15; beats Jun 17/24 (both missed ⇒ gone quiet). A pre-window SET(until Jul 1)
+        // at Jun 10 covers both trailing misses ⇒ GoneQuiet.Reason = 'snoozed'.
+        Seed(ctx =>
+        {
+            ctx.Chores.Add(WeeklyChore(1, "Trash", ChoreDaysOfWeek.Wednesday, snoozedUntil: new DateOnly(2026, 7, 1)));
+            ctx.ChoreSnoozeEvents.Add(SnoozeEvent(1, 1, Utc0(2026, 6, 10, 9), new DateOnly(2026, 7, 1)));
+        });
+
+        var history = await CreateService(Utc).GetHistoryAsync(H1, weeks: 2, now: Utc0(2026, 6, 24, 12));
+
+        history.GoneQuiet.Should().ContainSingle().Which.Reason.Should().Be("snoozed",
+            "every trailing missed beat is covered by the snooze log");
+    }
 }

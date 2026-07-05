@@ -210,6 +210,41 @@ public class ChoreHistoryService(
                 g => g.Key,
                 g => g.Select(r => ChoreStatusCalculator.LocalDate(r.CompletedAt, tz)).OrderBy(d => d).ToList());
 
+        // Snooze log (WP-03): the accurate snoozed-vs-slipped reason for each ghost/gone-quiet chore comes from
+        // the ChoreSnoozeEvent stream, not current state. Two bounded reads (M2 exception b):
+        //   (1) in-window events (SetAt >= windowStart);
+        //   (2) the SINGLE latest event before the window per chore (MAX(SetAt) GROUP BY ChoreId, re-fetched),
+        //       seeding the snooze state active AT windowStart so an early-window ghost inside a pre-window
+        //       snooze isn't mislabeled.
+        var snoozeEventRows = await context.ChoreSnoozeEvents
+            .AsNoTracking()
+            .Where(e => e.HouseholdId == householdId && e.SetAt >= oldestWeekStartUtc)
+            .Select(e => new SnoozeRow(e.ChoreId, e.SetAt, e.SnoozedUntil))
+            .ToListAsync(ct);
+
+        var seedMaxes = await context.ChoreSnoozeEvents
+            .AsNoTracking()
+            .Where(e => e.HouseholdId == householdId && e.SetAt < oldestWeekStartUtc)
+            .GroupBy(e => e.ChoreId)
+            .Select(g => new { ChoreId = g.Key, MaxSetAt = g.Max(e => e.SetAt) })
+            .ToListAsync(ct);
+
+        var seedRows = new List<SnoozeRow>();
+        if (seedMaxes.Count > 0)
+        {
+            var maxSetAts = seedMaxes.Select(s => s.MaxSetAt).Distinct().ToList();
+            var candidates = await context.ChoreSnoozeEvents
+                .AsNoTracking()
+                .Where(e => e.HouseholdId == householdId && e.SetAt < oldestWeekStartUtc && maxSetAts.Contains(e.SetAt))
+                .Select(e => new SnoozeRow(e.ChoreId, e.SetAt, e.SnoozedUntil))
+                .ToListAsync(ct);
+            // Keep exactly the (ChoreId, MaxSetAt) rows — guards against a rare cross-chore SetAt collision.
+            var seedKeys = seedMaxes.Select(s => (s.ChoreId, s.MaxSetAt)).ToHashSet();
+            seedRows = candidates.Where(c => seedKeys.Contains((c.ChoreId, c.SetAt))).ToList();
+        }
+
+        var snoozeByChore = BuildSnoozeStates(snoozeEventRows, seedRows);
+
         var memberNameById = members.ToDictionary(m => m.UserId, m => m.DisplayName);
 
         var events = BuildEvents(completions, choreById, memberNameById);
@@ -218,7 +253,7 @@ public class ChoreHistoryService(
         var milestones = BuildMilestones(weeksResult, firstEverByChore, choreById, oldestWeekStartUtc, asOf);
         var keptMoments = BuildKeptMoments(completions, choreById);
         var whatGotTended = BuildWhatGotTended(completions, choreById, roomNameById);
-        var (ghosts, goneQuiet) = BuildProjection(activeChores, doneDatesByChore, oldestWeekStartUtc, asOf);
+        var (ghosts, goneQuiet) = BuildProjection(activeChores, doneDatesByChore, snoozeByChore, oldestWeekStartUtc, asOf);
 
         return new ChoreHistoryResult(
             WindowStartLocal: LocalIsoDate(oldestWeekStartUtc),
@@ -244,6 +279,7 @@ public class ChoreHistoryService(
     private (IReadOnlyList<HistoryGhost> Ghosts, IReadOnlyList<HistoryGoneQuiet> GoneQuiet) BuildProjection(
         IReadOnlyList<Chore> activeChores,
         IReadOnlyDictionary<int, List<DateOnly>> doneDatesByChore,
+        IReadOnlyDictionary<int, ChoreSnoozeState> snoozeByChore,
         DateTime oldestWeekStartUtc,
         DateTime asOf)
     {
@@ -278,14 +314,19 @@ public class ChoreHistoryService(
             var (back, fwd) = ToleranceFor(snap);
             var (_, missed) = Match(beats, doneDates, back, fwd);
 
+            snoozeByChore.TryGetValue(chore.ChoreId, out var snoozeState);
+
             var missedSet = missed.ToHashSet();
             foreach (var beat in missed)
             {
+                // WP-03: the accurate reason comes from the ChoreSnoozeEvent log (ReasonFromLog=true); beats
+                // before the chore's earliest logged event fall back to current state (ReasonFromLog=false).
+                var (reason, fromLog) = ResolveReason(snap, beat, snoozeState);
                 ghosts.Add(new HistoryGhost(
                     ChoreName: chore.Name,
                     ExpectedLocalDate: Iso(beat),
-                    Reason: CurrentStateReason(snap, beat),
-                    ReasonFromLog: false)); // WP-03 overwrites both Reason and ReasonFromLog from the log.
+                    Reason: reason,
+                    ReasonFromLog: fromLog));
             }
 
             // Gone-quiet: the trailing run of consecutive misses at the newest end of the beat list.
@@ -293,7 +334,8 @@ public class ChoreHistoryService(
             if (trailing >= GoneQuietThreshold)
             {
                 var trailingBeats = beats.GetRange(beats.Count - trailing, trailing);
-                var allSnoozed = trailingBeats.All(b => CurrentStateReason(snap, b) == "snoozed");
+                // Snoozed iff EVERY trailing missed beat was snoozed (log-derived); else slipped (D5).
+                var allSnoozed = trailingBeats.All(b => ResolveReason(snap, b, snoozeState).Reason == "snoozed");
                 goneQuiet.Add(new HistoryGoneQuiet(
                     ChoreName: chore.Name,
                     CadenceLabel: CadenceLabel(snap),
@@ -503,6 +545,106 @@ public class ChoreHistoryService(
 
     /// <summary>Format a <see cref="DateOnly"/> beat as an ISO date string (already a local date — no tz conversion).</summary>
     private static string Iso(DateOnly d) => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    // ── Snooze log fold (WP-03) ──────────────────────────────────────────────────────────────────────
+
+    /// <summary>A single snooze-log row (a SET when <c>SnoozedUntil</c> is non-null, a CLEAR when null).</summary>
+    private sealed record SnoozeRow(int ChoreId, DateTime SetAt, DateOnly? SnoozedUntil);
+
+    /// <summary>
+    /// A chore's folded snooze state: the active snooze intervals (UTC half-open <c>[start, end)</c>) plus the
+    /// local date of the earliest loaded event — the coverage boundary. A ghost on/after
+    /// <see cref="EarliestEventLocalDate"/> is labeled from the log; one before it falls back to current state.
+    /// </summary>
+    private sealed record ChoreSnoozeState(
+        IReadOnlyList<(DateTime StartUtc, DateTime EndUtc)> Intervals,
+        DateOnly? EarliestEventLocalDate);
+
+    /// <summary>Group the (seed + in-window) snooze rows per chore and fold each into snooze intervals.</summary>
+    private Dictionary<int, ChoreSnoozeState> BuildSnoozeStates(
+        IReadOnlyList<SnoozeRow> inWindow, IReadOnlyList<SnoozeRow> seeds)
+    {
+        var byChore = new Dictionary<int, List<SnoozeRow>>();
+        foreach (var r in seeds.Concat(inWindow))
+        {
+            if (!byChore.TryGetValue(r.ChoreId, out var list))
+            {
+                list = new List<SnoozeRow>();
+                byChore[r.ChoreId] = list;
+            }
+            list.Add(r);
+        }
+
+        var result = new Dictionary<int, ChoreSnoozeState>(byChore.Count);
+        foreach (var (choreId, rows) in byChore)
+        {
+            var ordered = rows.OrderBy(r => r.SetAt).ToList();
+            var intervals = FoldSnoozeIntervals(ordered);
+            var earliest = ChoreStatusCalculator.LocalDate(ordered[0].SetAt, tz);
+            result[choreId] = new ChoreSnoozeState(intervals, earliest);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Fold an ordered event stream into active snooze intervals (D5). A SET at <c>t0</c> with floor <c>X</c>
+    /// opens <c>[t0, min(LocalMidnightUtc(X), nextEventSetAt))</c> — the snooze expires at its own floor OR is
+    /// superseded by the next event (a CLEAR or a re-snooze), whichever is earlier. A CLEAR opens no interval;
+    /// it only bounds the preceding SET via <c>nextEventSetAt</c>. Using the next EVENT (not just the next
+    /// CLEAR) also cleanly handles a re-snooze that shortens the prior floor.
+    /// </summary>
+    private List<(DateTime StartUtc, DateTime EndUtc)> FoldSnoozeIntervals(IReadOnlyList<SnoozeRow> ordered)
+    {
+        var intervals = new List<(DateTime, DateTime)>();
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            if (ordered[i].SnoozedUntil is not { } floor)
+            {
+                continue; // CLEAR — opens nothing.
+            }
+            var startUtc = DateTime.SpecifyKind(ordered[i].SetAt, DateTimeKind.Utc);
+            var floorUtc = ChoreStatusCalculator.LocalMidnightUtc(floor, tz);
+            var nextEventUtc = i + 1 < ordered.Count
+                ? DateTime.SpecifyKind(ordered[i + 1].SetAt, DateTimeKind.Utc)
+                : DateTime.MaxValue;
+            var endUtc = floorUtc < nextEventUtc ? floorUtc : nextEventUtc;
+            if (endUtc > startUtc)
+            {
+                intervals.Add((startUtc, endUtc));
+            }
+        }
+        return intervals;
+    }
+
+    /// <summary>Whether a beat's local day <c>[midnight(D), midnight(D+1))</c> intersects any snooze interval.</summary>
+    private bool WasSnoozedAt(DateOnly beat, IReadOnlyList<(DateTime StartUtc, DateTime EndUtc)> intervals)
+    {
+        var dayStart = ChoreStatusCalculator.LocalMidnightUtc(beat, tz);
+        var dayEnd = ChoreStatusCalculator.LocalMidnightUtc(beat.AddDays(1), tz);
+        foreach (var (startUtc, endUtc) in intervals)
+        {
+            if (startUtc < dayEnd && endUtc > dayStart)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Resolve a beat's reason. If the snooze log covers the beat (the chore has events AND the beat is on/after
+    /// the earliest loaded event), the answer is log-derived (<c>ReasonFromLog=true</c>). Otherwise it falls
+    /// back to the current-state placeholder (<c>ReasonFromLog=false</c>) — best-effort for pre-log beats (D5).
+    /// </summary>
+    private (string Reason, bool FromLog) ResolveReason(
+        ChoreRecurrenceSnapshot chore, DateOnly beat, ChoreSnoozeState? state)
+    {
+        if (state is { EarliestEventLocalDate: { } earliest } && beat >= earliest)
+        {
+            return (WasSnoozedAt(beat, state.Intervals) ? "snoozed" : "slipped", true);
+        }
+        return (CurrentStateReason(chore, beat), false);
+    }
 
     // ── Events — the completion feed (newest-first) ──────────────────────────────────────────────────
 
