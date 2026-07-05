@@ -1,6 +1,7 @@
 import type { HouseholdRequestsDto, HouseholdSummaryDto, FeedbackListDto } from './types';
 
 const REQUESTS = '/api/settings/household-requests';
+const HOUSEHOLDS = '/api/settings/households';
 const FEEDBACK = '/api/settings/feedback';
 
 /**
@@ -71,6 +72,21 @@ export async function approveRequest(id: number): Promise<HouseholdSummaryDto> {
 /** #3 Reject with an OPTIONAL reason → 204. Already-reviewed ⇒ 409 (ApiError); unknown ⇒ 404. */
 export async function rejectRequest(id: number, reason: string): Promise<void> {
   await request<void>(`${REQUESTS}/${id}/reject`, { method: 'POST', ...jsonBody({ reason }) });
+}
+
+/**
+ * Admin-initiated household create (the "push" invite) → the new household summary (201). Blank/too-long ⇒ 400
+ * (ApiError); an email already belonging to a member ⇒ 409 (ApiError). `ownerDisplayName` is optional.
+ */
+export async function createHousehold(
+  householdName: string,
+  ownerEmail: string,
+  ownerDisplayName?: string,
+): Promise<HouseholdSummaryDto> {
+  return request<HouseholdSummaryDto>(`${HOUSEHOLDS}/`, {
+    method: 'POST',
+    ...jsonBody({ householdName, ownerEmail, ownerDisplayName: ownerDisplayName || null }),
+  });
 }
 
 // ─── Feedback (dual-mode) ───────────────────────────────────────────────────

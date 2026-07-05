@@ -145,4 +145,82 @@ public sealed class HouseholdRequestService(
 
         return ReviewOutcome.Ok;
     }
+
+    public async Task<CreateHouseholdResult> CreateHouseholdAsync(
+        string householdName, string ownerEmail, string? ownerDisplayName, string createdByEmail,
+        CancellationToken cancellationToken = default)
+    {
+        var name = householdName?.Trim() ?? "";
+        var email = ownerEmail?.Trim().ToLowerInvariant() ?? "";
+        if (name.Length == 0 || email.Length == 0)
+        {
+            return new CreateHouseholdResult(CreateHouseholdOutcome.InvalidInput, null);
+        }
+
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        // The owner email must be free across ALL households (cross-tenant read, like AddMemberAsync's guard): an
+        // existing user already has a home, and the unique Users.Email constraint would reject the insert anyway.
+        // Cheap pre-check for a clean 409 before opening the transaction.
+        var emailTaken = await context.Users.AnyAsync(u => u.Email == email, cancellationToken);
+        if (emailTaken)
+        {
+            return new CreateHouseholdResult(CreateHouseholdOutcome.EmailInUse, null);
+        }
+
+        var now = DateTime.UtcNow;
+
+        // R-C2: household + owner + default categories commit atomically (same shape as ApproveAsync). The owner FK
+        // needs household.Id, so the household flushes first; a failure anywhere rolls the whole thing back — no
+        // orphan household, no household with no categories.
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+        var household = new Household { Name = name, CreatedAt = now };
+        context.Households.Add(household);
+        await context.SaveChangesAsync(cancellationToken); // assign household.Id for the user FK below
+
+        context.Users.Add(new User
+        {
+            HouseholdId = household.Id,
+            Email = email,
+            // Fall back to the email local-part when no display name is given (parity AddMemberAsync).
+            DisplayName = string.IsNullOrWhiteSpace(ownerDisplayName) ? email.Split('@')[0] : ownerDisplayName!.Trim(),
+            GoogleId = null, // set when the owner first logs in with Google (parity AddMemberAsync)
+            IsWhitelisted = true,
+            CreatedAt = now,
+        });
+
+        SeedData.AddDefaultCategories(context, household.Id);
+
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            // A concurrent create/approve inserted the same email first. The transaction is NOT committed; returning
+            // disposes it → full rollback (no orphan household), so the caller gets a clean 409 (parity ApproveAsync).
+            logger.LogWarning(ex, "Create household blocked: email {Email} already in use — rolled back", email);
+            return new CreateHouseholdResult(CreateHouseholdOutcome.EmailInUse, null);
+        }
+
+        // Seed the curated chore/room library AFTER the commit (parity SetupService.CreateHouseholdAsync — the seeder
+        // opens its own factory context; idempotent per OQ3). Kept out of the transaction on purpose: a failure here
+        // leaves a usable household (owner + categories) with an empty chore library, not an orphan — logged, not fatal.
+        try
+        {
+            await SeedData.SeedChoresAndRoomsAsync(dbFactory, household.Id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Household {HouseholdId} created but chore/room seeding failed", household.Id);
+        }
+
+        logger.LogInformation(
+            "Created household {HouseholdId} '{HouseholdName}' with owner {Email} by {Admin}",
+            household.Id, name, email, createdByEmail);
+
+        return new CreateHouseholdResult(CreateHouseholdOutcome.Ok, household);
+    }
 }
