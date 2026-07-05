@@ -22,6 +22,7 @@ import type {
   ChoreSubtaskDto,
   ChoreEquityDto,
   ChoreRecapDto,
+  ChoreLedgerDto,
   EquityWindow,
   CapacityTier,
   RoomRollupDto,
@@ -54,6 +55,7 @@ import {
   setCapacity,
   getEquity,
   getRecap,
+  getLedger,
   type CreateChoreRequest,
   type UpdateChoreRequest,
   type CompleteRequest,
@@ -180,6 +182,23 @@ class BoardStore {
   recapError = $state<string | null>(null);
   /** True once a recap fetch has resolved; invalidation flips it back so the App effect reloads. */
   recapLoaded = $state(false);
+
+  // ── Ledger lens (chore-history C surface — its own cached payload, like recap) ─
+  //
+  // GET /api/chores/ledger: the completion feed + weave scaffold + ghost rows +
+  // gone-quiet band. Same lifecycle as recap — fetch-on-open (App.svelte $effect,
+  // WP-09) + invalidated on the SAME completion/snooze/edit events (folded into
+  // `invalidateEquity`). `loadLedger()` never varies `weeks`, so a re-entrancy guard
+  // suffices — no loadSeq needed. All values are server-computed; NO client date math.
+
+  /** The cached ledger payload. null until first loaded (or after invalidation+reload). */
+  ledger = $state<ChoreLedgerDto | null>(null);
+  /** True while a `loadLedger()` fetch is in flight. */
+  ledgerLoading = $state(false);
+  /** Human-readable ledger error; null when healthy. */
+  ledgerError = $state<string | null>(null);
+  /** True once a ledger fetch has resolved; invalidation flips it back so the App effect reloads. */
+  ledgerLoaded = $state(false);
 
   /**
    * The board refetch hook, wired by App.svelte (`store.setRefresh(loadBoard)`).
@@ -418,9 +437,10 @@ class BoardStore {
     if (this.lens === 'equity') {
       void this.loadEquity();
     }
-    // The recap reads the same completion-derived data, so it goes stale on the
-    // exact same events — cascade the invalidation (reloads now if recap is open).
+    // The recap + ledger read the same completion-derived data, so they go stale on
+    // the exact same events — cascade the invalidation (each reloads now if open).
     this.invalidateRecap();
+    this.invalidateLedger();
   }
 
   // ── Recap lens fetch + invalidation (mirrors equity) ──────────────────────
@@ -452,6 +472,43 @@ class BoardStore {
     this.recapLoaded = false;
     if (this.lens === 'recap') {
       void this.loadRecap();
+    }
+  }
+
+  // ── Ledger lens fetch + invalidation (mirrors recap) ──────────────────────
+
+  /**
+   * Fetch the ledger payload (feed + weave + ghosts + gone-quiet). Called by
+   * App.svelte's $effect when the history lens is open on the ledger sub-view and
+   * the cache is stale (WP-09). Re-entrancy-guarded so the effect doesn't refetch
+   * every tick; `weeks` never varies at runtime, so no loadSeq guard is needed.
+   */
+  async loadLedger(): Promise<void> {
+    if (this.ledgerLoading) return;
+    this.ledgerLoading = true;
+    this.ledgerError = null;
+    try {
+      this.ledger = await getLedger();
+      this.ledgerLoaded = true;
+    } catch (e) {
+      this.ledgerError =
+        e instanceof ApiError
+          ? `Couldn't load the ledger (HTTP ${e.status}).`
+          : "Couldn't load the ledger right now.";
+    } finally {
+      this.ledgerLoading = false;
+    }
+  }
+
+  /**
+   * Drop the cached ledger; reload immediately if the history lens is open. The
+   * lens id stays `'recap'` (WP-09 relabels the DISPLAY only — the canonical id is
+   * unchanged so `ChoreLens.All` isn't churned).
+   */
+  invalidateLedger(): void {
+    this.ledgerLoaded = false;
+    if (this.lens === 'recap') {
+      void this.loadLedger();
     }
   }
 
