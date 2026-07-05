@@ -12,7 +12,8 @@ namespace FamilyCoordinationApp.Tests.Services;
 
 /// <summary>
 /// Unit coverage for <see cref="HouseholdRequestService.CreateHouseholdAsync"/> — the admin-initiated "push" invite
-/// (the mirror of the self-request→approve "pull"). InMemory EF (mirrors <see cref="HouseholdMemberServiceTests"/>);
+/// (the mirror of the self-request→approve "pull") — plus the seeding parity of the "pull" side
+/// (<see cref="HouseholdRequestService.ApproveAsync"/>). InMemory EF (mirrors <see cref="HouseholdMemberServiceTests"/>);
 /// the service opens a fresh context per call via the mocked factory over ONE in-memory DB, so state persists across
 /// calls. The service wraps the create in a transaction — InMemory can't do transactions, so the options ignore
 /// <see cref="InMemoryEventId.TransactionIgnoredWarning"/> (the transaction no-ops; the create logic still runs). The
@@ -126,6 +127,38 @@ public class HouseholdRequestServiceTests : IDisposable
         result.Outcome.Should().Be(CreateHouseholdOutcome.InvalidInput);
         result.Household.Should().BeNull();
         (await CountHouseholdsAsync()).Should().Be(before);
+    }
+
+    [Fact]
+    public async Task Approve_PendingRequest_SeedsCategoriesChoresAndRooms()
+    {
+        // A pending self-service request awaiting admin review.
+        const int requestId = 42;
+        _seedContext.HouseholdRequests.Add(new HouseholdRequest
+        {
+            Id = requestId,
+            Email = "eve@new.test",
+            DisplayName = "Eve",
+            HouseholdName = "The Everetts",
+            Status = HouseholdRequestStatus.Pending,
+            RequestedAt = DateTime.UtcNow,
+        });
+        _seedContext.SaveChanges();
+
+        var result = await _service.ApproveAsync(requestId, "admin@site.test");
+
+        result.Outcome.Should().Be(ReviewOutcome.Ok);
+        result.CreatedHousehold.Should().NotBeNull();
+
+        await using var db = NewContext();
+        var hhId = result.CreatedHousehold!.Id;
+
+        // Parity with the push-invite / first-run paths: an approved household comes up with the full
+        // starter library — the nine categories PLUS the curated chore/room set. Regression guard: approve
+        // used to seed categories only, leaving a household with an empty Chores surface.
+        (await db.Categories.Where(c => c.HouseholdId == hhId).ToListAsync()).Should().NotBeEmpty();
+        (await db.Rooms.Where(r => r.HouseholdId == hhId).ToListAsync()).Should().NotBeEmpty();
+        (await db.Chores.Where(c => c.HouseholdId == hhId).ToListAsync()).Should().NotBeEmpty();
     }
 
     private async Task<int> CountHouseholdsAsync()

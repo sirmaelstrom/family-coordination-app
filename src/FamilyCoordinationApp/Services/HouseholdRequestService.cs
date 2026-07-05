@@ -105,6 +105,18 @@ public sealed class HouseholdRequestService(
             return new ApproveResult(ReviewOutcome.EmailInUse, null);
         }
 
+        // Seed the curated chore/room library AFTER the commit (parity CreateHouseholdAsync / SetupService — the seeder
+        // opens its own factory context; idempotent per OQ3). Kept out of the transaction on purpose: a failure here
+        // leaves a usable household (owner + categories) with an empty chore library, not an orphan — logged, not fatal.
+        try
+        {
+            await SeedData.SeedChoresAndRoomsAsync(dbFactory, household.Id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Household {HouseholdId} approved but chore/room seeding failed", household.Id);
+        }
+
         logger.LogInformation(
             "Approved household request {RequestId}: {HouseholdName} for {Email} by {Admin}",
             requestId, request.HouseholdName, request.Email, reviewerEmail);
