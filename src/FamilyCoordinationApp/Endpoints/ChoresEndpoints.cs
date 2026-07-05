@@ -62,6 +62,9 @@ public static class ChoresEndpoints
         group.MapGet("/equity", GetEquity);
         // In-app weekly recap lens (digest content + week-over-week trend). Cookie-authed, household-scoped.
         group.MapGet("/recap", GetRecap);
+        // Chore-history ledger (C): completion feed + weave scaffold + ghost rows + gone-quiet band. Read-only,
+        // household-scoped. Its own cached payload, mirroring the /board /equity /recap lens idiom (D1).
+        group.MapGet("/ledger", GetLedger);
         group.MapGet("/digest-settings", GetDigestSettings);
         group.MapPut("/digest-settings", UpdateDigestSettings);
         group.MapPost("/seed-starter", SeedStarter);
@@ -857,6 +860,30 @@ public static class ChoresEndpoints
         // HouseholdId comes from the resolved caller, never the client (M1). weeks is clamped in the service.
         var dto = await recapService.GetRecapAsync(user.HouseholdId, weeks ?? 8, now: null, ct);
         return Results.Ok(dto);
+    }
+
+    // ─── Chore-history ledger lens (C — the browsable completion ledger) ──────────────────────────────
+
+    /// <summary>
+    /// GET /api/chores/ledger?weeks=N — the ledger read-model (M1, household-scoped): the completion feed, the
+    /// weave scaffold, ghost rows (expected-but-missing beats, snoozed/slipped), and the gone-quiet band. Read
+    /// only. <c>weeks</c> defaults to 12 (the weave is a 12×7 grid) and is clamped 1–26 by the service.
+    /// </summary>
+    private static async Task<IResult> GetLedger(
+        [FromQuery] int? weeks,
+        ClaimsPrincipal principal,
+        IChoreHistoryService historyService,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
+        // Non-empty 401 body (M7/fca-empty-404) — a deliberate improvement over the sibling handlers' bare
+        // Results.Unauthorized(): an empty 4xx re-executes through the GET-only /not-found page.
+        if (user is null) return Results.Json(new { message = "Unauthorized" }, statusCode: 401);
+
+        // HouseholdId comes from the resolved caller, never the client (M1). weeks is clamped in the service.
+        var result = await historyService.GetHistoryAsync(user.HouseholdId, weeks ?? 12, now: null, ct);
+        return Results.Ok(ChoreLedgerProjection.ToLedger(result));
     }
 
     // ─── Digest settings (v1.1 WP-06) ────────────────────────────────────────────────
