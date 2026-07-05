@@ -44,7 +44,8 @@ public class ChoreRecapService(
     ChoreStatusCalculator status,
     DigestBuilder builder,
     TimeZoneInfo tz,
-    TimeProvider timeProvider) : IChoreRecapService
+    TimeProvider timeProvider,
+    IChoreHistoryService historyService) : IChoreRecapService
 {
     private const int MinWeeks = 1;
     private const int MaxWeeks = 26;
@@ -87,11 +88,39 @@ public class ChoreRecapService(
             .Where(c => c.HouseholdId == householdId && c.Status == ChoreStatus.Active)
             .ToListAsync(ct);
 
-        var current = BuildCurrentWeek(householdName, members, completions, activeChores, asOf);
-        var trend = BuildTrend(completions, asOf, weeks);
+        // Phase 15 (D2/D3): project the shared history result for the additive logbook sections. Same instant
+        // + same weeks ⇒ its Weeks align to the trend by exact WeekStartLocal key. The digest-mirror Current
+        // path (BuildCurrentWeek) is UNTOUCHED — M6/E3.
+        var history = await historyService.GetHistoryAsync(householdId, weeks, now: asOf, ct);
+        var distributionByWeek = history.Weeks.ToDictionary(
+            w => w.WeekStartLocal, w => w.Distribution);
 
-        return new ChoreRecapDto(current, trend);
+        var current = BuildCurrentWeek(householdName, members, completions, activeChores, asOf);
+        var trend = BuildTrend(completions, asOf, weeks, distributionByWeek);
+
+        return new ChoreRecapDto(
+            current,
+            trend,
+            Milestones: ProjectMilestones(history.Milestones),
+            KeptMoments: history.KeptMoments
+                .Select(k => new KeptMomentDto(k.LocalDate, k.ChoreName, k.Note, k.HasPhoto))
+                .ToList(),
+            WhatGotTended: history.WhatGotTended
+                .Select(t => new WhatGotTendedDto(t.RoomName, t.Completions))
+                .ToList(),
+            GoneQuiet: history.GoneQuiet
+                .Select(q => new GoneQuietDto(q.ChoreName, q.CadenceLabel, q.LastCompletedLocalDate, q.Reason))
+                .ToList());
     }
+
+    /// <summary>Project the shared history milestones onto the wire DTO (renames Completions/Points →
+    /// TotalCompletions/TotalPoints to match the sibling recap DTO shapes).</summary>
+    private static MilestonesDto ProjectMilestones(HistoryMilestones m) => new(
+        BestWeek: m.BestWeek is { } bw ? new BestWeekDto(bw.WeekStartLocal, bw.Completions, bw.Points) : null,
+        LongestActiveStreakWeeks: m.LongestActiveStreakWeeks,
+        FirstEvers: m.FirstEvers.Select(f => new FirstEverDto(f.ChoreName, f.LocalDate)).ToList(),
+        SeasonTotalCompletions: m.SeasonTotalCompletions,
+        SeasonTotalPoints: m.SeasonTotalPoints);
 
     /// <summary>
     /// Assemble the current week EXACTLY as <see cref="DigestService.BuildModelAsync"/> does (same equity
@@ -150,7 +179,8 @@ public class ChoreRecapService(
     /// the following Monday-00:00 completion land in different weeks.
     /// </summary>
     private IReadOnlyList<RecapTrendPointDto> BuildTrend(
-        IReadOnlyList<ChoreCompletion> completions, DateTime now, int weeks)
+        IReadOnlyList<ChoreCompletion> completions, DateTime now, int weeks,
+        IReadOnlyDictionary<string, IReadOnlyList<RecapMemberLineDto>> distributionByWeek)
     {
         // Bucket every completion ONCE by its local week-start (O(completions)), then emit the requested
         // weeks from the buckets (O(weeks)) — instead of rescanning all completions per week. Both sides
@@ -172,11 +202,17 @@ public class ChoreRecapService(
             var weekStartUtc = ChoreEquityCalculator.WeekStartUtc(now.AddDays(-7 * k), tz);
             byWeekStart.TryGetValue(weekStartUtc, out var agg);
 
+            var weekStartLocal = LocalIsoDate(weekStartUtc);
             points.Add(new RecapTrendPointDto(
-                WeekStartLocal: LocalIsoDate(weekStartUtc),
+                WeekStartLocal: weekStartLocal,
                 TotalCompletions: agg.Completions,
                 TotalPoints: agg.Points,
-                IsCurrent: k == 0));
+                IsCurrent: k == 0,
+                // Merge the per-week distribution from the shared history result by exact WeekStartLocal key —
+                // both sides derive it from WeekStartUtc, so the keys align (D6). Never merge by index.
+                Distribution: distributionByWeek.TryGetValue(weekStartLocal, out var dist)
+                    ? dist
+                    : Array.Empty<RecapMemberLineDto>()));
         }
         return points;
     }

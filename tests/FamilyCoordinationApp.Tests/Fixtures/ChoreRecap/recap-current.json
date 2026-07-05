@@ -1,0 +1,22 @@
+{
+  "weekStartLocal": "2026-06-15",
+  "headline": "The Smith house knocked out 4 chores (10 pts) this week!",
+  "totalCompletions": 4,
+  "totalPoints": 10,
+  "distribution": [
+    {
+      "displayName": "Alice",
+      "points": 6,
+      "sharePct": 60
+    },
+    {
+      "displayName": "Bob",
+      "points": 4,
+      "sharePct": 40
+    }
+  ],
+  "fallingBehind": [
+    "Take out trash"
+  ],
+  "upForGrabsCount": 2
+}

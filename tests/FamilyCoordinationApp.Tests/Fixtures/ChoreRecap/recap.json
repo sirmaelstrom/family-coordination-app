@@ -1,0 +1,104 @@
+{
+  "current": {
+    "weekStartLocal": "2026-06-15",
+    "headline": "The Smith house knocked out 4 chores (10 pts) this week!",
+    "totalCompletions": 4,
+    "totalPoints": 10,
+    "distribution": [
+      {
+        "displayName": "Alice",
+        "points": 6,
+        "sharePct": 60
+      },
+      {
+        "displayName": "Bob",
+        "points": 4,
+        "sharePct": 40
+      }
+    ],
+    "fallingBehind": [
+      "Take out trash"
+    ],
+    "upForGrabsCount": 2
+  },
+  "trend": [
+    {
+      "weekStartLocal": "2026-06-08",
+      "totalCompletions": 3,
+      "totalPoints": 7,
+      "isCurrent": false,
+      "distribution": [
+        {
+          "displayName": "Alice",
+          "points": 4,
+          "sharePct": 57.1
+        },
+        {
+          "displayName": "Bob",
+          "points": 3,
+          "sharePct": 42.9
+        }
+      ]
+    },
+    {
+      "weekStartLocal": "2026-06-15",
+      "totalCompletions": 4,
+      "totalPoints": 10,
+      "isCurrent": true,
+      "distribution": [
+        {
+          "displayName": "Alice",
+          "points": 6,
+          "sharePct": 60
+        },
+        {
+          "displayName": "Bob",
+          "points": 4,
+          "sharePct": 40
+        }
+      ]
+    }
+  ],
+  "milestones": {
+    "bestWeek": {
+      "weekStartLocal": "2026-06-15",
+      "totalCompletions": 4,
+      "totalPoints": 10
+    },
+    "longestActiveStreakWeeks": 2,
+    "firstEvers": [
+      {
+        "choreName": "Deep clean",
+        "localDate": "2026-06-10"
+      }
+    ],
+    "seasonTotalCompletions": 7,
+    "seasonTotalPoints": 17
+  },
+  "keptMoments": [
+    {
+      "localDate": "2026-06-14",
+      "choreName": "Dishes",
+      "note": "Left them sparkling",
+      "hasPhoto": true
+    }
+  ],
+  "whatGotTended": [
+    {
+      "roomName": "Kitchen",
+      "completions": 5
+    },
+    {
+      "roomName": "General",
+      "completions": 2
+    }
+  ],
+  "goneQuiet": [
+    {
+      "choreName": "Water plants",
+      "cadenceLabel": "every 7 days",
+      "lastCompletedLocalDate": null,
+      "reason": "slipped"
+    }
+  ]
+}
