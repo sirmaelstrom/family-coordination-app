@@ -6,6 +6,7 @@
   import { base } from '$app/paths';
   import { page } from '$app/state';
   import { session } from '$lib/session.svelte';
+  import { sidebar } from './sidebar.svelte';
   import Icon from './Icon.svelte';
   import {
     primaryNav,
@@ -27,8 +28,8 @@
   );
 </script>
 
-<nav class="sh-nav" aria-label="Primary">
-  <a class="sh-brand" href="{base}/dashboard">
+<nav class="sh-nav" class:collapsed={sidebar.collapsed} aria-label="Primary">
+  <a class="sh-brand" href="{base}/dashboard" aria-label="Family Kitchen — dashboard" title="Family Kitchen">
     <Icon name="recipes" size={26} />
     <span class="sh-brand-name">Family Kitchen</span>
   </a>
@@ -40,6 +41,8 @@
           class="sh-nav-link"
           class:active={isActive(pathname, base, item.href, item.match)}
           href="{base}{item.href}"
+          title={item.label}
+          aria-label={item.label}
           aria-current={isActive(pathname, base, item.href, item.match) ? 'page' : undefined}
         >
           <Icon name={item.icon} />
@@ -51,39 +54,61 @@
 
   <div class="sh-divider"></div>
 
-  <div class="sh-section">
-    <button
-      type="button"
-      class="sh-nav-link sh-section-toggle"
-      class:active={settingsActive}
-      aria-expanded={settingsOpen}
-      onclick={() => (userToggled = !settingsOpen)}
-    >
-      <Icon name="settings" />
-      <span>Settings</span>
-      <span class="sh-chevron" class:open={settingsOpen}>
-        <Icon name="chevron" size={18} />
-      </span>
-    </button>
+  {#if sidebar.collapsed}
+    <!-- Mini rail: settings items as a flat icon-only list (parity with the old
+         NavMenu mini drawer, which flattened Settings to bare icons). -->
+    <ul class="sh-nav-list">
+      {#each visibleSettings as item (item.href)}
+        <li>
+          <a
+            class="sh-nav-link"
+            class:active={isActive(pathname, base, item.href, 'prefix')}
+            href="{base}{item.href}"
+            title={item.label}
+            aria-label={item.label}
+            aria-current={isActive(pathname, base, item.href, 'prefix') ? 'page' : undefined}
+          >
+            <Icon name={item.icon} />
+            <span>{item.label}</span>
+          </a>
+        </li>
+      {/each}
+    </ul>
+  {:else}
+    <div class="sh-section">
+      <button
+        type="button"
+        class="sh-nav-link sh-section-toggle"
+        class:active={settingsActive}
+        aria-expanded={settingsOpen}
+        onclick={() => (userToggled = !settingsOpen)}
+      >
+        <Icon name="settings" />
+        <span>Settings</span>
+        <span class="sh-chevron" class:open={settingsOpen}>
+          <Icon name="chevron" size={18} />
+        </span>
+      </button>
 
-    {#if settingsOpen}
-      <ul class="sh-nav-list sh-subnav">
-        {#each visibleSettings as item (item.href)}
-          <li>
-            <a
-              class="sh-nav-link sh-sublink"
-              class:active={isActive(pathname, base, item.href, 'prefix')}
-              href="{base}{item.href}"
-              aria-current={isActive(pathname, base, item.href, 'prefix') ? 'page' : undefined}
-            >
-              <Icon name={item.icon} size={20} />
-              <span>{item.label}</span>
-            </a>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </div>
+      {#if settingsOpen}
+        <ul class="sh-nav-list sh-subnav">
+          {#each visibleSettings as item (item.href)}
+            <li>
+              <a
+                class="sh-nav-link sh-sublink"
+                class:active={isActive(pathname, base, item.href, 'prefix')}
+                href="{base}{item.href}"
+                aria-current={isActive(pathname, base, item.href, 'prefix') ? 'page' : undefined}
+              >
+                <Icon name={item.icon} size={20} />
+                <span>{item.label}</span>
+              </a>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+  {/if}
 </nav>
 
 <style>
@@ -94,9 +119,32 @@
     background: var(--color-drawer);
     border-right: 1px solid var(--color-divider);
     overflow-y: auto;
+    overflow-x: hidden;
     display: flex;
     flex-direction: column;
     gap: 2px;
+    transition: width 0.15s ease;
+  }
+
+  /* Collapsed mini rail: icon-only, narrow. Labels are hidden (and removed from
+     the a11y tree) — every link carries an aria-label so it stays reachable. */
+  .sh-nav.collapsed {
+    width: var(--shell-nav-mini-width, 56px);
+  }
+  .sh-nav.collapsed .sh-brand {
+    justify-content: center;
+    padding: 12px 0;
+  }
+  .sh-nav.collapsed .sh-brand-name {
+    display: none;
+  }
+  .sh-nav.collapsed .sh-nav-link {
+    justify-content: center;
+    gap: 0;
+    padding: 10px 0;
+  }
+  .sh-nav.collapsed .sh-nav-link span {
+    display: none;
   }
   .sh-brand {
     display: flex;
