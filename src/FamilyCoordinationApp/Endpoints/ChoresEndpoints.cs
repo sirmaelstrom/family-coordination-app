@@ -331,7 +331,7 @@ public static class ChoresEndpoints
 
         try
         {
-            var chore = await svc.SnoozeAsync(user.HouseholdId, choreId, until, req.Version, ct);
+            var chore = await svc.SnoozeAsync(user.HouseholdId, choreId, user.UserId, until, req.Version, ct);
             return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }

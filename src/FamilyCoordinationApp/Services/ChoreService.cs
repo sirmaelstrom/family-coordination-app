@@ -363,7 +363,12 @@ public class ChoreService(
 
             // Clear any snooze floor on a satisfying completion (D9) — BEFORE the OneOff-vs-recurring fork so it
             // applies to ALL modes (a OneOff completion clears it too). MN3: ONLY a satisfying completion clears
-            // it; snooze expiry never does.
+            // it; snooze expiry never does. Log the clear in the append-only snooze history (Phase 15), but ONLY
+            // when there was an actual floor to clear — else every satisfying completion would spam a no-op clear.
+            if (chore.SnoozedUntil is not null)
+            {
+                AppendSnoozeEvent(context, chore, actorUserId, snoozedUntil: null, now);
+            }
             chore.SnoozedUntil = null;
 
             if (chore.RecurrenceMode == RecurrenceMode.OneOff)
@@ -411,16 +416,25 @@ public class ChoreService(
         return chore;
     }
 
-    public async Task<Chore> SnoozeAsync(int householdId, int choreId, DateOnly? until, uint version, CancellationToken cancellationToken = default)
+    public async Task<Chore> SnoozeAsync(int householdId, int choreId, int actorUserId, DateOnly? until, uint version, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         var chore = await LoadChoreAsync(context, householdId, choreId, cancellationToken);
 
-        // Set or clear the snooze floor (until == null ⇒ un-snooze). The ONLY field changed: no assignment-trio
-        // touch (D11), no recurrence mutation (MN1), no ChoreCompletion written and LastCompletedAt untouched
-        // (M6). The scalar change drives the xmin UPDATE so SaveWithConcurrencyAsync surfaces a stale token as
-        // a 409 (mirrors the rest of the claim machine).
+        // Set or clear the snooze floor (until == null ⇒ un-snooze). The ONLY chore field changed: no
+        // assignment-trio touch (D11), no recurrence mutation (MN1), no ChoreCompletion written and
+        // LastCompletedAt untouched (M6). The scalar change drives the xmin UPDATE so SaveWithConcurrencyAsync
+        // surfaces a stale token as a 409 (mirrors the rest of the claim machine).
+        var previous = chore.SnoozedUntil;
         chore.SnoozedUntil = until;
+
+        // Append-only snooze log (Phase 15): record the transition so history can later label a missed beat
+        // snoozed-vs-slipped and narrate re-snoozes. Only on an ACTUAL change — a no-op re-snooze to the same
+        // date, or clearing an already-un-snoozed chore, writes nothing.
+        if (previous != until)
+        {
+            AppendSnoozeEvent(context, chore, actorUserId, until, UtcNow());
+        }
 
         await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
         logger.LogInformation("Chore {ChoreId} snooze {Action} (household {HouseholdId})",
@@ -556,6 +570,23 @@ public class ChoreService(
             ActorUserId = actorUserId,
             TargetUserId = targetUserId,
             At = now
+        });
+    }
+
+    /// <summary>
+    /// Append a snooze-floor transition to the append-only history (Phase 15). <c>SnoozeEventId</c> is
+    /// DB-generated; <paramref name="snoozedUntil"/> null ⇒ a CLEAR event. Callers append only on an actual
+    /// state change (<see cref="SnoozeAsync"/> and the satisfying-completion clear).
+    /// </summary>
+    private static void AppendSnoozeEvent(ApplicationDbContext context, Chore chore, int actorUserId, DateOnly? snoozedUntil, DateTime now)
+    {
+        context.ChoreSnoozeEvents.Add(new ChoreSnoozeEvent
+        {
+            HouseholdId = chore.HouseholdId,
+            ChoreId = chore.ChoreId,
+            SetByUserId = actorUserId,
+            SetAt = now,
+            SnoozedUntil = snoozedUntil
         });
     }
 
