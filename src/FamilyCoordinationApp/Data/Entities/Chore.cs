@@ -71,6 +71,7 @@ public class Chore
     public User? Assignee { get; set; }
     public ICollection<ChoreCompletion> Completions { get; set; } = new List<ChoreCompletion>();
     public ICollection<ChoreEvent> Events { get; set; } = new List<ChoreEvent>();
+    public ICollection<ChoreSnoozeEvent> SnoozeEvents { get; set; } = new List<ChoreSnoozeEvent>();
     public ICollection<ChoreParticipationEvent> ParticipationEvents { get; set; } = new List<ChoreParticipationEvent>();
     public ICollection<ChoreSubtask> Subtasks { get; set; } = new List<ChoreSubtask>();
 }

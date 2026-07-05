@@ -26,6 +26,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Chore> Chores => Set<Chore>();
     public DbSet<ChoreCompletion> ChoreCompletions => Set<ChoreCompletion>();
     public DbSet<ChoreEvent> ChoreEvents => Set<ChoreEvent>();
+    public DbSet<ChoreSnoozeEvent> ChoreSnoozeEvents => Set<ChoreSnoozeEvent>();
     public DbSet<ChoreParticipationEvent> ChoreParticipationEvents => Set<ChoreParticipationEvent>();
     public DbSet<ChoreSubtask> ChoreSubtasks => Set<ChoreSubtask>();
     public DbSet<HouseholdChoreDigestSettings> ChoreDigestSettings => Set<HouseholdChoreDigestSettings>();

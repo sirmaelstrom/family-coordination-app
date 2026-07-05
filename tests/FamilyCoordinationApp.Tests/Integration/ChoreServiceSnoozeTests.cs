@@ -124,13 +124,13 @@ public sealed class ChoreServiceSnoozeTests(PostgresContainerFixture postgres) :
         var before = await ReloadAsync(FixedWeeklyChoreId);
         before.SnoozedUntil.Should().BeNull();
 
-        var snoozed = await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, new DateOnly(2026, 6, 20), before.Version);
+        var snoozed = await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, Alice, new DateOnly(2026, 6, 20), before.Version);
         snoozed.SnoozedUntil.Should().Be(new DateOnly(2026, 6, 20));
         snoozed.Version.Should().NotBe(before.Version, "the snooze write advances the xmin token");
         (await ReloadAsync(FixedWeeklyChoreId)).SnoozedUntil.Should().Be(new DateOnly(2026, 6, 20));
 
         // until: null clears the floor (un-snooze).
-        var cleared = await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, null, snoozed.Version);
+        var cleared = await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, Alice, null, snoozed.Version);
         cleared.SnoozedUntil.Should().BeNull();
         (await ReloadAsync(FixedWeeklyChoreId)).SnoozedUntil.Should().BeNull();
     }
@@ -141,10 +141,10 @@ public sealed class ChoreServiceSnoozeTests(PostgresContainerFixture postgres) :
         // V8. A stale xmin token must surface as ChoreConflictException (→ 409), never last-write-wins.
         var staleVersion = (await ReloadAsync(FixedWeeklyChoreId)).Version;
 
-        var first = await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, new DateOnly(2026, 6, 20), staleVersion);
+        var first = await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, Alice, new DateOnly(2026, 6, 20), staleVersion);
         first.Version.Should().NotBe(staleVersion);
 
-        var act = async () => await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, new DateOnly(2026, 6, 22), staleVersion);
+        var act = async () => await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, Alice, new DateOnly(2026, 6, 22), staleVersion);
         await act.Should().ThrowAsync<ChoreConflictException>();
     }
 
@@ -195,7 +195,7 @@ public sealed class ChoreServiceSnoozeTests(PostgresContainerFixture postgres) :
         // rows (equity totals unchanged) and never touches LastCompletedAt.
         var before = await ReloadAsync(FixedWeeklyChoreId);
 
-        await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, new DateOnly(2026, 6, 22), before.Version);
+        await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, Alice, new DateOnly(2026, 6, 22), before.Version);
 
         await using var ctx = _dbFactory.CreateDbContext();
         var completions = await ctx.ChoreCompletions
@@ -231,5 +231,95 @@ public sealed class ChoreServiceSnoozeTests(PostgresContainerFixture postgres) :
         var after = await ReloadAsync(OneOffChoreId);
         after.SnoozedUntil.Should().BeNull("a OneOff satisfying completion clears the floor too (D9)");
         after.Status.Should().Be(ChoreStatus.Done);
+    }
+
+    // ─── Append-only snooze log (Phase 15 — the chore-history substrate) ─────────────
+
+    private async Task<List<ChoreSnoozeEvent>> SnoozeEventsAsync(int choreId)
+    {
+        await using var ctx = _dbFactory.CreateDbContext();
+        return await ctx.ChoreSnoozeEvents.AsNoTracking()
+            .Where(e => e.HouseholdId == HouseholdId && e.ChoreId == choreId)
+            .OrderBy(e => e.SnoozeEventId)
+            .ToListAsync();
+    }
+
+    [Fact]
+    public async Task SnoozeAsync_LogsSetEvent_ThenClearEvent_OnRealPostgres()
+    {
+        // Phase 15. Each snooze transition appends one ChoreSnoozeEvent carrying the actor + floor (a null
+        // floor = a clear). The actor is per-action — Bob clears what Alice set.
+        var before = await ReloadAsync(FixedWeeklyChoreId);
+
+        var snoozed = await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, Alice, new DateOnly(2026, 6, 20), before.Version);
+
+        var afterSet = await SnoozeEventsAsync(FixedWeeklyChoreId);
+        afterSet.Should().ContainSingle();
+        afterSet[0].SetByUserId.Should().Be(Alice);
+        afterSet[0].SnoozedUntil.Should().Be(new DateOnly(2026, 6, 20));
+        afterSet[0].SetAt.Should().Be(Now);
+
+        await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, Bob, null, snoozed.Version);
+
+        var afterClear = await SnoozeEventsAsync(FixedWeeklyChoreId);
+        afterClear.Should().HaveCount(2);
+        afterClear[1].SetByUserId.Should().Be(Bob, "the clear records who un-snoozed, not who set it");
+        afterClear[1].SnoozedUntil.Should().BeNull("a clear event carries a null floor");
+    }
+
+    [Fact]
+    public async Task SnoozeAsync_NoOpReSnoozeToSameDate_LogsNoDuplicate_OnRealPostgres()
+    {
+        // Only an ACTUAL transition is logged — re-snoozing to the same date writes nothing.
+        var before = await ReloadAsync(FixedWeeklyChoreId);
+        await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, Alice, new DateOnly(2026, 6, 20), before.Version);
+
+        var reloaded = await ReloadAsync(FixedWeeklyChoreId);
+        await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, Alice, new DateOnly(2026, 6, 20), reloaded.Version);
+
+        (await SnoozeEventsAsync(FixedWeeklyChoreId)).Should().ContainSingle("a no-op re-snooze to the same date logs nothing");
+    }
+
+    [Fact]
+    public async Task SnoozeAsync_ReSnoozeToNewDate_LogsSecondEvent_OnRealPostgres()
+    {
+        // A re-snooze to a DIFFERENT date is a real transition — logged, so history can narrate a re-snooze.
+        var before = await ReloadAsync(FixedWeeklyChoreId);
+        await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, Alice, new DateOnly(2026, 6, 20), before.Version);
+
+        var reloaded = await ReloadAsync(FixedWeeklyChoreId);
+        await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, Alice, new DateOnly(2026, 6, 27), reloaded.Version);
+
+        var events = await SnoozeEventsAsync(FixedWeeklyChoreId);
+        events.Select(e => e.SnoozedUntil).Should().Equal(new DateOnly(2026, 6, 20), new DateOnly(2026, 6, 27));
+    }
+
+    [Fact]
+    public async Task SatisfyingCompletion_WhenSnoozed_LogsClearEvent_OnRealPostgres()
+    {
+        // D9 + Phase 15. Completing a snoozed chore clears the floor AND logs a clear event attributed to the
+        // completer — so history knows a missed beat AFTER this instant is slipped, not snoozed.
+        var chore = await ReloadAsync(FlexibleChoreId);   // seeded snoozed
+        chore.SnoozedUntil.Should().Be(Seeded);
+
+        await _service.CompleteAsync(HouseholdId, FlexibleChoreId, Bob, note: null, photoPath: null, participantUserIds: null, chore.Version);
+
+        var events = await SnoozeEventsAsync(FlexibleChoreId);
+        events.Should().ContainSingle("the completion cleared a real floor");
+        events[0].SnoozedUntil.Should().BeNull();
+        events[0].SetByUserId.Should().Be(Bob, "the completer is the clear actor");
+    }
+
+    [Fact]
+    public async Task SatisfyingCompletion_WhenNotSnoozed_LogsNoSnoozeEvent_OnRealPostgres()
+    {
+        // The anti-spam guard: a satisfying completion of an UN-snoozed chore must NOT write a clear event
+        // (else every completion would spam the log). FixedWeeklyChoreId starts un-snoozed.
+        var chore = await ReloadAsync(FixedWeeklyChoreId);
+        chore.SnoozedUntil.Should().BeNull();
+
+        await _service.CompleteAsync(HouseholdId, FixedWeeklyChoreId, Alice, note: null, photoPath: null, participantUserIds: null, chore.Version);
+
+        (await SnoozeEventsAsync(FixedWeeklyChoreId)).Should().BeEmpty("an un-snoozed completion writes no snooze event");
     }
 }

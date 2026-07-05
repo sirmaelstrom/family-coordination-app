@@ -120,7 +120,7 @@ public interface IChoreService
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore in the household.</exception>
     /// <exception cref="ChoreConflictException">The client <paramref name="version"/> is stale.</exception>
-    Task<Chore> SnoozeAsync(int householdId, int choreId, DateOnly? until, uint version, CancellationToken cancellationToken = default);
+    Task<Chore> SnoozeAsync(int householdId, int choreId, int actorUserId, DateOnly? until, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Adds a named member to a multi-person chore's roster as <b>Assigned</b> (a pre-opt-in by
