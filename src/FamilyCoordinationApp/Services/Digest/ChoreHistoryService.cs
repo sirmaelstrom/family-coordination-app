@@ -93,7 +93,6 @@ public sealed record HistoryRoomTally(string RoomName, int Completions);
 public class ChoreHistoryService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     ChoreEquityCalculator equity,
-    ChoreStatusCalculator status,
     TimeZoneInfo tz,
     TimeProvider timeProvider) : IChoreHistoryService
 {
@@ -105,6 +104,32 @@ public class ChoreHistoryService(
 
     /// <summary>The "kept moments" highlight reel is capped so the payload stays small (newest-first).</summary>
     private const int KeptMomentsCap = 12;
+
+    /// <summary>
+    /// A chore enters the gone-quiet band at ≥2 consecutive TRAILING missed beats (D10). One miss is a blip;
+    /// two-plus trailing is a pattern of silence. First-pass value, fixture-locked — tuning is cheap because
+    /// beat generation is separate from gone-quiet detection.
+    /// </summary>
+    private const int GoneQuietThreshold = 2;
+
+    /// <summary>
+    /// The projection read reaches this many days before the aggregation window so a beat at the window's
+    /// leading edge can still be "kept" by a completion that landed just before the window (the widest per-mode
+    /// back tolerance is 7 — <see cref="IntervalBackDays"/>'s clamp ceiling). Bounded (M2) — a small constant
+    /// margin, not O(all history).
+    /// </summary>
+    private const int MaxBackToleranceDays = 7;
+
+    // ── Per-mode match tolerances (D8) — named, fixture-locked. How many days a completion may land from a
+    //    beat and still "keep" it. Tuning is cheap because generation (ProjectBeats) is separate from matching.
+    private const int WeeklyBackDays = 1;
+    private const int WeeklyForwardDays = 3;
+    private const int OneOffBackDays = 1;
+    private const int OneOffForwardDays = 14;
+    private static int IntervalBackDays(int intervalDays) => Math.Clamp(intervalDays / 4, 1, 7);
+    private static int IntervalForwardDays(int intervalDays) => Math.Clamp(intervalDays / 2, 1, 14);
+    private const int FlexibleBackDays = 1;
+    private static int FlexibleForwardDays(int intervalDays) => Math.Clamp(intervalDays / 2, 1, 14);
 
     /// <inheritdoc />
     public async Task<ChoreHistoryResult> GetHistoryAsync(
@@ -162,6 +187,29 @@ public class ChoreHistoryService(
             .Select(r => (r.ChoreId, r.FirstCompletedAt))
             .ToList();
 
+        // Active chores drive the gap projection (WP-02). Read the full entities (recurrence fields +
+        // SnoozedUntil + CreatedAt + LastCompletedAt) — O(active chores), scoped to the household (M1).
+        var activeChores = await context.Chores
+            .AsNoTracking()
+            .Where(c => c.HouseholdId == householdId && c.Status == ChoreStatus.Active)
+            .ToListAsync(ct);
+
+        // Completion dates for matching. Read back a small margin before the window (MaxBackToleranceDays) so a
+        // beat at the window's leading edge can be kept by a completion just before it (no false leading-edge
+        // ghost). Bounded (M2). Lightweight projection ({ChoreId, CompletedAt}) — grouped into per-chore local
+        // dates for the greedy matcher.
+        var projectionReadStartUtc = oldestWeekStartUtc.AddDays(-MaxBackToleranceDays);
+        var projectionCompletionRows = await context.ChoreCompletions
+            .AsNoTracking()
+            .Where(c => c.HouseholdId == householdId && c.CompletedAt >= projectionReadStartUtc)
+            .Select(c => new { c.ChoreId, c.CompletedAt })
+            .ToListAsync(ct);
+        var doneDatesByChore = projectionCompletionRows
+            .GroupBy(r => r.ChoreId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(r => ChoreStatusCalculator.LocalDate(r.CompletedAt, tz)).OrderBy(d => d).ToList());
+
         var memberNameById = members.ToDictionary(m => m.UserId, m => m.DisplayName);
 
         var events = BuildEvents(completions, choreById, memberNameById);
@@ -170,18 +218,291 @@ public class ChoreHistoryService(
         var milestones = BuildMilestones(weeksResult, firstEverByChore, choreById, oldestWeekStartUtc, asOf);
         var keptMoments = BuildKeptMoments(completions, choreById);
         var whatGotTended = BuildWhatGotTended(completions, choreById, roomNameById);
+        var (ghosts, goneQuiet) = BuildProjection(activeChores, doneDatesByChore, oldestWeekStartUtc, asOf);
 
         return new ChoreHistoryResult(
             WindowStartLocal: LocalIsoDate(oldestWeekStartUtc),
             WindowEndLocal: LocalIsoDate(asOf),
             Events: events,
             Weeks: weeksResult,
-            Ghosts: Array.Empty<HistoryGhost>(),          // WP-02 fills
-            GoneQuiet: Array.Empty<HistoryGoneQuiet>(),    // WP-02/03 fill
+            Ghosts: ghosts,
+            GoneQuiet: goneQuiet,
             Milestones: milestones,
             KeptMoments: keptMoments,
             WhatGotTended: whatGotTended);
     }
+
+    // ── Historical gap/ghost projection (WP-02) ──────────────────────────────────────────────────────
+    //
+    // For each active recurring chore, project the NOMINAL expected beats across the window in DateOnly space
+    // (M4/MN4 — never UTC-tick arithmetic), greedily match them to completions within a per-mode tolerance, and
+    // emit each unmatched beat as a ghost. A chore with ≥2 consecutive trailing misses becomes gone-quiet.
+    // Snooze does NOT suppress generation (MN7) — it only labels the reason (a current-state placeholder here;
+    // WP-03 overwrites it from the ChoreSnoozeEvent log). Matching does NOT collapse the way the live board does
+    // (MN6) — every missed beat is surfaced.
+
+    private (IReadOnlyList<HistoryGhost> Ghosts, IReadOnlyList<HistoryGoneQuiet> GoneQuiet) BuildProjection(
+        IReadOnlyList<Chore> activeChores,
+        IReadOnlyDictionary<int, List<DateOnly>> doneDatesByChore,
+        DateTime oldestWeekStartUtc,
+        DateTime asOf)
+    {
+        var aggWindowStart = ChoreStatusCalculator.LocalDate(oldestWeekStartUtc, tz);
+        var today = ChoreStatusCalculator.LocalDate(asOf, tz);
+
+        var ghosts = new List<HistoryGhost>();
+        var goneQuiet = new List<HistoryGoneQuiet>();
+
+        foreach (var chore in activeChores)
+        {
+            var snap = ChoreRecurrenceSnapshot.FromChore(chore);
+
+            // Monthly (DayOfMonth-only) is rejected in v1 (MN5) — never project it. ProjectBeats also returns
+            // empty for it, but skip explicitly so intent is legible.
+            if (IsMonthlyOnly(snap))
+            {
+                continue;
+            }
+
+            // Never invent a beat before the chore existed: floor the window at the chore's creation date.
+            var choreCreated = ChoreStatusCalculator.LocalDate(chore.CreatedAt, tz);
+            var windowStart = choreCreated > aggWindowStart ? choreCreated : aggWindowStart;
+
+            var beats = ProjectBeats(snap, windowStart, today, tz);
+            if (beats.Count == 0)
+            {
+                continue;
+            }
+
+            var doneDates = doneDatesByChore.TryGetValue(chore.ChoreId, out var d) ? d : new List<DateOnly>();
+            var (back, fwd) = ToleranceFor(snap);
+            var (_, missed) = Match(beats, doneDates, back, fwd);
+
+            var missedSet = missed.ToHashSet();
+            foreach (var beat in missed)
+            {
+                ghosts.Add(new HistoryGhost(
+                    ChoreName: chore.Name,
+                    ExpectedLocalDate: Iso(beat),
+                    Reason: CurrentStateReason(snap, beat),
+                    ReasonFromLog: false)); // WP-03 overwrites both Reason and ReasonFromLog from the log.
+            }
+
+            // Gone-quiet: the trailing run of consecutive misses at the newest end of the beat list.
+            var trailing = TrailingMissCount(beats, missedSet);
+            if (trailing >= GoneQuietThreshold)
+            {
+                var trailingBeats = beats.GetRange(beats.Count - trailing, trailing);
+                var allSnoozed = trailingBeats.All(b => CurrentStateReason(snap, b) == "snoozed");
+                goneQuiet.Add(new HistoryGoneQuiet(
+                    ChoreName: chore.Name,
+                    CadenceLabel: CadenceLabel(snap),
+                    LastCompletedLocalDate: chore.LastCompletedAt is { } lc
+                        ? Iso(ChoreStatusCalculator.LocalDate(lc, tz))
+                        : null,
+                    Reason: allSnoozed ? "snoozed" : "slipped"));
+            }
+        }
+
+        // Deterministic order (fixture-stable): ghosts by date then chore; gone-quiet by chore.
+        ghosts = ghosts
+            .OrderBy(g => g.ExpectedLocalDate, StringComparer.Ordinal)
+            .ThenBy(g => g.ChoreName, StringComparer.Ordinal)
+            .ToList();
+        goneQuiet = goneQuiet
+            .OrderBy(g => g.ChoreName, StringComparer.Ordinal)
+            .ToList();
+
+        return (ghosts, goneQuiet);
+    }
+
+    /// <summary>
+    /// Project the NOMINAL expected beats for a chore across <c>[windowStart, today]</c>, generated entirely in
+    /// <see cref="DateOnly"/> (local-calendar) space so DST can never shift a beat off its weekday (M4 — the
+    /// load-bearing rule; UTC conversion happens only at the render edge). Mirrors the validated projection
+    /// spike verbatim. Snooze is ignored for GENERATION (MN7). <c>internal</c> for direct unit testing.
+    /// </summary>
+    internal static List<DateOnly> ProjectBeats(
+        ChoreRecurrenceSnapshot chore, DateOnly windowStart, DateOnly today, TimeZoneInfo tz)
+    {
+        var beats = new List<DateOnly>();
+        switch (chore.RecurrenceMode)
+        {
+            // Fixed weekly (DaysOfWeek): every flagged local weekday in the window is a calendar slot. Interior
+            // misses accumulate (unlike Flexible). Respect AnchorDate as a lower bound when set.
+            case RecurrenceMode.Fixed when chore.DaysOfWeek is { } days && days != ChoreDaysOfWeek.None:
+                for (var d = windowStart; d <= today; d = d.AddDays(1))
+                {
+                    if (days.HasFlag(ChoreStatusCalculator.ToChoreFlag(d.DayOfWeek))
+                        && (chore.AnchorDate is not { } a || d >= a))
+                    {
+                        beats.Add(d);
+                    }
+                }
+                break;
+
+            // Fixed interval-from-anchor: anchor + k·interval, stepped in DateOnly space (DST-immune).
+            case RecurrenceMode.Fixed when chore.AnchorDate is { } anchor && chore.IntervalDays is { } iv && iv > 0:
+                for (var k = 0; ; k++)
+                {
+                    var d = anchor.AddDays(k * iv);
+                    if (d > today)
+                    {
+                        break;
+                    }
+                    if (d >= windowStart)
+                    {
+                        beats.Add(d);
+                    }
+                }
+                break;
+
+            // Flexible is COMPLETION-anchored: the clock resets on every completion, so only the TRAILING run
+            // after the last completion accumulates missed beats. A late-but-done interior gap is a late
+            // completion, NOT a missed beat (fundamentally different from Fixed's calendar slots).
+            case RecurrenceMode.Flexible when chore.IntervalDays is { } iv && iv > 0:
+                var lastDone = chore.LastCompletedAt is { } last
+                    ? ChoreStatusCalculator.LocalDate(last, tz)
+                    : chore.AnchorDate; // never completed: pressure starts at the anchor
+                if (lastDone is { } baseDate)
+                {
+                    for (var d = baseDate.AddDays(iv); d <= today; d = d.AddDays(iv))
+                    {
+                        if (d >= windowStart)
+                        {
+                            beats.Add(d);
+                        }
+                    }
+                }
+                break;
+
+            // OneOff: HISTORY projects the ORIGINAL anchor, NOT the snooze-replaced due date — surfacing what
+            // snooze hid is the whole point (diverges from production OneOff dueness which reschedules).
+            case RecurrenceMode.OneOff:
+                if (chore.AnchorDate is { } due && due >= windowStart && due <= today && chore.LastCompletedAt is null)
+                {
+                    beats.Add(due);
+                }
+                break;
+        }
+        return beats;
+    }
+
+    /// <summary>
+    /// Greedily match beats to completions: each beat claims the NEAREST not-yet-consumed completion whose local
+    /// date is within <c>[beat − backTol, beat + fwdTol]</c> (ties → the earlier completion); a completion is
+    /// consumed by at most one beat. Unmatched beats are missed. Deliberately does NOT collapse the way the live
+    /// board does (MN6) — the history surface shows every missed beat. <c>internal</c> for direct unit testing.
+    /// </summary>
+    internal static (List<DateOnly> Kept, List<DateOnly> Missed) Match(
+        IReadOnlyList<DateOnly> beats, IReadOnlyList<DateOnly> doneDates, int backTol, int fwdTol)
+    {
+        var kept = new List<DateOnly>();
+        var missed = new List<DateOnly>();
+        var used = new bool[doneDates.Count];
+        foreach (var beat in beats)
+        {
+            var bestIdx = -1;
+            var bestDist = int.MaxValue;
+            for (var i = 0; i < doneDates.Count; i++)
+            {
+                if (used[i])
+                {
+                    continue;
+                }
+                var delta = doneDates[i].DayNumber - beat.DayNumber; // + = completed after the beat
+                if (delta < -backTol || delta > fwdTol)
+                {
+                    continue;
+                }
+                var dist = Math.Abs(delta);
+                // doneDates is ascending, so the FIRST minimal-distance hit is the earliest (tie → earlier).
+                if (dist < bestDist)
+                {
+                    bestDist = dist;
+                    bestIdx = i;
+                }
+            }
+            if (bestIdx >= 0)
+            {
+                used[bestIdx] = true;
+                kept.Add(beat);
+            }
+            else
+            {
+                missed.Add(beat);
+            }
+        }
+        return (kept, missed);
+    }
+
+    /// <summary>The count of consecutive missed beats at the NEWEST (trailing) end of the ordered beat list.</summary>
+    internal static int TrailingMissCount(IReadOnlyList<DateOnly> beats, ISet<DateOnly> missedSet)
+    {
+        var trailing = 0;
+        for (var i = beats.Count - 1; i >= 0; i--)
+        {
+            if (!missedSet.Contains(beats[i]))
+            {
+                break;
+            }
+            trailing++;
+        }
+        return trailing;
+    }
+
+    /// <summary>The per-mode match tolerance (D8), keyed off the recurrence shape.</summary>
+    private static (int Back, int Fwd) ToleranceFor(ChoreRecurrenceSnapshot chore)
+    {
+        var iv = chore.IntervalDays ?? 0;
+        return chore.RecurrenceMode switch
+        {
+            RecurrenceMode.Fixed when chore.DaysOfWeek is { } days && days != ChoreDaysOfWeek.None
+                => (WeeklyBackDays, WeeklyForwardDays),
+            RecurrenceMode.Fixed => (IntervalBackDays(iv), IntervalForwardDays(iv)),
+            RecurrenceMode.Flexible => (FlexibleBackDays, FlexibleForwardDays(iv)),
+            RecurrenceMode.OneOff => (OneOffBackDays, OneOffForwardDays),
+            _ => (WeeklyBackDays, WeeklyForwardDays),
+        };
+    }
+
+    /// <summary>A human cadence label for the gone-quiet card ("Mon/Thu" | "every N days" | "one-off").</summary>
+    private static string CadenceLabel(ChoreRecurrenceSnapshot chore)
+    {
+        if (chore.RecurrenceMode == RecurrenceMode.OneOff)
+        {
+            return "one-off";
+        }
+        if (chore.RecurrenceMode == RecurrenceMode.Fixed
+            && chore.DaysOfWeek is { } days && days != ChoreDaysOfWeek.None)
+        {
+            var abbr = new[]
+            {
+                (ChoreDaysOfWeek.Sunday, "Sun"), (ChoreDaysOfWeek.Monday, "Mon"), (ChoreDaysOfWeek.Tuesday, "Tue"),
+                (ChoreDaysOfWeek.Wednesday, "Wed"), (ChoreDaysOfWeek.Thursday, "Thu"), (ChoreDaysOfWeek.Friday, "Fri"),
+                (ChoreDaysOfWeek.Saturday, "Sat"),
+            };
+            return string.Join("/", abbr.Where(x => days.HasFlag(x.Item1)).Select(x => x.Item2));
+        }
+        return chore.IntervalDays is { } iv && iv > 0 ? $"every {iv} days" : "recurring";
+    }
+
+    /// <summary>Whether a chore is a monthly (<c>DayOfMonth</c>-only) recurrence — OUT OF SCOPE in v1 (MN5).</summary>
+    private static bool IsMonthlyOnly(ChoreRecurrenceSnapshot chore) =>
+        chore.DayOfMonth is not null
+        && (chore.DaysOfWeek is null || chore.DaysOfWeek == ChoreDaysOfWeek.None)
+        && !(chore.AnchorDate is not null && chore.IntervalDays is > 0);
+
+    /// <summary>
+    /// The CURRENT-STATE placeholder reason (WP-02): a beat is <c>snoozed</c> iff a snooze floor is set now and
+    /// the beat predates it, else <c>slipped</c>. Coarse — a slip-then-snooze paints the whole gap "snoozed"
+    /// (spike S8); WP-03 replaces this with the accurate log-derived reason.
+    /// </summary>
+    private static string CurrentStateReason(ChoreRecurrenceSnapshot chore, DateOnly beat) =>
+        chore.SnoozedUntil is { } s && beat < s ? "snoozed" : "slipped";
+
+    /// <summary>Format a <see cref="DateOnly"/> beat as an ISO date string (already a local date — no tz conversion).</summary>
+    private static string Iso(DateOnly d) => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     // ── Events — the completion feed (newest-first) ──────────────────────────────────────────────────
 

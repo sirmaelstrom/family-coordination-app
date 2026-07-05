@@ -65,7 +65,6 @@ public class ChoreHistoryServiceTests
         return new ChoreHistoryService(
             dbFactory.Object,
             new ChoreEquityCalculator(),
-            new ChoreStatusCalculator(),
             tz,
             TimeProvider.System);
     }
@@ -387,18 +386,261 @@ public class ChoreHistoryServiceTests
         history.Milestones.SeasonTotalPoints.Should().Be(3, "household 2's 99 points must not leak");
     }
 
-    // ── Gap projection is WP-02 — empty here ─────────────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════════════════════════════════
+    // WP-02 — historical gap/ghost projection. The DST-heavy scenarios (S1/S2/S4/S6/S7/S-tol) test the
+    // pure ProjectBeats/Match functions directly (mirroring the validated spike); S-GQ + reason + monthly
+    // exercise the GetHistoryAsync integration. now = 2026-11-15 18:00 UTC (window crosses BOTH 2026 DST
+    // transitions: spring-fwd 2026-03-08, fall-back 2026-11-01).
+    // ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+    // A completion stamped at local `hour` in Chicago, stored as the UTC instant (mirrors the spike's DoneAt).
+    private static DateTime DoneAtUtc(int y, int m, int d, int localHour = 10) =>
+        TimeZoneInfo.ConvertTimeToUtc(new DateTime(y, m, d, localHour, 0, 0, DateTimeKind.Unspecified), Chicago);
+
+    private static readonly DateOnly S1Today = ChoreStatusCalculator.LocalDate(Utc0(2026, 11, 15, 18), Chicago);
+
+    // ── S1 — snoozed-since-March Fixed weekly Mon+Thu: 72 missed, DST beats present + missed ──────────
 
     [Fact]
-    public async Task GhostsAndGoneQuiet_AreEmpty_InWp01()
+    public void S1_FixedWeekly_SnoozedSinceMarch_72MissedBeats_AcrossBothDst()
     {
+        var winStart = new DateOnly(2026, 2, 2); // Monday — the chore's history start
+        var snap = new ChoreRecurrenceSnapshot(
+            RecurrenceMode.Fixed, IntervalDays: null, AnchorDate: null,
+            DaysOfWeek: ChoreDaysOfWeek.Monday | ChoreDaysOfWeek.Thursday, DayOfMonth: null,
+            LastCompletedAt: DoneAtUtc(2026, 3, 5), SnoozedUntil: new DateOnly(2026, 12, 31));
+
+        var beats = ChoreHistoryService.ProjectBeats(snap, winStart, S1Today, Chicago);
+
+        // Completed regularly Feb..Mar 5 (the 10 Mon/Thu completions), then nothing.
+        var done = new List<DateOnly>
+        {
+            new(2026, 2, 2), new(2026, 2, 5), new(2026, 2, 9), new(2026, 2, 12),
+            new(2026, 2, 16), new(2026, 2, 19), new(2026, 2, 23), new(2026, 2, 26),
+            new(2026, 3, 2), new(2026, 3, 5),
+        };
+        var (kept, missed) = ChoreHistoryService.Match(beats, done, backTol: 1, fwdTol: 3);
+
+        kept.Should().HaveCount(10, "the 10 Feb..Mar completions each keep their beat, none mis-counted");
+        missed.Should().HaveCount(72, "every Mon/Thu after Mar 5 through today is a surfaced miss");
+
+        // DST spot-checks: the Monday AFTER spring-forward and the Monday AFTER fall-back are both real,
+        // correctly-dated beats and both missed (UTC-tick arithmetic would drift these off Monday — M4/MN4).
+        beats.Should().Contain(new DateOnly(2026, 3, 9));
+        missed.Should().Contain(new DateOnly(2026, 3, 9));
+        beats.Should().Contain(new DateOnly(2026, 11, 2));
+        missed.Should().Contain(new DateOnly(2026, 11, 2));
+    }
+
+    // ── S2 — kept-current control: ZERO false positives across both DST transitions ──────────────────
+
+    [Fact]
+    public void S2_FixedWeeklySunday_CompletedEverySunday_ZeroGhosts()
+    {
+        var winStart = new DateOnly(2026, 2, 1); // Sunday
+        var snap = new ChoreRecurrenceSnapshot(
+            RecurrenceMode.Fixed, null, null, ChoreDaysOfWeek.Sunday, null, LastCompletedAt: null);
+
+        var beats = ChoreHistoryService.ProjectBeats(snap, winStart, S1Today, Chicago);
+
+        var done = new List<DateOnly>();
+        for (var d = winStart; d <= S1Today; d = d.AddDays(7))
+        {
+            done.Add(d);
+        }
+        var (kept, missed) = ChoreHistoryService.Match(beats, done, 1, 3);
+
+        missed.Should().BeEmpty("a kept-current chore across BOTH DST transitions has NO false-positive ghosts");
+        kept.Should().HaveCount(beats.Count, "every Sunday beat matched exactly one completion");
+    }
+
+    // ── S4 — Flexible: trailing-only; interior late gap is not a missed beat ─────────────────────────
+
+    [Fact]
+    public void S4_Flexible_ProjectsFromLastCompletion_InteriorLateGapNotMissed()
+    {
+        var winStart = new DateOnly(2026, 6, 1);
+        var snap = new ChoreRecurrenceSnapshot(
+            RecurrenceMode.Flexible, IntervalDays: 7, AnchorDate: null, DaysOfWeek: null, DayOfMonth: null,
+            LastCompletedAt: DoneAtUtc(2026, 6, 25)); // done Jun 1 & Jun 25 (late); Jun 25 reset the clock
+
+        var beats = ChoreHistoryService.ProjectBeats(snap, winStart, S1Today, Chicago);
+
+        beats.Should().NotBeEmpty();
+        beats[0].Should().Be(new DateOnly(2026, 7, 2), "flexible projects from LAST completion (Jun 25 + 7), not Jun 8");
+        beats.Should().NotContain(new DateOnly(2026, 6, 8), "the interior late gap is a late completion, not a missed beat");
+
+        var done = new List<DateOnly> { new(2026, 6, 1), new(2026, 6, 25) };
+        var (_, missed) = ChoreHistoryService.Match(beats, done, 1, 3);
+        missed.Should().HaveCount(beats.Count, "all trailing beats after Jun 25 are missed");
+    }
+
+    // ── S6 — no-collapse: 3 missed Wednesdays + ONE Done → 2 missed + 1 kept (not 0) ─────────────────
+
+    [Fact]
+    public void S6_FixedWeekly_OneCompletionDoesNotCollapseBacklog()
+    {
+        var winStart = new DateOnly(2026, 6, 3); // Wednesday
+        var today = new DateOnly(2026, 6, 24);
+        var snap = new ChoreRecurrenceSnapshot(
+            RecurrenceMode.Fixed, null, null, ChoreDaysOfWeek.Wednesday, null, LastCompletedAt: DoneAtUtc(2026, 6, 24));
+
+        var beats = ChoreHistoryService.ProjectBeats(snap, winStart, today, Chicago); // Jun 3,10,17,24
+        var (kept, missed) = ChoreHistoryService.Match(beats, new List<DateOnly> { new(2026, 6, 24) }, 1, 3);
+
+        kept.Should().HaveCount(1, "one completion clears exactly one beat — history does NOT collapse like the board");
+        missed.Should().HaveCount(beats.Count - 1, "the earlier missed Wednesdays stay missed (honest history)");
+    }
+
+    // ── monthly (DayOfMonth) — OUT OF SCOPE: zero beats generated ────────────────────────────────────
+
+    [Fact]
+    public void Monthly_DayOfMonthChore_GeneratesNoBeats()
+    {
+        var snap = new ChoreRecurrenceSnapshot(
+            RecurrenceMode.Fixed, IntervalDays: null, AnchorDate: null, DaysOfWeek: null,
+            DayOfMonth: 15, LastCompletedAt: null);
+
+        var beats = ChoreHistoryService.ProjectBeats(snap, new DateOnly(2026, 1, 1), S1Today, Chicago);
+
+        beats.Should().BeEmpty("monthly-on-day recurrence is rejected in v1 — never project it (MN5)");
+    }
+
+    // ── naive-UTC control — documents why DateOnly generation is mandatory across the fall-back ──────
+
+    [Fact]
+    public void NaiveUtcTickStepping_DriftsAcrossFallBack_WhileDateOnlyStaysOnMonday()
+    {
+        var firstMon = new DateOnly(2026, 10, 19);
+        var correct = new List<DateOnly>();
+        for (var d = firstMon; d <= new DateOnly(2026, 11, 16); d = d.AddDays(7))
+        {
+            correct.Add(d);
+        }
+
+        // Naive: start at local-midnight-UTC, step fixed 7×24h ticks, convert back to local date.
+        var naive = new List<DateOnly>();
+        var utc = ChoreStatusCalculator.LocalMidnightUtc(firstMon, Chicago);
+        for (var i = 0; i < correct.Count; i++)
+        {
+            naive.Add(ChoreStatusCalculator.LocalDate(utc, Chicago));
+            utc = utc.AddDays(7);
+        }
+
+        correct.Should().OnlyContain(d => d.DayOfWeek == DayOfWeek.Monday, "DateOnly stepping stays on Monday");
+        naive.Should().Contain(d => d.DayOfWeek != DayOfWeek.Monday,
+            "naive UTC-tick stepping DRIFTS off Monday after the fall-back — the false-ghost trap M4/MN4 forbid");
+    }
+
+    // ── S-tol (D8) — on-time keeps; fwd+1 late leaves the beat missed ────────────────────────────────
+
+    [Fact]
+    public void STol_OnTimeKeeps_ButOneBeyondForwardToleranceMisses()
+    {
+        var beats = new List<DateOnly> { new(2026, 6, 10) };
+
+        // On-time (localDate == beat): kept.
+        ChoreHistoryService.Match(beats, new List<DateOnly> { new(2026, 6, 10) }, 1, 3)
+            .Kept.Should().ContainSingle();
+
+        // fwd+1 days late (weekly fwd = 3 ⇒ 4 days after): the beat stays missed.
+        ChoreHistoryService.Match(beats, new List<DateOnly> { new(2026, 6, 14) }, 1, 3)
+            .Missed.Should().ContainSingle();
+    }
+
+    // ── S-GQ (D10) — gone-quiet detection through the GetHistoryAsync integration ─────────────────────
+
+    // A Fixed weekly chore created before the window (so beats generate across it).
+    private static Chore WeeklyChore(
+        int id, string name, ChoreDaysOfWeek days, DateTime? lastCompletedAt = null, DateOnly? snoozedUntil = null) =>
+        new()
+        {
+            HouseholdId = H1,
+            ChoreId = id,
+            Name = name,
+            RecurrenceMode = RecurrenceMode.Fixed,
+            DaysOfWeek = days,
+            LastCompletedAt = lastCompletedAt,
+            SnoozedUntil = snoozedUntil,
+            EffortTier = EffortTier.Standard,
+            EffortPoints = 2,
+            Status = ChoreStatus.Active,
+            EnteredByUserId = Alice,
+            AssignmentKind = AssignmentKind.None,
+            CreatedAt = Utc0(2026, 1, 1),
+        };
+
+    [Fact]
+    public async Task GoneQuiet_NeverCompletedWeekly_AppearsWithCadenceAndNullLastCompleted()
+    {
+        // Fixed weekly Wed, never completed, created Jan. now = Wed 2026-06-24, weeks=4 ⇒ window Mon 06-01.
+        // Beats Jun 3/10/17/24 all missed (never done) ⇒ 4 trailing misses ⇒ gone quiet.
+        Seed(ctx => ctx.Chores.Add(WeeklyChore(1, "Water plants", ChoreDaysOfWeek.Wednesday)));
+
+        var history = await CreateService(Utc).GetHistoryAsync(H1, weeks: 4, now: Utc0(2026, 6, 24, 12));
+
+        history.GoneQuiet.Should().ContainSingle();
+        var gq = history.GoneQuiet[0];
+        gq.ChoreName.Should().Be("Water plants");
+        gq.CadenceLabel.Should().Be("Wed");
+        gq.LastCompletedLocalDate.Should().BeNull("a never-completed chore has no last-completed date");
+        gq.Reason.Should().Be("slipped", "no snooze floor ⇒ slipped, not snoozed");
+
+        history.Ghosts.Should().HaveCount(4, "every missed Wednesday in the window is a ghost");
+        history.Ghosts.Should().OnlyContain(g => g.ChoreName == "Water plants" && g.ReasonFromLog == false);
+    }
+
+    [Fact]
+    public async Task GoneQuiet_SingleTrailingMiss_DoesNotQualify()
+    {
+        // Completed on Jun 17 (keeps that beat); only Jun 24 is a trailing miss ⇒ 1 < threshold ⇒ NOT gone quiet.
         Seed(ctx =>
         {
-            ctx.Chores.Add(SimpleChore(1, "Dishes"));
-            ctx.ChoreCompletions.Add(Completion(1, Alice, Utc0(2026, 6, 16, 9), 3));
+            ctx.Chores.Add(WeeklyChore(1, "Vacuum", ChoreDaysOfWeek.Wednesday, lastCompletedAt: Utc0(2026, 6, 17, 12)));
+            ctx.ChoreCompletions.Add(Completion(1, Alice, Utc0(2026, 6, 17, 12), 2));
         });
 
-        var history = await CreateService(Utc).GetHistoryAsync(H1, weeks: 3, now: Utc0(2026, 6, 17, 12));
+        var history = await CreateService(Utc).GetHistoryAsync(H1, weeks: 4, now: Utc0(2026, 6, 24, 12));
+
+        history.GoneQuiet.Should().BeEmpty("a single trailing miss is a blip, not silence");
+        history.Ghosts.Should().Contain(g => g.ExpectedLocalDate == "2026-06-24", "the trailing miss is still a ghost");
+    }
+
+    [Fact]
+    public async Task Snooze_DoesNotSuppressGeneration_GhostsReadSnoozedPlaceholder()
+    {
+        // A snoozed-to-December chore STILL generates its nominal beats (MN7) — snooze only labels the reason.
+        // WP-02's reason is a current-state placeholder (ReasonFromLog=false); WP-03 overwrites from the log.
+        Seed(ctx => ctx.Chores.Add(
+            WeeklyChore(1, "Take out trash", ChoreDaysOfWeek.Wednesday, snoozedUntil: new DateOnly(2026, 12, 31))));
+
+        var history = await CreateService(Utc).GetHistoryAsync(H1, weeks: 4, now: Utc0(2026, 6, 24, 12));
+
+        history.Ghosts.Should().HaveCount(4, "snooze does NOT suppress beat generation (MN7)");
+        history.Ghosts.Should().OnlyContain(g => g.Reason == "snoozed" && g.ReasonFromLog == false);
+        history.GoneQuiet.Should().ContainSingle().Which.Reason.Should().Be("snoozed");
+    }
+
+    [Fact]
+    public async Task Monthly_ChoreProducesNoGhosts_Integration()
+    {
+        // A DayOfMonth-only Fixed chore is skipped entirely by the projection (MN5) — no ghosts, no gone-quiet.
+        Seed(ctx => ctx.Chores.Add(new Chore
+        {
+            HouseholdId = H1,
+            ChoreId = 1,
+            Name = "Pay rent",
+            RecurrenceMode = RecurrenceMode.Fixed,
+            DayOfMonth = 1,
+            EffortTier = EffortTier.Standard,
+            EffortPoints = 2,
+            Status = ChoreStatus.Active,
+            EnteredByUserId = Alice,
+            AssignmentKind = AssignmentKind.None,
+            CreatedAt = Utc0(2026, 1, 1),
+        }));
+
+        var history = await CreateService(Utc).GetHistoryAsync(H1, weeks: 4, now: Utc0(2026, 6, 24, 12));
 
         history.Ghosts.Should().BeEmpty();
         history.GoneQuiet.Should().BeEmpty();
