@@ -416,16 +416,20 @@ public class ChoreStatusCalculator
 
     // ---- Date helpers (all day-boundary math is timezone-aware) --------------------------------------
 
-    /// <summary>The local calendar date of a UTC instant in the injected timezone.</summary>
-    private static DateOnly LocalDate(DateTime utc, TimeZoneInfo tz)
+    /// <summary>The local calendar date of a UTC instant in the injected timezone.
+    /// <para><c>internal</c> (Phase 15 WP-01) so <c>ChoreHistoryService</c> reuses the single DST-correct
+    /// source for its projection math (M4) instead of re-deriving it. Visibility-only — no behavior change.</para></summary>
+    internal static DateOnly LocalDate(DateTime utc, TimeZoneInfo tz)
     {
         var asUtc = DateTime.SpecifyKind(utc, DateTimeKind.Utc);
         var local = TimeZoneInfo.ConvertTimeFromUtc(asUtc, tz);
         return DateOnly.FromDateTime(local);
     }
 
-    /// <summary>The UTC instant corresponding to local-midnight (00:00) of the given local date.</summary>
-    private static DateTime LocalMidnightUtc(DateOnly localDate, TimeZoneInfo tz)
+    /// <summary>The UTC instant corresponding to local-midnight (00:00) of the given local date.
+    /// <para><c>internal</c> (Phase 15 WP-01) — the projection converts each generated <c>DateOnly</c> beat to
+    /// UTC solely through this helper (M4). Visibility-only — no behavior change.</para></summary>
+    internal static DateTime LocalMidnightUtc(DateOnly localDate, TimeZoneInfo tz)
     {
         var localMidnight = localDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
         return TimeZoneInfo.ConvertTimeToUtc(localMidnight, tz);
@@ -442,8 +446,10 @@ public class ChoreStatusCalculator
         return naturalNextDue is { } nd && nd > resumeFloor ? nd : resumeFloor;
     }
 
-    /// <summary>Map a <see cref="System.DayOfWeek"/> to the project's custom <see cref="ChoreDaysOfWeek"/> flag.</summary>
-    private static ChoreDaysOfWeek ToChoreFlag(DayOfWeek day) => day switch
+    /// <summary>Map a <see cref="System.DayOfWeek"/> to the project's custom <see cref="ChoreDaysOfWeek"/> flag.
+    /// <para><c>internal</c> (Phase 15 WP-01) so the weekly-cadence beat generator flag-matches local dates via
+    /// the same map. Visibility-only — no behavior change.</para></summary>
+    internal static ChoreDaysOfWeek ToChoreFlag(DayOfWeek day) => day switch
     {
         DayOfWeek.Sunday => ChoreDaysOfWeek.Sunday,
         DayOfWeek.Monday => ChoreDaysOfWeek.Monday,

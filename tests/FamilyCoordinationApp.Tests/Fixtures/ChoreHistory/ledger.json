@@ -1,0 +1,58 @@
+{
+  "windowStartLocal": "2026-04-06",
+  "windowEndLocal": "2026-06-24",
+  "events": [
+    {
+      "choreName": "Dishes",
+      "doerDisplayName": "Alice",
+      "localDate": "2026-06-22",
+      "points": 2,
+      "note": "Left them sparkling",
+      "hasPhoto": true
+    },
+    {
+      "choreName": "Take out trash",
+      "doerDisplayName": "Bob",
+      "localDate": "2026-06-21",
+      "points": 1,
+      "note": null,
+      "hasPhoto": false
+    }
+  ],
+  "weeks": [
+    {
+      "weekStartLocal": "2026-06-08",
+      "completions": 0
+    },
+    {
+      "weekStartLocal": "2026-06-15",
+      "completions": 2
+    }
+  ],
+  "ghosts": [
+    {
+      "choreName": "Water plants",
+      "expectedLocalDate": "2026-06-17",
+      "reason": "slipped"
+    },
+    {
+      "choreName": "Take out trash",
+      "expectedLocalDate": "2026-06-18",
+      "reason": "snoozed"
+    }
+  ],
+  "goneQuiet": [
+    {
+      "choreName": "Water plants",
+      "cadenceLabel": "every 7 days",
+      "lastCompletedLocalDate": null,
+      "reason": "slipped"
+    },
+    {
+      "choreName": "Deep clean",
+      "cadenceLabel": "Sun",
+      "lastCompletedLocalDate": "2026-03-15",
+      "reason": "snoozed"
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import type {
   ChoreSubtaskDto,
   ChoreEquityDto,
   ChoreRecapDto,
+  ChoreLedgerDto,
   EquityWindow,
   CapacityTier,
   RoomDto,
@@ -206,6 +207,15 @@ export async function getEquity(
 
 export async function getRecap(weeks = 8): Promise<ChoreRecapDto> {
   return request<ChoreRecapDto>(`${CHORES_BASE}/recap?weeks=${weeks}`);
+}
+
+// ─── Ledger read (chore-history C surface — its own cached payload, like recap) ─
+// The browsable completion ledger: feed + weave scaffold + ghost rows + gone-quiet
+// band. Read-only; `weeks` is the weave length (default 12; server clamps 1..26).
+// Server is authoritative on clamping — no client date math (MN9).
+
+export async function getLedger(weeks = 12): Promise<ChoreLedgerDto> {
+  return request<ChoreLedgerDto>(`${CHORES_BASE}/ledger?weeks=${weeks}`);
 }
 
 // ─── Chore mutations (WP-11 wires these to optimistic UI + 409 retry) ───────

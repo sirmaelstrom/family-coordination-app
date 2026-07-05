@@ -278,7 +278,11 @@ export interface RecapWeekDto {
   upForGrabsCount: number;
 }
 
-/** One week's totals in the week-over-week trend (totals only — no per-member split). */
+/**
+ * One week's totals in the week-over-week trend, plus its per-member `distribution` (Phase 15). The
+ * distribution is a WITHIN-week breakdown (displayName only) rendered on a SELECTED week — NEVER keyed as a
+ * single person's line across weeks (MN2: that rebuilds the dropped "B" scoreboard).
+ */
 export interface RecapTrendPointDto {
   /** Local Monday of the week, "YYYY-MM-DD" (household tz; MN9 — do not Date-parse). */
   weekStartLocal: string;
@@ -286,12 +290,120 @@ export interface RecapTrendPointDto {
   totalPoints: number;
   /** True for the in-progress current week (the last, partial bar). */
   isCurrent: boolean;
+  /** Per-member effort split for THIS week (displayName only; sums to the week total). */
+  distribution: RecapMemberLineDto[];
 }
 
-/** Full recap payload: the current week + the week-over-week trend (oldest→newest). */
+/** The highest-output week in the window (Phase 15). Uses total* names to match the sibling recap DTOs. */
+export interface BestWeekDto {
+  weekStartLocal: string;
+  totalCompletions: number;
+  totalPoints: number;
+}
+
+/** A chore whose ALL-TIME first-ever completion landed in the window ("first time!"). */
+export interface FirstEverDto {
+  choreName: string;
+  /** "YYYY-MM-DD" household-local (MN9 — do not Date-parse). */
+  localDate: string;
+}
+
+/** The collective milestones over the recap window (Phase 15 — effort/count facts, no per-person ranking). */
+export interface MilestonesDto {
+  /** null when the window had no activity. */
+  bestWeek: BestWeekDto | null;
+  longestActiveStreakWeeks: number;
+  firstEvers: FirstEverDto[];
+  seasonTotalCompletions: number;
+  seasonTotalPoints: number;
+}
+
+/** A completion that carried a note or photo — the logbook's "kept moments" (newest-first, cap 12). */
+export interface KeptMomentDto {
+  /** "YYYY-MM-DD" household-local (MN9 — do not Date-parse). */
+  localDate: string;
+  choreName: string;
+  note: string | null;
+  hasPhoto: boolean;
+}
+
+/** Per-room completion tally over the window. Roomless completions bucket into the virtual "General" group. */
+export interface WhatGotTendedDto {
+  roomName: string;
+  completions: number;
+}
+
+/**
+ * Full recap payload (Phase 15 — the evolved logbook): the digest-mirror current week + the week-over-week
+ * trend (each point now carrying a per-week distribution) + the additive logbook sections. Mirrors
+ * ChoreRecapDtos.cs EXACTLY (M5 lockstep with Fixtures/ChoreRecap/recap.json).
+ */
 export interface ChoreRecapDto {
   current: RecapWeekDto;
   trend: RecapTrendPointDto[];
+  milestones: MilestonesDto;
+  keptMoments: KeptMomentDto[];
+  whatGotTended: WhatGotTendedDto[];
+  /** The shared gone-quiet band (same shape + data as the ledger's). */
+  goneQuiet: GoneQuietDto[];
+}
+
+// ─── Chore-history ledger lens DTO (mirrors ChoreLedgerDtos.cs EXACTLY) ──────
+// Served at GET /api/chores/ledger?weeks=N (default 12). JSON keys are camelCase.
+// Source of truth: tests/FamilyCoordinationApp.Tests/Fixtures/ChoreHistory/ledger.json
+// (M5 lockstep tripwire). displayName ONLY — no userId/mention anywhere (D9/MN1).
+//
+// ⚠ MN9: every date is a "YYYY-MM-DD" household-local string already resolved
+//   server-side. NEVER `new Date('YYYY-MM-DD')` — group by the string (weekLabel()).
+
+/** One completion in the ledger feed (displayName only — neutral framing). */
+export interface LedgerEventDto {
+  choreName: string;
+  doerDisplayName: string;
+  /** "YYYY-MM-DD" household-local (MN9 — do not Date-parse). */
+  localDate: string;
+  points: number;
+  note: string | null;
+  hasPhoto: boolean;
+}
+
+/** One week of the weave scaffold (incl. empty weeks). Per-day density derives client-side from events/ghosts. */
+export interface LedgerWeekDto {
+  /** Local Monday of the week, "YYYY-MM-DD" (household tz; MN9). */
+  weekStartLocal: string;
+  completions: number;
+}
+
+/** An expected-but-missing beat. `reason` is 'snoozed' | 'slipped' (the server-internal ReasonFromLog is off-wire). */
+export interface GhostDto {
+  choreName: string;
+  /** "YYYY-MM-DD" household-local (MN9 — do not Date-parse). */
+  expectedLocalDate: string;
+  reason: 'snoozed' | 'slipped';
+}
+
+/**
+ * A chore that has gone quiet (≥2 trailing missed beats). SHARED by the ledger AND recap payloads — defined
+ * ONCE here (mirrors the C# single-owner `GoneQuietDto`). `lastCompletedLocalDate` is `null` when the chore
+ * was never completed (the key is always present).
+ */
+export interface GoneQuietDto {
+  choreName: string;
+  cadenceLabel: string;
+  /** "YYYY-MM-DD" household-local, or null = never completed (MN9 — do not Date-parse). */
+  lastCompletedLocalDate: string | null;
+  reason: 'snoozed' | 'slipped';
+}
+
+/** Full ledger payload: window bounds + completion feed + weave scaffold + ghost rows + gone-quiet band. */
+export interface ChoreLedgerDto {
+  /** "YYYY-MM-DD" household-local window bounds (the weave grid extent; MN9). */
+  windowStartLocal: string;
+  windowEndLocal: string;
+  events: LedgerEventDto[];
+  weeks: LedgerWeekDto[];
+  ghosts: GhostDto[];
+  goneQuiet: GoneQuietDto[];
 }
 
 // ─── Digest settings (WP-11 — mirrors WP-06 frozen contract EXACTLY) ─────────

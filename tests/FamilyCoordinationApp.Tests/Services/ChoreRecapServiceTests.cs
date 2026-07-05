@@ -57,13 +57,17 @@ public class ChoreRecapServiceTests
         dbFactory.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => new ApplicationDbContext(_options));
 
+        var equity = new ChoreEquityCalculator();
+        var history = new ChoreHistoryService(dbFactory.Object, equity, tz, TimeProvider.System);
+
         return new ChoreRecapService(
             dbFactory.Object,
-            new ChoreEquityCalculator(),
+            equity,
             new ChoreStatusCalculator(),
             new DigestBuilder(),
             tz,
-            TimeProvider.System);
+            TimeProvider.System,
+            history);
     }
 
     private void SeedCompletions(params ChoreCompletion[] completions)

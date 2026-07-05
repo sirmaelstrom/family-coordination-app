@@ -10,6 +10,7 @@
   import RoomsDashboard from './lib/components/RoomsDashboard.svelte';
   import EquityBoard from './lib/components/EquityBoard.svelte';
   import RecapBoard from './lib/components/RecapBoard.svelte';
+  import LedgerBoard from './lib/components/LedgerBoard.svelte';
   import QuickAddSheet, { type QuickAddValue } from './lib/components/QuickAddSheet.svelte';
   import EditChoreSheet from './lib/components/EditChoreSheet.svelte';
   import HandOffPicker from './lib/components/HandOffPicker.svelte';
@@ -58,6 +59,12 @@
   let editOpen = $state(false);
   let editChore = $state<ChoreDto | null>(null);
   let digestSettingsOpen = $state(false);
+
+  // History lens ("Look back") sub-view. C-leads: default to the ledger; the logbook
+  // (the evolved recap) loads lazily on first toggle. COMPONENT-LOCAL state — not the
+  // store, and not a new lens id (the canonical lens stays `recap`; WP-09 relabels
+  // the display only, so ChoreLens.All is not churned).
+  let historySubview = $state<'ledger' | 'logbook'>('ledger');
 
   async function loadBoard() {
     try {
@@ -249,15 +256,32 @@
     }
   });
 
-  // ── Recap fetch-on-open (a second cached fetcher, like equity — M11) ──────
-  // Load the recap payload when the Recap lens is open and the cache is stale.
-  // A user who defaulted onto Recap lands here on mount and loads it the same way.
-  // The store guards re-entrancy; invalidation (completions/snooze/edit) reloads it.
-  // `!recapError` guard: don't auto-retry a failed load in a loop — the Retry button
-  // (which clears the error) is the re-attempt path.
+  // ── Ledger fetch-on-open (C-leads — the history lens's default sub-view) ──
+  // Load the ledger when the history lens ('recap') is open ON THE LEDGER sub-view
+  // and the cache is stale. Gated on `historySubview === 'ledger'` so opening the
+  // lens fetches ONLY the ledger (no double-fetch of the logbook). Same guarded
+  // shape as the equity/recap effects (re-entrancy + no auto-retry loop, MN10).
   $effect(() => {
     if (
       store.lens === 'recap' &&
+      historySubview === 'ledger' &&
+      !store.ledgerLoaded &&
+      !store.ledgerLoading &&
+      !store.ledgerError
+    ) {
+      store.loadLedger();
+    }
+  });
+
+  // ── Logbook (recap) fetch-on-open — now LAZY on the logbook sub-view ───────
+  // The evolved recap loads only when the user toggles to the logbook sub-view (was:
+  // on any 'recap' lens open, before C-leads). Guard expression copied verbatim from
+  // the equity effect + the sub-view gate (MN10 — no state read the effect also writes;
+  // it settles once loaded, and a FAILED load waits for the Retry button, not a loop).
+  $effect(() => {
+    if (
+      store.lens === 'recap' &&
+      historySubview === 'logbook' &&
       !store.recapLoaded &&
       !store.recapLoading &&
       !store.recapError
@@ -369,17 +393,52 @@
       />
     {:else if store.lens === 'recap'}
       <!--
-        Recap lens — the in-app weekly recap (GET /api/chores/recap). The $effect
-        above fetches it on open; completions/snooze/edit invalidate it (folded into
-        invalidateEquity). Shows the SAME content the Discord digest posts plus the
-        week-over-week trend. Server values only; NO client date math (MN9).
+        History lens ("Look back", Phase 15) — C-LEADS: opens on the LEDGER (the
+        browsable completion ledger, GET /api/chores/ledger) with a sub-toggle to the
+        LOGBOOK (the evolved recap, GET /api/chores/recap). Client-side switch only —
+        no route change, no SPA fallback (M11). Each sub-view has its own cached
+        payload + its own fetch-on-open $effect (above) + its own retry. The logbook
+        loads lazily on first toggle. Server values only; NO client date math (MN9).
       -->
-      <RecapBoard
-        recap={store.recap}
-        loading={store.recapLoading}
-        error={store.recapError}
-        onRetry={() => store.loadRecap()}
-      />
+      <div class="ch-history">
+        <div class="ch-history-toggle" role="tablist" aria-label="Look back view">
+          <button
+            type="button"
+            role="tab"
+            class="ch-history-tab"
+            class:on={historySubview === 'ledger'}
+            aria-selected={historySubview === 'ledger'}
+            onclick={() => (historySubview = 'ledger')}
+          >
+            Ledger
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="ch-history-tab"
+            class:on={historySubview === 'logbook'}
+            aria-selected={historySubview === 'logbook'}
+            onclick={() => (historySubview = 'logbook')}
+          >
+            Logbook
+          </button>
+        </div>
+        {#if historySubview === 'ledger'}
+          <LedgerBoard
+            ledger={store.ledger}
+            loading={store.ledgerLoading}
+            error={store.ledgerError}
+            onRetry={() => store.loadLedger()}
+          />
+        {:else}
+          <RecapBoard
+            recap={store.recap}
+            loading={store.recapLoading}
+            error={store.recapError}
+            onRetry={() => store.loadRecap()}
+          />
+        {/if}
+      </div>
     {/if}
   {:else if !store.loading}
     <div class="ch-empty">No chore board data.</div>
@@ -511,6 +570,50 @@
   }
   .ch-toolbar {
     margin-bottom: 24px;
+  }
+
+  /* ── History lens ("Look back") sub-toggle: Ledger | Logbook ─────────────── */
+  .ch-history {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .ch-history-toggle {
+    display: inline-flex;
+    align-self: center;
+    gap: 2px;
+    padding: 3px;
+    background: var(--color-action-hover);
+    border-radius: var(--radius-md);
+  }
+  .ch-history-tab {
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    padding: 8px 20px;
+    min-height: 38px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition:
+      background-color 0.15s,
+      color 0.15s;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .ch-history-tab:hover:not(.on) {
+    color: var(--color-text);
+  }
+  .ch-history-tab.on {
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: var(--shadow-1);
+  }
+  .ch-history-tab:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
   }
   .ch-loading,
   .ch-empty {
