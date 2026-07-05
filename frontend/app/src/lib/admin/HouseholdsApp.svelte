@@ -59,6 +59,24 @@
     rejectTarget = null;
     if (r) await store.reject(r.id, reason, r.displayName);
   }
+
+  // Invite a household (admin "push" — create the household + owner directly).
+  let inviteName = $state('');
+  let inviteEmail = $state('');
+  let inviteDisplayName = $state('');
+  const canInvite = $derived(
+    inviteName.trim().length > 0 && inviteEmail.trim().length > 0 && !store.creating,
+  );
+  async function submitInvite(e: SubmitEvent) {
+    e.preventDefault();
+    if (!canInvite) return;
+    const ok = await store.createHousehold(inviteName.trim(), inviteEmail.trim(), inviteDisplayName);
+    if (ok) {
+      inviteName = '';
+      inviteEmail = '';
+      inviteDisplayName = '';
+    }
+  }
 </script>
 
 <div class="adm-page">
@@ -116,6 +134,32 @@
         {/each}
       </div>
     {/if}
+
+    <h2 class="adm-subtitle">Invite a Household</h2>
+    <form class="adm-form" onsubmit={submitInvite}>
+      <p class="adm-form-hint">
+        Create a new household and its owner. They can sign in with Google straight away — no request to approve.
+      </p>
+      <div class="adm-form-grid">
+        <label class="adm-field">
+          <span class="adm-field-label">Household name</span>
+          <input class="adm-input" type="text" bind:value={inviteName} maxlength="200" placeholder="The Smiths" required />
+        </label>
+        <label class="adm-field">
+          <span class="adm-field-label">Owner email</span>
+          <input class="adm-input" type="email" bind:value={inviteEmail} maxlength="256" placeholder="owner@example.com" required />
+        </label>
+        <label class="adm-field">
+          <span class="adm-field-label">Owner name <span class="adm-field-opt">(optional)</span></span>
+          <input class="adm-input" type="text" bind:value={inviteDisplayName} maxlength="200" placeholder="Jane Smith" />
+        </label>
+      </div>
+      <div class="adm-form-actions">
+        <button type="submit" class="adm-btn-primary" disabled={!canInvite}>
+          {store.creating ? 'Creating…' : 'Create household'}
+        </button>
+      </div>
+    </form>
 
     <h2 class="adm-subtitle">Existing Households</h2>
     {#if store.households.length === 0}
@@ -308,6 +352,76 @@
   }
   .adm-danger-text {
     color: var(--color-error);
+  }
+  .adm-form {
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-1);
+    padding: 16px;
+  }
+  .adm-form-hint {
+    margin: 0 0 14px;
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+  }
+  .adm-form-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  @media (min-width: 640px) {
+    .adm-form-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  .adm-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .adm-field-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+  }
+  .adm-field-opt {
+    font-weight: 400;
+  }
+  .adm-input {
+    font: inherit;
+    padding: 9px 12px;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
+  .adm-input:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -1px;
+  }
+  .adm-form-actions {
+    margin-top: 14px;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .adm-btn-primary {
+    font: inherit;
+    font-weight: 500;
+    background: var(--color-primary);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 9px 18px;
+    cursor: pointer;
+    min-height: 40px;
+  }
+  .adm-btn-primary:hover:not(:disabled) {
+    background: var(--color-primary-hover);
+  }
+  .adm-btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .adm-table-wrap {
     overflow-x: auto;

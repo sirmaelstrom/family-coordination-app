@@ -39,6 +39,20 @@ public interface IHouseholdRequestService
     /// unknown id ⇒ <see cref="ReviewOutcome.NotFound"/>.
     /// </summary>
     Task<ReviewOutcome> RejectAsync(int requestId, string? reason, string reviewerEmail, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Admin-initiated household creation (the "push" invite — the mirror of the self-request→approve "pull"). A
+    /// site admin names a household and its owner's email; this creates the household + a whitelisted owner user
+    /// (GoogleId null until their first Google login — parity with <c>HouseholdMemberService.AddMemberAsync</c>) so
+    /// the owner lands straight in on first sign-in, no self-request. Household + owner + the nine default categories
+    /// commit in ONE transaction (R-C2, same shape as <see cref="ApproveAsync"/>); the curated chore/room library is
+    /// seeded post-commit (parity <c>SetupService.CreateHouseholdAsync</c>) so a pushed household is as complete as a
+    /// first-run one. If the email already belongs to any user ⇒ <see cref="CreateHouseholdOutcome.EmailInUse"/>
+    /// (they already have a household); blank name/email ⇒ <see cref="CreateHouseholdOutcome.InvalidInput"/>.
+    /// </summary>
+    Task<CreateHouseholdResult> CreateHouseholdAsync(
+        string householdName, string ownerEmail, string? ownerDisplayName, string createdByEmail,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>The Household-requests view data (raw entities; the endpoint projects to DTOs).</summary>
@@ -64,3 +78,21 @@ public enum ReviewOutcome
 
 /// <summary>The result of an approve: the <see cref="Outcome"/> plus the created household (only when Ok).</summary>
 public sealed record ApproveResult(ReviewOutcome Outcome, Household? CreatedHousehold);
+
+/// <summary>Outcome of an admin-initiated household create — maps to HTTP (InvalidInput ⇒ 400, EmailInUse ⇒ 409).</summary>
+public enum CreateHouseholdOutcome
+{
+    Ok,
+
+    /// <summary>Household name or owner email was blank after trimming — a clean 400 (the endpoint also guards this).</summary>
+    InvalidInput,
+
+    /// <summary>
+    /// The owner email already belongs to a user (any household). Creating them would collide with the unique
+    /// <c>Users.Email</c> constraint and they already have a home — refuse with a clean 409, transaction rolled back.
+    /// </summary>
+    EmailInUse,
+}
+
+/// <summary>The result of a create: the <see cref="Outcome"/> plus the created household (only when Ok).</summary>
+public sealed record CreateHouseholdResult(CreateHouseholdOutcome Outcome, Household? Household);

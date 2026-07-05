@@ -43,6 +43,12 @@ public static class SettingsAdminEndpoints
         requests.MapPost("/{id:int}/approve", ApproveRequest);
         requests.MapPost("/{id:int}/reject", RejectRequest);
 
+        // ── Households (site-admin only) — admin-initiated create (the "push" invite) ──
+        var households = app.MapGroup("/api/settings/households")
+            .RequireAuthorization()
+            .DisableAntiforgery();
+        households.MapPost("/", CreateHousehold);
+
         // ── Feedback (dual-mode) ──────────────────────────────────────────────────
         var feedback = app.MapGroup("/api/settings/feedback")
             .RequireAuthorization()
@@ -121,6 +127,52 @@ public static class SettingsAdminEndpoints
             ReviewOutcome.NotFound => Results.NotFound(new { message = "Household request not found." }),
             ReviewOutcome.AlreadyReviewed => Results.Conflict(new { message = "This request has already been reviewed." }),
             _ => Results.NoContent(),
+        };
+    }
+
+    /// <summary>
+    /// #3b POST /api/settings/households — admin-initiated household create (the "push" invite mirroring the
+    /// self-request→approve "pull"). Site-admin only. Validates + caps inputs to the column limits server-side so an
+    /// oversized direct-API value is a clean 400, not a varchar-overflow 500 (parity RejectRequest's 500-char guard).
+    /// 403 / 400 (blank or too long) / 409 (email already a member) / else 201 with the new household summary.
+    /// </summary>
+    private static async Task<IResult> CreateHousehold(
+        CreateHouseholdRequest? req,
+        ClaimsPrincipal principal,
+        ISiteAdminService siteAdmin,
+        IHouseholdRequestService requestService,
+        CancellationToken ct)
+    {
+        if (RequireSiteAdmin(principal, siteAdmin) is { } forbidden) return forbidden;
+
+        var name = req?.HouseholdName?.Trim() ?? "";
+        var email = req?.OwnerEmail?.Trim() ?? "";
+        if (name.Length == 0 || email.Length == 0)
+        {
+            return Results.BadRequest(new { message = "Household name and owner email are required." });
+        }
+        if (name.Length > 200)
+        {
+            return Results.BadRequest(new { message = "Household name must be 200 characters or fewer." });
+        }
+        if (email.Length > 256)
+        {
+            return Results.BadRequest(new { message = "Owner email must be 256 characters or fewer." });
+        }
+        if (req?.OwnerDisplayName is { Length: > 200 })
+        {
+            return Results.BadRequest(new { message = "Owner display name must be 200 characters or fewer." });
+        }
+
+        var createdBy = principal.FindFirst(ClaimTypes.Email)?.Value ?? "";
+        var result = await requestService.CreateHouseholdAsync(name, email, req?.OwnerDisplayName, createdBy, ct);
+        return result.Outcome switch
+        {
+            CreateHouseholdOutcome.InvalidInput => Results.BadRequest(new { message = "Household name and owner email are required." }),
+            CreateHouseholdOutcome.EmailInUse => Results.Conflict(new { message = "That email already belongs to a household member." }),
+            // Member count is exactly 1 (the owner, just created in the transaction).
+            _ => Results.Created("/api/settings/households", new HouseholdSummaryDto(
+                result.Household!.Id, result.Household.Name, 1, ToIso(result.Household.CreatedAt))),
         };
     }
 
@@ -255,3 +307,9 @@ public static class SettingsAdminEndpoints
 
 /// <summary>Reject body — <see cref="Reason"/> is OPTIONAL (nullable; empty allowed, R-C7).</summary>
 public sealed record RejectReasonRequest(string? Reason);
+
+/// <summary>
+/// Admin create-household body: the household name + its owner's email (whitelisted so they drop straight in on
+/// first Google login), plus an OPTIONAL display name (defaults to the email local-part). Server-validated.
+/// </summary>
+public sealed record CreateHouseholdRequest(string? HouseholdName, string? OwnerEmail, string? OwnerDisplayName);

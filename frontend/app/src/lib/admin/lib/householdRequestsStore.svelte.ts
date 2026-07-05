@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { HouseholdRequestDto, HouseholdSummaryDto } from './types';
-import { ApiError, getHouseholdRequests, approveRequest, rejectRequest } from './api';
+import { ApiError, getHouseholdRequests, approveRequest, rejectRequest, createHousehold } from './api';
 import { showToast } from '$lib/shared/toast-store.svelte';
 
 class HouseholdRequestsStore {
@@ -23,6 +23,8 @@ class HouseholdRequestsStore {
   error = $state<string | null>(null);
   /** True after a 403 on the list GET — the caller is not a site admin (R-C4). */
   accessDenied = $state(false);
+  /** True while an admin create-household POST is in flight (disables the invite form). */
+  creating = $state(false);
 
   private hasLoaded = false;
   private seq = 0;
@@ -70,6 +72,26 @@ class HouseholdRequestsStore {
     } catch (e) {
       if (e instanceof ApiError) await this.load();
       showToast({ message: describe(e, 'reject request'), kind: 'error' });
+    }
+  }
+
+  /**
+   * Admin-initiated household create (the "push" invite). Returns true on success so the form can clear itself.
+   * Validation/collision (400/409) surface as a calm toast; the server is the source of truth, the client reflects it.
+   */
+  async createHousehold(householdName: string, ownerEmail: string, ownerDisplayName: string): Promise<boolean> {
+    if (this.creating) return false;
+    this.creating = true;
+    try {
+      const summary = await createHousehold(householdName, ownerEmail, ownerDisplayName.trim() || undefined);
+      await this.load();
+      showToast({ message: `Created “${summary.name}” — ${ownerEmail} can now sign in.`, kind: 'success' });
+      return true;
+    } catch (e) {
+      showToast({ message: describe(e, 'create household'), kind: 'error' });
+      return false;
+    } finally {
+      this.creating = false;
     }
   }
 }
