@@ -49,7 +49,7 @@ Deployment + environment configuration detail auto-loads via `.claude/rules/depl
 
 ## Roadmap
 
-`.planning/ROADMAP.md` is the authoritative phase list + status; forward work is also in the Spine campaign **"Family Coordination App"** (`spine_map` for the live frontier — trust it over any snapshot here). As of 2026-07-04: core app Phases 1–7 and chores Phases 10–12 + 14 + 16 (Snooze) are shipped (8–9 deprecated); the **strangler/de-Blazor track is COMPLETE** (keystone `ae67f7dc` — 8 islands → SvelteKit shell → WP-12 flip). Open phases: **13 — multi-room chores (M:N)** and **15 — equity rework / invisible labor**.
+`.planning/ROADMAP.md` is the authoritative phase list + status; forward work is also in the Spine campaign **"Family Coordination App"** (`spine_map` for the live frontier — trust it over any snapshot here). As of 2026-07-06: core app Phases 1–7 and chores Phases 10–14 + 16 (Snooze) are shipped (8–9 deprecated); **Phase 13 — multi-room chores (M:N)** shipped 2026-07-06 (`ChoreRoom` join is the sole source of membership; `Chore.RoomId` dropped); the **strangler/de-Blazor track is COMPLETE** (keystone `ae67f7dc` — 8 islands → SvelteKit shell → WP-12 flip). Open phase: **15 — equity rework / invisible labor**.
 
 ## Corrections
 <!-- Also see global corrections: D:\Development\data\memory\CORRECTIONS.md -->
