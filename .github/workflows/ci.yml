@@ -51,7 +51,35 @@ jobs:
         
       - name: Run tests
         run: dotnet test tests/FamilyCoordinationApp.Tests/FamilyCoordinationApp.Tests.csproj --configuration Release --verbosity normal
-        
+
+  frontend:
+    name: Frontend Check & Test
+    runs-on: ubuntu-latest  # GitHub-hosted, safe for untrusted code
+
+    defaults:
+      run:
+        working-directory: frontend/app
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'  # matches the SPA build stage in Dockerfile (node:20-alpine)
+          cache: 'npm'
+          cache-dependency-path: frontend/app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check (svelte-check)
+        run: npm run check
+
+      - name: Unit tests (vitest)
+        run: npm test
+
   lint:
     name: Code Quality
     runs-on: ubuntu-latest

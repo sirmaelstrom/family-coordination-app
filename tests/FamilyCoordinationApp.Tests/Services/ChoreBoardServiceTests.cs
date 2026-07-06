@@ -348,6 +348,30 @@ public class ChoreBoardServiceTests
     }
 
     [Fact]
+    public async Task CallerCapacityTier_ReflectsTheCallerOnly_NullWhenUnset()
+    {
+        // Phase 15 R4′ (V1.2): the board carries the CALLER's own physical-capacity tier, sourced from
+        // User.PhysicalCapacityTier on the SAME single-user caller projection as the default view. Give Alice
+        // a Reduced tier; leave Bob's unset.
+        using (var ctx = new ApplicationDbContext(_options))
+        {
+            ctx.Users.Single(u => u.Id == Alice).PhysicalCapacityTier = "Reduced";
+            ctx.SaveChanges();
+        }
+        Seed(OneOff(1, H1, new DateOnly(2026, 5, 30)));
+
+        // The caller (Alice) sees her own tier.
+        var aliceBoard = await CreateService().GetBoardAsync(H1, Alice, Now);
+        aliceBoard.CallerCapacityTier.Should().Be("Reduced");
+
+        // Bob (same household, tier unset) sees null (⇒ Full). The field is CALLER-scoped — it is never
+        // leaked from another member's row, even though Alice in the same household is Reduced.
+        var bobBoard = await CreateService().GetBoardAsync(H1, Bob, Now);
+        bobBoard.CallerCapacityTier.Should().BeNull(
+            "the board carries only the caller's own tier, never another member's");
+    }
+
+    [Fact]
     public async Task IsClaimStale_True_ForClaimOlderThanThreshold_ButStillDisplayedClaimed()
     {
         // Claimed > 48h ago => stale on read; the chore is still surfaced as Claimed (no materialized release).

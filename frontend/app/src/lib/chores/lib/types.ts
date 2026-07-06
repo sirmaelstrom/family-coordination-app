@@ -133,6 +133,12 @@ export interface ChoreBoardDto {
   needsAttentionChoreIds: number[];
   /** Persisted lens id; null ⇒ Up-for-grabs. One of ChoreLens (see below). */
   userDefaultView: string | null;
+  /**
+   * The REQUESTING user's OWN physical-capacity tier (Phase 15 R4′); `null` ⇒ Full (the pre-migration
+   * default). Rides the board payload so the up-for-grabs "Fits me" chip reads the caller's tier without the
+   * separately-cached equity fetch. Serializes AFTER `userDefaultView` (additive init-only body property).
+   */
+  callerCapacityTier: CapacityTier | null;
 }
 
 // ─── Rooms (admin surface, /api/rooms) ──────────────────────────────────────

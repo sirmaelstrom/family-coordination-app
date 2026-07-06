@@ -253,7 +253,12 @@ public class ChoreBoardDtoContractTests
             rooms,
             members,
             needsAttention,
-            UserDefaultView: ChoreLens.Rooms);
+            UserDefaultView: ChoreLens.Rooms)
+        {
+            // Phase 15 R4′: the caller's own capacity tier rides the board payload (init-only body property).
+            // A non-null value ("Reduced" — the founding-case tier) exercises the added field in the contract.
+            CallerCapacityTier = "Reduced",
+        };
     }
 
     [Fact]
@@ -282,8 +287,9 @@ public class ChoreBoardDtoContractTests
         var root = JsonNode.Parse(json)!.AsObject();
 
         // Top-level camelCase property set is frozen (M9 — added/removed keys break this).
+        // Phase 15 R4′ added the 6th key `callerCapacityTier` (init-only body property, serializes last).
         root.Select(kvp => kvp.Key).Should().BeEquivalentTo(
-            "chores", "rooms", "members", "needsAttentionChoreIds", "userDefaultView");
+            "chores", "rooms", "members", "needsAttentionChoreIds", "userDefaultView", "callerCapacityTier");
 
         var firstChore = root["chores"]!.AsArray()[0]!.AsObject();
         firstChore.Select(kvp => kvp.Key).Should().BeEquivalentTo(

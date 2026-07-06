@@ -69,11 +69,20 @@
     onSnooze,
   }: Props = $props();
 
-  // ── Named effort tiers (P3 — never the raw points number as primary) ─────
+  // ── Named effort tiers (P3 — named tier leads; the raw points number is a
+  //    secondary cue). Phase 15 R4′ (WP-01): the chip also renders a 3-dot weight
+  //    gauge (filled = tier rank) so the chore's WEIGHT is legible at a glance —
+  //    the only signal R4′ reads is this declared weight, never anything personal.
   const EFFORT_LABEL: Record<EffortTier, string> = {
     Quick: 'Quick',
     Standard: 'Standard',
     BigJob: 'Big job',
+  };
+  /** Filled-dot count for the weight gauge (1..3). Rank of the chore's own tier. */
+  const EFFORT_DOTS: Record<EffortTier, number> = {
+    Quick: 1,
+    Standard: 2,
+    BigJob: 3,
   };
 
   // ── Dueness pill copy (server `dueState`) ────────────────────────────────
@@ -85,6 +94,8 @@
   };
 
   let effortLabel = $derived(EFFORT_LABEL[chore.effortTier]);
+  let effortDots = $derived(EFFORT_DOTS[chore.effortTier]);
+  let effortPointsLabel = $derived(`${chore.effortPoints} pt${chore.effortPoints === 1 ? '' : 's'}`);
   let dueLabel = $derived(DUE_LABEL[chore.dueState]);
 
   // colorTier (fresh|mid|due|overdue) is the decay accent — server-computed.
@@ -351,11 +362,22 @@
         {/each}
       {/if}
 
-      <span class="ch-tag ch-tag-effort" title="Effort: {effortLabel}">
-        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-          <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z" fill="currentColor" />
-        </svg>
-        {effortLabel}
+      <!--
+        Effort chip (Phase 15 R4′ WP-01) — the chore's declared WEIGHT made
+        legible: a 3-dot gauge (filled = tier rank) + the named tier + points.
+        Named tier leads (P3); the gauge + points are secondary cues. This reads
+        ONLY the chore's own effortTier/effortPoints — never a per-person signal.
+      -->
+      <span
+        class="ch-tag ch-tag-effort"
+        title="Effort: {effortLabel} · {effortPointsLabel}"
+      >
+        <span class="ch-effort-dots" aria-hidden="true">
+          {#each [1, 2, 3] as n (n)}
+            <i class:ch-effort-dot-on={n <= effortDots}></i>
+          {/each}
+        </span>
+        {effortLabel} · {effortPointsLabel}
       </span>
 
       <span class="ch-tag ch-tag-recurrence" title="{recurrenceHint}">
@@ -947,6 +969,27 @@
   }
   .ch-tag svg {
     flex-shrink: 0;
+  }
+  /* Effort chip (R4′ WP-01) — steady digit width for the points count. */
+  .ch-tag-effort {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Weight gauge — three dots, filled up to the chore's tier rank. Inherits the
+     chip's muted text color via currentColor, so it works in light + dark. */
+  .ch-effort-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .ch-effort-dots i {
+    width: 5px;
+    height: 5px;
+    border-radius: 1.5px;
+    background: currentColor;
+    opacity: 0.3;
+  }
+  .ch-effort-dots i.ch-effort-dot-on {
+    opacity: 0.95;
   }
   /* Room locator chip — tinted distinct from the muted effort/recurrence tags
      so "which room" reads as the card's primary orientation cue. */
