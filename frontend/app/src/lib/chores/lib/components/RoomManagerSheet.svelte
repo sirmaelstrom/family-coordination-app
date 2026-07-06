@@ -126,11 +126,15 @@
     }
   }
 
-  /** Confirm copy spells out the M3 server behavior: chores fall back to General. */
+  /**
+   * Confirm copy for the server delete behavior. Under multi-room (M:N, Phase 13) a chore can belong to
+   * several rooms, so `choreCount` (which fans out per membership) overstates what actually moves to
+   * General: only chores whose SOLE room is this one fall to General; chores also in other rooms keep those.
+   * Don't cite the fanned-out count as the move count.
+   */
   function deleteConfirmText(rollup: RoomRollupDto): string {
-    const n = rollup.choreCount;
-    if (n === 0) return `Delete “${rollup.name}”? It has no chores.`;
-    return `Delete “${rollup.name}”? Its ${n} ${n === 1 ? 'chore' : 'chores'} will move to General.`;
+    if (rollup.choreCount === 0) return `Delete “${rollup.name}”? It has no chores.`;
+    return `Delete “${rollup.name}”? Chores only in this room move to General; chores also in other rooms keep those.`;
   }
 
   // ── Add (thin inline create — reuses the createRoom path) ────────────────────

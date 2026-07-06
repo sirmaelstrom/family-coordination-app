@@ -244,56 +244,65 @@ public class RoomServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task DeleteRoomAsync_NullsOutRoomIdOnAffectedChores_LeavingChoresIntact()
+    public async Task DeleteRoomAsync_RemovesMembership_MultiRoomChoreKeepsOtherRooms_LeavingChoresIntact()
     {
-        // Arrange: two chores in room 1, one in room 2, one already unassigned (General).
+        // Arrange (Phase 13 M:N): a chore only in room 1; a chore in rooms 1 AND 2; a chore only in room 2;
+        // a General chore (no memberships).
         await using (var ctx = new ApplicationDbContext(_options))
         {
-            ctx.Chores.AddRange(
-                MakeChore(ctx, choreId: 1, roomId: 1, name: "Wash dishes"),
-                MakeChore(ctx, choreId: 2, roomId: 1, name: "Mop floor"),
-                MakeChore(ctx, choreId: 3, roomId: 2, name: "Clean tub"),
-                MakeChore(ctx, choreId: 4, roomId: null, name: "Take out trash")
-            );
+            SeedChoreWithRooms(ctx, householdId: 1, choreId: 1, name: "Wash dishes", roomIds: new[] { 1 });
+            SeedChoreWithRooms(ctx, householdId: 1, choreId: 2, name: "Mop floor", roomIds: new[] { 1, 2 });
+            SeedChoreWithRooms(ctx, householdId: 1, choreId: 3, name: "Clean tub", roomIds: new[] { 2 });
+            SeedChoreWithRooms(ctx, householdId: 1, choreId: 4, name: "Take out trash", roomIds: Array.Empty<int>());
             await ctx.SaveChangesAsync();
         }
 
         // Act: delete room 1.
         await _service.DeleteRoomAsync(householdId: 1, roomId: 1);
 
-        // Assert: room gone; its chores survive with RoomId == null; other rooms' chores untouched.
+        // Assert: room gone; NO chores deleted; memberships + shim updated correctly.
         await using var verify = new ApplicationDbContext(_options);
         verify.Rooms.Any(r => r.HouseholdId == 1 && r.RoomId == 1).Should().BeFalse();
 
         var allChores = await verify.Chores.Where(c => c.HouseholdId == 1).ToListAsync();
-        allChores.Should().HaveCount(4, "no chores may be deleted when a room is deleted");
+        allChores.Should().HaveCount(4, "a room delete removes memberships, never chores");
 
-        allChores.Single(c => c.ChoreId == 1).RoomId.Should().BeNull("room-1 chore must fall back to General");
-        allChores.Single(c => c.ChoreId == 2).RoomId.Should().BeNull("room-1 chore must fall back to General");
-        allChores.Single(c => c.ChoreId == 3).RoomId.Should().Be(2, "room-2 chore is unaffected");
-        allChores.Single(c => c.ChoreId == 4).RoomId.Should().BeNull("already-General chore is unchanged");
+        // Chore 1 (only room 1) → General.
+        (await MembershipsAsync(1, 1)).Should().BeEmpty("a chore only in the deleted room falls to General");
+        allChores.Single(c => c.ChoreId == 1).RoomId.Should().BeNull();
+
+        // Chore 2 (rooms 1+2) → keeps room 2; shim recomputes to the min remaining (2).
+        (await MembershipsAsync(1, 2)).Should().Equal(new[] { 2 }, "a multi-room chore keeps its other rooms");
+        allChores.Single(c => c.ChoreId == 2).RoomId.Should().Be(2);
+
+        // Chore 3 (only room 2) → untouched.
+        (await MembershipsAsync(1, 3)).Should().Equal(new[] { 2 });
+        allChores.Single(c => c.ChoreId == 3).RoomId.Should().Be(2, "a chore in another room is unaffected");
+
+        // Chore 4 (General) → unchanged.
+        (await MembershipsAsync(1, 4)).Should().BeEmpty();
+        allChores.Single(c => c.ChoreId == 4).RoomId.Should().BeNull("an already-General chore is unchanged");
     }
 
     [Fact]
-    public async Task DeleteRoomAsync_DoesNotNullChoresInOtherHouseholds()
+    public async Task DeleteRoomAsync_DoesNotTouchOtherHouseholdsMemberships()
     {
-        // Household 2 also has a RoomId 1 with a chore in it.
+        // Household 2 also has a RoomId 1 with a chore membership in it (same RoomId as household 1 — the
+        // isolation trap).
         await using (var ctx = new ApplicationDbContext(_options))
         {
-            var c = MakeChore(ctx, choreId: 1, roomId: 1, name: "Sweep garage");
-            c.HouseholdId = 2;
-            c.EnteredByUserId = 1; // user 1 belongs to h1 but FK is Restrict-only; fine for InMemory
-            ctx.Chores.Add(c);
+            SeedChoreWithRooms(ctx, householdId: 2, choreId: 1, name: "Sweep garage", roomIds: new[] { 1 });
             await ctx.SaveChangesAsync();
         }
 
         // Act: delete household 1's room 1.
         await _service.DeleteRoomAsync(householdId: 1, roomId: 1);
 
-        // Assert: household 2's chore still references room 1.
+        // Assert: household 2's chore keeps its room-1 membership + shim (M1).
+        (await MembershipsAsync(2, 1)).Should().Equal(new[] { 1 }, "a delete in household 1 must not touch household 2 (M1)");
         await using var verify = new ApplicationDbContext(_options);
         var h2Chore = await verify.Chores.SingleAsync(c => c.HouseholdId == 2 && c.ChoreId == 1);
-        h2Chore.RoomId.Should().Be(1, "a delete in household 1 must not touch household 2's chores (M1)");
+        h2Chore.RoomId.Should().Be(1);
     }
 
     [Fact]
@@ -331,14 +340,20 @@ public class RoomServiceTests : IDisposable
 
     // -----------------------------------------------------------------------
 
-    private static Chore MakeChore(ApplicationDbContext ctx, int choreId, int? roomId, string name)
+    /// <summary>
+    /// Seed a chore with 0..N room memberships (Phase 13): writes the Chore + one ChoreRoom row per id, and
+    /// the dual-write shim RoomId = the min membership (or null). Mirrors what ChoreService.CreateChoreAsync
+    /// persists, so the room-delete path sees realistic membership data.
+    /// </summary>
+    private static void SeedChoreWithRooms(ApplicationDbContext ctx, int householdId, int choreId, string name, int[] roomIds)
     {
-        return new Chore
+        var distinct = roomIds.Distinct().OrderBy(x => x).ToArray();
+        ctx.Chores.Add(new Chore
         {
-            HouseholdId = 1,
+            HouseholdId = householdId,
             ChoreId = choreId,
             Name = name,
-            RoomId = roomId,
+            RoomId = distinct.Length == 0 ? null : distinct[0],
             RecurrenceMode = RecurrenceMode.OneOff,
             EffortTier = EffortTier.Standard,
             EffortPoints = 1,
@@ -346,6 +361,21 @@ public class RoomServiceTests : IDisposable
             AssignmentKind = AssignmentKind.None,
             EnteredByUserId = 1,
             CreatedAt = DateTime.UtcNow
-        };
+        });
+
+        foreach (var roomId in distinct)
+        {
+            ctx.ChoreRooms.Add(new ChoreRoom { HouseholdId = householdId, ChoreId = choreId, RoomId = roomId });
+        }
+    }
+
+    private async Task<List<int>> MembershipsAsync(int householdId, int choreId)
+    {
+        await using var ctx = new ApplicationDbContext(_options);
+        return await ctx.ChoreRooms
+            .Where(cr => cr.HouseholdId == householdId && cr.ChoreId == choreId)
+            .OrderBy(cr => cr.RoomId)
+            .Select(cr => cr.RoomId)
+            .ToListAsync();
     }
 }

@@ -103,17 +103,37 @@ public class RoomService(
             .FirstOrDefaultAsync(r => r.HouseholdId == householdId && r.RoomId == roomId, cancellationToken)
             ?? throw new InvalidOperationException($"Room {roomId} not found for household {householdId}");
 
-        // Explicitly null out RoomId on every chore in this room (same household) BEFORE removing the
-        // room row, in the SAME SaveChanges (council M3). The Chore→Room composite FK is ClientSetNull
-        // (NO ACTION in the DB), so the database will NOT null these out for us — without this the delete
-        // would fail (or orphan a stale RoomId). Chores survive and fall back to "General" (RoomId == null).
-        var chores = await context.Chores
-            .Where(c => c.HouseholdId == householdId && c.RoomId == roomId)
+        // Phase 13 (M:N): remove this room's ChoreRoom membership rows BEFORE the room row, in the SAME
+        // SaveChanges (M1, M4 — explicit delete, never DB cascade; the ChoreRoom→Room FK is ClientNoAction).
+        // Collect the affected chore ids FIRST (the set is lost once the rows are removed). A chore in other
+        // rooms keeps those; a chore left with zero memberships falls back to General.
+        var affectedChoreIds = await context.ChoreRooms
+            .Where(cr => cr.HouseholdId == householdId && cr.RoomId == roomId)
+            .Select(cr => cr.ChoreId)
             .ToListAsync(cancellationToken);
 
-        foreach (var chore in chores)
+        var membershipsToRemove = await context.ChoreRooms
+            .Where(cr => cr.HouseholdId == householdId && cr.RoomId == roomId)
+            .ToListAsync(cancellationToken);
+        context.ChoreRooms.RemoveRange(membershipsToRemove);
+
+        // Recompute the dual-write shim for each affected chore = the MIN remaining membership (or null =
+        // General) — deterministic, matching WP-02's min shim. One batched read (filter RoomId != roomId so
+        // the about-to-be-deleted rows are excluded regardless of flush order).
+        var remainingMinByChore = (await context.ChoreRooms
+            .Where(cr => cr.HouseholdId == householdId && cr.RoomId != roomId && affectedChoreIds.Contains(cr.ChoreId))
+            .Select(cr => new { cr.ChoreId, cr.RoomId })
+            .ToListAsync(cancellationToken))
+            .GroupBy(x => x.ChoreId)
+            .ToDictionary(g => g.Key, g => (int?)g.Min(x => x.RoomId));
+
+        var affectedChores = await context.Chores
+            .Where(c => c.HouseholdId == householdId && affectedChoreIds.Contains(c.ChoreId))
+            .ToListAsync(cancellationToken);
+
+        foreach (var chore in affectedChores)
         {
-            chore.RoomId = null;
+            chore.RoomId = remainingMinByChore.TryGetValue(chore.ChoreId, out var minRoom) ? minRoom : null;
         }
 
         // Delete the room's photo from disk before removing the row (M8 — EF cascade does not touch the
@@ -126,8 +146,8 @@ public class RoomService(
         context.Rooms.Remove(room);
         await context.SaveChangesAsync(cancellationToken);
 
-        logger.LogInformation("Deleted Room {RoomId} for household {HouseholdId}; nulled RoomId on {ChoreCount} chore(s)",
-            roomId, householdId, chores.Count);
+        logger.LogInformation("Deleted Room {RoomId} for household {HouseholdId}; removed membership on {ChoreCount} chore(s)",
+            roomId, householdId, affectedChoreIds.Count);
     }
 
     public async Task ReorderAsync(int householdId, IReadOnlyList<int> orderedRoomIds, CancellationToken cancellationToken = default)

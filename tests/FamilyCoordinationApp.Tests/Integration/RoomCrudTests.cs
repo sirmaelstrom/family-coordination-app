@@ -142,6 +142,37 @@ public sealed class RoomCrudTests(PostgresContainerFixture postgres) : IAsyncLif
         survivor!.roomId.Should().BeNull("the orphaned chore is reassigned to General");
     }
 
+    [Fact]
+    public async Task DeleteRoom_MultiRoomChore_KeepsItsOtherRoom_NotGeneral()
+    {
+        // Phase 13 (M:N): a chore in TWO rooms survives a room delete by keeping the other room — it does
+        // NOT fall to General. Until WP-04 the board carries only the single-room shim, so we assert the
+        // survivor reads the remaining room (the min remaining membership).
+        var client = ClientA;
+        var roomA = await CreateRoomAsync(client, "RoomA-multi");
+        var roomB = await CreateRoomAsync(client, "RoomB-multi");
+
+        var createChore = await client.PostAsJsonAsync("/api/chores/", new
+        {
+            name = "Two-room survivor",
+            roomIds = new[] { roomA.id, roomB.id },
+            recurrenceMode = "flexible",
+            intervalDays = 7,
+            effortTier = "quick"
+        }, Json);
+        createChore.StatusCode.Should().Be(HttpStatusCode.Created);
+        var chore = (await createChore.Content.ReadFromJsonAsync<ChoreCard>(Json))!;
+
+        // Delete room A (created first → lower id, so B is the min remaining membership).
+        var deleteResp = await client.DeleteAsync($"/api/rooms/{roomA.id}");
+        deleteResp.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var board = await client.GetFromJsonAsync<Board>("/api/chores/board", Json);
+        var survivor = board!.chores.SingleOrDefault(c => c.id == chore.id);
+        survivor.Should().NotBeNull("a multi-room chore must survive a room delete");
+        survivor!.roomId.Should().Be(roomB.id, "it keeps its other room rather than falling to General");
+    }
+
     // NOTE: a "delete a nonexistent room" case is intentionally NOT covered here. The endpoint returns an
     // empty 404, which the app-global UseStatusCodePagesWithReExecute("/not-found") re-executes through the
     // Blazor not-found page — and because re-execution preserves the DELETE verb against a GET-only page, the
