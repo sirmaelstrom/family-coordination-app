@@ -97,11 +97,21 @@ class MealPlanStore {
    * the first load; liveness refreshes are silent.
    */
   async loadBoard(): Promise<void> {
+    // Capture the week this load targets. Two getBoard calls for different weeks can be in flight at
+    // once (a liveness reconcile racing changeWeek, or rapid prev/next); without this guard the OLDER
+    // response can land last and — because setBoard() adopts the response's weekStartDate — snap the
+    // board back to the wrong week. Mirror the targetWeek capture/compare addEntry already uses.
+    const targetWeek = this.weekStart;
     try {
       if (this.board == null) this.loading = true;
       this.error = null;
-      this.setBoard(await getBoard(this.weekStart));
+      const next = await getBoard(targetWeek);
+      // Discard a stale response: the user moved to another week while this GET was in flight.
+      if (this.weekStart !== targetWeek) return;
+      this.setBoard(next);
     } catch (e) {
+      // A stale week's failure is moot — only surface an error for the week still in view.
+      if (this.weekStart !== targetWeek) return;
       if (e instanceof ApiError) {
         this.error = `Failed to load the meal plan (HTTP ${e.status}).`;
       } else {

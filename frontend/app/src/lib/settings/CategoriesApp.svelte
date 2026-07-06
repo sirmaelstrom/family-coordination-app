@@ -42,16 +42,21 @@
 
   // Drag-reorder: a local copy svelte-dnd-action mutates during a drag, resynced
   // from the store whenever we're NOT dragging (the chores/recipes pattern).
-  let rows = $state<CategoryDto[]>([]);
+  // svelte-dnd-action requires every item to carry an `id`; CategoryDto keys on
+  // `categoryId`, so we drag over a lightweight row that ADDS `id` — without it,
+  // svelte-dnd-action (0.9.70) throws 'missing id property for item' on init and
+  // reorder is dead (same class as the shopping-list cross-category drag bug).
+  type DragRow = CategoryDto & { id: number };
+  let rows = $state<DragRow[]>([]);
   let dragging = $state(false);
   $effect(() => {
-    if (!dragging) rows = [...store.active];
+    if (!dragging) rows = store.active.map((c) => ({ ...c, id: c.categoryId }));
   });
-  function handleConsider(e: CustomEvent<DndEvent<CategoryDto>>) {
+  function handleConsider(e: CustomEvent<DndEvent<DragRow>>) {
     dragging = true;
     rows = e.detail.items;
   }
-  function handleFinalize(e: CustomEvent<DndEvent<CategoryDto>>) {
+  function handleFinalize(e: CustomEvent<DndEvent<DragRow>>) {
     rows = e.detail.items;
     dragging = false;
     void store.reorder(rows.map((c) => c.categoryId));
@@ -118,7 +123,7 @@
           onconsider={handleConsider}
           onfinalize={handleFinalize}
         >
-          {#each rows as cat (cat.categoryId)}
+          {#each rows as cat (cat.id)}
             <li class="set-row">
               <div class="set-row-main">
                 <span class="set-grip" aria-hidden="true">⠿</span>

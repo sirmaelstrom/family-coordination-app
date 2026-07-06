@@ -48,14 +48,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-first ONLY for immutable/fingerprinted SPA assets (/_app/* is content-hashed
-  // per build) and the static icons. Everything else — including the server-rendered
-  // Razor pages (/account/*, /household/*, legal) and their assets — stays network-first
-  // so a deploy is picked up immediately.
-  if (
-    url.pathname.startsWith('/_app/') ||
-    (url.pathname.startsWith('/icons/') && /\.(png|svg|webp)$/.test(url.pathname))
-  ) {
+  // Immutable, content-hashed SPA assets (/_app/* is fingerprinted per build): cache-first
+  // FOREVER is correct — a new build changes the hash → new URL → cache miss → fetched fresh.
+  if (url.pathname.startsWith('/_app/')) {
     event.respondWith(
       caches.match(req).then(
         (cached) =>
@@ -66,6 +61,29 @@ self.addEventListener('fetch', (event) => {
             return res;
           }),
       ),
+    );
+    return;
+  }
+
+  // Stable-NAMED assets (PWA icons): STALE-WHILE-REVALIDATE — serve the cached copy for speed,
+  // but ALWAYS refetch in the background and update the cache so a deploy is picked up on the next
+  // load. This is the fix for the never-rotating CACHE_VERSION (its `?v=` is never passed by the
+  // registration, so the constant version means the activate purge never fires): a changed icon can
+  // no longer be pinned to its first-ever copy, WITHOUT relying on a cache-name rotation. Offline: the
+  // background refetch just fails and the cached copy stands. (Fingerprinted /_app/* above stays
+  // cache-first; only stable-named assets needed this.)
+  if (url.pathname.startsWith('/icons/') && /\.(png|svg|webp)$/.test(url.pathname)) {
+    event.respondWith(
+      caches.match(req).then((cached) => {
+        const revalidate = fetch(req)
+          .then((res) => {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(req, clone));
+            return res;
+          })
+          .catch(() => cached);
+        return cached || revalidate;
+      }),
     );
     return;
   }
