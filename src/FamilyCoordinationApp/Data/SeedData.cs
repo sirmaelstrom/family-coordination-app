@@ -186,9 +186,14 @@ public static class SeedData
 
         // Local helper: build a chore with the invariant trio + effort tier → points kept consistent
         // (P3 — never hand-type points that disagree with the tier; ChoreEffort.PointsFor is the SoT).
+        // Phase 13: takes 0..N room ids (empty == General). Writes a ChoreRoom membership row per id
+        // AND the transitional shim RoomId = the min membership (or null) so seeded chores are
+        // consistent under both the join table and the not-yet-dropped Chore.RoomId column. The
+        // backfill migration runs on an EMPTY Chores table (fresh DB), so these seed memberships must
+        // be written explicitly here — the backfill won't cover them.
         Chore NewChore(
             string name,
-            int? roomId,
+            int[] roomIds,
             RecurrenceMode recurrence,
             EffortTier effort,
             string? description = null,
@@ -201,13 +206,14 @@ public static class SeedData
             AssignmentKind assignmentKind = AssignmentKind.None,
             DateTime? claimedAt = null)
         {
+            var distinctRoomIds = roomIds.Distinct().OrderBy(x => x).ToArray();
             var chore = new Chore
             {
                 HouseholdId = householdId,
                 ChoreId = ++choreId,
                 Name = name,
                 Description = description,
-                RoomId = roomId,
+                RoomId = distinctRoomIds.Length == 0 ? null : distinctRoomIds[0],
                 RecurrenceMode = recurrence,
                 IntervalDays = intervalDays,
                 AnchorDate = anchorDate,
@@ -242,6 +248,19 @@ public static class SeedData
                 });
             }
 
+            // One ChoreRoom membership row per room (Phase 13). Added directly to the context so they
+            // commit in the same SaveChanges as the chores; EF orders the chore insert before its
+            // memberships (FK dependency).
+            foreach (var roomId in distinctRoomIds)
+            {
+                context.ChoreRooms.Add(new ChoreRoom
+                {
+                    HouseholdId = householdId,
+                    ChoreId = chore.ChoreId,
+                    RoomId = roomId
+                });
+            }
+
             return chore;
         }
 
@@ -249,61 +268,61 @@ public static class SeedData
         {
             // ---- Flexible (decay relative to last completion) — exercises Fresh / Mid / Overdue. ----
             // Fresh: completed today → fraction 0 → Fresh / NotDue.
-            NewChore("Wipe down counters", kitchen, RecurrenceMode.Flexible, EffortTier.Quick,
+            NewChore("Wipe down counters", [kitchen], RecurrenceMode.Flexible, EffortTier.Quick,
                 description: "Clear and wipe the kitchen counters.",
                 intervalDays: 3, lastCompletedAt: now),
 
             // Mid: ~5 days into a 7-day cadence → fraction ~0.71 → Mid / NotDue.
-            NewChore("Vacuum living room", livingRoom, RecurrenceMode.Flexible, EffortTier.Standard,
+            NewChore("Vacuum living room", [livingRoom], RecurrenceMode.Flexible, EffortTier.Standard,
                 description: "Vacuum carpets and rugs.",
                 intervalDays: 7, lastCompletedAt: now.AddDays(-5)),
 
             // Overdue: 12 days into a 7-day cadence → fraction > 1 → Overdue.
-            NewChore("Clean bathroom", bathroom, RecurrenceMode.Flexible, EffortTier.Standard,
+            NewChore("Clean bathroom", [bathroom], RecurrenceMode.Flexible, EffortTier.Standard,
                 description: "Scrub sink, toilet, and shower.",
                 intervalDays: 7, lastCompletedAt: now.AddDays(-12)),
 
             // Flexible never completed → first-occurrence pressure → DueToday / Due.
-            NewChore("Mop kitchen floor", kitchen, RecurrenceMode.Flexible, EffortTier.BigJob,
+            NewChore("Mop kitchen floor", [kitchen], RecurrenceMode.Flexible, EffortTier.BigJob,
                 description: "Sweep then mop the whole floor.",
                 intervalDays: 14),
 
             // ---- Fixed weekly-on-weekday (D4-B) — DueToday on a flagged weekday else Scheduled. ----
-            NewChore("Take out trash", null, RecurrenceMode.Fixed, EffortTier.Quick,
+            NewChore("Take out trash", [], RecurrenceMode.Fixed, EffortTier.Quick,
                 description: "Roll bins to the curb.",
                 daysOfWeek: ChoreDaysOfWeek.Monday | ChoreDaysOfWeek.Thursday),
 
-            NewChore("Water the plants", livingRoom, RecurrenceMode.Fixed, EffortTier.Quick,
+            NewChore("Water the plants", [livingRoom], RecurrenceMode.Fixed, EffortTier.Quick,
                 description: "Water indoor and porch plants.",
                 daysOfWeek: ChoreDaysOfWeek.Wednesday | ChoreDaysOfWeek.Sunday),
 
             // ---- Fixed every-N (anchor + interval) — DueToday on a cadence multiple else Scheduled. ----
-            NewChore("Mow the lawn", yard, RecurrenceMode.Fixed, EffortTier.BigJob,
+            NewChore("Mow the lawn", [yard], RecurrenceMode.Fixed, EffortTier.BigJob,
                 description: "Mow front and back yard.",
                 intervalDays: 10, anchorDate: today.AddDays(-20)),
 
             // ---- OneOff (due against AnchorDate, never recurs). ----
             // Overdue one-off (anchor in the past, not completed).
-            NewChore("Return library books", null, RecurrenceMode.OneOff, EffortTier.Quick,
+            NewChore("Return library books", [], RecurrenceMode.OneOff, EffortTier.Quick,
                 description: "Drop the overdue books at the branch.",
                 anchorDate: today.AddDays(-2)),
 
             // Future one-off (anchor ahead → NotDue / Fresh).
-            NewChore("Schedule HVAC service", null, RecurrenceMode.OneOff, EffortTier.Standard,
+            NewChore("Schedule HVAC service", [], RecurrenceMode.OneOff, EffortTier.Standard,
                 description: "Book the seasonal furnace tune-up.",
                 anchorDate: today.AddDays(7)),
 
             // ---- Assignment states (limited to the single seed member at creation time). ----
             // Assigned (sticky): AssignmentKind.Assigned + assignee + null ClaimedAt (deliberate
             // assignment is never auto-released — claimedAt stays null for Assigned).
-            NewChore("Manage weekly meal plan", kitchen, RecurrenceMode.Flexible, EffortTier.Standard,
+            NewChore("Manage weekly meal plan", [kitchen], RecurrenceMode.Flexible, EffortTier.Standard,
                 description: "Plan meals and update the shopping list.",
                 intervalDays: 7, lastCompletedAt: now.AddDays(-2),
                 ownerUserId: userId, assigneeUserId: userId, assignmentKind: AssignmentKind.Assigned),
 
             // Claimed (fresh, NOT stale): AssignmentKind.Claimed + assignee + recent ClaimedAt
             // (well within the 48h staleness threshold → isClaimStale == false).
-            NewChore("Make the beds", bedroom, RecurrenceMode.Fixed, EffortTier.Quick,
+            NewChore("Make the beds", [bedroom], RecurrenceMode.Fixed, EffortTier.Quick,
                 description: "Make all the beds.",
                 daysOfWeek: ChoreDaysOfWeek.Saturday | ChoreDaysOfWeek.Sunday,
                 assigneeUserId: userId, assignmentKind: AssignmentKind.Claimed, claimedAt: now.AddHours(-2))
