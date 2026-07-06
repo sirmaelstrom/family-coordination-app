@@ -48,10 +48,10 @@ public class ChoreService(
                     await EnsureHouseholdMemberAsync(context, householdId, assigneeId, cancellationToken);
                 }
 
-                // Resolve the desired room membership set (Phase 13). On create: roomIds wins; else the legacy
-                // single roomId; else General (no memberships). Validate every id is a room in the household
-                // (M1/M6 — ChoreValidationException → 400 with a body at the endpoint).
-                var desiredRoomIds = ResolveDesiredRoomIds(cmd.RoomIds, cmd.RoomId, forUpdate: false)!;
+                // Resolve the desired room membership set (Phase 13). On create: the roomIds set, or General
+                // (no memberships) when null/empty. Validate every id is a room in the household (M1/M6 —
+                // ChoreValidationException → 400 with a body at the endpoint).
+                var desiredRoomIds = ResolveDesiredRoomIds(cmd.RoomIds, forUpdate: false)!;
                 await EnsureRoomsExistAsync(context, householdId, desiredRoomIds, cancellationToken);
 
                 var maxId = await context.Chores
@@ -65,7 +65,6 @@ public class ChoreService(
                     Name = cmd.Name.Trim(),
                     Description = string.IsNullOrWhiteSpace(cmd.Description) ? null : cmd.Description.Trim(),
                     Icon = cmd.Icon ?? string.Empty,
-                    RoomId = MinShim(desiredRoomIds),   // dual-write shim = min membership (or null) until WP-08
                     RecurrenceMode = cmd.RecurrenceMode,
                     IntervalDays = cmd.IntervalDays,
                     AnchorDate = cmd.AnchorDate,
@@ -140,14 +139,12 @@ public class ChoreService(
         chore.Name = cmd.Name.Trim();
         chore.Description = string.IsNullOrWhiteSpace(cmd.Description) ? null : cmd.Description.Trim();
         chore.Icon = cmd.Icon ?? string.Empty;
-        // Room membership (Phase 13). Precedence: roomIds wins; else the legacy single roomId; else null =
-        // PRESERVE (transitional no-op — don't touch memberships or the shim). [] clears to General.
-        var desiredRoomIds = ResolveDesiredRoomIds(cmd.RoomIds, cmd.RoomId, forUpdate: true);
+        // Room membership (Phase 13). null RoomIds = PRESERVE (no-op); [] clears to General; a set replaces.
+        var desiredRoomIds = ResolveDesiredRoomIds(cmd.RoomIds, forUpdate: true);
         if (desiredRoomIds is not null)
         {
             await EnsureRoomsExistAsync(context, householdId, desiredRoomIds, cancellationToken);
             await ChoreRoomMembership.ReconcileMembershipsAsync(context, householdId, choreId, desiredRoomIds, cancellationToken);
-            chore.RoomId = MinShim(desiredRoomIds);   // keep the shim = min remaining membership (or null)
         }
         chore.RecurrenceMode = cmd.RecurrenceMode;
         chore.IntervalDays = cmd.IntervalDays;
@@ -676,26 +673,16 @@ public class ChoreService(
     }
 
     /// <summary>
-    /// Resolve the desired room-membership set (Phase 13). Precedence: a non-null <paramref name="roomIds"/>
-    /// wins (including <c>[]</c> = clear to General); else the legacy single <paramref name="legacyRoomId"/>
-    /// maps to a one-element set; else — neither supplied — <c>null</c> on update PRESERVES existing
-    /// memberships (transitional no-op), while create falls to an empty set (General). Council convergent
-    /// (codex/carto/gpt): roomIds wins, null=preserve, []=clear.
+    /// Resolve the desired room-membership set (Phase 13). A non-null <paramref name="roomIds"/> is the set
+    /// (including <c>[]</c> = clear to General); <c>null</c> on update PRESERVES existing memberships (no-op),
+    /// while create falls to an empty set (General). Council convergent (codex/carto/gpt): null=preserve,
+    /// []=clear.
     /// </summary>
-    private static IReadOnlyList<int>? ResolveDesiredRoomIds(IReadOnlyList<int>? roomIds, int? legacyRoomId, bool forUpdate)
+    private static IReadOnlyList<int>? ResolveDesiredRoomIds(IReadOnlyList<int>? roomIds, bool forUpdate)
     {
         if (roomIds is not null) return roomIds;
-        if (legacyRoomId is { } r) return new[] { r };
         return forUpdate ? null : Array.Empty<int>();
     }
-
-    /// <summary>
-    /// The dual-write shim <c>Chore.RoomId</c> = the deterministic MIN of the membership set (or null when
-    /// roomless). Deterministic min — not <c>FirstOrDefault()</c> on unordered input — so the shim is stable
-    /// across WP-02/WP-03 (council convergent). Dropped in WP-08.
-    /// </summary>
-    private static int? MinShim(IReadOnlyCollection<int> roomIds)
-        => roomIds.Count == 0 ? null : roomIds.Distinct().Min();
 
     /// <summary>
     /// Validate that every requested room id exists in the household (M1). Throws

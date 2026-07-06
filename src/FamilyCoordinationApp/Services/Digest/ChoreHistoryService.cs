@@ -163,9 +163,11 @@ public class ChoreHistoryService(
         var choreLookup = await context.Chores
             .AsNoTracking()
             .Where(c => c.HouseholdId == householdId)
-            .Select(c => new { c.ChoreId, c.Name, c.RoomId })
+            .Select(c => new { c.ChoreId, c.Name })
             .ToListAsync(ct);
-        var choreById = choreLookup.ToDictionary(c => c.ChoreId, c => (c.Name, c.RoomId));
+        // choreId → name (Phase 13: the room lives in ChoreRoom now, not Chore.RoomId; the per-room tally
+        // reads memberships via membershipsByChore, so this lookup no longer carries a room).
+        var choreById = choreLookup.ToDictionary(c => c.ChoreId, c => c.Name);
 
         // Room names for the what-got-tended tally (O(rooms)); roomless → the virtual "General" group.
         var roomNameById = await context.Rooms
@@ -654,13 +656,13 @@ public class ChoreHistoryService(
 
     private IReadOnlyList<HistoryEvent> BuildEvents(
         IReadOnlyList<ChoreCompletion> completions,
-        IReadOnlyDictionary<int, (string Name, int? RoomId)> choreById,
+        IReadOnlyDictionary<int, string> choreById,
         IReadOnlyDictionary<int, string> memberNameById)
     {
         return completions
             .OrderByDescending(c => c.CompletedAt)
             .Select(c => new HistoryEvent(
-                ChoreName: choreById.TryGetValue(c.ChoreId, out var chore) ? chore.Name : string.Empty,
+                ChoreName: choreById.TryGetValue(c.ChoreId, out var choreName) ? choreName : string.Empty,
                 DoerDisplayName: memberNameById.TryGetValue(c.CompletedByUserId, out var name) ? name : UnknownDoerName,
                 LocalDate: LocalIsoDate(c.CompletedAt),
                 Points: c.EffortPointsSnapshot,
@@ -736,7 +738,7 @@ public class ChoreHistoryService(
     private HistoryMilestones BuildMilestones(
         IReadOnlyList<HistoryWeek> weeks,
         IReadOnlyList<(int ChoreId, DateTime FirstCompletedAt)> firstEverByChore,
-        IReadOnlyDictionary<int, (string Name, int? RoomId)> choreById,
+        IReadOnlyDictionary<int, string> choreById,
         DateTime oldestWeekStartUtc,
         DateTime asOf)
     {
@@ -775,7 +777,7 @@ public class ChoreHistoryService(
             {
                 continue;
             }
-            var name = choreById.TryGetValue(choreId, out var chore) ? chore.Name : string.Empty;
+            var name = choreById.TryGetValue(choreId, out var choreName) ? choreName : string.Empty;
             firstEvers.Add(new FirstEver(name, LocalIsoDate(first)));
         }
         // Deterministic order — newest first-ever first (a fresh "first time!" leads the list).
@@ -796,7 +798,7 @@ public class ChoreHistoryService(
 
     private IReadOnlyList<HistoryKeptMoment> BuildKeptMoments(
         IReadOnlyList<ChoreCompletion> completions,
-        IReadOnlyDictionary<int, (string Name, int? RoomId)> choreById)
+        IReadOnlyDictionary<int, string> choreById)
     {
         return completions
             .Where(c => !string.IsNullOrWhiteSpace(c.Note) || !string.IsNullOrWhiteSpace(c.PhotoPath))
@@ -804,7 +806,7 @@ public class ChoreHistoryService(
             .Take(KeptMomentsCap)
             .Select(c => new HistoryKeptMoment(
                 LocalDate: LocalIsoDate(c.CompletedAt),
-                ChoreName: choreById.TryGetValue(c.ChoreId, out var chore) ? chore.Name : string.Empty,
+                ChoreName: choreById.TryGetValue(c.ChoreId, out var choreName) ? choreName : string.Empty,
                 Note: string.IsNullOrWhiteSpace(c.Note) ? null : c.Note,
                 HasPhoto: !string.IsNullOrWhiteSpace(c.PhotoPath)))
             .ToList();

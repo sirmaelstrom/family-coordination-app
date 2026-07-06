@@ -181,7 +181,7 @@ public class ChoreRosterServiceTests : IDisposable
     public async Task CreateChore_MultiPerson_SeedsRoster_AndLeavesTrioOnPile()
     {
         var cmd = new CreateChoreCommand(
-            Name: "Flip the mattress", Description: null, RoomId: null,
+            Name: "Flip the mattress", Description: null,
             RecurrenceMode: RecurrenceMode.OneOff, IntervalDays: null, AnchorDate: new DateOnly(2026, 6, 10),
             DaysOfWeek: null, DayOfMonth: null, EffortTier: EffortTier.BigJob,
             OwnerUserId: null, AssigneeUserId: null, PhotoPath: null,
@@ -202,7 +202,7 @@ public class ChoreRosterServiceTests : IDisposable
     public async Task CreateChore_SinglePerson_IgnoresAssignedUserIds()
     {
         var cmd = new CreateChoreCommand(
-            Name: "Dishes", Description: null, RoomId: null,
+            Name: "Dishes", Description: null,
             RecurrenceMode: RecurrenceMode.OneOff, IntervalDays: null, AnchorDate: new DateOnly(2026, 6, 10),
             DaysOfWeek: null, DayOfMonth: null, EffortTier: EffortTier.Quick,
             OwnerUserId: null, AssigneeUserId: Bob, PhotoPath: null,
@@ -222,7 +222,7 @@ public class ChoreRosterServiceTests : IDisposable
     {
         SeedChore(1, requiredCount: 1, assigneeUserId: Bob, kind: AssignmentKind.Assigned);
         var cmd = new UpdateChoreCommand(
-            Name: "Test chore", Description: null, RoomId: null,
+            Name: "Test chore", Description: null,
             RecurrenceMode: RecurrenceMode.OneOff, IntervalDays: null, AnchorDate: new DateOnly(2026, 6, 10),
             DaysOfWeek: null, DayOfMonth: null, EffortTier: EffortTier.Standard,
             OwnerUserId: null, PhotoPath: null, RequiredCount: 2);
@@ -243,7 +243,7 @@ public class ChoreRosterServiceTests : IDisposable
     {
         SeedChore(1, requiredCount: 2);
         var cmd = new UpdateChoreCommand(
-            Name: "Test chore", Description: null, RoomId: null,
+            Name: "Test chore", Description: null,
             RecurrenceMode: RecurrenceMode.OneOff, IntervalDays: null, AnchorDate: new DateOnly(2026, 6, 10),
             DaysOfWeek: null, DayOfMonth: null, EffortTier: EffortTier.Standard,
             OwnerUserId: null, PhotoPath: null, RequiredCount: 1);

@@ -71,8 +71,8 @@ public sealed record ChoreDto(
     int RequiredCount,                    // 1 = normal; >1 = multi-person
     int CompletedCount,                   // distinct DONE toward the CURRENT occurrence (0..RequiredCount) — the gate
     IReadOnlyList<RosterMemberDto> Roster, // named roster + per-member state; [] = open / single-person unassigned
-    // Lightweight per-chore checklist (Phase 14); a momentum aid that never gates completion; resets on a
-    // recurring chore's satisfying completion. Last field ⇒ serializes after `roster` (matches the fixture).
+                                           // Lightweight per-chore checklist (Phase 14); a momentum aid that never gates completion; resets on a
+                                           // recurring chore's satisfying completion. Last field ⇒ serializes after `roster` (matches the fixture).
     IReadOnlyList<ChoreSubtaskDto> Subtasks
     );
 

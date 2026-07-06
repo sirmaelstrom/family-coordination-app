@@ -155,7 +155,6 @@ public sealed class ChoreServiceSnoozeTests(PostgresContainerFixture postgres) :
         var created = await _service.CreateChoreAsync(HouseholdId, Alice, new CreateChoreCommand(
             Name: "New flexible chore",
             Description: null,
-            RoomId: null,
             RecurrenceMode: RecurrenceMode.Flexible,
             IntervalDays: 7,
             AnchorDate: null,
@@ -173,7 +172,6 @@ public sealed class ChoreServiceSnoozeTests(PostgresContainerFixture postgres) :
         await _service.UpdateChoreAsync(HouseholdId, created.ChoreId, new UpdateChoreCommand(
             Name: "New flexible chore",
             Description: null,
-            RoomId: null,
             RecurrenceMode: RecurrenceMode.Flexible,
             IntervalDays: 7,
             AnchorDate: null,

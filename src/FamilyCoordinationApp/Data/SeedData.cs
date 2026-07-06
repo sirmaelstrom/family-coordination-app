@@ -186,10 +186,9 @@ public static class SeedData
 
         // Local helper: build a chore with the invariant trio + effort tier → points kept consistent
         // (P3 — never hand-type points that disagree with the tier; ChoreEffort.PointsFor is the SoT).
-        // Phase 13: takes 0..N room ids (empty == General). Writes a ChoreRoom membership row per id
-        // AND the transitional shim RoomId = the min membership (or null) so seeded chores are
-        // consistent under both the join table and the not-yet-dropped Chore.RoomId column. The
-        // backfill migration runs on an EMPTY Chores table (fresh DB), so these seed memberships must
+        // Phase 13: takes 0..N room ids (empty == General). Writes a ChoreRoom membership row per id —
+        // the join table is the sole source of room membership (WP-08 dropped the old Chore.RoomId shim).
+        // The backfill migration runs on an EMPTY Chores table (fresh DB), so these seed memberships must
         // be written explicitly here — the backfill won't cover them.
         Chore NewChore(
             string name,
@@ -213,7 +212,6 @@ public static class SeedData
                 ChoreId = ++choreId,
                 Name = name,
                 Description = description,
-                RoomId = distinctRoomIds.Length == 0 ? null : distinctRoomIds[0],
                 RecurrenceMode = recurrence,
                 IntervalDays = intervalDays,
                 AnchorDate = anchorDate,

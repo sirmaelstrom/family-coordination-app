@@ -90,7 +90,6 @@ public class ChoreServiceTests : IDisposable
     private static CreateChoreCommand FlexibleCmd(int? assignee = null) => new(
         Name: "Dishes",
         Description: "  rinse first  ",
-        RoomId: null,
         RecurrenceMode: RecurrenceMode.Flexible,
         IntervalDays: 7,
         AnchorDate: null,
@@ -239,10 +238,9 @@ public class ChoreServiceTests : IDisposable
 
     // ---- ROOM MEMBERSHIP (Phase 13, WP-02) ---------------------------------
 
-    private static UpdateChoreCommand RoomUpdateCmd(IReadOnlyList<int>? roomIds = null, int? legacyRoomId = null) => new(
+    private static UpdateChoreCommand RoomUpdateCmd(IReadOnlyList<int>? roomIds = null) => new(
         Name: "Dishes",
         Description: null,
-        RoomId: legacyRoomId,
         RecurrenceMode: RecurrenceMode.Flexible,
         IntervalDays: 7,
         AnchorDate: null,
@@ -255,13 +253,12 @@ public class ChoreServiceTests : IDisposable
         RoomIds: roomIds);
 
     [Fact]
-    public async Task Create_WithRoomIds_WritesSortedMembershipRows_AndMinShim()
+    public async Task Create_WithRoomIds_WritesSortedMembershipRows()
     {
-        // Unsorted input → sorted rows; shim = min membership.
+        // Unsorted input → sorted rows.
         var chore = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RoomIds = new[] { Bathroom, Kitchen } });
 
         (await MembershipsAsync(chore.ChoreId)).Should().Equal(Kitchen, Bathroom);
-        (await ReloadAsync(chore.ChoreId)).RoomId.Should().Be(Kitchen, "the dual-write shim is the min membership");
     }
 
     [Fact]
@@ -279,7 +276,6 @@ public class ChoreServiceTests : IDisposable
         var chore = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd());
 
         (await MembershipsAsync(chore.ChoreId)).Should().BeEmpty();
-        (await ReloadAsync(chore.ChoreId)).RoomId.Should().BeNull();
     }
 
     [Fact]
@@ -292,7 +288,7 @@ public class ChoreServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Update_ToSubsetRoomIds_RemovesDeselected_AndRecomputesShim()
+    public async Task Update_ToSubsetRoomIds_RemovesDeselected()
     {
         var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RoomIds = new[] { Kitchen, Bathroom } });
         var current = await ReloadAsync(created.ChoreId);
@@ -300,7 +296,6 @@ public class ChoreServiceTests : IDisposable
         await _service.UpdateChoreAsync(HouseholdId, created.ChoreId, RoomUpdateCmd(roomIds: new[] { Bathroom }), current.Version);
 
         (await MembershipsAsync(created.ChoreId)).Should().Equal(new[] { Bathroom }, "the deselected room's row is removed");
-        (await ReloadAsync(created.ChoreId)).RoomId.Should().Be(Bathroom);
     }
 
     [Fact]
@@ -312,7 +307,6 @@ public class ChoreServiceTests : IDisposable
         await _service.UpdateChoreAsync(HouseholdId, created.ChoreId, RoomUpdateCmd(roomIds: Array.Empty<int>()), current.Version);
 
         (await MembershipsAsync(created.ChoreId)).Should().BeEmpty("[] clears to General");
-        (await ReloadAsync(created.ChoreId)).RoomId.Should().BeNull();
     }
 
     [Fact]
@@ -325,7 +319,6 @@ public class ChoreServiceTests : IDisposable
         await _service.UpdateChoreAsync(HouseholdId, created.ChoreId, RoomUpdateCmd(), current.Version);
 
         (await MembershipsAsync(created.ChoreId)).Should().Equal(new[] { Kitchen, Bathroom }, "null roomIds preserves memberships");
-        (await ReloadAsync(created.ChoreId)).RoomId.Should().Be(Kitchen);
     }
 
     [Fact]
@@ -351,7 +344,6 @@ public class ChoreServiceTests : IDisposable
         var updateCmd = new UpdateChoreCommand(
             Name: "Wash dishes",
             Description: null,
-            RoomId: null,
             RecurrenceMode: RecurrenceMode.Flexible,
             IntervalDays: 3,
             AnchorDate: null,
@@ -379,7 +371,7 @@ public class ChoreServiceTests : IDisposable
     [Fact]
     public async Task Update_MissingChore_ThrowsNotFound()
     {
-        var cmd = new UpdateChoreCommand("X", null, null, RecurrenceMode.OneOff, null, null, null, null, EffortTier.Quick, null, null);
+        var cmd = new UpdateChoreCommand("X", null, RecurrenceMode.OneOff, null, null, null, null, EffortTier.Quick, null, null);
         var act = async () => await _service.UpdateChoreAsync(HouseholdId, choreId: 99, cmd, version: 0);
         await act.Should().ThrowAsync<ChoreNotFoundException>();
     }
@@ -753,7 +745,7 @@ public class ChoreServiceTests : IDisposable
         var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RequiredCount = 2 });
         var current = await ReloadAsync(created.ChoreId);
         var cmd = new UpdateChoreCommand(
-            Name: "Dishes", Description: null, RoomId: null,
+            Name: "Dishes", Description: null,
             RecurrenceMode: RecurrenceMode.Flexible, IntervalDays: 7, AnchorDate: null,
             DaysOfWeek: null, DayOfMonth: null, EffortTier: EffortTier.Standard,
             OwnerUserId: null, PhotoPath: null, Icon: "", RequiredCount: 0);
@@ -768,7 +760,7 @@ public class ChoreServiceTests : IDisposable
         var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd());
         var current = await ReloadAsync(created.ChoreId);
         var cmd = new UpdateChoreCommand(
-            Name: "Dishes", Description: null, RoomId: null,
+            Name: "Dishes", Description: null,
             RecurrenceMode: RecurrenceMode.Flexible, IntervalDays: 7, AnchorDate: null,
             DaysOfWeek: null, DayOfMonth: null, EffortTier: EffortTier.Standard,
             OwnerUserId: null, PhotoPath: null, Icon: "", RequiredCount: 3);

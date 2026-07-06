@@ -8,8 +8,8 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// <summary>
 /// End-to-end coverage for the room manager (chores v1.2 — PR #21) through the real <c>/api/rooms</c>
 /// endpoints against real Postgres. Exercises the full CRUD + reorder surface the island drives, plus the
-/// load-bearing delete semantic: deleting a room does NOT delete its chores — it reassigns them to
-/// <c>RoomId = null</c> ("General"), which the board renders under the General bucket. Tenant scoping is
+/// load-bearing delete semantic: deleting a room does NOT delete its chores — it removes their ChoreRoom
+/// memberships, so a chore left with none falls to "General" (Phase 13 M:N). Tenant scoping is
 /// inherited from the shared <see cref="ChoresWebAppFactory"/> seed (every handler resolves HouseholdId from
 /// the caller, M1).
 /// <para><b>Contract note:</b> <see cref="RoomDto"/> is <c>{ id, name, icon, photoPath, sortOrder }</c> — the
@@ -118,14 +118,14 @@ public sealed class RoomCrudTests(PostgresContainerFixture postgres) : IAsyncLif
         var createChore = await client.PostAsJsonAsync("/api/chores/", new
         {
             name = "Sweep the mudroom",
-            roomId = room.id,
+            roomIds = new[] { room.id },
             recurrenceMode = "flexible",
             intervalDays = 7,
             effortTier = "quick"
         }, Json);
         createChore.StatusCode.Should().Be(HttpStatusCode.Created);
         var chore = (await createChore.Content.ReadFromJsonAsync<ChoreCard>(Json))!;
-        chore.roomIds.Should().Equal(room.id);   // the legacy roomId request maps to a one-room membership
+        chore.roomIds.Should().Equal(room.id);
 
         // Delete the room (no body — rooms have no concurrency token).
         var deleteResp = await client.DeleteAsync($"/api/rooms/{room.id}");

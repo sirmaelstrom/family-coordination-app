@@ -110,13 +110,12 @@ public class ChoreHistoryServiceTests
             PhotoPath = photo,
         };
 
-    private static Chore SimpleChore(int id, string name, int householdId = H1, int? roomId = null) =>
+    private static Chore SimpleChore(int id, string name, int householdId = H1) =>
         new()
         {
             HouseholdId = householdId,
             ChoreId = id,
             Name = name,
-            RoomId = roomId,
             RecurrenceMode = RecurrenceMode.Flexible,
             IntervalDays = 7,
             EffortTier = EffortTier.Standard,
@@ -354,8 +353,8 @@ public class ChoreHistoryServiceTests
         {
             ctx.Rooms.Add(new Room { HouseholdId = H1, RoomId = 1, Name = "Kitchen" });
             ctx.Chores.AddRange(
-                SimpleChore(1, "Dishes", roomId: 1),   // Kitchen
-                SimpleChore(2, "Errand"));              // roomless ⇒ General
+                SimpleChore(1, "Dishes"),   // Kitchen (via the membership row below)
+                SimpleChore(2, "Errand"));  // roomless ⇒ General
             // Phase 13: the tally now reads ChoreRoom memberships, not Chore.RoomId — seed the membership row.
             ctx.ChoreRooms.Add(new ChoreRoom { HouseholdId = H1, ChoreId = 1, RoomId = 1 });
             ctx.ChoreCompletions.AddRange(
@@ -383,8 +382,8 @@ public class ChoreHistoryServiceTests
                 new Room { HouseholdId = H1, RoomId = 1, Name = "Kitchen" },
                 new Room { HouseholdId = H1, RoomId = 2, Name = "Bathroom" });
             ctx.Chores.AddRange(
-                SimpleChore(1, "Deep clean", roomId: 1),   // shim=1, but member of BOTH rooms
-                SimpleChore(2, "Errand"));                  // roomless ⇒ General
+                SimpleChore(1, "Deep clean"),   // member of BOTH rooms (via the membership rows below)
+                SimpleChore(2, "Errand"));      // roomless ⇒ General
             ctx.ChoreRooms.AddRange(
                 new ChoreRoom { HouseholdId = H1, ChoreId = 1, RoomId = 1 },
                 new ChoreRoom { HouseholdId = H1, ChoreId = 1, RoomId = 2 });

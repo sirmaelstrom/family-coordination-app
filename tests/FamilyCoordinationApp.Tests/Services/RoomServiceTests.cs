@@ -260,28 +260,24 @@ public class RoomServiceTests : IDisposable
         // Act: delete room 1.
         await _service.DeleteRoomAsync(householdId: 1, roomId: 1);
 
-        // Assert: room gone; NO chores deleted; memberships + shim updated correctly.
+        // Assert: room gone; NO chores deleted; memberships updated correctly.
         await using var verify = new ApplicationDbContext(_options);
         verify.Rooms.Any(r => r.HouseholdId == 1 && r.RoomId == 1).Should().BeFalse();
 
-        var allChores = await verify.Chores.Where(c => c.HouseholdId == 1).ToListAsync();
-        allChores.Should().HaveCount(4, "a room delete removes memberships, never chores");
+        var choreCount = await verify.Chores.CountAsync(c => c.HouseholdId == 1);
+        choreCount.Should().Be(4, "a room delete removes memberships, never chores");
 
         // Chore 1 (only room 1) → General.
         (await MembershipsAsync(1, 1)).Should().BeEmpty("a chore only in the deleted room falls to General");
-        allChores.Single(c => c.ChoreId == 1).RoomId.Should().BeNull();
 
-        // Chore 2 (rooms 1+2) → keeps room 2; shim recomputes to the min remaining (2).
+        // Chore 2 (rooms 1+2) → keeps room 2.
         (await MembershipsAsync(1, 2)).Should().Equal(new[] { 2 }, "a multi-room chore keeps its other rooms");
-        allChores.Single(c => c.ChoreId == 2).RoomId.Should().Be(2);
 
         // Chore 3 (only room 2) → untouched.
-        (await MembershipsAsync(1, 3)).Should().Equal(new[] { 2 });
-        allChores.Single(c => c.ChoreId == 3).RoomId.Should().Be(2, "a chore in another room is unaffected");
+        (await MembershipsAsync(1, 3)).Should().Equal(new[] { 2 }, "a chore in another room is unaffected");
 
         // Chore 4 (General) → unchanged.
-        (await MembershipsAsync(1, 4)).Should().BeEmpty();
-        allChores.Single(c => c.ChoreId == 4).RoomId.Should().BeNull("an already-General chore is unchanged");
+        (await MembershipsAsync(1, 4)).Should().BeEmpty("an already-General chore is unchanged");
     }
 
     [Fact]
@@ -298,11 +294,10 @@ public class RoomServiceTests : IDisposable
         // Act: delete household 1's room 1.
         await _service.DeleteRoomAsync(householdId: 1, roomId: 1);
 
-        // Assert: household 2's chore keeps its room-1 membership + shim (M1).
+        // Assert: household 2's chore keeps its room-1 membership (M1).
         (await MembershipsAsync(2, 1)).Should().Equal(new[] { 1 }, "a delete in household 1 must not touch household 2 (M1)");
         await using var verify = new ApplicationDbContext(_options);
-        var h2Chore = await verify.Chores.SingleAsync(c => c.HouseholdId == 2 && c.ChoreId == 1);
-        h2Chore.RoomId.Should().Be(1);
+        (await verify.Chores.AnyAsync(c => c.HouseholdId == 2 && c.ChoreId == 1)).Should().BeTrue();
     }
 
     [Fact]
@@ -341,9 +336,9 @@ public class RoomServiceTests : IDisposable
     // -----------------------------------------------------------------------
 
     /// <summary>
-    /// Seed a chore with 0..N room memberships (Phase 13): writes the Chore + one ChoreRoom row per id, and
-    /// the dual-write shim RoomId = the min membership (or null). Mirrors what ChoreService.CreateChoreAsync
-    /// persists, so the room-delete path sees realistic membership data.
+    /// Seed a chore with 0..N room memberships (Phase 13): writes the Chore + one ChoreRoom row per id.
+    /// The ChoreRoom join is the sole source of membership (the old Chore.RoomId shim was dropped in WP-08),
+    /// so the room-delete path sees realistic membership data.
     /// </summary>
     private static void SeedChoreWithRooms(ApplicationDbContext ctx, int householdId, int choreId, string name, int[] roomIds)
     {
@@ -353,7 +348,6 @@ public class RoomServiceTests : IDisposable
             HouseholdId = householdId,
             ChoreId = choreId,
             Name = name,
-            RoomId = distinct.Length == 0 ? null : distinct[0],
             RecurrenceMode = RecurrenceMode.OneOff,
             EffortTier = EffortTier.Standard,
             EffortPoints = 1,

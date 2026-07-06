@@ -76,14 +76,8 @@ public class ChoreConfiguration : IEntityTypeConfiguration<Chore>
             .HasForeignKey(c => c.HouseholdId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // Optional FK to Room (composite, nullable). The composite FK includes the non-nullable
-        // HouseholdId, so EF cannot emit ON DELETE SET NULL; use ClientSetNull (=> NO ACTION in the
-        // DB). The service (WP-03) explicitly nulls RoomId before deleting a room (council M3).
-        builder.HasOne(c => c.Room)
-            .WithMany()
-            .HasForeignKey(c => new { c.HouseholdId, c.RoomId })
-            .OnDelete(DeleteBehavior.ClientSetNull)
-            .IsRequired(false);
+        // Room membership is the M:N ChoreRoom join (Phase 13) — see ChoreRoomConfiguration. The old
+        // single Chore→Room composite FK was removed in WP-08 (the RoomId column is dropped).
 
         // User FKs => Restrict (NOT Cascade): a user delete must not cascade-wipe chore history
         // (council M4). The HouseholdId cascade FK already covers household teardown.

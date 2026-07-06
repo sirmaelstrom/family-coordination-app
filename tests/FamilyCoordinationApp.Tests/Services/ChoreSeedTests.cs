@@ -58,8 +58,14 @@ public class ChoreSeedTests : IDisposable
         rooms.Should().OnlyContain(r => r.HouseholdId == 1);
         rooms.Should().OnlyContain(r => !string.IsNullOrWhiteSpace(r.Name) && !string.IsNullOrWhiteSpace(r.Icon));
 
-        // ≥1 General (roomless) chore — the virtual General group.
-        chores.Should().Contain(c => c.RoomId == null, "at least one chore lives in the virtual General group");
+        // ≥1 General (roomless) chore — a chore with NO ChoreRoom membership (Phase 13: the shim is gone).
+        var memberChoreIds = await context.ChoreRooms
+            .Where(cr => cr.HouseholdId == 1)
+            .Select(cr => cr.ChoreId)
+            .Distinct()
+            .ToListAsync();
+        chores.Should().Contain(c => !memberChoreIds.Contains(c.ChoreId),
+            "at least one chore lives in the virtual General group (no room membership)");
     }
 
     [Fact]

@@ -57,17 +57,22 @@ public class ChoreBoardServiceTests
             TimeProvider.System);
     }
 
+    // Seed roomless chores (General). Phase 13: room membership lives in ChoreRoom, so a chore-in-a-room is
+    // seeded via SeedInRoom / SeedMemberships, not a Chore.RoomId field (dropped in WP-08).
     private void Seed(params Chore[] chores)
     {
         using var ctx = new ApplicationDbContext(_options);
         ctx.Chores.AddRange(chores);
-        // Phase 13: the board reads room membership from ChoreRoom, not Chore.RoomId. Mirror each seeded
-        // chore's shim RoomId as a single membership row so existing rollup tests (which set RoomId) keep
-        // their semantics unchanged. Multi-room tests add extra memberships via SeedMemberships.
-        foreach (var chore in chores.Where(c => c.RoomId is not null))
-        {
-            ctx.ChoreRooms.Add(new ChoreRoom { HouseholdId = chore.HouseholdId, ChoreId = chore.ChoreId, RoomId = chore.RoomId!.Value });
-        }
+        ctx.SaveChanges();
+    }
+
+    // Seed chores that all belong to a single room (adds the chores + one ChoreRoom membership each).
+    private void SeedInRoom(int roomId, params Chore[] chores)
+    {
+        using var ctx = new ApplicationDbContext(_options);
+        ctx.Chores.AddRange(chores);
+        foreach (var c in chores)
+            ctx.ChoreRooms.Add(new ChoreRoom { HouseholdId = c.HouseholdId, ChoreId = c.ChoreId, RoomId = roomId });
         ctx.SaveChanges();
     }
 
@@ -86,12 +91,11 @@ public class ChoreBoardServiceTests
     }
 
     // A OneOff chore due on the given local date (Overdue if date < today, DueToday if ==, NotDue if future).
-    private static Chore OneOff(int id, int householdId, int? roomId, DateOnly due, AssignmentKind kind = AssignmentKind.None, int? assignee = null, DateTime? claimedAt = null) => new()
+    private static Chore OneOff(int id, int householdId, DateOnly due, AssignmentKind kind = AssignmentKind.None, int? assignee = null, DateTime? claimedAt = null) => new()
     {
         HouseholdId = householdId,
         ChoreId = id,
         Name = $"Chore {id}",
-        RoomId = roomId,
         RecurrenceMode = RecurrenceMode.OneOff,
         AnchorDate = due,
         EffortTier = EffortTier.Standard,
@@ -115,13 +119,14 @@ public class ChoreBoardServiceTests
             new Room { HouseholdId = H1, RoomId = 11, Name = "Attn", Icon = "⚠️", SortOrder = 2, CreatedAt = Now },
             new Room { HouseholdId = H1, RoomId = 12, Name = "Work", Icon = "🧹", SortOrder = 3, CreatedAt = Now });
 
-        Seed(
-            OneOff(1, H1, 10, new DateOnly(2026, 6, 10)),   // future => not due
-            OneOff(2, H1, 11, new DateOnly(2026, 5, 1)),    // overdue
-            OneOff(3, H1, 11, new DateOnly(2026, 5, 2)),    // overdue
-            OneOff(4, H1, 12, new DateOnly(2026, 5, 1)),    // overdue
-            OneOff(5, H1, 12, new DateOnly(2026, 5, 2)),    // overdue
-            OneOff(6, H1, 12, new DateOnly(2026, 5, 3)));   // overdue
+        SeedInRoom(10, OneOff(1, H1, new DateOnly(2026, 6, 10)));   // future => not due
+        SeedInRoom(11,
+            OneOff(2, H1, new DateOnly(2026, 5, 1)),    // overdue
+            OneOff(3, H1, new DateOnly(2026, 5, 2)));   // overdue
+        SeedInRoom(12,
+            OneOff(4, H1, new DateOnly(2026, 5, 1)),    // overdue
+            OneOff(5, H1, new DateOnly(2026, 5, 2)),    // overdue
+            OneOff(6, H1, new DateOnly(2026, 5, 3)));   // overdue
 
         var board = await CreateService().GetBoardAsync(H1, Alice, Now);
 
@@ -143,12 +148,11 @@ public class ChoreBoardServiceTests
     {
         // A flexible chore that is decayed-overdue but stored Status=Active must count toward the due bucket.
         SeedRooms(new Room { HouseholdId = H1, RoomId = 10, Name = "Kitchen", Icon = "🍳", SortOrder = 1, CreatedAt = Now });
-        Seed(new Chore
+        SeedInRoom(10, new Chore
         {
             HouseholdId = H1,
             ChoreId = 1,
             Name = "Decayed flexible",
-            RoomId = 10,
             RecurrenceMode = RecurrenceMode.Flexible,
             IntervalDays = 7,
             LastCompletedAt = Now.AddDays(-30),  // way past one interval => Overdue dueness
@@ -184,8 +188,8 @@ public class ChoreBoardServiceTests
     public async Task RoomlessChores_LandInGeneralGroup_WithNullRoomId()
     {
         Seed(
-            OneOff(1, H1, roomId: null, new DateOnly(2026, 6, 10)),
-            OneOff(2, H1, roomId: null, new DateOnly(2026, 6, 11)));
+            OneOff(1, H1, new DateOnly(2026, 6, 10)),
+            OneOff(2, H1, new DateOnly(2026, 6, 11)));
 
         var board = await CreateService().GetBoardAsync(H1, Alice, Now);
 
@@ -200,7 +204,7 @@ public class ChoreBoardServiceTests
     public async Task GeneralGroup_NotEmitted_WhenNoRoomlessChores()
     {
         SeedRooms(new Room { HouseholdId = H1, RoomId = 10, Name = "Kitchen", Icon = "🍳", SortOrder = 1, CreatedAt = Now });
-        Seed(OneOff(1, H1, roomId: 10, new DateOnly(2026, 6, 10)));
+        SeedInRoom(10, OneOff(1, H1, new DateOnly(2026, 6, 10)));
 
         var board = await CreateService().GetBoardAsync(H1, Alice, Now);
 
@@ -215,9 +219,8 @@ public class ChoreBoardServiceTests
         SeedRooms(
             new Room { HouseholdId = H1, RoomId = 10, Name = "Bravo", Icon = "🅱️", SortOrder = 2, CreatedAt = Now },
             new Room { HouseholdId = H1, RoomId = 11, Name = "Alpha", Icon = "🅰️", SortOrder = 1, CreatedAt = Now });
-        Seed(
-            OneOff(1, H1, roomId: 10, new DateOnly(2026, 6, 10)),
-            OneOff(2, H1, roomId: null, new DateOnly(2026, 6, 10)));
+        SeedInRoom(10, OneOff(1, H1, new DateOnly(2026, 6, 10)));
+        Seed(OneOff(2, H1, new DateOnly(2026, 6, 10)));
 
         var board = await CreateService().GetBoardAsync(H1, Alice, Now);
 
@@ -231,11 +234,11 @@ public class ChoreBoardServiceTests
     public async Task NeedsAttention_OrdersOverdueThenDueThenPile_DirtiestFirst()
     {
         Seed(
-            OneOff(1, H1, null, new DateOnly(2026, 6, 10)),                          // future, claimed => excluded
-            OneOff(2, H1, null, new DateOnly(2026, 5, 30)),                          // due today, assigned
-            OneOff(3, H1, null, new DateOnly(2026, 5, 1)),                           // overdue (older)
-            OneOff(4, H1, null, new DateOnly(2026, 5, 20)),                          // overdue (newer)
-            OneOff(5, H1, null, new DateOnly(2026, 6, 5)));                          // future, unclaimed pile
+            OneOff(1, H1, new DateOnly(2026, 6, 10)),                          // future, claimed => excluded
+            OneOff(2, H1, new DateOnly(2026, 5, 30)),                          // due today, assigned
+            OneOff(3, H1, new DateOnly(2026, 5, 1)),                           // overdue (older)
+            OneOff(4, H1, new DateOnly(2026, 5, 20)),                          // overdue (newer)
+            OneOff(5, H1, new DateOnly(2026, 6, 5)));                          // future, unclaimed pile
 
         // Make #1 + #2 not pile so only #3/#4/#5 + due-#2 qualify; #1 future+claimed is excluded.
         using (var ctx = new ApplicationDbContext(_options))
@@ -262,7 +265,7 @@ public class ChoreBoardServiceTests
     public async Task NeedsAttention_IncludesUnclaimedPile_EvenWhenNotDue()
     {
         // A future-dated, unclaimed pile chore is "up for grabs" => needs-attention.
-        Seed(OneOff(1, H1, null, new DateOnly(2026, 7, 1)));   // future, AssignmentKind.None
+        Seed(OneOff(1, H1, new DateOnly(2026, 7, 1)));   // future, AssignmentKind.None
 
         var board = await CreateService().GetBoardAsync(H1, Alice, Now);
 
@@ -274,7 +277,7 @@ public class ChoreBoardServiceTests
     {
         // V11 (board surface). A snoozed unclaimed chore (None, SnoozedUntil = today+5) must be ABSENT from
         // needs-attention — the !IsSnoozed gate closes the up-for-grabs leak. Un-snoozed, it returns.
-        var snoozed = OneOff(1, H1, null, new DateOnly(2026, 7, 1));  // future OneOff, unclaimed pile
+        var snoozed = OneOff(1, H1, new DateOnly(2026, 7, 1));  // future OneOff, unclaimed pile
         snoozed.SnoozedUntil = new DateOnly(2026, 6, 4);              // Now is 2026-05-30 => today < s => snoozed
         Seed(snoozed);
 
@@ -300,8 +303,8 @@ public class ChoreBoardServiceTests
     public async Task SecondHouseholdChores_NeverAppear()
     {
         Seed(
-            OneOff(1, H1, null, new DateOnly(2026, 5, 30)),
-            OneOff(99, H2, null, new DateOnly(2026, 5, 30)));
+            OneOff(1, H1, new DateOnly(2026, 5, 30)),
+            OneOff(99, H2, new DateOnly(2026, 5, 30)));
 
         var board = await CreateService().GetBoardAsync(H1, Alice, Now);
 
@@ -314,12 +317,12 @@ public class ChoreBoardServiceTests
     public async Task DoneAndArchivedChores_AreExcluded()
     {
         SeedRooms(new Room { HouseholdId = H1, RoomId = 10, Name = "Kitchen", Icon = "🍳", SortOrder = 1, CreatedAt = Now });
-        var done = OneOff(1, H1, 10, new DateOnly(2026, 5, 30));
+        var done = OneOff(1, H1, new DateOnly(2026, 5, 30));
         done.Status = ChoreStatus.Done;
-        var archived = OneOff(2, H1, 10, new DateOnly(2026, 5, 30));
+        var archived = OneOff(2, H1, new DateOnly(2026, 5, 30));
         archived.Status = ChoreStatus.Archived;
-        var active = OneOff(3, H1, 10, new DateOnly(2026, 5, 30));
-        Seed(done, archived, active);
+        var active = OneOff(3, H1, new DateOnly(2026, 5, 30));
+        SeedInRoom(10, done, archived, active);
 
         var board = await CreateService().GetBoardAsync(H1, Alice, Now);
 
@@ -334,7 +337,7 @@ public class ChoreBoardServiceTests
     [Fact]
     public async Task UserDefaultView_IsSurfaced_ForTheCaller()
     {
-        Seed(OneOff(1, H1, null, new DateOnly(2026, 5, 30)));
+        Seed(OneOff(1, H1, new DateOnly(2026, 5, 30)));
 
         var aliceBoard = await CreateService().GetBoardAsync(H1, Alice, Now);
         aliceBoard.UserDefaultView.Should().Be(ChoreLens.Rooms);
@@ -348,9 +351,9 @@ public class ChoreBoardServiceTests
     public async Task IsClaimStale_True_ForClaimOlderThanThreshold_ButStillDisplayedClaimed()
     {
         // Claimed > 48h ago => stale on read; the chore is still surfaced as Claimed (no materialized release).
-        var stale = OneOff(1, H1, null, new DateOnly(2026, 6, 10),
+        var stale = OneOff(1, H1, new DateOnly(2026, 6, 10),
             kind: AssignmentKind.Claimed, assignee: Bob, claimedAt: Now.AddHours(-49));
-        var fresh = OneOff(2, H1, null, new DateOnly(2026, 6, 10),
+        var fresh = OneOff(2, H1, new DateOnly(2026, 6, 10),
             kind: AssignmentKind.Claimed, assignee: Bob, claimedAt: Now.AddHours(-1));
         Seed(stale, fresh);
 
@@ -368,7 +371,7 @@ public class ChoreBoardServiceTests
     [Fact]
     public void ProjectChore_ComputesDueness_AndStaleness_ForASingleEntity()
     {
-        var chore = OneOff(42, H1, roomId: 7, new DateOnly(2026, 5, 1),   // overdue vs Now
+        var chore = OneOff(42, H1, new DateOnly(2026, 5, 1),   // overdue vs Now
             kind: AssignmentKind.Claimed, assignee: Bob, claimedAt: Now.AddHours(-49));
         chore.EffortTier = EffortTier.BigJob;
         chore.EffortPoints = 3;
@@ -398,9 +401,11 @@ public class ChoreBoardServiceTests
         SeedRooms(
             new Room { HouseholdId = H1, RoomId = 10, Name = "Kitchen", SortOrder = 1 },
             new Room { HouseholdId = H1, RoomId = 11, Name = "Bathroom", SortOrder = 2 });
-        // A chore in BOTH rooms: the factory seeds the shim (10) + its membership; add the second (11).
-        Seed(OneOff(1, H1, roomId: 10, due: new DateOnly(2026, 6, 15)));   // future → NotDue, so no bucket noise
-        SeedMemberships(new ChoreRoom { HouseholdId = H1, ChoreId = 1, RoomId = 11 });
+        // A chore in BOTH rooms (Phase 13 memberships).
+        Seed(OneOff(1, H1, new DateOnly(2026, 6, 15)));   // future → NotDue, so no bucket noise
+        SeedMemberships(
+            new ChoreRoom { HouseholdId = H1, ChoreId = 1, RoomId = 10 },
+            new ChoreRoom { HouseholdId = H1, ChoreId = 1, RoomId = 11 });
 
         var board = await CreateService().GetBoardAsync(H1, Alice, Now);
 
@@ -421,8 +426,10 @@ public class ChoreBoardServiceTests
             new Room { HouseholdId = H1, RoomId = 11, Name = "Bathroom", SortOrder = 2 });
         // An overdue, unclaimed chore in TWO rooms. The rollups fan out (both rooms show it), but the flat
         // board.chores list — the household-total substrate — must carry it exactly ONCE (M3/MN1).
-        Seed(OneOff(1, H1, roomId: 10, due: new DateOnly(2026, 5, 1)));    // past → Overdue
-        SeedMemberships(new ChoreRoom { HouseholdId = H1, ChoreId = 1, RoomId = 11 });
+        Seed(OneOff(1, H1, new DateOnly(2026, 5, 1)));    // past → Overdue
+        SeedMemberships(
+            new ChoreRoom { HouseholdId = H1, ChoreId = 1, RoomId = 10 },
+            new ChoreRoom { HouseholdId = H1, ChoreId = 1, RoomId = 11 });
 
         var board = await CreateService().GetBoardAsync(H1, Alice, Now);
 
@@ -443,10 +450,10 @@ public class ChoreBoardServiceTests
     public async Task MultiPersonChore_WithOneCompletion_ProjectsCorrectProgress()
     {
         // Arrange: one RequiredCount=2 chore with one completion; one RequiredCount=1 chore with no completions.
-        var multiChore = OneOff(1, H1, roomId: null, new DateOnly(2026, 6, 10));
+        var multiChore = OneOff(1, H1, new DateOnly(2026, 6, 10));
         multiChore.RequiredCount = 2;
 
-        var singleChore = OneOff(2, H1, roomId: null, new DateOnly(2026, 6, 10));
+        var singleChore = OneOff(2, H1, new DateOnly(2026, 6, 10));
         // RequiredCount defaults to 1 (entity default)
 
         Seed(multiChore, singleChore);
@@ -487,8 +494,8 @@ public class ChoreBoardServiceTests
     {
         // Arrange: all chores have RequiredCount=1 (default). The lazy P5 query should not run.
         Seed(
-            OneOff(1, H1, null, new DateOnly(2026, 6, 10)),
-            OneOff(2, H1, null, new DateOnly(2026, 6, 10)));
+            OneOff(1, H1, new DateOnly(2026, 6, 10)),
+            OneOff(2, H1, new DateOnly(2026, 6, 10)));
 
         // Act
         var board = await CreateService().GetBoardAsync(H1, Alice, Now);

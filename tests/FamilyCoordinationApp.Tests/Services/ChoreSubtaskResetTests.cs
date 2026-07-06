@@ -68,7 +68,6 @@ public class ChoreSubtaskResetTests : IDisposable
     private static CreateChoreCommand FlexibleCmd(int requiredCount = 1) => new(
         Name: "Dishes",
         Description: null,
-        RoomId: null,
         RecurrenceMode: RecurrenceMode.Flexible,
         IntervalDays: 7,
         AnchorDate: null,

@@ -16,7 +16,6 @@ namespace FamilyCoordinationApp.Services;
 public record CreateChoreCommand(
     string Name,
     string? Description,
-    int? RoomId,
     RecurrenceMode RecurrenceMode,
     int? IntervalDays,
     DateOnly? AnchorDate,
@@ -32,9 +31,9 @@ public record CreateChoreCommand(
     // First-due floor at creation (null = due now). Persisted to Chore.SnoozedUntil; trailing + defaulted so
     // existing positional callers compile.
     DateOnly? SnoozedUntil = null,
-    // Multi-room membership set (Phase 13). Trailing + defaulted so existing positional callers compile.
-    // Precedence (WP-02): non-null RoomIds wins over the legacy single RoomId; on create, null (with no
-    // legacy RoomId) means General (no memberships); [] also means General. RoomId stays the dual-write shim.
+    // Multi-room membership set (Phase 13) — the sole source of a chore's rooms (the Chore.RoomId shim was
+    // dropped in WP-08). Trailing + defaulted so existing positional callers compile. On create, null/[] =
+    // General (no memberships).
     IReadOnlyList<int>? RoomIds = null);
 
 /// <summary>
@@ -45,7 +44,6 @@ public record CreateChoreCommand(
 public record UpdateChoreCommand(
     string Name,
     string? Description,
-    int? RoomId,
     RecurrenceMode RecurrenceMode,
     int? IntervalDays,
     DateOnly? AnchorDate,
@@ -59,8 +57,7 @@ public record UpdateChoreCommand(
     // Next-due floor from the edit sheet (null = no floor). Persisted to Chore.SnoozedUntil; trailing +
     // defaulted so existing positional callers compile.
     DateOnly? SnoozedUntil = null,
-    // Multi-room membership set (Phase 13). Trailing + defaulted so existing positional callers compile.
-    // Precedence (WP-02): non-null RoomIds wins over the legacy single RoomId; on update, null (with no
-    // legacy RoomId) PRESERVES existing memberships (transitional no-op); [] clears to General. RoomId stays
-    // the dual-write shim.
+    // Multi-room membership set (Phase 13) — the sole source of a chore's rooms (the Chore.RoomId shim was
+    // dropped in WP-08). Trailing + defaulted so existing positional callers compile. On update, null =
+    // PRESERVE existing memberships (no-op); [] clears to General.
     IReadOnlyList<int>? RoomIds = null);

@@ -1117,7 +1117,6 @@ public static class ChoresEndpoints
     public sealed record CreateChoreRequest(
         string Name,
         string? Description,
-        int? RoomId,
         RecurrenceMode RecurrenceMode,
         int? IntervalDays,
         DateOnly? AnchorDate,
@@ -1131,15 +1130,13 @@ public static class ChoresEndpoints
         int RequiredCount = 1,
         IReadOnlyList<int>? AssignedUserIds = null,
         DateOnly? SnoozedUntil = null,
-        // Multi-room membership set (Phase 13). The legacy single RoomId is still accepted (dual-write shim
-        // until WP-08); the service resolves precedence (non-null RoomIds wins). Not fixture-guarded — the
-        // svelte-check gate + the service tests are the backstop.
+        // Multi-room membership set (Phase 13) — the sole room input (the legacy single roomId was removed in
+        // WP-08). Not fixture-guarded — the svelte-check gate + the service tests are the backstop.
         IReadOnlyList<int>? RoomIds = null)
     {
         public CreateChoreCommand ToCommand() => new(
             Name,
             Description,
-            RoomId,
             RecurrenceMode,
             IntervalDays,
             AnchorDate,
@@ -1159,7 +1156,6 @@ public static class ChoresEndpoints
     public sealed record UpdateChoreRequest(
         string Name,
         string? Description,
-        int? RoomId,
         RecurrenceMode RecurrenceMode,
         int? IntervalDays,
         DateOnly? AnchorDate,
@@ -1172,14 +1168,13 @@ public static class ChoresEndpoints
         string? Icon = null,
         int RequiredCount = 1,
         DateOnly? SnoozedUntil = null,
-        // Multi-room membership set (Phase 13). Legacy single RoomId still accepted (dual-write shim until
-        // WP-08). Service precedence: non-null RoomIds wins; null (no legacy RoomId) PRESERVES; [] clears.
+        // Multi-room membership set (Phase 13) — the sole room input (legacy single roomId removed in WP-08).
+        // null = PRESERVE existing memberships; [] clears to General.
         IReadOnlyList<int>? RoomIds = null)
     {
         public UpdateChoreCommand ToCommand() => new(
             Name,
             Description,
-            RoomId,
             RecurrenceMode,
             IntervalDays,
             AnchorDate,

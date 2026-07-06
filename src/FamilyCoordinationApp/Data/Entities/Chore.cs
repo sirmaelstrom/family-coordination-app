@@ -19,8 +19,8 @@ public class Chore
     // Multi-person: UTC timestamp set on every contribution — activity marker, not a progress count.
     public DateTime? LastContributionAt { get; set; }
 
-    // Optional room association (nullable FK -> Room).
-    public int? RoomId { get; set; }
+    // Room membership is the M:N ChoreRoom join (Phase 13) — the sole source of a chore's rooms. The old
+    // single Chore.RoomId shim was dropped in WP-08 (migration DropChoreRoomId).
 
     // Recurrence configuration (the logic lives in WP-02/WP-04; these only hold it).
     public RecurrenceMode RecurrenceMode { get; set; }
@@ -65,7 +65,6 @@ public class Chore
 
     // Navigation
     public Household Household { get; set; } = default!;
-    public Room? Room { get; set; }
     public User EnteredBy { get; set; } = default!;
     public User? Owner { get; set; }
     public User? Assignee { get; set; }
