@@ -68,8 +68,12 @@
    */
   let firstDueDate = $state('');
   let effort = $state<EffortTier>('Standard');
-  /** null ⇒ General (roomless). */
-  let roomId = $state<number | null>(null);
+  /** Phase 13: multi-select room membership. [] ⇒ General (roomless). */
+  let roomIds = $state<number[]>([]);
+  /** Toggle a room in/out of the selection via IMMUTABLE reassignment (push/splice won't trigger $state). */
+  function toggleRoom(id: number): void {
+    roomIds = roomIds.includes(id) ? roomIds.filter((x) => x !== id) : [...roomIds, id];
+  }
   /** null ⇒ "Leave for anyone" (pile). */
   let assigneeUserId = $state<number | null>(null);
   /** 1 = single person (default); ≥2 = multi-person requirement. */
@@ -180,7 +184,8 @@
           status: 'clean',
         },
       ];
-      roomId = created.id;
+      // Inline-created room is ADDED to the selection (not replace it — a chore may span several rooms).
+      roomIds = [...roomIds, created.id];
       newRoomName = '';
       newRoomPhotoFile = null;
       showNewRoom = false;
@@ -200,7 +205,7 @@
     dueDate = '';
     firstDueDate = '';
     effort = 'Standard';
-    roomId = null;
+    roomIds = [];
     assigneeUserId = null;
     requiredCount = 1;
     assignedUserIds = [];
@@ -292,9 +297,8 @@
     const request: CreateChoreRequest = {
       name: trimmed,
       description: null,
-      // Phase 13: send the membership set. WP-05 keeps a single-select transient (roomId); WP-06 makes it
-      // true multi-select. General = [] (empty selection).
-      roomIds: roomId == null ? [] : [roomId],
+      // Phase 13: send the multi-select membership set. General = [] (empty selection).
+      roomIds,
       recurrenceMode: recurrence.mode,
       intervalDays: recurrence.intervalDays,
       anchorDate: cadence === 'once' ? dueDate || null : null,
@@ -476,25 +480,17 @@
       {/if}
 
       <fieldset class="ch-field">
-        <legend class="ch-field-label">Room</legend>
-        <div class="ch-chip-row" role="group" aria-label="Room">
-          <button
-            type="button"
-            class="ch-chip"
-            class:active={roomId === null}
-            aria-pressed={roomId === null}
-            onclick={() => (roomId = null)}
-          >
-            🏠 General
-          </button>
+        <legend class="ch-field-label">Rooms</legend>
+        <div class="ch-chip-row" role="group" aria-label="Rooms">
           {#each roomChips as room (room.roomId ?? 'general')}
             {#if room.roomId !== null}
+              {@const rid = room.roomId}
               <button
                 type="button"
                 class="ch-chip"
-                class:active={roomId === room.roomId}
-                aria-pressed={roomId === room.roomId}
-                onclick={() => (roomId = room.roomId)}
+                class:active={roomIds.includes(rid)}
+                aria-pressed={roomIds.includes(rid)}
+                onclick={() => toggleRoom(rid)}
               >
                 {room.icon} {room.name}
               </button>
@@ -513,6 +509,9 @@
             </button>
           {/if}
         </div>
+        {#if roomIds.length === 0}
+          <p class="ch-hint">Will appear in <strong>General</strong>.</p>
+        {/if}
 
         {#if showNewRoom}
           <div class="ch-newroom">
