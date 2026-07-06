@@ -26,6 +26,16 @@
     totalChores: number;
     /** True while a mutation for the given chore id is in flight. */
     isPending: (choreId: number) => boolean;
+    /**
+     * Phase 15 R4′ (WP-03) — the up-for-grabs "Fits me" filter is actively narrowing the pile. When true the
+     * board appends the provenance note, and (if any chores were hidden) the "N bigger lifts set aside" row.
+     * Defaults false so every other lens/board renders exactly as before.
+     */
+    fitsMeActive?: boolean;
+    /** Count of pile chores hidden by the active Fits-me filter (drives the set-aside row). */
+    setAsideCount?: number;
+    /** "Show them" — reveal the full pile (the store clears the Fits-me filter). */
+    onShowSetAside?: () => void;
     onClaim: (chore: ChoreDto) => void;
     onDrop: (chore: ChoreDto) => void;
     onComplete: (chore: ChoreDto) => void;
@@ -44,6 +54,9 @@
     currentUserId,
     totalChores,
     isPending,
+    fitsMeActive = false,
+    setAsideCount = 0,
+    onShowSetAside,
     onClaim,
     onDrop,
     onComplete,
@@ -109,6 +122,26 @@
       <p>{emptyCopy.body}</p>
     </div>
   {/if}
+
+  {#if fitsMeActive}
+    <!--
+      Phase 15 R4′ (WP-03) — the "Fits me" escape hatch + provenance. The filter is
+      never a wall: any bigger lifts it set aside stay one tap away. The subject of
+      every string here is the CHORE ("bigger lifts") and the viewer's OWN setting —
+      never "you can't do this" (VD.4). Rendered only while the filter is active.
+    -->
+    {#if setAsideCount > 0}
+      <div class="ch-set-aside">
+        <span>{setAsideCount} bigger lift{setAsideCount === 1 ? '' : 's'} set aside</span>
+        <button type="button" class="ch-set-aside-show" onclick={() => onShowSetAside?.()}>
+          Show {setAsideCount === 1 ? 'it' : 'them'}
+        </button>
+      </div>
+    {/if}
+    <p class="ch-fit-note">
+      Matched to each chore’s weight and your own capacity setting — never to history.
+    </p>
+  {/if}
 </div>
 
 <style>
@@ -165,5 +198,46 @@
     font-weight: 500;
     color: var(--color-text);
     margin: 0 0 4px;
+  }
+
+  /* ── Fits-me escape hatch + provenance (R4′ WP-03) ──────────────────────── */
+  .ch-set-aside {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 14px;
+    border: 1px dashed var(--color-line-strong);
+    border-radius: var(--radius-md);
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+  }
+  .ch-set-aside-show {
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-primary);
+    background: transparent;
+    border: none;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .ch-set-aside-show:hover {
+    background: var(--color-action-hover);
+  }
+  .ch-set-aside-show:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+  .ch-fit-note {
+    margin: 0;
+    padding: 4px 0 0;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    text-align: center;
   }
 </style>

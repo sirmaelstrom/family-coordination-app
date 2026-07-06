@@ -350,6 +350,9 @@
       <PileControls
         quickFirst={store.pileQuickFirst}
         onToggleQuickFirst={() => store.togglePileQuickFirst()}
+        fitsMe={store.pileFitsMe}
+        showFitsMe={store.showFitsMeChip}
+        onToggleFitsMe={() => store.togglePileFitsMe()}
       />
     {/if}
     {#if store.lens === 'up-for-grabs' || store.lens === 'mine' || store.lens === 'needs-attention'}
@@ -359,6 +362,9 @@
         currentUserId={store.currentUserId}
         totalChores={store.boardTotalCount}
         isPending={(id) => store.isPending(id)}
+        fitsMeActive={store.pileFitsMeActive}
+        setAsideCount={store.pileSetAsideCount}
+        onShowSetAside={() => store.togglePileFitsMe()}
         onClaim={handleClaim}
         onDrop={handleDrop}
         onComplete={handleComplete}

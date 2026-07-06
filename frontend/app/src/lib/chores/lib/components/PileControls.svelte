@@ -4,12 +4,14 @@
   // Rendered ONLY on the up-for-grabs lens (App.svelte gates it) — pull-only:
   // every pixel here exists because the viewer opened that lens (M3).
   //
-  // WP-01 ships ONE control: "Quick first", a symmetric PRESENTATION toggle that
-  // orders the pile effort-ascending (the store owns the sort). It reads only the
-  // chore's declared weight — nothing personal, identical for every member (M6).
-  //
-  // WP-03 adds the self-only "Fits me" chip + set-aside row + provenance note
-  // beside it; this component is the seam that hosts them.
+  // Two controls, both up-for-grabs-only + pull-only:
+  //   "Quick first" (WP-01) — a symmetric PRESENTATION sort (effort-ascending). It
+  //   reads only the chore's declared weight; identical for every member (M6).
+  //   "Fits me" (WP-03) — a SELF-ONLY filter to the tiers that fit the viewer's own
+  //   capacity. It renders ONLY for a Reduced/Minimal caller (the store owns the
+  //   whitelist gate via `showFitsMe`); a Full/unset viewer never sees it. The
+  //   filter's subject is the chore's weight × the viewer's OWN tier — never a
+  //   per-person share/history (M1/M6/MN1).
   // ───────────────────────────────────────────────────────────────────────
 
   interface Props {
@@ -17,9 +19,15 @@
     quickFirst: boolean;
     /** Toggle "Quick first" — the store flips its session-only field. */
     onToggleQuickFirst: () => void;
+    /** Is "Fits me" filtering on? (store.pileFitsMe) */
+    fitsMe: boolean;
+    /** Render the "Fits me" chip at all? WHITELIST gate — Reduced/Minimal callers only (store.showFitsMeChip). */
+    showFitsMe: boolean;
+    /** Toggle "Fits me" — the store flips its session-only field. */
+    onToggleFitsMe: () => void;
   }
 
-  let { quickFirst, onToggleQuickFirst }: Props = $props();
+  let { quickFirst, onToggleQuickFirst, fitsMe, showFitsMe, onToggleFitsMe }: Props = $props();
 </script>
 
 <div class="ch-pile-controls" role="group" aria-label="Pile controls">
@@ -32,6 +40,23 @@
   >
     Quick first
   </button>
+  {#if showFitsMe}
+    <!--
+      Self-only "Fits me" filter. Shown ONLY for a Reduced/Minimal caller — a
+      Full/unset viewer never renders this chip, so the pile stays identical for
+      them (the founding-case guarantee). It matches the chore's weight to the
+      viewer's OWN capacity setting; never to anyone's share or history.
+    -->
+    <button
+      type="button"
+      class="ch-pile-chip"
+      aria-pressed={fitsMe}
+      onclick={onToggleFitsMe}
+      title="Show chores that fit your capacity setting"
+    >
+      Fits me
+    </button>
+  {/if}
 </div>
 
 <style>
