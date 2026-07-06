@@ -250,10 +250,17 @@ class BoardStore {
     const board = this.board;
     if (!board) return [];
     const byRoom = new Map<number | null, ChoreDto[]>();
+    // Phase 13 (M:N): fan out — a chore appears under EACH of its rooms; empty roomIds → General (null).
     for (const c of this.chores) {
-      const key = c.roomId ?? null;
-      if (!byRoom.has(key)) byRoom.set(key, []);
-      byRoom.get(key)!.push(c);
+      if (c.roomIds.length === 0) {
+        if (!byRoom.has(null)) byRoom.set(null, []);
+        byRoom.get(null)!.push(c);
+        continue;
+      }
+      for (const roomId of c.roomIds) {
+        if (!byRoom.has(roomId)) byRoom.set(roomId, []);
+        byRoom.get(roomId)!.push(c);
+      }
     }
     // Server provides the rollups (incl. General) pre-sorted by sortOrder.
     return [...board.rooms]
@@ -1081,11 +1088,13 @@ class BoardStore {
     const patch: Partial<ChoreDto> = {
       name: body.name,
       description: body.description ?? null,
-      roomId: body.roomId ?? null,
       recurrenceMode: body.recurrenceMode,
       effortTier: body.effortTier,
       ownerUserId: body.ownerUserId ?? null,
     };
+    // Phase 13: mirror the room membership set optimistically ONLY when the edit carries it
+    // (undefined = preserve; the server keeps the existing memberships).
+    if (body.roomIds !== undefined) patch.roomIds = body.roomIds;
     await this.runOptimistic(
       choreId,
       patch,

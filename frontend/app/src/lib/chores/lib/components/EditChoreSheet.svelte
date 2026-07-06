@@ -198,7 +198,8 @@
     name = c.name;
     description = c.description ?? '';
     choreIcon = c.icon ?? '';
-    roomId = c.roomId ?? null;
+    // Phase 13: prefill the single-select transient from the first membership (WP-06 makes it multi-select).
+    roomId = c.roomIds[0] ?? null;
     effort = c.effortTier;
     ownerUserId = c.ownerUserId ?? null;
     // Single-person assignment, pre-filled from the chore's CURRENT holder
@@ -367,7 +368,9 @@
       const body: UpdateChoreRequest = {
         name: trimmed,
         description: description.trim() || null,
-        roomId,
+        // Phase 13: send the membership set. WP-05 keeps a single-select transient (roomId); WP-06 makes it
+        // true multi-select. Empty selection clears to General.
+        roomIds: roomId == null ? [] : [roomId],
         recurrenceMode: recurrence.mode,
         intervalDays: recurrence.intervalDays,
         // One-off due date: pass the date input's "YYYY-MM-DD" straight through as

@@ -292,7 +292,9 @@
     const request: CreateChoreRequest = {
       name: trimmed,
       description: null,
-      roomId,
+      // Phase 13: send the membership set. WP-05 keeps a single-select transient (roomId); WP-06 makes it
+      // true multi-select. General = [] (empty selection).
+      roomIds: roomId == null ? [] : [roomId],
       recurrenceMode: recurrence.mode,
       intervalDays: recurrence.intervalDays,
       anchorDate: cadence === 'once' ? dueDate || null : null,
