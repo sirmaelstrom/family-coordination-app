@@ -47,10 +47,16 @@ public class ChoreBoardService(
             .Select(u => new MemberDto(u.Id, u.DisplayName, u.Initials, u.PictureUrl))
             .ToListAsync(cancellationToken);
 
-        var userDefaultView = await context.Users
+        // The caller's own row carries BOTH the roaming default lens AND (Phase 15 R4′) the self-set
+        // physical-capacity tier the up-for-grabs "Fits me" chip reads. Widen the existing single-user
+        // projection to an anonymous type — STILL ONE query (E4), no new round-trip. A missing row (caller not
+        // found) ⇒ both null, preserving the prior FirstOrDefault-on-string behavior.
+        var caller = await context.Users
             .Where(u => u.HouseholdId == householdId && u.Id == userId)
-            .Select(u => u.ChoresDefaultView)
+            .Select(u => new { u.ChoresDefaultView, u.PhysicalCapacityTier })
             .FirstOrDefaultAsync(cancellationToken);
+        var userDefaultView = caller?.ChoresDefaultView;
+        var callerCapacityTier = caller?.PhysicalCapacityTier;
 
         // P5: Lazy progress query — only issued when the household has at least one multi-person chore.
         // Load completions in ONE query, group by ChoreId; single-person chores get an empty set.
@@ -157,7 +163,10 @@ public class ChoreBoardService(
             rollups,
             members,
             needsAttentionIds,
-            userDefaultView);
+            userDefaultView)
+        {
+            CallerCapacityTier = callerCapacityTier,
+        };
     }
 
     /// <inheritdoc />

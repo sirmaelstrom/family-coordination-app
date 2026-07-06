@@ -255,5 +255,6 @@
     2,
     3
   ],
-  "userDefaultView": "rooms"
+  "userDefaultView": "rooms",
+  "callerCapacityTier": "Reduced"
 }

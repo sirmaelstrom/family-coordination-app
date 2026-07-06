@@ -15,7 +15,21 @@ public sealed record ChoreBoardDto(
     IReadOnlyList<RoomRollupDto> Rooms,
     IReadOnlyList<MemberDto> Members,
     IReadOnlyList<int> NeedsAttentionChoreIds,
-    string? UserDefaultView);
+    string? UserDefaultView)
+{
+    /// <summary>
+    /// The REQUESTING user's own physical-capacity tier (<c>Full</c> / <c>Reduced</c> / <c>Minimal</c>;
+    /// <c>null</c> ⇒ Full, the pre-migration default). Phase 15 R4′: rides the board payload so the
+    /// up-for-grabs "Fits me" chip reads the caller's tier WITHOUT the separately-cached equity fetch (which
+    /// loads only on the equity lens, so on the default board surface it is null). Sourced from
+    /// <c>User.PhysicalCapacityTier</c> by widening the existing single-user caller projection in
+    /// <c>GetBoardAsync</c> — still ONE query (no new round-trip). Additive <c>init</c>-only property in the
+    /// record BODY (no primary-ctor arity change) so both positional <c>new ChoreBoardDto(...)</c> sites stay
+    /// valid — set via object initializer (mirrors <c>ChoreEquityDto.CallerCapacityTier</c>). Serializes
+    /// camelCase as <c>callerCapacityTier</c>, AFTER the positional keys.
+    /// </summary>
+    public string? CallerCapacityTier { get; init; }
+}
 
 /// <summary>
 /// A single chore with its <b>computed</b> dueness/freshness state (WP-02). The island renders
