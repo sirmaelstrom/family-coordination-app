@@ -31,7 +31,7 @@ public sealed class RoomCrudTests(PostgresContainerFixture postgres) : IAsyncLif
     private HttpClient ClientA => _factory.CreateClientAs(ChoresWebAppFactory.UserAEmail);
 
     private sealed record RoomDto(int id, string name, string icon, string? photoPath, int sortOrder);
-    private sealed record ChoreCard(int id, int? roomId);
+    private sealed record ChoreCard(int id, IReadOnlyList<int> roomIds);
     private sealed record Board(List<ChoreCard> chores);
 
     private async Task<RoomDto> CreateRoomAsync(HttpClient client, string name, string? icon = null)
@@ -125,7 +125,7 @@ public sealed class RoomCrudTests(PostgresContainerFixture postgres) : IAsyncLif
         }, Json);
         createChore.StatusCode.Should().Be(HttpStatusCode.Created);
         var chore = (await createChore.Content.ReadFromJsonAsync<ChoreCard>(Json))!;
-        chore.roomId.Should().Be(room.id);
+        chore.roomIds.Should().Equal(room.id);   // the legacy roomId request maps to a one-room membership
 
         // Delete the room (no body — rooms have no concurrency token).
         var deleteResp = await client.DeleteAsync($"/api/rooms/{room.id}");
@@ -135,11 +135,11 @@ public sealed class RoomCrudTests(PostgresContainerFixture postgres) : IAsyncLif
         var rooms = await GetRoomsAsync(client);
         rooms.Should().NotContain(r => r.id == room.id);
 
-        // ...but its chore survives, reassigned to General (roomId == null), still on the board.
+        // ...but its chore survives, reassigned to General (empty roomIds), still on the board.
         var board = await client.GetFromJsonAsync<Board>("/api/chores/board", Json);
         var survivor = board!.chores.SingleOrDefault(c => c.id == chore.id);
         survivor.Should().NotBeNull("deleting a room must not delete its chores");
-        survivor!.roomId.Should().BeNull("the orphaned chore is reassigned to General");
+        survivor!.roomIds.Should().BeEmpty("the orphaned chore is reassigned to General");
     }
 
     [Fact]
@@ -170,7 +170,7 @@ public sealed class RoomCrudTests(PostgresContainerFixture postgres) : IAsyncLif
         var board = await client.GetFromJsonAsync<Board>("/api/chores/board", Json);
         var survivor = board!.chores.SingleOrDefault(c => c.id == chore.id);
         survivor.Should().NotBeNull("a multi-room chore must survive a room delete");
-        survivor!.roomId.Should().Be(roomB.id, "it keeps its other room rather than falling to General");
+        survivor!.roomIds.Should().Equal(new[] { roomB.id }, "it keeps its other room rather than falling to General");
     }
 
     // NOTE: a "delete a nonexistent room" case is intentionally NOT covered here. The endpoint returns an

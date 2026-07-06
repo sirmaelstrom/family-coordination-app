@@ -61,6 +61,20 @@ public class ChoreBoardServiceTests
     {
         using var ctx = new ApplicationDbContext(_options);
         ctx.Chores.AddRange(chores);
+        // Phase 13: the board reads room membership from ChoreRoom, not Chore.RoomId. Mirror each seeded
+        // chore's shim RoomId as a single membership row so existing rollup tests (which set RoomId) keep
+        // their semantics unchanged. Multi-room tests add extra memberships via SeedMemberships.
+        foreach (var chore in chores.Where(c => c.RoomId is not null))
+        {
+            ctx.ChoreRooms.Add(new ChoreRoom { HouseholdId = chore.HouseholdId, ChoreId = chore.ChoreId, RoomId = chore.RoomId!.Value });
+        }
+        ctx.SaveChanges();
+    }
+
+    private void SeedMemberships(params ChoreRoom[] memberships)
+    {
+        using var ctx = new ApplicationDbContext(_options);
+        ctx.ChoreRooms.AddRange(memberships);
         ctx.SaveChanges();
     }
 
@@ -360,10 +374,11 @@ public class ChoreBoardServiceTests
         chore.EffortPoints = 3;
         chore.Version = 5;
 
-        var dto = CreateService().ProjectChore(chore, Now, Utc);
+        // ProjectChore is now a pure projection — the caller supplies the persisted membership set (Phase 13).
+        var dto = CreateService().ProjectChore(chore, Now, Utc, [7]);
 
         dto.Id.Should().Be(42);
-        dto.RoomId.Should().Be(7);
+        dto.RoomIds.Should().Equal(7);
         dto.DueState.Should().Be(DueState.Overdue);
         dto.ColorTier.Should().Be(ColorTier.Overdue);
         dto.IsClaimStale.Should().BeTrue();
@@ -373,6 +388,53 @@ public class ChoreBoardServiceTests
         dto.EffortPoints.Should().Be(3);
         dto.RecurrenceMode.Should().Be("OneOff");
         dto.Version.Should().Be(5u);
+    }
+
+    // ------------------------------------------------------------------ multi-room (Phase 13, WP-04)
+
+    [Fact]
+    public async Task Board_MultiRoomChore_CountsInEachRoom()
+    {
+        SeedRooms(
+            new Room { HouseholdId = H1, RoomId = 10, Name = "Kitchen", SortOrder = 1 },
+            new Room { HouseholdId = H1, RoomId = 11, Name = "Bathroom", SortOrder = 2 });
+        // A chore in BOTH rooms: the factory seeds the shim (10) + its membership; add the second (11).
+        Seed(OneOff(1, H1, roomId: 10, due: new DateOnly(2026, 6, 15)));   // future → NotDue, so no bucket noise
+        SeedMemberships(new ChoreRoom { HouseholdId = H1, ChoreId = 1, RoomId = 11 });
+
+        var board = await CreateService().GetBoardAsync(H1, Alice, Now);
+
+        // Flat list stays one DTO per chore (M3), carrying BOTH rooms sorted ascending.
+        board.Chores.Should().ContainSingle();
+        board.Chores.Single().RoomIds.Should().Equal(10, 11);
+
+        // Rollups fan out: the chore appears in each of its member rooms.
+        board.Rooms.Single(r => r.RoomId == 10).ChoreCount.Should().Be(1, "the chore counts in Kitchen");
+        board.Rooms.Single(r => r.RoomId == 11).ChoreCount.Should().Be(1, "the same chore also counts in Bathroom");
+    }
+
+    [Fact]
+    public async Task HouseholdTotals_CountEachChoreOnce()
+    {
+        SeedRooms(
+            new Room { HouseholdId = H1, RoomId = 10, Name = "Kitchen", SortOrder = 1 },
+            new Room { HouseholdId = H1, RoomId = 11, Name = "Bathroom", SortOrder = 2 });
+        // An overdue, unclaimed chore in TWO rooms. The rollups fan out (both rooms show it), but the flat
+        // board.chores list — the household-total substrate — must carry it exactly ONCE (M3/MN1).
+        Seed(OneOff(1, H1, roomId: 10, due: new DateOnly(2026, 5, 1)));    // past → Overdue
+        SeedMemberships(new ChoreRoom { HouseholdId = H1, ChoreId = 1, RoomId = 11 });
+
+        var board = await CreateService().GetBoardAsync(H1, Alice, Now);
+
+        // Sanity: it fans out in the rollups (each room counts it).
+        board.Rooms.Single(r => r.RoomId == 10).ChoreCount.Should().Be(1);
+        board.Rooms.Single(r => r.RoomId == 11).ChoreCount.Should().Be(1);
+
+        // Household totals read the flat list → each bucket counts the chore ONCE, never twice.
+        var stats = ChoreHomeStats.Compute(board.Chores);
+        stats.Total.Should().Be(1, "the flat board list is one DTO per chore, even for a 2-room chore");
+        stats.Overdue.Should().Be(1, "a multi-room chore is not double-counted in household totals (MN1)");
+        stats.UpForGrabs.Should().Be(1);
     }
 
     // ------------------------------------------------------------------ multi-person co-sign progress (WP-04)

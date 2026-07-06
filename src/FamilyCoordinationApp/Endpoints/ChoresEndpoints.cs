@@ -118,7 +118,7 @@ public static class ChoresEndpoints
         try
         {
             var chore = await svc.CreateChoreAsync(user.HouseholdId, user.UserId, req.ToCommand(), ct);
-            return Results.Created($"/api/chores/{chore.ChoreId}", Project(boardService, chore, timeProvider, timeZone));
+            return Results.Created($"/api/chores/{chore.ChoreId}", await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
         }
         catch (ChoreValidationException ex)
         {
@@ -150,7 +150,7 @@ public static class ChoresEndpoints
         try
         {
             var chore = await svc.UpdateChoreAsync(user.HouseholdId, choreId, req.ToCommand(), req.Version, ct);
-            return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -196,7 +196,7 @@ public static class ChoresEndpoints
         try
         {
             var chore = await svc.ClaimAsync(user.HouseholdId, choreId, user.UserId, req.Version, ct);
-            return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -220,7 +220,7 @@ public static class ChoresEndpoints
         try
         {
             var chore = await svc.TakeAsync(user.HouseholdId, choreId, user.UserId, req.Version, ct);
-            return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -244,7 +244,7 @@ public static class ChoresEndpoints
         try
         {
             var chore = await svc.DropAsync(user.HouseholdId, choreId, user.UserId, req.Version, ct);
-            return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -268,7 +268,7 @@ public static class ChoresEndpoints
         try
         {
             var chore = await svc.HandOffAsync(user.HouseholdId, choreId, user.UserId, req.TargetUserId, req.Version, ct);
-            return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -293,7 +293,7 @@ public static class ChoresEndpoints
         {
             var chore = await svc.CompleteAsync(
                 user.HouseholdId, choreId, user.UserId, req.Note, req.PhotoPath, req.ParticipantUserIds, req.Version, ct);
-            return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -335,7 +335,7 @@ public static class ChoresEndpoints
         try
         {
             var chore = await svc.SnoozeAsync(user.HouseholdId, choreId, user.UserId, until, req.Version, ct);
-            return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -414,7 +414,7 @@ public static class ChoresEndpoints
         try
         {
             var chore = await svc.AssignToRosterAsync(user.HouseholdId, choreId, user.UserId, req.SubjectUserId, req.Version, ct);
-            return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -438,7 +438,7 @@ public static class ChoresEndpoints
         try
         {
             var chore = await svc.CommitToRosterAsync(user.HouseholdId, choreId, user.UserId, req.Version, ct);
-            return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -462,7 +462,7 @@ public static class ChoresEndpoints
         try
         {
             var chore = await svc.LeaveRosterAsync(user.HouseholdId, choreId, user.UserId, req.SubjectUserId, req.Version, ct);
-            return Results.Ok(Project(boardService, chore, timeProvider, timeZone));
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -1016,9 +1016,17 @@ public static class ChoresEndpoints
 
     // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-    private static ChoreDto Project(
-        IChoreBoardService boardService, Chore chore, TimeProvider timeProvider, TimeZoneInfo timeZone) =>
-        boardService.ProjectChore(chore, timeProvider.GetUtcNow().UtcDateTime, timeZone);
+    private static async Task<ChoreDto> Project(
+        IChoreBoardService boardService, Chore chore, TimeProvider timeProvider, TimeZoneInfo timeZone,
+        IDbContextFactory<ApplicationDbContext> dbFactory, int householdId, CancellationToken ct)
+    {
+        // Phase 13: load the chore's PERSISTED room memberships (post dedup/normalize/validate) so a mutation
+        // response reflects the STORED set, not the request. One indexed one-chore query per mutation (NOT the
+        // board N+1 concern) — each mutation handler already injects the factory.
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
+        var roomIds = await ChoreRoomMembership.LoadMembershipsForChoreAsync(context, householdId, chore.ChoreId, ct);
+        return boardService.ProjectChore(chore, timeProvider.GetUtcNow().UtcDateTime, timeZone, roomIds);
+    }
 
     // ─── Request DTOs ───────────────────────────────────────────────────────────────
 

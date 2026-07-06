@@ -18,7 +18,7 @@ public class ChoreHomeStatsTests
         Name: $"Chore {id}",
         Icon: "",
         Description: null,
-        RoomId: null,
+        RoomIds: [],
         RecurrenceMode: "Flexible",
         IntervalDays: 7,
         DaysOfWeek: null,

@@ -35,5 +35,5 @@ public interface IChoreBoardService
     /// <c>ChoreService</c> methods return into the HTTP <see cref="ChoreDto"/> response WITHOUT a board
     /// rebuild — the board and the mutation responses share one projection (no DTO drift, M9).
     /// </summary>
-    ChoreDto ProjectChore(Chore chore, DateTime now, TimeZoneInfo timeZone);
+    ChoreDto ProjectChore(Chore chore, DateTime now, TimeZoneInfo timeZone, IReadOnlyList<int> roomIds);
 }

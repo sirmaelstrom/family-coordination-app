@@ -42,7 +42,9 @@ public sealed record ChoreDto(
     string Name,
     string Icon,
     string? Description,
-    int? RoomId,
+    // Phase 13: the chore's 0..N room memberships (was a single int? RoomId). Empty == General. Kept at the
+    // 5th positional slot (E2). Sorted ascending server-side (deterministic wire → stable contract fixture).
+    IReadOnlyList<int> RoomIds,
     string RecurrenceMode,
     int? IntervalDays,
     ChoreDaysOfWeek? DaysOfWeek,

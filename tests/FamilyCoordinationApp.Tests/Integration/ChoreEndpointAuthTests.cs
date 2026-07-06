@@ -26,7 +26,7 @@ public sealed class ChoreEndpointAuthTests(PostgresContainerFixture postgres) : 
 
     public async Task DisposeAsync() => await _factory.DisposeAsync();
 
-    private sealed record BoardChore(int id, int? roomId);
+    private sealed record BoardChore(int id, IReadOnlyList<int>? roomIds);
     private sealed record Board(List<BoardChore> chores);
     private sealed record VersionBody(uint version);
 
