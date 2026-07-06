@@ -6,6 +6,7 @@
   import { startLiveness, type LivenessHandle } from './lib/liveness';
   import { showToast } from '$lib/shared/toast-store.svelte';
   import ViewSwitcher from './lib/components/ViewSwitcher.svelte';
+  import PileControls from './lib/components/PileControls.svelte';
   import NeedsAttentionBoard from './lib/components/NeedsAttentionBoard.svelte';
   import RoomsDashboard from './lib/components/RoomsDashboard.svelte';
   import EquityBoard from './lib/components/EquityBoard.svelte';
@@ -340,6 +341,17 @@
       CLIENT-SIDE grouping of the ONE board payload — switching `store.lens` NEVER
       refetches (M11). All share the same optimistic card handlers.
     -->
+    <!--
+      Up-for-grabs pile controls (Phase 15 R4′). Pull-only + up-for-grabs-only:
+      the "Quick first" ordering toggle (WP-01; WP-03 adds "Fits me"). Gated on
+      the lens so it never shows on Mine / All; the store resets it on lens-switch.
+    -->
+    {#if store.lens === 'up-for-grabs'}
+      <PileControls
+        quickFirst={store.pileQuickFirst}
+        onToggleQuickFirst={() => store.togglePileQuickFirst()}
+      />
+    {/if}
     {#if store.lens === 'up-for-grabs' || store.lens === 'mine' || store.lens === 'needs-attention'}
       <NeedsAttentionBoard
         sections={store.boardSections}

@@ -29,6 +29,7 @@ import type {
   MemberDto,
   ChoreLensId,
   DueState,
+  EffortTier,
   RosterState,
 } from './types';
 import { CHORE_LENSES } from './types';
@@ -104,6 +105,32 @@ function sortDirtiestFirst(a: ChoreDto, b: ChoreDto): number {
   return a.id - b.id;
 }
 
+/**
+ * Effort-weight rank for the "Quick first" ordering (Phase 15 R4′ WP-01, D2). The
+ * ONLY chore input this feature reads — the chore's declared weight, already on
+ * every ChoreDto. Never a per-person signal (VD.1 / MN1).
+ */
+const EFFORT_RANK: Record<EffortTier, number> = {
+  Quick: 0,
+  Standard: 1,
+  BigJob: 2,
+};
+
+/**
+ * "Quick first" ordering: ascending effort weight (Quick → Standard → BigJob) as
+ * the PRIMARY key, then the shipped dirtiest-first as the tiebreak. Applied only
+ * to the up-for-grabs pile when the Quick-first toggle is on (WP-01 D2). It NEVER
+ * recomputes dueness — the tiebreak defers to `sortDirtiestFirst`, which keys on
+ * the server `dueState` (M5/M7). Bucketing into attention sections is a stable
+ * partition, so sorting the whole set with this composite comparator yields
+ * effort-primary order WITHIN each section without flattening the sections.
+ */
+function sortQuickFirst(a: ChoreDto, b: ChoreDto): number {
+  const r = EFFORT_RANK[a.effortTier] - EFFORT_RANK[b.effortTier];
+  if (r !== 0) return r;
+  return sortDirtiestFirst(a, b);
+}
+
 class BoardStore {
   /** The one fetched payload. null until the first load resolves. */
   board = $state<ChoreBoardDto | null>(null);
@@ -113,6 +140,22 @@ class BoardStore {
 
   /** The active lens (ViewSwitcher). Defaults to Up-for-grabs. */
   lens = $state<ChoreLensId>('up-for-grabs');
+
+  // ── Up-for-grabs pile controls (Phase 15 R4′ — WP-01 "Quick wins") ─────────
+  //
+  // "Quick first" is a self-only, session-only PRESENTATION toggle on the pile:
+  // it re-orders each attention section effort-ascending (D2). It is default-OFF,
+  // reset on lens-switch and first board load, and PERSISTS NOWHERE (D4/M4 — not
+  // server, not localStorage). It reads ONLY the chore's declared weight
+  // (effortTier), never any per-person / gap signal (M1/MN1). Reset is imperative
+  // (in setLens / first setBoard), NOT a $effect (M9 — no setup-effect loop).
+  //
+  // The state lives as a $state FIELD on this class instance, never an exported
+  // reassigned rune (M9 / rune-export rule). WP-03 adds the `pileFitsMe` filter
+  // beside it; the filter runs BEFORE sectioning, this sort runs within-section.
+
+  /** "Quick first" pile ordering toggle (up-for-grabs only). Default-off; session-only. */
+  pileQuickFirst = $state(false);
 
   /** This household member's userId — set once on init from the shell context. */
   currentUserId = $state(0);
@@ -337,13 +380,22 @@ class BoardStore {
   // fields it reads.
 
   boardSections = $derived.by<NeedsAttentionSection[]>(() => {
+    // 1. Pick the lens's chore set. This is the pre-section stage — WP-03's
+    //    "Fits me" filter narrows the up-for-grabs `set` HERE (filter-before-section,
+    //    D3), before the sort + bucketing below.
     const set =
       this.lens === 'up-for-grabs'
         ? this.upForGrabsChores
         : this.lens === 'mine'
           ? this.mineChores
           : this.chores; // 'needs-attention' ⇒ All
-    const ordered = [...set].sort(sortDirtiestFirst);
+    // 2. Order the set. On the up-for-grabs pile with "Quick first" ON, use the
+    //    effort-primary comparator (D2 — Quick→Standard→BigJob, dirtiest-first
+    //    tiebreak); everywhere else keep the shipped dirtiest-first. The bucketing
+    //    below is a stable partition, so this yields effort-primary order WITHIN
+    //    each attention section without recomputing dueness (M5/M7).
+    const quickFirst = this.lens === 'up-for-grabs' && this.pileQuickFirst;
+    const ordered = [...set].sort(quickFirst ? sortQuickFirst : sortDirtiestFirst);
     const fallingBehind: ChoreDto[] = [];
     const dueNow: ChoreDto[] = [];
     const comingUp: ChoreDto[] = [];
@@ -374,12 +426,21 @@ class BoardStore {
   );
 
   setBoard(next: ChoreBoardDto): void {
+    // Capture BEFORE initLensFromDefault flips the guard — true only on the very
+    // first board load of this store instance (a full page reload recreates the
+    // singleton, so this fires again then, satisfying "off after reload").
+    const firstLoad = !this.defaultViewInitialized;
     this.board = next;
     this.error = null;
     // Keep the local default mirror in sync with the authoritative payload, and
     // (on the FIRST load only) land on the user's roaming default lens.
     this.defaultView = coerceLens(next.userDefaultView);
     this.initLensFromDefault();
+    // Pile controls are default-off on first load (D4/M4). We reset ONLY on first
+    // load — never on the periodic liveness refetch, which also lands here and
+    // would otherwise stomp an active in-session toggle every ~20s. Lens-switches
+    // are handled separately in setLens().
+    if (firstLoad) this.pileQuickFirst = false;
     // The board refetch path (loadBoard / setRefresh / liveness) may have
     // included a completion from another user, so the cached equity payload is
     // potentially stale. Invalidate (and reload if the equity lens is active).
@@ -388,6 +449,14 @@ class BoardStore {
 
   setLens(next: ChoreLensId): void {
     this.lens = next;
+    // Default-off, no sticky personalization of the shared pile (D4/M4): a lens
+    // switch always resets the pile controls. Imperative reset, NOT a $effect (M9).
+    this.pileQuickFirst = false;
+  }
+
+  /** Toggle the up-for-grabs "Quick first" ordering (WP-01). Session-only, persists nowhere. */
+  togglePileQuickFirst(): void {
+    this.pileQuickFirst = !this.pileQuickFirst;
   }
 
   // ── Equity lens fetch + invalidation ──────────────────────────────────────
