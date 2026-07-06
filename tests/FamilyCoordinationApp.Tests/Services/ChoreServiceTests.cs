@@ -61,7 +61,24 @@ public class ChoreServiceTests : IDisposable
             new User { Id = Alice, HouseholdId = HouseholdId, Email = "a@x.com", DisplayName = "Alice" },
             new User { Id = Bob, HouseholdId = HouseholdId, Email = "b@x.com", DisplayName = "Bob" },
             new User { Id = Carol, HouseholdId = OtherHouseholdId, Email = "c@x.com", DisplayName = "Carol" });
+        // Rooms for the multi-room membership tests (Phase 13). Ids 10/11 exist in household 1.
+        _seedContext.Rooms.AddRange(
+            new Room { HouseholdId = HouseholdId, RoomId = Kitchen, Name = "Kitchen", Icon = "🍳", SortOrder = 1, CreatedAt = NowBase },
+            new Room { HouseholdId = HouseholdId, RoomId = Bathroom, Name = "Bathroom", Icon = "🛁", SortOrder = 2, CreatedAt = NowBase });
         _seedContext.SaveChanges();
+    }
+
+    private const int Kitchen = 10;
+    private const int Bathroom = 11;
+
+    private async Task<List<int>> MembershipsAsync(int choreId)
+    {
+        await using var ctx = new ApplicationDbContext(_options);
+        return await ctx.ChoreRooms
+            .Where(cr => cr.HouseholdId == HouseholdId && cr.ChoreId == choreId)
+            .OrderBy(cr => cr.RoomId)
+            .Select(cr => cr.RoomId)
+            .ToListAsync();
     }
 
     public void Dispose()
@@ -218,6 +235,108 @@ public class ChoreServiceTests : IDisposable
 
         var chore = await _service.CreateChoreAsync(HouseholdId, Alice, cmd);
         chore.RecurrenceMode.Should().Be(RecurrenceMode.OneOff);
+    }
+
+    // ---- ROOM MEMBERSHIP (Phase 13, WP-02) ---------------------------------
+
+    private static UpdateChoreCommand RoomUpdateCmd(IReadOnlyList<int>? roomIds = null, int? legacyRoomId = null) => new(
+        Name: "Dishes",
+        Description: null,
+        RoomId: legacyRoomId,
+        RecurrenceMode: RecurrenceMode.Flexible,
+        IntervalDays: 7,
+        AnchorDate: null,
+        DaysOfWeek: null,
+        DayOfMonth: null,
+        EffortTier: EffortTier.Standard,
+        OwnerUserId: null,
+        PhotoPath: null,
+        Icon: "🧹",
+        RoomIds: roomIds);
+
+    [Fact]
+    public async Task Create_WithRoomIds_WritesSortedMembershipRows_AndMinShim()
+    {
+        // Unsorted input → sorted rows; shim = min membership.
+        var chore = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RoomIds = new[] { Bathroom, Kitchen } });
+
+        (await MembershipsAsync(chore.ChoreId)).Should().Equal(Kitchen, Bathroom);
+        (await ReloadAsync(chore.ChoreId)).RoomId.Should().Be(Kitchen, "the dual-write shim is the min membership");
+    }
+
+    [Fact]
+    public async Task Create_WithDuplicateRoomIds_DedupesToSingleRow()
+    {
+        // roomIds:[10,10] must not violate the composite PK — the helper .Distinct()-normalizes.
+        var chore = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RoomIds = new[] { Kitchen, Kitchen } });
+
+        (await MembershipsAsync(chore.ChoreId)).Should().Equal(Kitchen);
+    }
+
+    [Fact]
+    public async Task Create_WithNoRooms_IsGeneral()
+    {
+        var chore = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd());
+
+        (await MembershipsAsync(chore.ChoreId)).Should().BeEmpty();
+        (await ReloadAsync(chore.ChoreId)).RoomId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Create_WithInvalidRoomId_ThrowsValidation()
+    {
+        var act = async () => await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RoomIds = new[] { Kitchen, 999 } });
+
+        await act.Should().ThrowAsync<ChoreValidationException>()
+            .Where(e => e.Message.Contains("999"));
+    }
+
+    [Fact]
+    public async Task Update_ToSubsetRoomIds_RemovesDeselected_AndRecomputesShim()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RoomIds = new[] { Kitchen, Bathroom } });
+        var current = await ReloadAsync(created.ChoreId);
+
+        await _service.UpdateChoreAsync(HouseholdId, created.ChoreId, RoomUpdateCmd(roomIds: new[] { Bathroom }), current.Version);
+
+        (await MembershipsAsync(created.ChoreId)).Should().Equal(new[] { Bathroom }, "the deselected room's row is removed");
+        (await ReloadAsync(created.ChoreId)).RoomId.Should().Be(Bathroom);
+    }
+
+    [Fact]
+    public async Task Update_ToEmptyRoomIds_ClearsToGeneral()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RoomIds = new[] { Kitchen, Bathroom } });
+        var current = await ReloadAsync(created.ChoreId);
+
+        await _service.UpdateChoreAsync(HouseholdId, created.ChoreId, RoomUpdateCmd(roomIds: Array.Empty<int>()), current.Version);
+
+        (await MembershipsAsync(created.ChoreId)).Should().BeEmpty("[] clears to General");
+        (await ReloadAsync(created.ChoreId)).RoomId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Update_WithNullRoomIds_PreservesMemberships()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RoomIds = new[] { Kitchen, Bathroom } });
+        var current = await ReloadAsync(created.ChoreId);
+
+        // Neither roomIds nor legacy roomId supplied → transitional no-op (preserve).
+        await _service.UpdateChoreAsync(HouseholdId, created.ChoreId, RoomUpdateCmd(), current.Version);
+
+        (await MembershipsAsync(created.ChoreId)).Should().Equal(new[] { Kitchen, Bathroom }, "null roomIds preserves memberships");
+        (await ReloadAsync(created.ChoreId)).RoomId.Should().Be(Kitchen);
+    }
+
+    [Fact]
+    public async Task Delete_RemovesMembershipRows()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RoomIds = new[] { Kitchen, Bathroom } });
+        var current = await ReloadAsync(created.ChoreId);
+
+        await _service.DeleteChoreAsync(HouseholdId, created.ChoreId, current.Version);
+
+        (await MembershipsAsync(created.ChoreId)).Should().BeEmpty("chore-delete removes its membership rows first (M4)");
     }
 
     // ---- UPDATE / DELETE ----------------------------------------------------

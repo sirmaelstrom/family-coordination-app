@@ -1122,7 +1122,11 @@ public static class ChoresEndpoints
         string? Icon = null,
         int RequiredCount = 1,
         IReadOnlyList<int>? AssignedUserIds = null,
-        DateOnly? SnoozedUntil = null)
+        DateOnly? SnoozedUntil = null,
+        // Multi-room membership set (Phase 13). The legacy single RoomId is still accepted (dual-write shim
+        // until WP-08); the service resolves precedence (non-null RoomIds wins). Not fixture-guarded — the
+        // svelte-check gate + the service tests are the backstop.
+        IReadOnlyList<int>? RoomIds = null)
     {
         public CreateChoreCommand ToCommand() => new(
             Name,
@@ -1140,7 +1144,8 @@ public static class ChoresEndpoints
             Icon ?? string.Empty,
             RequiredCount,
             AssignedUserIds,
-            SnoozedUntil);
+            SnoozedUntil,
+            RoomIds);
     }
 
     public sealed record UpdateChoreRequest(
@@ -1158,7 +1163,10 @@ public static class ChoresEndpoints
         uint Version,
         string? Icon = null,
         int RequiredCount = 1,
-        DateOnly? SnoozedUntil = null)
+        DateOnly? SnoozedUntil = null,
+        // Multi-room membership set (Phase 13). Legacy single RoomId still accepted (dual-write shim until
+        // WP-08). Service precedence: non-null RoomIds wins; null (no legacy RoomId) PRESERVES; [] clears.
+        IReadOnlyList<int>? RoomIds = null)
     {
         public UpdateChoreCommand ToCommand() => new(
             Name,
@@ -1174,6 +1182,7 @@ public static class ChoresEndpoints
             PhotoPath,
             Icon ?? string.Empty,
             RequiredCount,
-            SnoozedUntil);
+            SnoozedUntil,
+            RoomIds);
     }
 }

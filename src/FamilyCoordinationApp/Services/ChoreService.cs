@@ -48,6 +48,12 @@ public class ChoreService(
                     await EnsureHouseholdMemberAsync(context, householdId, assigneeId, cancellationToken);
                 }
 
+                // Resolve the desired room membership set (Phase 13). On create: roomIds wins; else the legacy
+                // single roomId; else General (no memberships). Validate every id is a room in the household
+                // (M1/M6 — ChoreValidationException → 400 with a body at the endpoint).
+                var desiredRoomIds = ResolveDesiredRoomIds(cmd.RoomIds, cmd.RoomId, forUpdate: false)!;
+                await EnsureRoomsExistAsync(context, householdId, desiredRoomIds, cancellationToken);
+
                 var maxId = await context.Chores
                     .Where(c => c.HouseholdId == householdId)
                     .MaxAsync(c => (int?)c.ChoreId, cancellationToken) ?? 0;
@@ -59,7 +65,7 @@ public class ChoreService(
                     Name = cmd.Name.Trim(),
                     Description = string.IsNullOrWhiteSpace(cmd.Description) ? null : cmd.Description.Trim(),
                     Icon = cmd.Icon ?? string.Empty,
-                    RoomId = cmd.RoomId,
+                    RoomId = MinShim(desiredRoomIds),   // dual-write shim = min membership (or null) until WP-08
                     RecurrenceMode = cmd.RecurrenceMode,
                     IntervalDays = cmd.IntervalDays,
                     AnchorDate = cmd.AnchorDate,
@@ -102,6 +108,10 @@ public class ChoreService(
                     }
                 }
 
+                // Write the ChoreRoom membership rows for the resolved set (ChoreId is known — maxId+1 — so
+                // this saves in the same transaction; EF orders the chore insert before its memberships).
+                await ChoreRoomMembership.ReconcileMembershipsAsync(context, householdId, chore.ChoreId, desiredRoomIds, cancellationToken);
+
                 await context.SaveChangesAsync(cancellationToken);
 
                 logger.LogInformation("Created Chore {ChoreId} for household {HouseholdId}", chore.ChoreId, householdId);
@@ -130,7 +140,15 @@ public class ChoreService(
         chore.Name = cmd.Name.Trim();
         chore.Description = string.IsNullOrWhiteSpace(cmd.Description) ? null : cmd.Description.Trim();
         chore.Icon = cmd.Icon ?? string.Empty;
-        chore.RoomId = cmd.RoomId;
+        // Room membership (Phase 13). Precedence: roomIds wins; else the legacy single roomId; else null =
+        // PRESERVE (transitional no-op — don't touch memberships or the shim). [] clears to General.
+        var desiredRoomIds = ResolveDesiredRoomIds(cmd.RoomIds, cmd.RoomId, forUpdate: true);
+        if (desiredRoomIds is not null)
+        {
+            await EnsureRoomsExistAsync(context, householdId, desiredRoomIds, cancellationToken);
+            await ChoreRoomMembership.ReconcileMembershipsAsync(context, householdId, choreId, desiredRoomIds, cancellationToken);
+            chore.RoomId = MinShim(desiredRoomIds);   // keep the shim = min remaining membership (or null)
+        }
         chore.RecurrenceMode = cmd.RecurrenceMode;
         chore.IntervalDays = cmd.IntervalDays;
         chore.AnchorDate = cmd.AnchorDate;
@@ -176,6 +194,14 @@ public class ChoreService(
         {
             await imageService.DeleteImageAsync(chore.PhotoPath, cancellationToken);
         }
+
+        // Remove the chore's room memberships FIRST (M4). The ChoreRoom→Chore FK is ClientNoAction (WP-01),
+        // so Postgres will NOT cascade; without this, deleting any chore that ever had a room membership
+        // throws FK 23503 → 500. The WP-01 backfill makes this live immediately.
+        var memberships = await context.ChoreRooms
+            .Where(cr => cr.HouseholdId == householdId && cr.ChoreId == choreId)
+            .ToListAsync(cancellationToken);
+        context.ChoreRooms.RemoveRange(memberships);
 
         context.Chores.Remove(chore);
         await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
@@ -646,6 +672,50 @@ public class ChoreService(
         if (!isMember)
         {
             throw new ChoreValidationException($"User {userId} is not a member of household {householdId}.");
+        }
+    }
+
+    /// <summary>
+    /// Resolve the desired room-membership set (Phase 13). Precedence: a non-null <paramref name="roomIds"/>
+    /// wins (including <c>[]</c> = clear to General); else the legacy single <paramref name="legacyRoomId"/>
+    /// maps to a one-element set; else — neither supplied — <c>null</c> on update PRESERVES existing
+    /// memberships (transitional no-op), while create falls to an empty set (General). Council convergent
+    /// (codex/carto/gpt): roomIds wins, null=preserve, []=clear.
+    /// </summary>
+    private static IReadOnlyList<int>? ResolveDesiredRoomIds(IReadOnlyList<int>? roomIds, int? legacyRoomId, bool forUpdate)
+    {
+        if (roomIds is not null) return roomIds;
+        if (legacyRoomId is { } r) return new[] { r };
+        return forUpdate ? null : Array.Empty<int>();
+    }
+
+    /// <summary>
+    /// The dual-write shim <c>Chore.RoomId</c> = the deterministic MIN of the membership set (or null when
+    /// roomless). Deterministic min — not <c>FirstOrDefault()</c> on unordered input — so the shim is stable
+    /// across WP-02/WP-03 (council convergent). Dropped in WP-08.
+    /// </summary>
+    private static int? MinShim(IReadOnlyCollection<int> roomIds)
+        => roomIds.Count == 0 ? null : roomIds.Distinct().Min();
+
+    /// <summary>
+    /// Validate that every requested room id exists in the household (M1). Throws
+    /// <see cref="ChoreValidationException"/> (→ 400 with a JSON body, M6) listing the missing ids.
+    /// </summary>
+    private static async Task EnsureRoomsExistAsync(ApplicationDbContext context, int householdId, IReadOnlyCollection<int> roomIds, CancellationToken cancellationToken)
+    {
+        if (roomIds.Count == 0) return;
+
+        var distinct = roomIds.Distinct().ToList();
+        var existing = await context.Rooms
+            .Where(room => room.HouseholdId == householdId && distinct.Contains(room.RoomId))
+            .Select(room => room.RoomId)
+            .ToListAsync(cancellationToken);
+
+        var missing = distinct.Except(existing).ToList();
+        if (missing.Count > 0)
+        {
+            throw new ChoreValidationException(
+                $"Room(s) {string.Join(", ", missing)} do not exist in household {householdId}.");
         }
     }
 

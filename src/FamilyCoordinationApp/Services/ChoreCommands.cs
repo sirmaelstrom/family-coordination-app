@@ -31,7 +31,11 @@ public record CreateChoreCommand(
     IReadOnlyList<int>? AssignedUserIds = null,
     // First-due floor at creation (null = due now). Persisted to Chore.SnoozedUntil; trailing + defaulted so
     // existing positional callers compile.
-    DateOnly? SnoozedUntil = null);
+    DateOnly? SnoozedUntil = null,
+    // Multi-room membership set (Phase 13). Trailing + defaulted so existing positional callers compile.
+    // Precedence (WP-02): non-null RoomIds wins over the legacy single RoomId; on create, null (with no
+    // legacy RoomId) means General (no memberships); [] also means General. RoomId stays the dual-write shim.
+    IReadOnlyList<int>? RoomIds = null);
 
 /// <summary>
 /// Command to update a chore's editable fields (council M11) — the same editable subset as
@@ -54,4 +58,9 @@ public record UpdateChoreCommand(
     int RequiredCount = 1,
     // Next-due floor from the edit sheet (null = no floor). Persisted to Chore.SnoozedUntil; trailing +
     // defaulted so existing positional callers compile.
-    DateOnly? SnoozedUntil = null);
+    DateOnly? SnoozedUntil = null,
+    // Multi-room membership set (Phase 13). Trailing + defaulted so existing positional callers compile.
+    // Precedence (WP-02): non-null RoomIds wins over the legacy single RoomId; on update, null (with no
+    // legacy RoomId) PRESERVES existing memberships (transitional no-op); [] clears to General. RoomId stays
+    // the dual-write shim.
+    IReadOnlyList<int>? RoomIds = null);
