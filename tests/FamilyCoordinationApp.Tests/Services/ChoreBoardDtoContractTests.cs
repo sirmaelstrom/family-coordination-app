@@ -48,7 +48,7 @@ public class ChoreBoardDtoContractTests
                 Name: "Mop the floor",
                 Icon: "🧹",
                 Description: "Use the good mop",
-                RoomId: 10,
+                RoomIds: [10],
                 RecurrenceMode: "Flexible",
                 IntervalDays: 3,
                 DaysOfWeek: null,
@@ -82,7 +82,7 @@ public class ChoreBoardDtoContractTests
                 Name: "Take out trash",
                 Icon: "",
                 Description: null,
-                RoomId: 10,
+                RoomIds: [10],
                 RecurrenceMode: "Fixed",
                 IntervalDays: null,
                 DaysOfWeek: ChoreDaysOfWeek.Monday | ChoreDaysOfWeek.Thursday,
@@ -113,7 +113,7 @@ public class ChoreBoardDtoContractTests
                 Name: "Water the plants",
                 Icon: "🪴",
                 Description: "Living room + balcony",
-                RoomId: null,
+                RoomIds: [],
                 RecurrenceMode: "Fixed",
                 IntervalDays: null,
                 DaysOfWeek: ChoreDaysOfWeek.Saturday,
@@ -144,7 +144,7 @@ public class ChoreBoardDtoContractTests
                 Name: "Fix the squeaky door",
                 Icon: "",
                 Description: null,
-                RoomId: null,
+                RoomIds: [],
                 RecurrenceMode: "OneOff",
                 IntervalDays: null,
                 DaysOfWeek: null,
@@ -168,6 +168,39 @@ public class ChoreBoardDtoContractTests
                 CompletedCount: 0,
                 Roster: [new RosterMemberDto(101, RosterState.In)],
                 Subtasks: []),
+
+            // Multi-room (Phase 13): belongs to BOTH Kitchen (10) and Bathroom (11) — exercises roomIds N>1.
+            // Not due + claimed (not pile) so it does NOT enter needs-attention and does NOT flip either room's
+            // due bucket; it only bumps each room's choreCount.
+            new(
+                Id: 5,
+                Name: "Deep clean bathroom + kitchen",
+                Icon: "🧽",
+                Description: "Shared deep clean",
+                RoomIds: [10, 11],
+                RecurrenceMode: "Flexible",
+                IntervalDays: 30,
+                DaysOfWeek: null,
+                AnchorDate: null,
+                DueState: DueState.NotDue,
+                ColorTier: ColorTier.Fresh,
+                NextDueAt: new DateTime(2026, 6, 20, 5, 0, 0, DateTimeKind.Utc),
+                SnoozedUntil: null,
+                IsSnoozed: false,
+                IsClaimStale: false,
+                EffortTier: "BigJob",
+                EffortPoints: 3,
+                OwnerUserId: null,
+                AssigneeUserId: 100,
+                AssignmentKind: AssignmentKind.Claimed,
+                ClaimedAt: new DateTime(2026, 5, 30, 2, 0, 0, DateTimeKind.Utc),
+                LastCompletedAt: new DateTime(2026, 5, 21, 5, 0, 0, DateTimeKind.Utc),
+                PhotoPath: null,
+                Version: 5,
+                RequiredCount: 1,
+                CompletedCount: 0,
+                Roster: [new RosterMemberDto(100, RosterState.In)],
+                Subtasks: []),
         };
 
         var rooms = new List<RoomRollupDto>
@@ -179,7 +212,7 @@ public class ChoreBoardDtoContractTests
                 Icon: "🍳",
                 PhotoPath: "/uploads/1/kitchen.jpg",
                 SortOrder: 1,
-                ChoreCount: 2,
+                ChoreCount: 3,   // chores 1, 2, and the multi-room chore 5
                 DueCount: 2,
                 Status: RoomRollupStatus.Attention),
 
@@ -190,7 +223,7 @@ public class ChoreBoardDtoContractTests
                 Icon: "🛁",
                 PhotoPath: null,
                 SortOrder: 2,
-                ChoreCount: 0,
+                ChoreCount: 1,   // the multi-room chore 5 also lives in Bathroom
                 DueCount: 0,
                 Status: RoomRollupStatus.Clean),
 
@@ -254,7 +287,7 @@ public class ChoreBoardDtoContractTests
 
         var firstChore = root["chores"]!.AsArray()[0]!.AsObject();
         firstChore.Select(kvp => kvp.Key).Should().BeEquivalentTo(
-            "id", "name", "icon", "description", "roomId", "recurrenceMode", "intervalDays", "daysOfWeek", "anchorDate",
+            "id", "name", "icon", "description", "roomIds", "recurrenceMode", "intervalDays", "daysOfWeek", "anchorDate",
             "dueState", "colorTier", "nextDueAt", "snoozedUntil", "isSnoozed",
             "isClaimStale", "effortTier", "effortPoints", "ownerUserId", "assigneeUserId", "assignmentKind",
             "claimedAt", "lastCompletedAt", "photoPath", "version",

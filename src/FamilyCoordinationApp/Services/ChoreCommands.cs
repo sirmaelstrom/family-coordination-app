@@ -16,7 +16,6 @@ namespace FamilyCoordinationApp.Services;
 public record CreateChoreCommand(
     string Name,
     string? Description,
-    int? RoomId,
     RecurrenceMode RecurrenceMode,
     int? IntervalDays,
     DateOnly? AnchorDate,
@@ -31,7 +30,11 @@ public record CreateChoreCommand(
     IReadOnlyList<int>? AssignedUserIds = null,
     // First-due floor at creation (null = due now). Persisted to Chore.SnoozedUntil; trailing + defaulted so
     // existing positional callers compile.
-    DateOnly? SnoozedUntil = null);
+    DateOnly? SnoozedUntil = null,
+    // Multi-room membership set (Phase 13) — the sole source of a chore's rooms (the Chore.RoomId shim was
+    // dropped in WP-08). Trailing + defaulted so existing positional callers compile. On create, null/[] =
+    // General (no memberships).
+    IReadOnlyList<int>? RoomIds = null);
 
 /// <summary>
 /// Command to update a chore's editable fields (council M11) — the same editable subset as
@@ -41,7 +44,6 @@ public record CreateChoreCommand(
 public record UpdateChoreCommand(
     string Name,
     string? Description,
-    int? RoomId,
     RecurrenceMode RecurrenceMode,
     int? IntervalDays,
     DateOnly? AnchorDate,
@@ -54,4 +56,8 @@ public record UpdateChoreCommand(
     int RequiredCount = 1,
     // Next-due floor from the edit sheet (null = no floor). Persisted to Chore.SnoozedUntil; trailing +
     // defaulted so existing positional callers compile.
-    DateOnly? SnoozedUntil = null);
+    DateOnly? SnoozedUntil = null,
+    // Multi-room membership set (Phase 13) — the sole source of a chore's rooms (the Chore.RoomId shim was
+    // dropped in WP-08). Trailing + defaulted so existing positional callers compile. On update, null =
+    // PRESERVE existing memberships (no-op); [] clears to General.
+    IReadOnlyList<int>? RoomIds = null);

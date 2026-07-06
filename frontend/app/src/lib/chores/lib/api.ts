@@ -83,7 +83,8 @@ export interface VersionRequest {
 export interface CreateChoreRequest {
   name: string;
   description?: string | null;
-  roomId?: number | null;
+  /** Phase 13: the chore's room memberships (was a single roomId). [] or omitted = General. */
+  roomIds?: number[];
   recurrenceMode: RecurrenceMode;
   intervalDays?: number | null;
   /** ISO date "YYYY-MM-DD" (DateOnly server-side). */
@@ -109,7 +110,8 @@ export interface CreateChoreRequest {
 export interface UpdateChoreRequest {
   name: string;
   description?: string | null;
-  roomId?: number | null;
+  /** Phase 13: room memberships (was a single roomId). [] clears to General; omit to preserve. */
+  roomIds?: number[];
   recurrenceMode: RecurrenceMode;
   intervalDays?: number | null;
   anchorDate?: string | null;

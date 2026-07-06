@@ -24,6 +24,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<HouseholdInvite> HouseholdInvites => Set<HouseholdInvite>();
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<Chore> Chores => Set<Chore>();
+    public DbSet<ChoreRoom> ChoreRooms => Set<ChoreRoom>();
     public DbSet<ChoreCompletion> ChoreCompletions => Set<ChoreCompletion>();
     public DbSet<ChoreEvent> ChoreEvents => Set<ChoreEvent>();
     public DbSet<ChoreSnoozeEvent> ChoreSnoozeEvents => Set<ChoreSnoozeEvent>();

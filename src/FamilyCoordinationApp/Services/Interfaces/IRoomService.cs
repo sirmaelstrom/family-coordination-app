@@ -26,10 +26,10 @@ public interface IRoomService
     Task<Room> UpdateRoomAsync(int householdId, int roomId, string name, string icon, string? photoPath, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Deletes a room. Before removing the row, every chore in that room (same household) has its
-    /// <see cref="Chore.RoomId"/> set to null in the same SaveChanges (the DB FK is ClientSetNull, so the
-    /// service must do this explicitly — council M3), and the room's photo file is deleted from disk (M8).
-    /// No-op safe when the room has no photo. Chores survive the delete and fall back to "General".
+    /// Deletes a room. Before removing the row, the room's <c>ChoreRoom</c> membership rows (same household)
+    /// are removed in the same SaveChanges — explicit, because the join FK is <c>ClientNoAction</c> (M1/M4,
+    /// Phase 13) — and the room's photo file is deleted from disk (M8). No-op safe when the room has no photo.
+    /// A chore in other rooms keeps them; a chore left with zero memberships falls back to "General".
     /// </summary>
     Task DeleteRoomAsync(int householdId, int roomId, CancellationToken cancellationToken = default);
 

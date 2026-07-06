@@ -110,13 +110,12 @@ public class ChoreHistoryServiceTests
             PhotoPath = photo,
         };
 
-    private static Chore SimpleChore(int id, string name, int householdId = H1, int? roomId = null) =>
+    private static Chore SimpleChore(int id, string name, int householdId = H1) =>
         new()
         {
             HouseholdId = householdId,
             ChoreId = id,
             Name = name,
-            RoomId = roomId,
             RecurrenceMode = RecurrenceMode.Flexible,
             IntervalDays = 7,
             EffortTier = EffortTier.Standard,
@@ -354,8 +353,10 @@ public class ChoreHistoryServiceTests
         {
             ctx.Rooms.Add(new Room { HouseholdId = H1, RoomId = 1, Name = "Kitchen" });
             ctx.Chores.AddRange(
-                SimpleChore(1, "Dishes", roomId: 1),   // Kitchen
-                SimpleChore(2, "Errand"));              // roomless ⇒ General
+                SimpleChore(1, "Dishes"),   // Kitchen (via the membership row below)
+                SimpleChore(2, "Errand"));  // roomless ⇒ General
+            // Phase 13: the tally now reads ChoreRoom memberships, not Chore.RoomId — seed the membership row.
+            ctx.ChoreRooms.Add(new ChoreRoom { HouseholdId = H1, ChoreId = 1, RoomId = 1 });
             ctx.ChoreCompletions.AddRange(
                 Completion(1, Alice, Utc0(2026, 6, 16, 9), 2, choreId: 1),
                 Completion(2, Bob, Utc0(2026, 6, 16, 10), 2, choreId: 1),
@@ -367,6 +368,35 @@ public class ChoreHistoryServiceTests
         history.WhatGotTended.Should().HaveCount(2);
         history.WhatGotTended[0].RoomName.Should().Be("Kitchen", "most-tended first (2 completions)");
         history.WhatGotTended[0].Completions.Should().Be(2);
+        history.WhatGotTended.Should().Contain(t => t.RoomName == "General" && t.Completions == 1);
+    }
+
+    [Fact]
+    public async Task WhatGotTended_MultiRoomCompletion_CountsInEachMemberRoom()
+    {
+        // Phase 13 / D6: a completion of a chore in {Kitchen, Bathroom} counts toward BOTH rooms; a roomless
+        // completion → General. The per-room tally therefore sums to more than the distinct completion count.
+        Seed(ctx =>
+        {
+            ctx.Rooms.AddRange(
+                new Room { HouseholdId = H1, RoomId = 1, Name = "Kitchen" },
+                new Room { HouseholdId = H1, RoomId = 2, Name = "Bathroom" });
+            ctx.Chores.AddRange(
+                SimpleChore(1, "Deep clean"),   // member of BOTH rooms (via the membership rows below)
+                SimpleChore(2, "Errand"));      // roomless ⇒ General
+            ctx.ChoreRooms.AddRange(
+                new ChoreRoom { HouseholdId = H1, ChoreId = 1, RoomId = 1 },
+                new ChoreRoom { HouseholdId = H1, ChoreId = 1, RoomId = 2 });
+            ctx.ChoreCompletions.AddRange(
+                Completion(1, Alice, Utc0(2026, 6, 16, 9), 2, choreId: 1),    // one completion of the 2-room chore
+                Completion(2, Bob, Utc0(2026, 6, 16, 11), 2, choreId: 2));    // roomless completion
+        });
+
+        var history = await CreateService(Utc).GetHistoryAsync(H1, weeks: 1, now: Utc0(2026, 6, 17, 12));
+
+        // 2 distinct completions → 3 room-tally increments (Kitchen+Bathroom from the one multi-room completion).
+        history.WhatGotTended.Should().Contain(t => t.RoomName == "Kitchen" && t.Completions == 1);
+        history.WhatGotTended.Should().Contain(t => t.RoomName == "Bathroom" && t.Completions == 1);
         history.WhatGotTended.Should().Contain(t => t.RoomName == "General" && t.Completions == 1);
     }
 

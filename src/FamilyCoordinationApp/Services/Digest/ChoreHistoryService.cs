@@ -163,15 +163,21 @@ public class ChoreHistoryService(
         var choreLookup = await context.Chores
             .AsNoTracking()
             .Where(c => c.HouseholdId == householdId)
-            .Select(c => new { c.ChoreId, c.Name, c.RoomId })
+            .Select(c => new { c.ChoreId, c.Name })
             .ToListAsync(ct);
-        var choreById = choreLookup.ToDictionary(c => c.ChoreId, c => (c.Name, c.RoomId));
+        // choreId → name (Phase 13: the room lives in ChoreRoom now, not Chore.RoomId; the per-room tally
+        // reads memberships via membershipsByChore, so this lookup no longer carries a room).
+        var choreById = choreLookup.ToDictionary(c => c.ChoreId, c => c.Name);
 
         // Room names for the what-got-tended tally (O(rooms)); roomless → the virtual "General" group.
         var roomNameById = await context.Rooms
             .AsNoTracking()
             .Where(r => r.HouseholdId == householdId)
             .ToDictionaryAsync(r => r.RoomId, r => r.Name, ct);
+
+        // Chore→room memberships for the per-room what-got-tended fan-out (Phase 13, D6). One household-scoped
+        // batched read (M1); a completion of a multi-room chore counts toward EACH of its member rooms.
+        var membershipsByChore = await ChoreRoomMembership.LoadMembershipsAsync(context, householdId, ct);
 
         // First-ever detection (D10): a bounded DB-side MIN(CompletedAt) GROUP BY ChoreId — one row per chore
         // (O(chores), indexed on HouseholdId+CompletedAt), NOT a full-history scan. A chore's first-ever is
@@ -252,7 +258,7 @@ public class ChoreHistoryService(
         var weeksResult = BuildWeeks(weekBuckets, members, asOf);
         var milestones = BuildMilestones(weeksResult, firstEverByChore, choreById, oldestWeekStartUtc, asOf);
         var keptMoments = BuildKeptMoments(completions, choreById);
-        var whatGotTended = BuildWhatGotTended(completions, choreById, roomNameById);
+        var whatGotTended = BuildWhatGotTended(completions, membershipsByChore, roomNameById);
         var (ghosts, goneQuiet) = BuildProjection(activeChores, doneDatesByChore, snoozeByChore, oldestWeekStartUtc, asOf);
 
         return new ChoreHistoryResult(
@@ -650,13 +656,13 @@ public class ChoreHistoryService(
 
     private IReadOnlyList<HistoryEvent> BuildEvents(
         IReadOnlyList<ChoreCompletion> completions,
-        IReadOnlyDictionary<int, (string Name, int? RoomId)> choreById,
+        IReadOnlyDictionary<int, string> choreById,
         IReadOnlyDictionary<int, string> memberNameById)
     {
         return completions
             .OrderByDescending(c => c.CompletedAt)
             .Select(c => new HistoryEvent(
-                ChoreName: choreById.TryGetValue(c.ChoreId, out var chore) ? chore.Name : string.Empty,
+                ChoreName: choreById.TryGetValue(c.ChoreId, out var choreName) ? choreName : string.Empty,
                 DoerDisplayName: memberNameById.TryGetValue(c.CompletedByUserId, out var name) ? name : UnknownDoerName,
                 LocalDate: LocalIsoDate(c.CompletedAt),
                 Points: c.EffortPointsSnapshot,
@@ -732,7 +738,7 @@ public class ChoreHistoryService(
     private HistoryMilestones BuildMilestones(
         IReadOnlyList<HistoryWeek> weeks,
         IReadOnlyList<(int ChoreId, DateTime FirstCompletedAt)> firstEverByChore,
-        IReadOnlyDictionary<int, (string Name, int? RoomId)> choreById,
+        IReadOnlyDictionary<int, string> choreById,
         DateTime oldestWeekStartUtc,
         DateTime asOf)
     {
@@ -771,7 +777,7 @@ public class ChoreHistoryService(
             {
                 continue;
             }
-            var name = choreById.TryGetValue(choreId, out var chore) ? chore.Name : string.Empty;
+            var name = choreById.TryGetValue(choreId, out var choreName) ? choreName : string.Empty;
             firstEvers.Add(new FirstEver(name, LocalIsoDate(first)));
         }
         // Deterministic order — newest first-ever first (a fresh "first time!" leads the list).
@@ -792,7 +798,7 @@ public class ChoreHistoryService(
 
     private IReadOnlyList<HistoryKeptMoment> BuildKeptMoments(
         IReadOnlyList<ChoreCompletion> completions,
-        IReadOnlyDictionary<int, (string Name, int? RoomId)> choreById)
+        IReadOnlyDictionary<int, string> choreById)
     {
         return completions
             .Where(c => !string.IsNullOrWhiteSpace(c.Note) || !string.IsNullOrWhiteSpace(c.PhotoPath))
@@ -800,7 +806,7 @@ public class ChoreHistoryService(
             .Take(KeptMomentsCap)
             .Select(c => new HistoryKeptMoment(
                 LocalDate: LocalIsoDate(c.CompletedAt),
-                ChoreName: choreById.TryGetValue(c.ChoreId, out var chore) ? chore.Name : string.Empty,
+                ChoreName: choreById.TryGetValue(c.ChoreId, out var choreName) ? choreName : string.Empty,
                 Note: string.IsNullOrWhiteSpace(c.Note) ? null : c.Note,
                 HasPhoto: !string.IsNullOrWhiteSpace(c.PhotoPath)))
             .ToList();
@@ -810,21 +816,29 @@ public class ChoreHistoryService(
 
     private static IReadOnlyList<HistoryRoomTally> BuildWhatGotTended(
         IReadOnlyList<ChoreCompletion> completions,
-        IReadOnlyDictionary<int, (string Name, int? RoomId)> choreById,
+        IReadOnlyDictionary<int, IReadOnlyList<int>> membershipsByChore,
         IReadOnlyDictionary<int, string> roomNameById)
     {
         var tally = new Dictionary<string, int>();
         foreach (var c in completions)
         {
-            var roomName = ChoreRollup.GeneralGroupName;
-            if (choreById.TryGetValue(c.ChoreId, out var chore)
-                && chore.RoomId is { } roomId
-                && roomNameById.TryGetValue(roomId, out var name))
+            // Fan out (D6): a completion of a multi-room chore counts toward EACH member room; a roomless
+            // completion counts once toward General. The per-room tally may therefore sum to MORE than the
+            // distinct completion count — correct for a per-room view (the household total counts each once).
+            var roomIds = membershipsByChore.TryGetValue(c.ChoreId, out var ids) ? ids : (IReadOnlyList<int>)Array.Empty<int>();
+            if (roomIds.Count == 0)
             {
-                roomName = name;
+                tally.TryGetValue(ChoreRollup.GeneralGroupName, out var generalCount);
+                tally[ChoreRollup.GeneralGroupName] = generalCount + 1;
+                continue;
             }
-            tally.TryGetValue(roomName, out var count);
-            tally[roomName] = count + 1;
+
+            foreach (var roomId in roomIds)
+            {
+                var roomName = roomNameById.TryGetValue(roomId, out var name) ? name : ChoreRollup.GeneralGroupName;
+                tally.TryGetValue(roomName, out var count);
+                tally[roomName] = count + 1;
+            }
         }
 
         // Most-tended first; tie-break by name for determinism (fixture-stable).

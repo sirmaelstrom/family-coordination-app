@@ -65,7 +65,8 @@ export interface ChoreDto {
   /** Optional emoji/short-code icon (parity with room icons); "" = none. */
   icon: string;
   description: string | null;
-  roomId: number | null;
+  /** Phase 13: the chore's 0..N room memberships (was a single roomId). [] = General. Sorted ascending. */
+  roomIds: number[];
   recurrenceMode: RecurrenceMode;
   /** Recurrence sub-value echoed for edit pre-fill (Flexible "every N days"); null otherwise. */
   intervalDays: number | null;

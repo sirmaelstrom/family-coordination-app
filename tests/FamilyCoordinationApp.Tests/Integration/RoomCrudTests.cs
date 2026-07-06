@@ -8,8 +8,8 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// <summary>
 /// End-to-end coverage for the room manager (chores v1.2 — PR #21) through the real <c>/api/rooms</c>
 /// endpoints against real Postgres. Exercises the full CRUD + reorder surface the island drives, plus the
-/// load-bearing delete semantic: deleting a room does NOT delete its chores — it reassigns them to
-/// <c>RoomId = null</c> ("General"), which the board renders under the General bucket. Tenant scoping is
+/// load-bearing delete semantic: deleting a room does NOT delete its chores — it removes their ChoreRoom
+/// memberships, so a chore left with none falls to "General" (Phase 13 M:N). Tenant scoping is
 /// inherited from the shared <see cref="ChoresWebAppFactory"/> seed (every handler resolves HouseholdId from
 /// the caller, M1).
 /// <para><b>Contract note:</b> <see cref="RoomDto"/> is <c>{ id, name, icon, photoPath, sortOrder }</c> — the
@@ -31,7 +31,7 @@ public sealed class RoomCrudTests(PostgresContainerFixture postgres) : IAsyncLif
     private HttpClient ClientA => _factory.CreateClientAs(ChoresWebAppFactory.UserAEmail);
 
     private sealed record RoomDto(int id, string name, string icon, string? photoPath, int sortOrder);
-    private sealed record ChoreCard(int id, int? roomId);
+    private sealed record ChoreCard(int id, IReadOnlyList<int> roomIds);
     private sealed record Board(List<ChoreCard> chores);
 
     private async Task<RoomDto> CreateRoomAsync(HttpClient client, string name, string? icon = null)
@@ -118,14 +118,14 @@ public sealed class RoomCrudTests(PostgresContainerFixture postgres) : IAsyncLif
         var createChore = await client.PostAsJsonAsync("/api/chores/", new
         {
             name = "Sweep the mudroom",
-            roomId = room.id,
+            roomIds = new[] { room.id },
             recurrenceMode = "flexible",
             intervalDays = 7,
             effortTier = "quick"
         }, Json);
         createChore.StatusCode.Should().Be(HttpStatusCode.Created);
         var chore = (await createChore.Content.ReadFromJsonAsync<ChoreCard>(Json))!;
-        chore.roomId.Should().Be(room.id);
+        chore.roomIds.Should().Equal(room.id);
 
         // Delete the room (no body — rooms have no concurrency token).
         var deleteResp = await client.DeleteAsync($"/api/rooms/{room.id}");
@@ -135,11 +135,42 @@ public sealed class RoomCrudTests(PostgresContainerFixture postgres) : IAsyncLif
         var rooms = await GetRoomsAsync(client);
         rooms.Should().NotContain(r => r.id == room.id);
 
-        // ...but its chore survives, reassigned to General (roomId == null), still on the board.
+        // ...but its chore survives, reassigned to General (empty roomIds), still on the board.
         var board = await client.GetFromJsonAsync<Board>("/api/chores/board", Json);
         var survivor = board!.chores.SingleOrDefault(c => c.id == chore.id);
         survivor.Should().NotBeNull("deleting a room must not delete its chores");
-        survivor!.roomId.Should().BeNull("the orphaned chore is reassigned to General");
+        survivor!.roomIds.Should().BeEmpty("the orphaned chore is reassigned to General");
+    }
+
+    [Fact]
+    public async Task DeleteRoom_MultiRoomChore_KeepsItsOtherRoom_NotGeneral()
+    {
+        // Phase 13 (M:N): a chore in TWO rooms survives a room delete by keeping the other room — it does
+        // NOT fall to General. Until WP-04 the board carries only the single-room shim, so we assert the
+        // survivor reads the remaining room (the min remaining membership).
+        var client = ClientA;
+        var roomA = await CreateRoomAsync(client, "RoomA-multi");
+        var roomB = await CreateRoomAsync(client, "RoomB-multi");
+
+        var createChore = await client.PostAsJsonAsync("/api/chores/", new
+        {
+            name = "Two-room survivor",
+            roomIds = new[] { roomA.id, roomB.id },
+            recurrenceMode = "flexible",
+            intervalDays = 7,
+            effortTier = "quick"
+        }, Json);
+        createChore.StatusCode.Should().Be(HttpStatusCode.Created);
+        var chore = (await createChore.Content.ReadFromJsonAsync<ChoreCard>(Json))!;
+
+        // Delete room A (created first → lower id, so B is the min remaining membership).
+        var deleteResp = await client.DeleteAsync($"/api/rooms/{roomA.id}");
+        deleteResp.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var board = await client.GetFromJsonAsync<Board>("/api/chores/board", Json);
+        var survivor = board!.chores.SingleOrDefault(c => c.id == chore.id);
+        survivor.Should().NotBeNull("a multi-room chore must survive a room delete");
+        survivor!.roomIds.Should().Equal(new[] { roomB.id }, "it keeps its other room rather than falling to General");
     }
 
     // NOTE: a "delete a nonexistent room" case is intentionally NOT covered here. The endpoint returns an

@@ -3,6 +3,7 @@ using System;
 using FamilyCoordinationApp.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace FamilyCoordinationApp.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260706170127_AddChoreRoomJoin")]
+    partial class AddChoreRoomJoin
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -156,6 +159,9 @@ namespace FamilyCoordinationApp.Migrations
                         .HasColumnType("integer")
                         .HasDefaultValue(1);
 
+                    b.Property<int?>("RoomId")
+                        .HasColumnType("integer");
+
                     b.Property<DateOnly?>("SnoozedUntil")
                         .HasColumnType("date");
 
@@ -177,6 +183,8 @@ namespace FamilyCoordinationApp.Migrations
                     b.HasIndex("EnteredByUserId");
 
                     b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("HouseholdId", "RoomId");
 
                     b.ToTable("Chores", (string)null);
                 });
@@ -1187,6 +1195,10 @@ namespace FamilyCoordinationApp.Migrations
                         .HasForeignKey("OwnerUserId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.Room", "Room")
+                        .WithMany()
+                        .HasForeignKey("HouseholdId", "RoomId");
+
                     b.Navigation("Assignee");
 
                     b.Navigation("EnteredBy");
@@ -1194,6 +1206,8 @@ namespace FamilyCoordinationApp.Migrations
                     b.Navigation("Household");
 
                     b.Navigation("Owner");
+
+                    b.Navigation("Room");
                 });
 
             modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.ChoreCompletion", b =>

@@ -61,7 +61,24 @@ public class ChoreServiceTests : IDisposable
             new User { Id = Alice, HouseholdId = HouseholdId, Email = "a@x.com", DisplayName = "Alice" },
             new User { Id = Bob, HouseholdId = HouseholdId, Email = "b@x.com", DisplayName = "Bob" },
             new User { Id = Carol, HouseholdId = OtherHouseholdId, Email = "c@x.com", DisplayName = "Carol" });
+        // Rooms for the multi-room membership tests (Phase 13). Ids 10/11 exist in household 1.
+        _seedContext.Rooms.AddRange(
+            new Room { HouseholdId = HouseholdId, RoomId = Kitchen, Name = "Kitchen", Icon = "🍳", SortOrder = 1, CreatedAt = NowBase },
+            new Room { HouseholdId = HouseholdId, RoomId = Bathroom, Name = "Bathroom", Icon = "🛁", SortOrder = 2, CreatedAt = NowBase });
         _seedContext.SaveChanges();
+    }
+
+    private const int Kitchen = 10;
+    private const int Bathroom = 11;
+
+    private async Task<List<int>> MembershipsAsync(int choreId)
+    {
+        await using var ctx = new ApplicationDbContext(_options);
+        return await ctx.ChoreRooms
+            .Where(cr => cr.HouseholdId == HouseholdId && cr.ChoreId == choreId)
+            .OrderBy(cr => cr.RoomId)
+            .Select(cr => cr.RoomId)
+            .ToListAsync();
     }
 
     public void Dispose()
@@ -73,7 +90,6 @@ public class ChoreServiceTests : IDisposable
     private static CreateChoreCommand FlexibleCmd(int? assignee = null) => new(
         Name: "Dishes",
         Description: "  rinse first  ",
-        RoomId: null,
         RecurrenceMode: RecurrenceMode.Flexible,
         IntervalDays: 7,
         AnchorDate: null,
@@ -220,6 +236,102 @@ public class ChoreServiceTests : IDisposable
         chore.RecurrenceMode.Should().Be(RecurrenceMode.OneOff);
     }
 
+    // ---- ROOM MEMBERSHIP (Phase 13, WP-02) ---------------------------------
+
+    private static UpdateChoreCommand RoomUpdateCmd(IReadOnlyList<int>? roomIds = null) => new(
+        Name: "Dishes",
+        Description: null,
+        RecurrenceMode: RecurrenceMode.Flexible,
+        IntervalDays: 7,
+        AnchorDate: null,
+        DaysOfWeek: null,
+        DayOfMonth: null,
+        EffortTier: EffortTier.Standard,
+        OwnerUserId: null,
+        PhotoPath: null,
+        Icon: "🧹",
+        RoomIds: roomIds);
+
+    [Fact]
+    public async Task Create_WithRoomIds_WritesSortedMembershipRows()
+    {
+        // Unsorted input → sorted rows.
+        var chore = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RoomIds = new[] { Bathroom, Kitchen } });
+
+        (await MembershipsAsync(chore.ChoreId)).Should().Equal(Kitchen, Bathroom);
+    }
+
+    [Fact]
+    public async Task Create_WithDuplicateRoomIds_DedupesToSingleRow()
+    {
+        // roomIds:[10,10] must not violate the composite PK — the helper .Distinct()-normalizes.
+        var chore = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RoomIds = new[] { Kitchen, Kitchen } });
+
+        (await MembershipsAsync(chore.ChoreId)).Should().Equal(Kitchen);
+    }
+
+    [Fact]
+    public async Task Create_WithNoRooms_IsGeneral()
+    {
+        var chore = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd());
+
+        (await MembershipsAsync(chore.ChoreId)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Create_WithInvalidRoomId_ThrowsValidation()
+    {
+        var act = async () => await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RoomIds = new[] { Kitchen, 999 } });
+
+        await act.Should().ThrowAsync<ChoreValidationException>()
+            .Where(e => e.Message.Contains("999"));
+    }
+
+    [Fact]
+    public async Task Update_ToSubsetRoomIds_RemovesDeselected()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RoomIds = new[] { Kitchen, Bathroom } });
+        var current = await ReloadAsync(created.ChoreId);
+
+        await _service.UpdateChoreAsync(HouseholdId, created.ChoreId, RoomUpdateCmd(roomIds: new[] { Bathroom }), current.Version);
+
+        (await MembershipsAsync(created.ChoreId)).Should().Equal(new[] { Bathroom }, "the deselected room's row is removed");
+    }
+
+    [Fact]
+    public async Task Update_ToEmptyRoomIds_ClearsToGeneral()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RoomIds = new[] { Kitchen, Bathroom } });
+        var current = await ReloadAsync(created.ChoreId);
+
+        await _service.UpdateChoreAsync(HouseholdId, created.ChoreId, RoomUpdateCmd(roomIds: Array.Empty<int>()), current.Version);
+
+        (await MembershipsAsync(created.ChoreId)).Should().BeEmpty("[] clears to General");
+    }
+
+    [Fact]
+    public async Task Update_WithNullRoomIds_PreservesMemberships()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RoomIds = new[] { Kitchen, Bathroom } });
+        var current = await ReloadAsync(created.ChoreId);
+
+        // Neither roomIds nor legacy roomId supplied → transitional no-op (preserve).
+        await _service.UpdateChoreAsync(HouseholdId, created.ChoreId, RoomUpdateCmd(), current.Version);
+
+        (await MembershipsAsync(created.ChoreId)).Should().Equal(new[] { Kitchen, Bathroom }, "null roomIds preserves memberships");
+    }
+
+    [Fact]
+    public async Task Delete_RemovesMembershipRows()
+    {
+        var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RoomIds = new[] { Kitchen, Bathroom } });
+        var current = await ReloadAsync(created.ChoreId);
+
+        await _service.DeleteChoreAsync(HouseholdId, created.ChoreId, current.Version);
+
+        (await MembershipsAsync(created.ChoreId)).Should().BeEmpty("chore-delete removes its membership rows first (M4)");
+    }
+
     // ---- UPDATE / DELETE ----------------------------------------------------
 
     [Fact]
@@ -232,7 +344,6 @@ public class ChoreServiceTests : IDisposable
         var updateCmd = new UpdateChoreCommand(
             Name: "Wash dishes",
             Description: null,
-            RoomId: null,
             RecurrenceMode: RecurrenceMode.Flexible,
             IntervalDays: 3,
             AnchorDate: null,
@@ -260,7 +371,7 @@ public class ChoreServiceTests : IDisposable
     [Fact]
     public async Task Update_MissingChore_ThrowsNotFound()
     {
-        var cmd = new UpdateChoreCommand("X", null, null, RecurrenceMode.OneOff, null, null, null, null, EffortTier.Quick, null, null);
+        var cmd = new UpdateChoreCommand("X", null, RecurrenceMode.OneOff, null, null, null, null, EffortTier.Quick, null, null);
         var act = async () => await _service.UpdateChoreAsync(HouseholdId, choreId: 99, cmd, version: 0);
         await act.Should().ThrowAsync<ChoreNotFoundException>();
     }
@@ -634,7 +745,7 @@ public class ChoreServiceTests : IDisposable
         var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd() with { RequiredCount = 2 });
         var current = await ReloadAsync(created.ChoreId);
         var cmd = new UpdateChoreCommand(
-            Name: "Dishes", Description: null, RoomId: null,
+            Name: "Dishes", Description: null,
             RecurrenceMode: RecurrenceMode.Flexible, IntervalDays: 7, AnchorDate: null,
             DaysOfWeek: null, DayOfMonth: null, EffortTier: EffortTier.Standard,
             OwnerUserId: null, PhotoPath: null, Icon: "", RequiredCount: 0);
@@ -649,7 +760,7 @@ public class ChoreServiceTests : IDisposable
         var created = await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd());
         var current = await ReloadAsync(created.ChoreId);
         var cmd = new UpdateChoreCommand(
-            Name: "Dishes", Description: null, RoomId: null,
+            Name: "Dishes", Description: null,
             RecurrenceMode: RecurrenceMode.Flexible, IntervalDays: 7, AnchorDate: null,
             DaysOfWeek: null, DayOfMonth: null, EffortTier: EffortTier.Standard,
             OwnerUserId: null, PhotoPath: null, Icon: "", RequiredCount: 3);

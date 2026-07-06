@@ -96,6 +96,11 @@ public class ChoreBoardService(
             .ToDictionary(g => g.Key, g => g.OrderBy(s => s.SortOrder).ThenBy(s => s.SubtaskId)
                 .Select(s => new ChoreSubtaskDto(s.SubtaskId, s.Title, s.IsDone, s.SortOrder, s.CompletedByUserId, s.CompletedAt)).ToList());
 
+        // Phase 13: every chore's room memberships in ONE household-scoped query (M1 — no N+1). choreId → sorted
+        // roomIds; a chore with no rooms is absent (→ empty list = General). Threaded into both the per-chore
+        // DTO (RoomIds) and the rollup fan-out.
+        var membershipsByChore = await ChoreRoomMembership.LoadMembershipsAsync(context, householdId, cancellationToken);
+
         // Project each chore once; reuse the computed dueness for both the per-chore DTO and the rollups so
         // a chore's dueness is computed in exactly one place (no divergence between the card and the room
         // bucket). The board buckets off COMPUTED dueness, never stored Status (decay would be ignored).
@@ -132,11 +137,12 @@ public class ChoreBoardService(
                     completedCount = 0;
                 }
                 var subtasks = subtasksByChore.GetValueOrDefault(p.Chore.ChoreId) ?? [];
-                return ToDto(p.Chore, p.Dueness, p.IsClaimStale, roster, completedCount, subtasks);
+                var roomIds = membershipsByChore.GetValueOrDefault(p.Chore.ChoreId) ?? [];
+                return ToDto(p.Chore, p.Dueness, p.IsClaimStale, roomIds, roster, completedCount, subtasks);
             })
             .ToList();
 
-        var rollups = BuildRollups(projected.Select(p => (p.Chore, p.Dueness)), rooms);
+        var rollups = BuildRollups(projected.Select(p => (p.Chore, p.Dueness)), membershipsByChore, rooms);
 
         var needsAttentionIds = projected
             .Where(p => IsNeedsAttention(p.Chore, p.Dueness))
@@ -155,7 +161,7 @@ public class ChoreBoardService(
     }
 
     /// <inheritdoc />
-    public ChoreDto ProjectChore(Chore chore, DateTime now, TimeZoneInfo timeZone)
+    public ChoreDto ProjectChore(Chore chore, DateTime now, TimeZoneInfo timeZone, IReadOnlyList<int> roomIds)
     {
         var dueness = calculator.Compute(ChoreRecurrenceSnapshot.FromChore(chore), now, timeZone);
         var isClaimStale = calculator.IsClaimStale(chore.AssignmentKind, chore.ClaimedAt, now);
@@ -169,7 +175,7 @@ public class ChoreBoardService(
         var subtasks = (chore.Subtasks ?? [])
             .OrderBy(s => s.SortOrder).ThenBy(s => s.SubtaskId)
             .Select(s => new ChoreSubtaskDto(s.SubtaskId, s.Title, s.IsDone, s.SortOrder, s.CompletedByUserId, s.CompletedAt)).ToList();
-        return ToDto(chore, dueness, isClaimStale, roster, completedCount: 0, subtasks);
+        return ToDto(chore, dueness, isClaimStale, roomIds, roster, completedCount: 0, subtasks);
     }
 
     // ------------------------------------------------------------------ projection
@@ -178,6 +184,7 @@ public class ChoreBoardService(
         Chore chore,
         ChoreDuenessResult dueness,
         bool isClaimStale,
+        IReadOnlyList<int> roomIds,
         IReadOnlyList<RosterMemberDto> roster,
         int completedCount,
         IReadOnlyList<ChoreSubtaskDto> subtasks) => new(
@@ -185,7 +192,7 @@ public class ChoreBoardService(
         chore.Name,
         chore.Icon,
         chore.Description,
-        chore.RoomId,
+        roomIds,
         chore.RecurrenceMode.ToString(),
         chore.IntervalDays,
         chore.DaysOfWeek,
@@ -232,18 +239,35 @@ public class ChoreBoardService(
 
     private static List<RoomRollupDto> BuildRollups(
         IEnumerable<(Chore Chore, ChoreDuenessResult Dueness)> projected,
+        IReadOnlyDictionary<int, IReadOnlyList<int>> membershipsByChore,
         IReadOnlyList<Room> rooms)
     {
-        // Group projected chores by RoomId. Note: a Dictionary cannot key on a null int?, so the roomless
-        // bucket (RoomId == null => the virtual General group) is partitioned out separately.
-        var byRoom = projected
-            .Where(p => p.Chore.RoomId is not null)
-            .GroupBy(p => p.Chore.RoomId!.Value)
-            .ToDictionary(g => g.Key, g => g.ToList());
+        // Fan out per membership (Phase 13): a chore counts in EACH of its member rooms — a 2-room chore
+        // appears in both rooms' rollups. A chore with zero memberships is the virtual General group. The flat
+        // board.chores list stays one-per-chore (M3), so household aggregates that read it never double-count
+        // (MN1) — only the rollups fan out here.
+        var byRoom = new Dictionary<int, List<(Chore Chore, ChoreDuenessResult Dueness)>>();
+        var generalChores = new List<(Chore Chore, ChoreDuenessResult Dueness)>();
 
-        var generalChores = projected
-            .Where(p => p.Chore.RoomId is null)
-            .ToList();
+        foreach (var p in projected)
+        {
+            var roomIds = membershipsByChore.GetValueOrDefault(p.Chore.ChoreId) ?? [];
+            if (roomIds.Count == 0)
+            {
+                generalChores.Add(p);
+                continue;
+            }
+
+            foreach (var roomId in roomIds)
+            {
+                if (!byRoom.TryGetValue(roomId, out var list))
+                {
+                    list = [];
+                    byRoom[roomId] = list;
+                }
+                list.Add(p);
+            }
+        }
 
         var rollups = new List<RoomRollupDto>();
 

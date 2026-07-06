@@ -103,18 +103,15 @@ public class RoomService(
             .FirstOrDefaultAsync(r => r.HouseholdId == householdId && r.RoomId == roomId, cancellationToken)
             ?? throw new InvalidOperationException($"Room {roomId} not found for household {householdId}");
 
-        // Explicitly null out RoomId on every chore in this room (same household) BEFORE removing the
-        // room row, in the SAME SaveChanges (council M3). The Chore→Room composite FK is ClientSetNull
-        // (NO ACTION in the DB), so the database will NOT null these out for us — without this the delete
-        // would fail (or orphan a stale RoomId). Chores survive and fall back to "General" (RoomId == null).
-        var chores = await context.Chores
-            .Where(c => c.HouseholdId == householdId && c.RoomId == roomId)
+        // Phase 13 (M:N): remove this room's ChoreRoom membership rows BEFORE the room row, in the SAME
+        // SaveChanges (M1, M4 — explicit delete, never DB cascade; the ChoreRoom→Room FK is ClientNoAction).
+        // A chore in other rooms keeps those; a chore left with zero memberships falls back to General. The
+        // ChoreRoom join is the sole source of membership now (WP-08 dropped the old Chore.RoomId shim), so
+        // there is nothing else to recompute.
+        var membershipsToRemove = await context.ChoreRooms
+            .Where(cr => cr.HouseholdId == householdId && cr.RoomId == roomId)
             .ToListAsync(cancellationToken);
-
-        foreach (var chore in chores)
-        {
-            chore.RoomId = null;
-        }
+        context.ChoreRooms.RemoveRange(membershipsToRemove);
 
         // Delete the room's photo from disk before removing the row (M8 — EF cascade does not touch the
         // filesystem). No-op safe when PhotoPath is null/empty (DeleteImageAsync short-circuits).
@@ -126,8 +123,8 @@ public class RoomService(
         context.Rooms.Remove(room);
         await context.SaveChangesAsync(cancellationToken);
 
-        logger.LogInformation("Deleted Room {RoomId} for household {HouseholdId}; nulled RoomId on {ChoreCount} chore(s)",
-            roomId, householdId, chores.Count);
+        logger.LogInformation("Deleted Room {RoomId} for household {HouseholdId}; removed {MembershipCount} chore membership(s)",
+            roomId, householdId, membershipsToRemove.Count);
     }
 
     public async Task ReorderAsync(int householdId, IReadOnlyList<int> orderedRoomIds, CancellationToken cancellationToken = default)

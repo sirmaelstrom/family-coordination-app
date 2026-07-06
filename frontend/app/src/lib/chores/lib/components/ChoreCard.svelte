@@ -93,10 +93,11 @@
   let owner = $derived(memberFor(chore.ownerUserId));
   let assignee = $derived(memberFor(chore.assigneeUserId));
 
-  // ── Room locator (which room this chore lives in) ────────────────────────
-  // Resolved off the board's room rollups. null for roomless chores (General)
-  // or when `showRoom` is off (the Rooms lens, where cards are already grouped).
-  let room = $derived(showRoom ? roomFor(chore.roomId) : null);
+  // ── Room locator chips (which room(s) this chore lives in) ───────────────
+  // Phase 13: a chore can belong to 0..N rooms → 0..N chips, resolved off the
+  // board rollups in the template. Rendered only in the cross-room lenses
+  // (showRoom); the Rooms lens groups cards under a room header already. Each id
+  // is resolved + guarded in the template (skip an unresolved/stale room id).
 
   let isUnclaimed = $derived(chore.assignmentKind === 'none' || chore.isClaimStale);
   let isClaimed = $derived(chore.assignmentKind === 'claimed' && !chore.isClaimStale);
@@ -329,20 +330,25 @@
           {chore.completedCount} of {chore.requiredCount} done
         </span>
       {/if}
-      {#if room}
-        <span class="ch-tag ch-tag-room" title="Room: {room.name}">
-          {#if room.icon}
-            <span class="ch-tag-room-icon" aria-hidden="true">{room.icon}</span>
-          {:else}
-            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-              <path
-                d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"
-                fill="currentColor"
-              />
-            </svg>
+      {#if showRoom}
+        {#each chore.roomIds as roomId (roomId)}
+          {@const room = roomFor(roomId)}
+          {#if room}
+            <span class="ch-tag ch-tag-room" title="Room: {room.name}">
+              {#if room.icon}
+                <span class="ch-tag-room-icon" aria-hidden="true">{room.icon}</span>
+              {:else}
+                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                  <path
+                    d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"
+                    fill="currentColor"
+                  />
+                </svg>
+              {/if}
+              {room.name}
+            </span>
           {/if}
-          {room.name}
-        </span>
+        {/each}
       {/if}
 
       <span class="ch-tag ch-tag-effort" title="Effort: {effortLabel}">
