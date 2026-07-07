@@ -27,6 +27,16 @@
   import { dndzone, SHADOW_ITEM_MARKER_PROPERTY_NAME, type DndEvent } from 'svelte-dnd-action';
 
   interface Props {
+    /**
+     * Compact (calendar-grid) layout: the grid's day columns are ~90–250px, so
+     * the side-by-side image+name row leaves the name a handful of characters.
+     * Compact stacks the card — full-width image banner, name below at full
+     * cell width (up to 3 lines). The day list omits it (roomy side-by-side).
+     * A class variant, NOT a container query: `container-type` would make the
+     * cell the containing block for svelte-dnd-action's position:fixed dragged
+     * card (clipped/mispositioned drags).
+     */
+    compact?: boolean;
     /** The slot's drag rows (entry + the dnd `id`) — the store's per-zone array. */
     entries: DragEntry[];
     /** Open the picker for this slot (＋ / add side-dessert). */
@@ -41,7 +51,7 @@
     onDnd: (items: DragEntry[], phase: 'consider' | 'finalize') => void;
   }
 
-  let { entries, onAdd, onRemove, onViewRecipe, onViewCustom, onDnd }: Props = $props();
+  let { compact = false, entries, onAdd, onRemove, onViewRecipe, onViewCustom, onDnd }: Props = $props();
 
   // REAL entries only: while a drag hovers an empty slot the zone briefly holds
   // the library's shadow placeholder — that must NOT flip the slot to its
@@ -58,7 +68,7 @@
   }
 </script>
 
-<div class="mp-slot" class:mp-slot-filled={hasEntries}>
+<div class="mp-slot" class:mp-slot-filled={hasEntries} class:mp-slot-compact={compact}>
   {#if !hasEntries}
     <button type="button" class="mp-slot-empty" aria-label="Add a meal" onclick={onAdd}>
       <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
@@ -319,11 +329,14 @@
     gap: 2px;
   }
   .mp-entry-name {
-    line-height: 1.2;
+    line-height: 1.25;
     font-size: 0.875rem;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .mp-entry-chip {
     align-self: flex-start;
@@ -343,16 +356,22 @@
     white-space: nowrap;
   }
 
+  /* Overlaid on the card's top-right (absolute — it must not reserve card width;
+     in a ~150px calendar cell every reserved px comes out of the recipe name). */
   .mp-entry-remove {
-    flex-shrink: 0;
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    z-index: 1;
     display: grid;
     place-items: center;
-    width: 32px;
-    height: 32px;
+    width: 26px;
+    height: 26px;
     border: none;
-    background: transparent;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-1);
     color: var(--color-text-muted);
-    border-radius: var(--radius-sm);
+    border-radius: 50%;
     cursor: pointer;
     opacity: 0;
     transition: opacity 0.2s ease, color 0.15s, background-color 0.15s;
@@ -364,6 +383,54 @@
   .mp-entry-remove:hover {
     color: var(--color-error);
     background: var(--color-action-hover);
+  }
+
+  /* ── Compact (calendar-grid) layout ─────────────────────────────────────
+     Stacked card: image as a full-width banner, the name below at full cell
+     width with up to 3 lines. Vertical space is cheap on the grid — rows
+     grow; legibility wins. (See the `compact` prop doc for why this is a
+     class variant and not a container query.) */
+  .mp-slot-compact .mp-entry {
+    display: block;
+  }
+  .mp-slot-compact .mp-entry-main {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding: 4px 4px 6px;
+  }
+  .mp-slot-compact .mp-entry-image,
+  .mp-slot-compact .mp-entry-placeholder,
+  .mp-slot-compact .mp-entry-custom-icon {
+    width: 100%;
+    height: 44px;
+    object-fit: cover;
+  }
+  .mp-slot-compact .mp-entry-name {
+    font-size: 0.8125rem;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+  .mp-slot-compact .mp-entry-notes {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+  /* The grip rides the banner's top-left corner instead of owning a column. */
+  .mp-slot-compact .mp-entry-grip {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    z-index: 1;
+    width: 18px;
+    height: 20px;
+    margin-left: 0;
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--color-surface) 75%, transparent);
+    opacity: 0.9;
   }
 
   .mp-slot-add-more {
