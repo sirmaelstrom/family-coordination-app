@@ -121,3 +121,44 @@ public sealed record PartialRecipeDataDto(
     int? PrepTimeMinutes,
     int? CookTimeMinutes,
     int? Servings);
+
+/// <summary>
+/// Result of <c>POST /import/preview</c> — the scrape + parse WITHOUT persisting anything. Mirrors
+/// <see cref="RecipeImportResultDto"/>'s duplicate/failure surface, but success carries the parsed
+/// recipe (<see cref="RecipePreviewDto"/>, create-request shaped) instead of a saved id: the SPA
+/// previews it and, on confirm, POSTs the payload to the existing create endpoint.
+/// </summary>
+public sealed record RecipeImportPreviewDto(
+    bool Success,
+    RecipePreviewDto? Recipe,
+    string? ErrorMessage,
+    string? ErrorType,
+    int? ExistingRecipeId,
+    string? ExistingRecipeName,
+    PartialRecipeDataDto? PartialData);
+
+/// <summary>
+/// The parsed-but-UNSAVED recipe. Field-compatible with the create body
+/// (<c>RecipesEndpoints.RecipeWriteRequest</c>) so the client can send it back verbatim on confirm.
+/// </summary>
+public sealed record RecipePreviewDto(
+    string Name,
+    string? Description,
+    string? Instructions,
+    string? SourceUrl,
+    int? Servings,
+    int? PrepTimeMinutes,
+    int? CookTimeMinutes,
+    RecipeType RecipeType,
+    string? ImagePath,
+    IReadOnlyList<RecipePreviewIngredientDto> Ingredients);
+
+/// <summary>One parsed ingredient line — same shape as <c>RecipeIngredientWrite</c> (create-compatible).</summary>
+public sealed record RecipePreviewIngredientDto(
+    string Name,
+    decimal? Quantity,
+    string? Unit,
+    string Category,
+    string? Notes,
+    string? GroupName,
+    int SortOrder);
