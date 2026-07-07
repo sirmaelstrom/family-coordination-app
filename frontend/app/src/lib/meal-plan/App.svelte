@@ -15,8 +15,8 @@
   // Root of the meal-plan island. Reads the ShellContext from #meal-plan-root
   // data-attrs, fetches the current week's board into the shared store, and
   // renders WeekNav + (CalendarGrid on md+ / DayList on sm-). Every slot is a
-  // client-side grouping of the one board payload (store.entriesByDayMeal).
-  // Versionless — add + remove only; on any 4xx/network the store reconciles.
+  // client-side grouping of the one board payload (the store's per-slot zones).
+  // Versionless — add + move + remove; on any 4xx the store reconciles.
   // No `new Date('YYYY-MM-DD')` anywhere — week stepping goes through dates.ts.
   // ───────────────────────────────────────────────────────────────────────
 
@@ -116,6 +116,18 @@
     confirmEntry = null;
     if (entry) await store.removeEntry(entry.mealPlanId, entry.entryId);
   }
+
+  // Rebuild the per-slot dnd zones whenever the board data or week changes —
+  // but NEVER mid-drag: while `dragActive`, the store's consider/finalize
+  // handlers own the zones, and a rebuild would re-bucket the dragged node and
+  // abort a cross-slot drop (the shopping-list lesson). On finalize the store
+  // applies the optimistic move to `board.entries` BEFORE releasing the gate,
+  // so this fires once and reconciles from the final state. $effect.pre so the
+  // zones exist in the same frame the board arrives (no empty flash).
+  $effect.pre(() => {
+    if (store.dragActive) return;
+    store.rebuildZones();
+  });
 
   $effect(() => {
     // One-time mount setup. MUST run exactly once — `loadBoard()` synchronously

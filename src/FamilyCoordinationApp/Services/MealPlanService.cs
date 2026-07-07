@@ -147,6 +147,64 @@ public class MealPlanService(
             "MealPlanEntry");
     }
 
+    public async Task<MealPlanEntry> MoveMealAsync(int householdId, int mealPlanId, int entryId, DateOnly newDate, MealType newMealType, int? userId = null, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        // Household-scoped — a cross-household id finds nothing ⇒ not found (M1). Recipe nav is loaded so
+        // the caller can project the response without a second query.
+        var entry = await context.MealPlanEntries
+            .Include(e => e.Recipe)
+            .FirstOrDefaultAsync(e =>
+                e.HouseholdId == householdId &&
+                e.MealPlanId == mealPlanId &&
+                e.EntryId == entryId, cancellationToken);
+
+        if (entry == null)
+        {
+            throw new InvalidOperationException($"Meal entry {entryId} not found in plan {mealPlanId} for household {householdId}");
+        }
+
+        // Same-week only: a MealPlan owns exactly one week, so a date in another week would need a
+        // cross-plan move (new EntryId under the other week's plan). The board UI only offers same-week
+        // drops; reject anything else cleanly instead of corrupting the plan's week invariant.
+        var mealPlan = await context.MealPlans
+            .FirstOrDefaultAsync(mp => mp.HouseholdId == householdId && mp.MealPlanId == mealPlanId, cancellationToken);
+        if (mealPlan == null || mealPlan.WeekStartDate != GetWeekStartDate(newDate))
+        {
+            throw new ArgumentException("The target date is outside this meal plan's week.");
+        }
+
+        // Mirror the AddMealAsync duplicate guard: the same recipe / custom meal can't sit twice in one slot.
+        var duplicateExists = await context.MealPlanEntries.AnyAsync(e =>
+            e.HouseholdId == householdId &&
+            e.MealPlanId == mealPlanId &&
+            e.EntryId != entryId &&
+            e.Date == newDate &&
+            e.MealType == newMealType &&
+            ((entry.RecipeId.HasValue && e.RecipeId == entry.RecipeId) ||
+             (entry.CustomMealName != null && e.CustomMealName == entry.CustomMealName)), cancellationToken);
+        if (duplicateExists)
+        {
+            throw new ArgumentException("That meal is already planned in the target slot.");
+        }
+
+        entry.Date = newDate;
+        entry.MealType = newMealType;
+        entry.UpdatedAt = DateTime.UtcNow;
+        entry.UpdatedByUserId = userId;
+
+        // Update parent MealPlan timestamp for polling
+        mealPlan.UpdatedAt = DateTime.UtcNow;
+
+        await context.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("Moved meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId} to {Date} {MealType}",
+            entryId, mealPlanId, householdId, newDate, newMealType);
+
+        return entry;
+    }
+
     public async Task RemoveMealAsync(int householdId, int mealPlanId, int entryId, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
