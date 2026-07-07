@@ -105,8 +105,9 @@
       />
       <IngredientList
         ingredients={store.ingredients}
+        categories={store.categories}
         onReorder={(rows) => store.reorder(rows)}
-        onEdit={(id) => store.editIngredient(id)}
+        onUpdate={(id, patch) => store.updateIngredient(id, patch)}
         onRemove={(id) => store.removeIngredient(id)}
       />
     </section>

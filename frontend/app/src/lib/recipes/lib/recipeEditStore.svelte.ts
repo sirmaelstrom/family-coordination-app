@@ -6,9 +6,9 @@
 // ⚠ Svelte 5 rune rule: export the class INSTANCE, not reassigned $state.
 //
 // Mirrors RecipeEdit.razor: draft-first load (restore + toast, else recipe-or-
-// blank), 2s-debounce autosave drafts, ingredient add/bulk/remove(undo)/reorder,
-// image upload/remove/pick, and Save/Cancel/Delete. Single-user form ⇒ NO
-// liveness (autosave is the persistence path).
+// blank), 2s-debounce autosave drafts, ingredient add/bulk/remove(undo)/inline-
+// edit/reorder, image upload/remove/pick, and Save/Cancel/Delete. Single-user
+// form ⇒ NO liveness (autosave is the persistence path).
 //
 // Concurrency: the full-form save echoes the xmin token (`version` from GET);
 // a 409 means someone else saved since we loaded → non-destructive conflict
@@ -73,6 +73,15 @@ export interface NewIngredientInput {
   category: string;
   notes: string | null;
   groupName?: string | null;
+}
+
+/** The inline-editable fields of a row (mirrors what the add-entry collects). */
+export interface IngredientUpdate {
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  category: string;
+  notes: string | null;
 }
 
 type AutosaveStatus = 'none' | 'saving' | 'saved';
@@ -361,13 +370,13 @@ class RecipeEditStore {
   }
 
   /**
-   * "Edit" an ingredient — parity with Blazor's remove-and-re-add flow
-   * (IngredientList.razor:451-456). Inline editing is a harvested follow-up quest.
+   * Inline-edit an ingredient in place (replaces the old Blazor remove-and-re-add flow). Only the
+   * entry-form fields are editable; groupName / sortOrder / ingredientId are preserved. Persistence is
+   * unchanged: ingredients are client state, saved wholesale by the recipe PUT (and the draft autosave).
    */
-  editIngredient(id: number): void {
-    this.ingredients = this.resequence(this.ingredients.filter((r) => r.id !== id));
+  updateIngredient(id: number, patch: IngredientUpdate): void {
+    this.ingredients = this.ingredients.map((r) => (r.id === id ? { ...r, ...patch } : r));
     this.onEdit();
-    showToast({ message: 'Re-add the ingredient with your changes.', kind: 'info' });
   }
 
   /** Apply a drag-reorder (svelte-dnd-action finalize gives the new row order). */
