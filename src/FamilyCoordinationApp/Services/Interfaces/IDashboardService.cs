@@ -5,7 +5,7 @@ namespace FamilyCoordinationApp.Services.Interfaces;
 /// <summary>
 /// Read + projection for the dashboard island aggregate (strangler — mirrors <c>IMealPlanBoardService</c>).
 /// Assembles the single <see cref="DashboardDto"/> by composing the existing domain services — the chore
-/// summary via <c>ChoreHomeStats.Compute</c> over <see cref="IChoreBoardService"/>, the shopping summary via
+/// summary via the lean <see cref="IChoreBoardService.GetHomeStatsAsync"/> count read, the shopping summary via
 /// <see cref="IShoppingListService"/>, and today's meals via a focused household-scoped query. Read-only: no
 /// writes, no row creation (an empty household yields zero counts / empty lists). All reads filter by
 /// <c>HouseholdId</c> (M1, resolved server-side — never client-supplied).

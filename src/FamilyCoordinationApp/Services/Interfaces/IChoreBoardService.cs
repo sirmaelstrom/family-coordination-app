@@ -28,6 +28,21 @@ public interface IChoreBoardService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Compute ONLY the four Home/dashboard chore counts (<see cref="ChoreHomeStatsDto"/>) for the
+    /// household — a lean read for aggregate surfaces (the dashboard) that must NOT pay for the full board
+    /// (rooms, rollups, roster folds, subtasks). Counting semantics are IDENTICAL to deriving them from
+    /// <see cref="GetBoardAsync"/>'s <c>Chores</c> via the <c>ChoreHomeStats</c> reducer: same active set
+    /// (strict <paramref name="householdId"/> filter, M1; stored Done/Archived excluded), same computed
+    /// dueness/snooze gate (<see cref="ChoreStatusCalculator"/>), one row per chore (multi-room membership
+    /// never multiplies a chore). <paramref name="now"/> may be supplied for deterministic tests; when null
+    /// the service uses <c>TimeProvider.GetUtcNow()</c>.
+    /// </summary>
+    Task<ChoreHomeStatsDto> GetHomeStatsAsync(
+        int householdId,
+        DateTime? now = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Project a single <see cref="Chore"/> entity into its per-chore <see cref="ChoreDto"/>, computing the
     /// chore's dueness (<see cref="ChoreStatusCalculator.Compute"/>) and claim-staleness
     /// (<see cref="ChoreStatusCalculator.IsClaimStale"/>) as of <paramref name="now"/> in the configured
