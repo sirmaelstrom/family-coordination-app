@@ -18,7 +18,9 @@ namespace FamilyCoordinationApp.Endpoints;
 /// <see cref="IRecipeProjectionService"/> (no card/detail drift, M9). Kept SEPARATE from the meal-plan picker's
 /// <c>/api/meal-plan/recipes/*</c> (spec D11).
 ///
-/// <para>Parity-first ⇒ versionless / last-write-wins (no xmin token on the wire). Not-found responses carry a
+/// <para>Full-form edits are optimistic-concurrency guarded: GET carries the xmin token (<c>version</c>),
+/// PUT echoes it back, and a stale token → 409 with a non-empty body (<see cref="RecipeConflictException"/>).
+/// A null token skips the check (legacy last-write-wins). Not-found responses carry a
 /// NON-EMPTY body so the app-global <c>UseStatusCodePagesWithReExecute</c> leaves them as clean 404s (an empty
 /// 404 surfaces as an empty 400/405). <c>Recipe</c> has an EF global query filter on <c>IsDeleted</c>
 /// (<c>RecipeConfiguration</c>), so soft-deleted recipes are auto-excluded — no explicit filter here.</para>
@@ -162,12 +164,18 @@ public static class RecipesEndpoints
 
         try
         {
-            await recipeService.UpdateRecipeAsync(recipe, ct);
+            // req.Version is the xmin token echoed from GET (null ⇒ legacy client ⇒ last-write-wins).
+            await recipeService.UpdateRecipeAsync(recipe, req.Version, ct);
         }
         catch (InvalidOperationException)
         {
             // Household-scoped load missed (missing / cross-household id) → clean 404 (non-empty body, M1).
             return Results.NotFound(new { message = "Recipe not found." });
+        }
+        catch (RecipeConflictException)
+        {
+            // Stale xmin token — someone else saved since this client loaded the recipe. Non-empty body (M1).
+            return Results.Conflict(new { message = "This recipe was changed by someone else. Reload to see the latest." });
         }
 
         // Project from a FRESH load, NOT the UpdateRecipeAsync return — its Ingredients nav is stale after the
@@ -589,7 +597,11 @@ public static class RecipesEndpoints
 
     // ─── Request DTOs ─────────────────────────────────────────────────────────────
 
-    /// <summary>Create/update body. <see cref="ImagePath"/> is a path already returned by POST /images.</summary>
+    /// <summary>
+    /// Create/update body. <see cref="ImagePath"/> is a path already returned by POST /images.
+    /// <see cref="Version"/> is the xmin token from GET, enforced on PUT (stale ⇒ 409); ignored on POST and
+    /// skipped when null (a client without a token keeps last-write-wins).
+    /// </summary>
     public sealed record RecipeWriteRequest(
         string Name,
         string? Description,
@@ -600,7 +612,8 @@ public static class RecipesEndpoints
         int? CookTimeMinutes,
         RecipeType RecipeType,
         string? ImagePath,
-        IReadOnlyList<RecipeIngredientWrite> Ingredients);
+        IReadOnlyList<RecipeIngredientWrite> Ingredients,
+        uint? Version = null);
 
     public sealed record RecipeIngredientWrite(
         string Name,

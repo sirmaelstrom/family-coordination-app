@@ -62,6 +62,8 @@ export interface RecipeIngredientFullDto {
 
 export interface RecipeFullDto {
   recipeId: number;
+  /** xmin concurrency token — echo it back on PUT; a stale token ⇒ 409. */
+  version: number;
   name: string;
   recipeType: RecipeType;
   description: string | null;
@@ -173,6 +175,8 @@ export interface RecipeWriteRequest {
   recipeType: RecipeType;
   imagePath: string | null;
   ingredients: RecipeIngredientWrite[];
+  /** xmin token from GET (PUT only; null ⇒ server skips the check — e.g. create). Stale ⇒ 409. */
+  version: number | null;
 }
 
 /** PUT /draft body — FLAT (recipeId + the draft fields). recipeId omitted ⇒ new-recipe draft. */

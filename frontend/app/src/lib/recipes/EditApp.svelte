@@ -69,6 +69,25 @@
   {#if store.loading}
     <div class="rc-loading-bar"><span></span></div>
   {:else}
+    {#if store.conflict}
+      <!-- Stale-version 409: NON-destructive — the form (and the user's typing) stays; Reload refetches
+           the latest (typed state is preserved as the draft first, see reloadAfterConflict). -->
+      <div class="rc-conflict-banner" role="alert">
+        <span class="rc-conflict-text">
+          This recipe changed — reload to get the latest. Your edits stay on screen until you reload (reloading
+          keeps them as a draft).
+        </span>
+        <button
+          type="button"
+          class="rc-btn-conflict"
+          onclick={() => store.reloadAfterConflict()}
+          disabled={store.reloading}
+        >
+          {store.reloading ? 'Reloading…' : 'Reload'}
+        </button>
+      </div>
+    {/if}
+
     {#if store.error}
       <div class="rc-inline-error" role="alert">{store.error}</div>
     {/if}
@@ -228,6 +247,41 @@
     border-radius: var(--radius-sm);
     color: var(--color-error);
     font-size: 0.875rem;
+  }
+  .rc-conflict-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 10px 16px;
+    margin-bottom: 16px;
+    background: rgba(251, 140, 0, 0.1);
+    border-left: 4px solid var(--color-warning);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-size: 0.875rem;
+  }
+  .rc-conflict-text {
+    flex: 1 1 240px;
+  }
+  .rc-btn-conflict {
+    font: inherit;
+    font-weight: 500;
+    padding: 8px 16px;
+    border: 1px solid var(--color-warning);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text);
+    cursor: pointer;
+    min-height: 36px;
+  }
+  .rc-btn-conflict:hover:not(:disabled) {
+    background: var(--color-action-hover);
+  }
+  .rc-btn-conflict:disabled {
+    opacity: 0.6;
+    cursor: default;
   }
   .rc-footer {
     display: flex;

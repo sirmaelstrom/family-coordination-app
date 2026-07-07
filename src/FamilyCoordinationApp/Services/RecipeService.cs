@@ -77,7 +77,7 @@ public class RecipeService(
             "Recipe");
     }
 
-    public async Task<Recipe> UpdateRecipeAsync(Recipe recipe, CancellationToken cancellationToken = default)
+    public async Task<Recipe> UpdateRecipeAsync(Recipe recipe, uint? expectedVersion = null, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
@@ -89,6 +89,16 @@ public class RecipeService(
         if (existing == null)
         {
             throw new InvalidOperationException($"Recipe {recipe.RecipeId} not found in household {recipe.HouseholdId}");
+        }
+
+        // Optimistic concurrency (mirrors ChoreService.SaveWithConcurrencyAsync): loading the row makes EF
+        // treat the LOADED Version as the original, so a stale client token would NOT conflict on its own.
+        // Setting the client token as the OriginalValue makes the UPDATE run WHERE xmin = <client version>,
+        // so a stale token surfaces as DbUpdateConcurrencyException → RecipeConflictException (→ 409).
+        // null ⇒ no token supplied ⇒ legacy last-write-wins (the check is skipped).
+        if (expectedVersion.HasValue)
+        {
+            context.Entry(existing).Property(r => r.Version).OriginalValue = expectedVersion.Value;
         }
 
         // Update scalar properties
@@ -126,7 +136,15 @@ public class RecipeService(
             context.RecipeIngredients.Add(newIngredient);
         }
 
-        await context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new RecipeConflictException(
+                $"Recipe {recipe.RecipeId} was modified by another user; the supplied version is stale.", ex);
+        }
 
         logger.LogInformation("Updated recipe {RecipeId} for household {HouseholdId}", recipe.RecipeId, recipe.HouseholdId);
 
