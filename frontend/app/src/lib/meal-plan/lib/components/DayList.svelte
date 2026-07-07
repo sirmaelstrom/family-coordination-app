@@ -51,11 +51,15 @@
             <span class="mp-day-row-label">{MEAL_LABELS[mealType]}</span>
             <div class="mp-day-row-slot">
               <MealSlot
-                entries={store.entriesFor(day, mealType)}
+                entries={store.zoneFor(day, mealType)}
                 onAdd={() => onSlotAdd(day, mealType)}
                 {onRemove}
                 {onViewRecipe}
                 {onViewCustom}
+                onDnd={(items, phase) =>
+                  phase === 'consider'
+                    ? store.zoneConsider(day, mealType, items)
+                    : void store.zoneFinalize(day, mealType, items)}
               />
             </div>
           </div>

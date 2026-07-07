@@ -20,7 +20,9 @@ const BASE = '/api/recipes';
  * arrive on the wire as an empty **400** (a bare DELETE 404 even surfaces as
  * 405). Every recipes endpoint therefore returns a NON-EMPTY body on not-found,
  * and the island treats ANY 4xx as a non-retryable client rejection → reconcile
- * (refetch the list) + a calm toast. There is no retry branch (versionless).
+ * (refetch the list) + a calm toast. Exception: a **409** on the full-form PUT
+ * is a stale xmin `version` token — the edit store shows a reload banner
+ * instead of navigating away (see recipeEditStore).
  */
 export class ApiError extends Error {
   constructor(
@@ -77,7 +79,7 @@ export async function createRecipe(body: RecipeWriteRequest): Promise<RecipeFull
   return request<RecipeFullDto>(`${BASE}`, { method: 'POST', ...jsonBody(body) });
 }
 
-/** #4 Update (replaces ingredients wholesale) → the re-fetched recipe. */
+/** #4 Update (replaces ingredients wholesale) → the re-fetched recipe. Stale `version` token ⇒ 409. */
 export async function updateRecipe(recipeId: number, body: RecipeWriteRequest): Promise<RecipeFullDto> {
   return request<RecipeFullDto>(`${BASE}/${recipeId}`, { method: 'PUT', ...jsonBody(body) });
 }

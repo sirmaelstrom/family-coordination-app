@@ -15,8 +15,9 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// load), soft delete, favorite toggle + the 404-not-500 guards, ingredient suggestions + parse + bulk-parse,
 /// categories, image-upload validation, import duplicate detection, connected-household 403 + the connected
 /// list/detail/copy happy path, draft round-trip, the 401 gate, and the M1 cross-household no-leak invariant.
-/// Versionless — no token on the wire. Tests use DISTINCT recipe names + scoped searches so the class's shared
-/// database can't let them interfere; all 403 assertions use a never-connected household id.
+/// Full-form PUT is xmin-guarded: a stale <c>version</c> token → 409 with a non-empty body (real Postgres is
+/// what enforces the token — InMemory has no xmin). Tests use DISTINCT recipe names + scoped searches so the
+/// class's shared database can't let them interfere; all 403 assertions use a never-connected household id.
 /// </summary>
 [Collection(IntegrationCollection.Name)]
 [Trait("kind", "integration")]
@@ -38,7 +39,7 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
         int ingredientId, decimal? quantity, string? unit, string name, string category,
         string? notes, string? groupName, int sortOrder);
     private sealed record RecipeFull(
-        int recipeId, string name, string recipeType, string? description, string? instructions,
+        int recipeId, uint version, string name, string recipeType, string? description, string? instructions,
         string instructionsHtml, string? imagePath, string? sourceUrl, int? prepTimeMinutes,
         int? cookTimeMinutes, int? servings, string? createdByName, string? createdByPictureUrl,
         string? sharedFromHouseholdName, List<IngredientFull> ingredients);
@@ -61,7 +62,8 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
 
     private static object WriteBody(
         string name, string type = "main", string? sourceUrl = null,
-        IEnumerable<object>? ingredients = null, int? servings = 4, string? instructions = null) => new
+        IEnumerable<object>? ingredients = null, int? servings = 4, string? instructions = null,
+        uint? version = null) => new
     {
         name,
         description = (string?)null,
@@ -72,7 +74,8 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
         cookTimeMinutes = (int?)null,
         recipeType = type,
         imagePath = (string?)null,
-        ingredients = ingredients ?? Array.Empty<object>()
+        ingredients = ingredients ?? Array.Empty<object>(),
+        version
     };
 
     private static object Ing(string name, double? qty = null, string? unit = null, string category = "Pantry",
@@ -187,6 +190,52 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
     {
         var resp = await ClientA.PutAsJsonAsync("/api/recipes/999999", WriteBody("Nope"), Json);
         resp.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // ── Optimistic concurrency (xmin — real Postgres enforces the token) ─────────────
+
+    [Fact]
+    public async Task Update_WithStaleVersion_Returns409WithBody_AndDoesNotOverwrite()
+    {
+        var created = await CreateAsync(ClientA, WriteBody("Concurrency Target Dish"));
+        var staleVersion = created.version;
+        staleVersion.Should().NotBe(0u, "real Postgres assigns a non-zero xmin to a committed row");
+
+        // Writer 1 saves (advances xmin) — no token, legacy last-write-wins path still succeeds.
+        var first = await ClientA.PutAsJsonAsync($"/api/recipes/{created.recipeId}",
+            WriteBody("Concurrency Target Dish (writer 1)"), Json);
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Writer 2 echoes the ORIGINAL (now stale) token → 409 with a NON-EMPTY body (a bare 4xx would
+        // re-execute through the GET-only /not-found page and surface as a 405 on PUT).
+        var second = await ClientA.PutAsJsonAsync($"/api/recipes/{created.recipeId}",
+            WriteBody("Concurrency Target Dish (writer 2)", version: staleVersion), Json);
+        second.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var body = await second.Content.ReadAsStringAsync();
+        body.Should().Contain("changed by someone else", "the 409 must carry a non-empty JSON message");
+
+        // The stale writer did NOT overwrite writer 1.
+        var detail = await ClientA.GetFromJsonAsync<RecipeFull>($"/api/recipes/{created.recipeId}", Json);
+        detail!.name.Should().Be("Concurrency Target Dish (writer 1)");
+    }
+
+    [Fact]
+    public async Task Update_WithCurrentVersion_Succeeds_AndAdvancesToken()
+    {
+        var created = await CreateAsync(ClientA, WriteBody("Concurrency Happy Dish"));
+
+        var resp = await ClientA.PutAsJsonAsync($"/api/recipes/{created.recipeId}",
+            WriteBody("Concurrency Happy Dish (edited)", version: created.version), Json);
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var updated = await resp.Content.ReadFromJsonAsync<RecipeFull>(Json);
+        updated!.name.Should().Be("Concurrency Happy Dish (edited)");
+        updated.version.Should().NotBe(created.version, "a successful save advances the xmin token");
+
+        // The advanced token is immediately usable for the next save (reload-and-retry flow).
+        var again = await ClientA.PutAsJsonAsync($"/api/recipes/{created.recipeId}",
+            WriteBody("Concurrency Happy Dish (edited twice)", version: updated.version), Json);
+        again.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]

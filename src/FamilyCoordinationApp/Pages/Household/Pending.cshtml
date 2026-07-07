@@ -11,6 +11,7 @@
         <h1>Please Sign In</h1>
         <p class="muted">Sign in to check your request status.</p>
         <form method="post" action="/account/login-google" asp-antiforgery="false" class="mt">
+            @Html.AntiForgeryToken()
             <input type="hidden" name="returnUrl" value="/household/pending" />
             <button type="submit" class="btn btn-outline btn-block">Sign in with Google</button>
         </form>

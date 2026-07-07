@@ -48,11 +48,15 @@
     {#each days as day (day)}
       <div class="mp-grid-cell">
         <MealSlot
-          entries={store.entriesFor(day, mealType)}
+          entries={store.zoneFor(day, mealType)}
           onAdd={() => onSlotAdd(day, mealType)}
           {onRemove}
           {onViewRecipe}
           {onViewCustom}
+          onDnd={(items, phase) =>
+            phase === 'consider'
+              ? store.zoneConsider(day, mealType, items)
+              : void store.zoneFinalize(day, mealType, items)}
         />
       </div>
     {/each}

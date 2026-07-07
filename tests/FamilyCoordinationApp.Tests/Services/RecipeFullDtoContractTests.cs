@@ -40,6 +40,7 @@ public class RecipeFullDtoContractTests
 
         return new RecipeFullDto(
             RecipeId: 10,
+            Version: 42,
             Name: "Overnight Oats",
             RecipeType: RecipeType.Breakfast,
             Description: "Creamy make-ahead oats.",
@@ -78,7 +79,7 @@ public class RecipeFullDtoContractTests
         var root = JsonNode.Parse(json)!.AsObject();
 
         root.Select(kvp => kvp.Key).Should().BeEquivalentTo(
-            "recipeId", "name", "recipeType", "description", "instructions", "instructionsHtml",
+            "recipeId", "version", "name", "recipeType", "description", "instructions", "instructionsHtml",
             "imagePath", "sourceUrl", "prepTimeMinutes", "cookTimeMinutes", "servings",
             "createdByName", "createdByPictureUrl", "sharedFromHouseholdName", "ingredients");
 

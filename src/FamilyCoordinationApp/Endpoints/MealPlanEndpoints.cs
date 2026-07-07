@@ -35,6 +35,7 @@ public static class MealPlanEndpoints
 
         group.MapGet("/board", GetBoard);
         group.MapPost("/entries", AddEntry);
+        group.MapPatch("/entries/{mealPlanId:int}/{entryId:int}", MoveEntry);
         group.MapDelete("/entries/{mealPlanId:int}/{entryId:int}", RemoveEntry);
 
         group.MapGet("/recipes", SearchRecipes);
@@ -119,6 +120,39 @@ public static class MealPlanEndpoints
 
         var dto = boardService.ProjectEntry(entry, recipe);
         return Results.Created($"/api/meal-plan/entries/{entry.MealPlanId}/{entry.EntryId}", dto);
+    }
+
+    private static async Task<IResult> MoveEntry(
+        int mealPlanId,
+        int entryId,
+        MoveEntryRequest req,
+        ClaimsPrincipal principal,
+        IMealPlanService mealPlanService,
+        IMealPlanBoardService boardService,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
+        if (user is null) return Results.Unauthorized();
+
+        try
+        {
+            // Household-scoped move to another same-week slot (drag-to-assign). The service loads the
+            // Recipe nav, so the response reuses the ONE board projection (M9) with no extra query.
+            var entry = await mealPlanService.MoveMealAsync(
+                user.HouseholdId, mealPlanId, entryId, req.Date, req.MealType, user.UserId, ct);
+            return Results.Ok(boardService.ProjectEntry(entry, entry.Recipe));
+        }
+        catch (InvalidOperationException)
+        {
+            // Non-empty body — see RemoveEntry (an empty non-GET 4xx re-executes into a 405 on the wire).
+            return Results.NotFound(new { message = "Meal entry not found." });
+        }
+        catch (ArgumentException ex)
+        {
+            // Cross-week target / duplicate-in-slot — clean 400 with the reason (messages are ours).
+            return Results.BadRequest(new { message = ex.Message });
+        }
     }
 
     private static async Task<IResult> RemoveEntry(
@@ -225,6 +259,12 @@ public static class MealPlanEndpoints
         int? RecipeId,
         string? CustomMealName,
         string? Notes);
+
+    /// <summary>
+    /// Move an entry to another slot in the SAME week (drag-to-assign). <see cref="Date"/> must fall inside
+    /// the entry's plan week — a cross-week target is a 400 (a plan owns exactly one week).
+    /// </summary>
+    public sealed record MoveEntryRequest(DateOnly Date, MealType MealType);
 
     /// <summary>Quick-create a bare recipe from the picker's "New Recipe" tab (details added later).</summary>
     public sealed record QuickCreateRecipeRequest(string Name, RecipeType RecipeType);

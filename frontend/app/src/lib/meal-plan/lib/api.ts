@@ -68,7 +68,7 @@ export async function getBoard(weekStart: string): Promise<MealPlanBoardDto> {
   return request<MealPlanBoardDto>(`${BASE}/board?weekStart=${encodeURIComponent(weekStart)}`);
 }
 
-// ─── Entries (add / remove — versionless) ────────────────────────────────────
+// ─── Entries (add / move / remove — versionless) ─────────────────────────────
 
 /** Body for POST /entries — supply EXACTLY one of recipeId / customMealName. */
 export interface AddEntryBody {
@@ -83,6 +83,28 @@ export interface AddEntryBody {
 /** Add a meal to a slot → the created entry (201). */
 export async function addEntry(body: AddEntryBody): Promise<MealPlanEntryDto> {
   return request<MealPlanEntryDto>(`${BASE}/entries`, { method: 'POST', ...jsonBody(body) });
+}
+
+/** Body for PATCH /entries/{mealPlanId}/{entryId} — the target slot (same week only). */
+export interface MoveEntryBody {
+  /** "YYYY-MM-DD" — must fall inside the entry's plan week (else a 400). */
+  date: string;
+  mealType: MealType;
+}
+
+/**
+ * Move an entry to another same-week slot (drag-to-assign) → the updated entry.
+ * Cross-week target / duplicate-in-slot → 400; a missing entry → 404/empty-400.
+ */
+export async function moveEntry(
+  mealPlanId: number,
+  entryId: number,
+  body: MoveEntryBody,
+): Promise<MealPlanEntryDto> {
+  return request<MealPlanEntryDto>(`${BASE}/entries/${mealPlanId}/${entryId}`, {
+    method: 'PATCH',
+    ...jsonBody(body),
+  });
 }
 
 /** Remove an entry. DELETE → 204 (no body); a missing entry → 404/empty-400. */

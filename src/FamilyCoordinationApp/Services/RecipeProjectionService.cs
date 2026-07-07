@@ -25,6 +25,7 @@ public class RecipeProjectionService : IRecipeProjectionService
 
     public RecipeFullDto ToFull(Recipe recipe, bool includeAuthor = true) => new(
         recipe.RecipeId,
+        recipe.Version,
         recipe.Name,
         recipe.RecipeType,
         recipe.Description,
