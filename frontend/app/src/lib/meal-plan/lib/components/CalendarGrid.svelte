@@ -48,6 +48,7 @@
     {#each days as day (day)}
       <div class="mp-grid-cell">
         <MealSlot
+          compact
           entries={store.zoneFor(day, mealType)}
           onAdd={() => onSlotAdd(day, mealType)}
           {onRemove}
