@@ -158,10 +158,12 @@
   /** Confirm: create the previewed recipe via the plain create endpoint, then navigate. */
   async function confirmImport(): Promise<void> {
     if (!canConfirm) return;
+    // version: null — this is a CREATE; the xmin concurrency token only applies to edits (PUT).
     const body: RecipeWriteRequest | null = preview
-      ? { ...preview }
+      ? { ...preview, version: null }
       : partial?.name?.trim()
         ? {
+            version: null,
             name: partial.name.trim(),
             description: partial.description,
             instructions: partial.instructions,
