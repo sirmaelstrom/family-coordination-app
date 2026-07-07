@@ -6,11 +6,14 @@
 // ⚠ Svelte 5 rune rule: export the class INSTANCE, not reassigned $state.
 //
 // Mirrors RecipeEdit.razor: draft-first load (restore + toast, else recipe-or-
-// blank), 2s-debounce autosave drafts, ingredient add/bulk/remove(undo)/reorder,
-// image upload/remove/pick, and Save/Cancel/Delete. Versionless / last-write-wins
-// (D5): on any 4xx during save/delete we surface a calm "this recipe changed"
-// and return to the list (§8). Single-user form ⇒ NO liveness (autosave is the
-// persistence path).
+// blank), 2s-debounce autosave drafts, ingredient add/bulk/remove(undo)/inline-
+// edit/reorder, image upload/remove/pick, and Save/Cancel/Delete. Single-user
+// form ⇒ NO liveness (autosave is the persistence path).
+//
+// Concurrency: the full-form save echoes the xmin token (`version` from GET);
+// a 409 means someone else saved since we loaded → non-destructive conflict
+// banner + an explicit Reload action (reloadAfterConflict). Other 4xx during
+// save/delete keep the old calm "this recipe changed" → back-to-list path.
 // ─────────────────────────────────────────────────────────────────────────
 
 import type {
@@ -72,6 +75,15 @@ export interface NewIngredientInput {
   groupName?: string | null;
 }
 
+/** The inline-editable fields of a row (mirrors what the add-entry collects). */
+export interface IngredientUpdate {
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  category: string;
+  notes: string | null;
+}
+
 type AutosaveStatus = 'none' | 'saving' | 'saved';
 
 const AUTOSAVE_DELAY_MS = 2000;
@@ -101,6 +113,10 @@ class RecipeEditStore {
   dirty = $state(false);
   autosaveStatus = $state<AutosaveStatus>('none');
   error = $state<string | null>(null);
+  /** A save hit a 409 (someone else changed the recipe) — show the reload banner, keep the form. */
+  conflict = $state(false);
+  /** Reload-after-conflict in progress (disables the banner button). */
+  reloading = $state(false);
 
   /** The recipe id (null = new). Set from the shell context. */
   recipeId = $state<number | null>(null);
@@ -108,6 +124,8 @@ class RecipeEditStore {
 
   isEdit = $derived(this.recipeId != null);
 
+  /** The xmin token from the last GET — echoed on the update PUT (null until a fresh load). */
+  private serverVersion: number | null = null;
   private uidSeq = 1;
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedClearTimer: ReturnType<typeof setTimeout> | null = null;
@@ -129,11 +147,22 @@ class RecipeEditStore {
     this.recipeId = recipeId;
     this.loading = true;
     this.error = null;
+    this.conflict = false;
+    this.serverVersion = null;
     try {
       const draft = await getDraft(recipeId);
       if (draft) {
         this.applyDraft(draft);
         showToast({ message: 'Restored from draft', kind: 'info' });
+        if (recipeId != null) {
+          // Drafts carry no version token — best-effort fetch the current one so the eventual save is
+          // still concurrency-guarded. On failure (e.g. recipe deleted) keep null ⇒ last-write-wins as before.
+          try {
+            this.serverVersion = (await getRecipe(recipeId)).version;
+          } catch {
+            this.serverVersion = null;
+          }
+        }
       } else if (recipeId != null) {
         const full = await getRecipe(recipeId);
         this.applyFull(full);
@@ -185,6 +214,7 @@ class RecipeEditStore {
   }
 
   private applyFull(f: RecipeFullDto): void {
+    this.serverVersion = f.version;
     this.form = {
       name: f.name,
       description: f.description ?? '',
@@ -340,13 +370,13 @@ class RecipeEditStore {
   }
 
   /**
-   * "Edit" an ingredient — parity with Blazor's remove-and-re-add flow
-   * (IngredientList.razor:451-456). Inline editing is a harvested follow-up quest.
+   * Inline-edit an ingredient in place (replaces the old Blazor remove-and-re-add flow). Only the
+   * entry-form fields are editable; groupName / sortOrder / ingredientId are preserved. Persistence is
+   * unchanged: ingredients are client state, saved wholesale by the recipe PUT (and the draft autosave).
    */
-  editIngredient(id: number): void {
-    this.ingredients = this.resequence(this.ingredients.filter((r) => r.id !== id));
+  updateIngredient(id: number, patch: IngredientUpdate): void {
+    this.ingredients = this.ingredients.map((r) => (r.id === id ? { ...r, ...patch } : r));
     this.onEdit();
-    showToast({ message: 'Re-add the ingredient with your changes.', kind: 'info' });
   }
 
   /** Apply a drag-reorder (svelte-dnd-action finalize gives the new row order). */
@@ -398,6 +428,7 @@ class RecipeEditStore {
     this.saving = true; // set first: a timer-fired autosave now bails on the saving guard
     await this.flushAutosave(); // wait out any in-flight draft save before we deleteDraft
     this.error = null;
+    this.conflict = false;
     try {
       const body = this.buildWriteRequest();
       if (this.recipeId != null) {
@@ -409,8 +440,12 @@ class RecipeEditStore {
       this.dirty = false; // suppress the beforeunload nav-lock before navigating
       this.navigateToList();
     } catch (e) {
-      if (e instanceof ApiError) {
-        // 4xx incl. the empty-400-from-404 quirk → concurrent delete / last-write-wins.
+      if (e instanceof ApiError && e.status === 409) {
+        // Stale xmin token — someone else saved since we loaded. NON-destructive: keep the form (and
+        // dirty, so the nav-lock still guards) and show the reload banner instead of navigating away.
+        this.conflict = true;
+      } else if (e instanceof ApiError) {
+        // Other 4xx incl. the empty-400-from-404 quirk → concurrent delete etc.
         this.error = 'This recipe changed since you opened it.';
         this.dirty = false;
         showToast({ message: 'This recipe changed — returning to the list.', kind: 'info' });
@@ -420,6 +455,43 @@ class RecipeEditStore {
       }
     } finally {
       this.saving = false;
+    }
+  }
+
+  /**
+   * Explicit conflict recovery: refetch the latest recipe and replace the form with it. The user's typed
+   * state is first persisted as the draft (best-effort) so it isn't silently discarded — reopening the
+   * editor restores it via the normal draft-first load. Deliberately NOT the draft-first load() (that
+   * would restore the very edits that just conflicted instead of showing the latest server state).
+   */
+  async reloadAfterConflict(): Promise<void> {
+    if (this.recipeId == null || this.reloading) return;
+    this.reloading = true;
+    try {
+      if (this.form.name.trim()) {
+        try {
+          await saveDraft(this.buildDraftBody()); // preserve what the user typed (draft needs a name)
+        } catch {
+          /* best-effort — reload anyway */
+        }
+      }
+      const full = await getRecipe(this.recipeId);
+      this.applyFull(full); // also refreshes serverVersion for the next save
+      this.conflict = false;
+      this.error = null;
+      this.dirty = false;
+      showToast({ message: 'Loaded the latest version. Your edits were kept as a draft.', kind: 'info' });
+    } catch (e) {
+      if (e instanceof ApiError) {
+        // The recipe was deleted meanwhile — nothing to reload into.
+        this.dirty = false;
+        showToast({ message: 'That recipe was removed — returning to the list.', kind: 'info' });
+        this.navigateToList();
+      } else {
+        showToast({ message: "Couldn't reload the recipe. Please try again.", kind: 'error' });
+      }
+    } finally {
+      this.reloading = false;
     }
   }
 
@@ -494,6 +566,8 @@ class RecipeEditStore {
         groupName: nullIfBlank(r.groupName),
         sortOrder: i,
       })),
+      // The xmin token echoed for the update PUT (null on create / when no fresh GET succeeded).
+      version: this.serverVersion,
     };
   }
 

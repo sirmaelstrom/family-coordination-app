@@ -21,8 +21,8 @@ namespace FamilyCoordinationApp.Services.Dtos;
 // Drafts reuse DraftService's existing RecipeDraftData / IngredientDraftData records
 // directly (no draft DTO here) — they already serialize camelCase via the web defaults.
 //
-// Parity-first ⇒ versionless / last-write-wins: NO xmin token on the wire. Recipe.Version
-// exists on the entity but is unused here (a future quest may add 409 concurrency).
+// Optimistic concurrency: RecipeFullDto carries the xmin token (Version) so the
+// edit form can send it back on PUT; a stale token → 409 (RecipeConflictException).
 // ─────────────────────────────────────────────────────────────────────────
 
 // ── List ──────────────────────────────────────────────────────────────────
@@ -53,6 +53,7 @@ public sealed record RecipeListItemDto(
 /// </summary>
 public sealed record RecipeFullDto(
     int RecipeId,
+    uint Version,                     // xmin concurrency token — echoed back on PUT (stale ⇒ 409)
     string Name,
     RecipeType RecipeType,
     string? Description,
