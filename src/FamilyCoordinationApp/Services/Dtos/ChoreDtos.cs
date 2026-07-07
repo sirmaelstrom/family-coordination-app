@@ -160,6 +160,21 @@ public enum RoomRollupStatus
 }
 
 /// <summary>
+/// The four Home/dashboard chore-card counts, computed server-side over the SAME active set
+/// <c>GetBoardAsync</c> projects (HouseholdId + <c>Status == Active</c>, one row per chore — multi-room
+/// membership never fans this out). Field-for-field mirror of <see cref="ChoreHomeStats.Result"/> /
+/// <c>DashboardChoreSummaryDto</c>: <see cref="Overdue"/>/<see cref="DueToday"/> read computed dueness
+/// (a snoozed chore reads <c>Scheduled</c>, so it is auto-excluded); <see cref="UpForGrabs"/> is
+/// <c>!IsSnoozed &amp;&amp; (AssignmentKind == None || claim-stale)</c>. Produced by the lean
+/// <c>ChoreBoardService.GetHomeStatsAsync</c> read (no rooms/rollups/roster/subtasks/equity work).
+/// </summary>
+public sealed record ChoreHomeStatsDto(
+    int ActiveTotal,
+    int Overdue,
+    int DueToday,
+    int UpForGrabs);
+
+/// <summary>
 /// Named rollup thresholds (P4) — the bucket boundaries for <see cref="RoomRollupStatus"/>, derived from
 /// the count of due-or-overdue chores in a room (D9). 0 ⇒ Clean; 1..<see cref="NeedsWorkThreshold"/>-1 ⇒
 /// Attention; &gt;= <see cref="NeedsWorkThreshold"/> ⇒ NeedsWork.

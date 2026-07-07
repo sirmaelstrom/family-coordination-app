@@ -170,6 +170,67 @@ public class ChoreBoardService(
     }
 
     /// <inheritdoc />
+    public async Task<ChoreHomeStatsDto> GetHomeStatsAsync(
+        int householdId,
+        DateTime? now = null,
+        CancellationToken cancellationToken = default)
+    {
+        var asOf = now ?? timeProvider.GetUtcNow().UtcDateTime;
+
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        // EXACTLY GetBoardAsync's active set (M1 household filter + Status == Active), but projected down to
+        // the recurrence + assignment fields the two calculator calls read — no rooms, members, completions,
+        // participation, subtasks, or ChoreRoom memberships are touched. One row per chore: room fan-out is a
+        // rollup concern only, so a multi-room chore counts ONCE here, exactly like board.Chores (MN1).
+        var chores = await context.Chores
+            .Where(c => c.HouseholdId == householdId && c.Status == ChoreStatus.Active)
+            .Select(c => new
+            {
+                c.RecurrenceMode,
+                c.IntervalDays,
+                c.AnchorDate,
+                c.DaysOfWeek,
+                c.DayOfMonth,
+                c.LastCompletedAt,
+                c.SnoozedUntil,
+                c.AssignmentKind,
+                c.ClaimedAt,
+            })
+            .ToListAsync(cancellationToken);
+
+        // Same reduction as ChoreHomeStats.Compute over the board's ChoreDtos, applied to the same computed
+        // dueness inputs: a snoozed chore already reads Scheduled (auto-excluded from Overdue/DueToday); only
+        // UpForGrabs needs the explicit !IsSnoozed guard, or a snoozed unclaimed chore would still surface.
+        int overdue = 0, dueToday = 0, upForGrabs = 0;
+        foreach (var c in chores)
+        {
+            var snapshot = new ChoreRecurrenceSnapshot(
+                c.RecurrenceMode, c.IntervalDays, c.AnchorDate, c.DaysOfWeek, c.DayOfMonth,
+                c.LastCompletedAt, c.SnoozedUntil);
+            var dueness = calculator.Compute(snapshot, asOf, timeZone);
+
+            if (dueness.DueState == DueState.Overdue)
+            {
+                overdue++;
+            }
+            else if (dueness.DueState == DueState.DueToday)
+            {
+                dueToday++;
+            }
+
+            if (!dueness.IsSnoozed &&
+                (c.AssignmentKind == AssignmentKind.None ||
+                 calculator.IsClaimStale(c.AssignmentKind, c.ClaimedAt, asOf)))
+            {
+                upForGrabs++;
+            }
+        }
+
+        return new ChoreHomeStatsDto(chores.Count, overdue, dueToday, upForGrabs);
+    }
+
+    /// <inheritdoc />
     public ChoreDto ProjectChore(Chore chore, DateTime now, TimeZoneInfo timeZone, IReadOnlyList<int> roomIds)
     {
         var dueness = calculator.Compute(ChoreRecurrenceSnapshot.FromChore(chore), now, timeZone);

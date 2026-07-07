@@ -9,8 +9,9 @@ namespace FamilyCoordinationApp.Services;
 /// <summary>
 /// Aggregates the dashboard island payload (strangler — mirrors <see cref="MealPlanBoardService"/>). Pure
 /// composition over the existing domain services + a focused today-meals query; adds NO new business logic so
-/// it rides those services' existing tests. The chore counts reuse the server-side, unit-tested
-/// <see cref="ChoreHomeStats"/> reducer directly (same assembly) rather than re-implementing the snooze guard.
+/// it rides those services' existing tests. The chore counts come from the lean
+/// <see cref="IChoreBoardService.GetHomeStatsAsync"/> read (equivalence-locked to the full board +
+/// <see cref="ChoreHomeStats"/> reducer) rather than building the whole board just to count.
 /// Read-only — never creates a plan/list/board row (an empty household yields zero counts / empty meals). All
 /// reads create short-lived contexts via the factory and filter by <c>HouseholdId</c> (M1).
 /// </summary>
@@ -28,12 +29,13 @@ public class DashboardService(
     {
         var householdName = await GetHouseholdNameAsync(userId, cancellationToken);
 
-        // Chores: reuse the board read + the SERVER-side, unit-tested ChoreHomeStats reducer (incl. the
-        // snooze guard on up-for-grabs). Parity with Home.razor's LoadChoreStats.
-        var board = await choreBoardService.GetBoardAsync(householdId, userId, cancellationToken: cancellationToken);
-        var choreStats = ChoreHomeStats.Compute(board.Chores);
+        // Chores: the lean count read (GetHomeStatsAsync) instead of the FULL board build — the dashboard only
+        // needs the four counts, not rooms/rollups/roster folds/subtasks. Counting semantics are locked to the
+        // board + ChoreHomeStats reducer by ChoreBoardHomeStatsTests' equivalence test (incl. the snooze guard
+        // on up-for-grabs and once-per-chore multi-room counting).
+        var choreStats = await choreBoardService.GetHomeStatsAsync(householdId, cancellationToken: cancellationToken);
         var chores = new DashboardChoreSummaryDto(
-            choreStats.Total, choreStats.Overdue, choreStats.DueToday, choreStats.UpForGrabs);
+            choreStats.ActiveTotal, choreStats.Overdue, choreStats.DueToday, choreStats.UpForGrabs);
 
         // Shopping: sum across ALL active (non-archived) lists — the household may have several going at once
         // and the card reflects everything still to buy (parity with Home.razor's LoadShoppingListStats).
