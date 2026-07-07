@@ -3,22 +3,32 @@
 //
 // One `MealPlanBoardDto` (the current week) is fetched and held here. The
 // calendar grid + day list are CLIENT-SIDE groupings of that one payload via
-// `entriesByDayMeal`.
+// the per-slot `zones` (rebuilt from `board.entries` outside drags — see the
+// gated $effect.pre in App.svelte).
 //
 // ⚠ Svelte 5 rune rule (global CORRECTION): never `export` a reassigned
 // `$state`/`$derived` from a module. We wrap the mutable state in a class
 // instance and export the instance — the runes live as `$state`/`$derived`
 // fields on the object, which is the supported pattern.
 //
-// Parity-first ⇒ VERSIONLESS / last-write-wins. The only ops are add + remove;
-// there is no xmin token, no 409 branch. On any 4xx/network error we reconcile
-// (re-GET the current week) + surface a calm toast. NO `new Date('YYYY-MM-DD')`
-// anywhere — week stepping goes through lib/dates.ts (MN4).
+// Parity-first ⇒ VERSIONLESS / last-write-wins. The ops are add + remove +
+// move (drag-to-assign, same week); there is no xmin token, no 409 branch. On
+// any 4xx error we reconcile (re-GET the current week) + surface a calm toast.
+// NO `new Date('YYYY-MM-DD')` anywhere — week stepping goes through
+// lib/dates.ts (MN4).
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { MealPlanBoardDto, MealPlanEntryDto, MealType, ShellContext } from './types';
-import { ApiError, addEntry, getBoard, removeEntry, type AddEntryBody } from './api';
-import { addWeeks, mondayOf, todayMonday } from './dates';
+import { ApiError, addEntry, getBoard, moveEntry, removeEntry, type AddEntryBody } from './api';
+import { addWeeks, mondayOf, todayMonday, weekDays } from './dates';
+import {
+  applyEntryMove,
+  buildZones,
+  findCrossSlotEntry,
+  replaceEntry,
+  zoneKey,
+  type DragEntry,
+} from './board-ops';
 import { showToast } from '$lib/shared/toast-store.svelte';
 
 /** The board's three rendered meal rows (Snack is implicit — only shown if data exists). */
@@ -42,24 +52,51 @@ class MealPlanStore {
    */
   private refresh: (() => Promise<void>) | null = null;
 
-  /**
-   * Slot lookup: `${date}|${mealType}` → the entries in that slot. Empty map
-   * until the board loads. A slot with no entries simply isn't a key.
-   */
-  entriesByDayMeal = $derived.by(() => {
-    const map = new Map<string, MealPlanEntryDto[]>();
-    for (const e of this.board?.entries ?? []) {
-      const key = `${e.date}|${e.mealType}`;
-      const bucket = map.get(key);
-      if (bucket) bucket.push(e);
-      else map.set(key, [e]);
-    }
-    return map;
-  });
+  // ── Per-slot zone state (drag-to-assign) ─────────────────────────────────
+  //
+  // svelte-dnd-action multi-zone rule (bit the shopping list): each slot's dnd
+  // zone must OWN a stable, mutable items array across a drag — NOT a $derived
+  // off `board.entries`. Any cross-zone rebuild mid-drag tears down the dragged
+  // DOM node and silently breaks between-slot drops. So `zones` is $state:
+  // App.svelte's gated $effect.pre rebuilds it from `board.entries` whenever
+  // data changes OUTSIDE a drag; during a drag the consider/finalize handlers
+  // below own it and only ever swap ONE zone's array.
+  zones = $state<Record<string, DragEntry[]>>({});
+  /** True from the first `consider` until `finalize` — gates the zone rebuild. */
+  dragActive = $state(false);
 
-  /** Entries for one slot (empty array when none). */
-  entriesFor(date: string, mealType: MealType): MealPlanEntryDto[] {
-    return this.entriesByDayMeal.get(`${date}|${mealType}`) ?? [];
+  /** One slot's drag rows (a stable empty array is seeded for empty slots). */
+  zoneFor(date: string, mealType: MealType): DragEntry[] {
+    return this.zones[zoneKey(date, mealType)] ?? [];
+  }
+
+  /** Re-derive all zones from the authoritative board. NEVER call mid-drag. */
+  rebuildZones(): void {
+    this.zones = buildZones(this.board?.entries ?? [], weekDays(this.weekStart), MEAL_ROWS);
+  }
+
+  /** Live drag: reflect the library's per-zone items in the zone that fired, nothing else. */
+  zoneConsider(date: string, mealType: MealType, items: DragEntry[]): void {
+    this.dragActive = true;
+    this.zones[zoneKey(date, mealType)] = items;
+  }
+
+  /**
+   * Drop: commit the fired zone's items, then — only in the DESTINATION zone,
+   * detected by a row still carrying its pre-drag slot — persist the move. The
+   * optimistic `board.entries` update happens synchronously inside `moveEntry`
+   * BEFORE the drag gate is released, so the rebuild reconciles to the moved
+   * state (no snap-back frame). The source zone's finalize (and a same-slot
+   * reorder, which has nothing to persist) just releases the gate.
+   */
+  zoneFinalize(date: string, mealType: MealType, items: DragEntry[]): Promise<void> {
+    this.zones[zoneKey(date, mealType)] = items;
+    const moved = findCrossSlotEntry(items, date, mealType);
+    const persist = moved
+      ? this.moveEntry(moved.mealPlanId, moved.entryId, date, mealType)
+      : Promise.resolve();
+    this.dragActive = false;
+    return persist;
   }
 
   /** Count of all entries on a given day (for the mobile day-list "N meals" label). */
@@ -162,6 +199,62 @@ class MealPlanStore {
           ? "Couldn't add that meal — the plan was refreshed."
           : "Couldn't add that meal right now.";
       showToast({ message: msg, kind: 'info' });
+    }
+  }
+
+  /**
+   * Move an entry to another slot in the SAME week (drag-to-assign). Optimistic
+   * re-slot, then PATCH; the server echo is merged back (authoritative
+   * UpdatedAt/UpdatedBy). Mirrors removeEntry's failure split: any 4xx (cross-
+   * week, duplicate-in-slot, entry gone — incl. the empty-400-from-404 quirk)
+   * → reconcile + calm toast; network/5xx → revert the optimistic move (the
+   * same transform aimed back at the original slot) + error toast. Same
+   * targetWeek stale-response guard as addEntry.
+   */
+  async moveEntry(
+    mealPlanId: number,
+    entryId: number,
+    date: string,
+    mealType: MealType,
+  ): Promise<void> {
+    if (!this.board) return;
+    const original = this.board.entries.find(
+      (e) => e.mealPlanId === mealPlanId && e.entryId === entryId,
+    );
+    if (!original) return;
+    const fromDate = original.date;
+    const fromMeal = original.mealType;
+    if (fromDate === date && fromMeal === mealType) return;
+
+    const targetWeek = this.weekStart;
+    // Optimistic re-slot (synchronous — zoneFinalize relies on this landing
+    // before the drag gate is released).
+    this.board.entries = applyEntryMove(this.board.entries, mealPlanId, entryId, date, mealType);
+    try {
+      const updated = await moveEntry(mealPlanId, entryId, { date, mealType });
+      // The user stepped to another week while the PATCH was in flight — this
+      // board is no longer the one we moved on; the new week's GET is truth.
+      if (!this.board || this.weekStart !== targetWeek) return;
+      this.board.entries = replaceEntry(this.board.entries, updated);
+    } catch (e) {
+      if (this.weekStart !== targetWeek) return;
+      if (e instanceof ApiError) {
+        // Any 4xx — the server rejected the move; resync to truth.
+        await this.reconcile();
+        showToast({ message: "Couldn't move that meal — the plan was refreshed.", kind: 'info' });
+      } else {
+        // Network/5xx: put the entry back in its original slot.
+        if (this.board) {
+          this.board.entries = applyEntryMove(
+            this.board.entries,
+            mealPlanId,
+            entryId,
+            fromDate,
+            fromMeal,
+          );
+        }
+        showToast({ message: 'Something went wrong. Please try again.', kind: 'error' });
+      }
     }
   }
 
