@@ -5,7 +5,7 @@ import type {
   ParsedIngredientDto,
   CategoryDto,
   ConnectedHouseholdDto,
-  RecipeImportResultDto,
+  RecipeImportPreviewDto,
   RecipeDraftData,
   SaveDraftRequest,
 } from './types';
@@ -135,13 +135,15 @@ export async function listImages(): Promise<string[]> {
 // ─── Import ─────────────────────────────────────────────────────────────────
 
 /**
- * #13 Scrape→create. On success returns the SAVED recipe id (then nav to edit).
+ * #13 Scrape→preview. Parses the URL WITHOUT persisting — on success returns the
+ * parsed recipe payload (create-compatible: confirm by POSTing it to createRecipe).
  * On a duplicate returns existingRecipeId/Name (unless `force`). On failure,
- * errorType + partialData for the "Add Manually" fallback. May take ≤60s (Polly)
- * — do NOT add a shorter client timeout.
+ * errorType + partialData (still previewable). May take ≤60s (Polly) — do NOT add
+ * a shorter client timeout. (The legacy scrape-and-create POST /import still
+ * exists server-side but the SPA no longer calls it.)
  */
-export async function importRecipe(url: string, force = false): Promise<RecipeImportResultDto> {
-  return request<RecipeImportResultDto>(`${BASE}/import`, { method: 'POST', ...jsonBody({ url, force }) });
+export async function previewImport(url: string, force = false): Promise<RecipeImportPreviewDto> {
+  return request<RecipeImportPreviewDto>(`${BASE}/import/preview`, { method: 'POST', ...jsonBody({ url, force }) });
 }
 
 // ─── Connected households ─────────────────────────────────────────────────────

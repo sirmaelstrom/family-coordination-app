@@ -113,12 +113,52 @@ export interface PartialRecipeDataDto {
   servings: number | null;
 }
 
+/** Legacy scrape-AND-create result (POST /import — endpoint kept; the SPA now uses /import/preview). */
 export interface RecipeImportResultDto {
   success: boolean;
   /** The SAVED recipe id on success. */
   recipeId: number | null;
   errorMessage: string | null;
   /** The RecipeImportErrorType name (e.g. "NetworkError"). */
+  errorType: string | null;
+  existingRecipeId: number | null;
+  existingRecipeName: string | null;
+  partialData: PartialRecipeDataDto | null;
+}
+
+/** One parsed ingredient of a preview — SAME shape as RecipeIngredientWrite (create-compatible). */
+export interface RecipePreviewIngredientDto {
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  category: string;
+  notes: string | null;
+  groupName: string | null;
+  sortOrder: number;
+}
+
+/** The parsed-but-UNSAVED recipe — field-compatible with RecipeWriteRequest (send verbatim on confirm). */
+export interface RecipePreviewDto {
+  name: string;
+  description: string | null;
+  instructions: string | null;
+  sourceUrl: string | null;
+  servings: number | null;
+  prepTimeMinutes: number | null;
+  cookTimeMinutes: number | null;
+  recipeType: RecipeType;
+  imagePath: string | null;
+  ingredients: RecipePreviewIngredientDto[];
+}
+
+/**
+ * POST /import/preview result — scrape + parse WITHOUT persisting. Mirrors RecipeImportResultDto's
+ * duplicate/failure surface; success carries `recipe` (the preview payload) instead of a saved id.
+ */
+export interface RecipeImportPreviewDto {
+  success: boolean;
+  recipe: RecipePreviewDto | null;
+  errorMessage: string | null;
   errorType: string | null;
   existingRecipeId: number | null;
   existingRecipeName: string | null;
