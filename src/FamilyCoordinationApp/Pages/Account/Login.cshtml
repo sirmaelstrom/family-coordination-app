@@ -11,6 +11,7 @@
     </div>
 
     <form method="post" action="/account/login-google">
+        @Html.AntiForgeryToken()
         <input type="hidden" name="returnUrl" value="@Model.SafeReturnUrl" />
         <button type="submit" class="btn btn-google btn-block">
             <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">

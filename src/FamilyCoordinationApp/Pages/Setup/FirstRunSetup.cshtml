@@ -19,6 +19,7 @@
     {
         <p class="center muted">First, sign in with Google to create your household.</p>
         <form method="post" action="/account/login-google" asp-antiforgery="false">
+            @Html.AntiForgeryToken()
             <input type="hidden" name="returnUrl" value="/setup" />
             <button type="submit" class="btn btn-outline btn-block">Sign in with Google</button>
         </form>

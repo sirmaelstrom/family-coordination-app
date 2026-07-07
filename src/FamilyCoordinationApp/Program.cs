@@ -7,6 +7,7 @@ using FamilyCoordinationApp.Endpoints;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Digest;
 using FamilyCoordinationApp.Services.Interfaces;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
@@ -464,9 +465,24 @@ app.MapGet("/shoppinglists", () => Results.Redirect("/shopping-list", permanent:
 // Health check endpoint for Docker
 app.MapGet("/health", () => Results.Ok("healthy"));
 
-// Auth endpoints (minimal API) - wiring for Login.razor form POST
-app.MapPost("/account/login-google", async (HttpContext context) =>
+// Auth endpoint (minimal API) — the login/onboarding Razor Pages' sign-in forms POST here.
+// Login-CSRF hardening: initiating the OAuth challenge requires a valid antiforgery token (every sign-in
+// form embeds one via @Html.AntiForgeryToken()), so a cross-site page cannot silently log the victim's
+// browser into an attacker-chosen Google account. Validation is done in-handler via IAntiforgery — this
+// endpoint has no form-binding metadata, so the UseAntiforgery middleware never validates it implicitly.
+app.MapPost("/account/login-google", async (HttpContext context, IAntiforgery antiforgery) =>
 {
+    try
+    {
+        await antiforgery.ValidateRequestAsync(context);
+    }
+    catch (AntiforgeryValidationException)
+    {
+        // Non-empty body: an empty 4xx would re-execute through the GET-only /not-found page
+        // (CORRECTIONS fca-empty-404-surfaces-as-405-on-delete).
+        return Results.BadRequest(new { message = "Invalid or missing antiforgery token." });
+    }
+
     // Get returnUrl from form, default to home
     var form = await context.Request.ReadFormAsync();
     var returnUrl = form["returnUrl"].FirstOrDefault() ?? "/";
@@ -487,7 +503,8 @@ app.MapPost("/account/login-google", async (HttpContext context) =>
         RedirectUri = returnUrl,
         IsPersistent = true  // Remember me
     };
-    await context.ChallengeAsync(GoogleDefaults.AuthenticationScheme, properties);
+    // The Challenge redirect to Google (and the callback path) is unchanged — only the initiation is gated.
+    return Results.Challenge(properties, [GoogleDefaults.AuthenticationScheme]);
 });
 
 app.MapGet("/account/logout", async (HttpContext context) =>
