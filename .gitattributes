@@ -1,3 +1,6 @@
 
 # Use bd merge for beads JSONL files
 .beads/issues.jsonl merge=beads
+
+# Shell scripts run on Linux (thedarktower) — keep LF so the shebang never sees CRLF
+*.sh text eol=lf
