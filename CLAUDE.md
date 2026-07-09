@@ -54,6 +54,6 @@ Deployment + environment configuration detail auto-loads via `.claude/rules/depl
 ## Corrections
 <!-- Also see global corrections: D:\Development\data\memory\CORRECTIONS.md -->
 
-- [2026-04-16 UTC] PREPEND `sudo` to docker commands on the production host over SSH. Reason: docker socket not in user group.
+- [2026-04-16 UTC] PREPEND `sudo` to docker commands on the production host over SSH. Reason: docker socket not in user group. **Update 2026-07-09:** `sirm` was added to the `docker` group (for the offsite `pg_dump`→R2 backup cron), so plain `docker` now works for `sirm` over a *fresh* SSH login (a new session picks up the group); `sudo docker` still works, and `deploy.sh` is unaffected. Prod Postgres is reachable only via `docker exec` (5432 is not host-published) — dump uses local-socket `trust` auth, no password. See `infra/backup/`.
 
 <!-- /reflect completed 2026-04-16 UTC -->
