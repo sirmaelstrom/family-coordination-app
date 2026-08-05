@@ -32,14 +32,16 @@ Push to `master` triggers GitHub Actions:
 1. **CI** (`ci.yml`): Build, test, format check, Docker build validation (GitHub-hosted runners)
 2. **Deploy** (`deploy.yml`): Self-hosted runner pulls code, builds Docker image, deploys via `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`
 
+This push-to-master pipeline is the **normal** deploy path. `deploy.sh` (and its Windows wrapper) is the manual/emergency path — don't run both concurrently against the same host.
+
 Production traffic flow: `Internet → Cloudflare → <server-hostname> (host nginx) → app container`
 
-(On the production host over SSH, prepend `sudo` to docker commands — see CLAUDE.md `## Corrections`. Note the NOPASSWD sudoers whitelist covers `docker build/compose/ps/inspect/exec/logs/rm/image prune/network` but NOT `docker tag/images/rmi` — non-interactive scripts must not call those bare.)
+(On the production host over SSH: the deploy user is in the `docker` group — added 2026-07-09 — so docker commands work **without sudo** on a fresh login; the host's agent-guidance doc was de-sudo'd 2026-08-05 with live receipts. If sudo is used anyway, the NOPASSWD whitelist covers `docker build/compose/ps/inspect/exec/logs/rm/image prune/network` but NOT `docker tag/images/rmi` — under sudo those prompt for a password, which is why the rollback below runs bare docker.)
 
 **Rollback (de-Blazor C-c):** every deployed image is also tagged `familyapp:<git-sha>` by the build (`deploy.sh`). To roll back (interactive):
 ```bash
-sudo docker tag familyapp:<sha> familyapp:latest
-sudo docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate app
+docker tag familyapp:<sha> familyapp:latest
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate app
 ```
 
 ## Environment Configuration
