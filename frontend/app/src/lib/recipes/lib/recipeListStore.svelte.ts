@@ -159,6 +159,10 @@ class RecipeListStore {
   async toggleFavorite(id: number): Promise<void> {
     if (this.selectedConnectedId != null) return;
     const had = this.favoriteIds.has(id);
+    // Retire any in-flight load BEFORE the optimistic write. A load that started earlier still holds
+    // the pre-toggle favorites and would otherwise land afterwards and overwrite this heart back to
+    // its old state — the optimistic update is a newer truth than any response already in flight.
+    this.loadSeq++;
     this.favoriteIds = toggled(this.favoriteIds, id, !had);
     try {
       const res = await apiToggleFavorite(id);
@@ -181,6 +185,9 @@ class RecipeListStore {
    */
   async deleteRecipe(id: number): Promise<void> {
     const prev = this.recipes;
+    // Retire any in-flight load BEFORE the optimistic removal — an earlier load still carries the
+    // deleted recipe and would resurrect the card when it lands. Same reason as toggleFavorite.
+    this.loadSeq++;
     this.recipes = this.recipes.filter((r) => r.recipeId !== id);
     try {
       await apiDeleteRecipe(id);

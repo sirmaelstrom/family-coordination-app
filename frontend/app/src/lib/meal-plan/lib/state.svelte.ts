@@ -52,6 +52,12 @@ class MealPlanStore {
    */
   private refresh: (() => Promise<void>) | null = null;
 
+  /** Monotonic load id. The targetWeek capture below catches a load that raced a WEEK CHANGE, but two
+   *  loads for the SAME week (liveness poll vs reconcile vs an explicit refresh) both pass that check,
+   *  so the slower/older response can still land last and overwrite newer data. Every load applies only
+   *  if it is still the latest. */
+  private loadSeq = 0;
+
   // ── Per-slot zone state (drag-to-assign) ─────────────────────────────────
   //
   // svelte-dnd-action multi-zone rule (bit the shopping list): each slot's dnd
@@ -139,23 +145,27 @@ class MealPlanStore {
     // response can land last and — because setBoard() adopts the response's weekStartDate — snap the
     // board back to the wrong week. Mirror the targetWeek capture/compare addEntry already uses.
     const targetWeek = this.weekStart;
+    const seq = ++this.loadSeq;
     try {
       if (this.board == null) this.loading = true;
       this.error = null;
       const next = await getBoard(targetWeek);
-      // Discard a stale response: the user moved to another week while this GET was in flight.
-      if (this.weekStart !== targetWeek) return;
+      // Discard a stale response: the user moved to another week while this GET was in flight, OR a
+      // newer load for the SAME week superseded this one (the week check alone cannot see that case).
+      if (this.weekStart !== targetWeek || seq !== this.loadSeq) return;
       this.setBoard(next);
     } catch (e) {
-      // A stale week's failure is moot — only surface an error for the week still in view.
-      if (this.weekStart !== targetWeek) return;
+      // A stale week's — or a superseded load's — failure is moot.
+      if (this.weekStart !== targetWeek || seq !== this.loadSeq) return;
       if (e instanceof ApiError) {
         this.error = `Failed to load the meal plan (HTTP ${e.status}).`;
       } else {
         this.error = e instanceof Error ? e.message : String(e);
       }
     } finally {
-      this.loading = false;
+      // Only the newest load owns the spinner: an older one finishing late must not clear it while
+      // the newer request is still in flight.
+      if (seq === this.loadSeq) this.loading = false;
     }
   }
 

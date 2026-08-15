@@ -67,20 +67,36 @@
   // the display only, so ChoreLens.All is not churned).
   let historySubview = $state<'ledger' | 'logbook'>('ledger');
 
+  // Monotonic load id. loadBoard is the liveness poll, the post-mutation reconcile AND the initial
+  // load, so several can be in flight at once; without this the slower/older response lands last and
+  // overwrites the newer board.
+  //
+  // SCOPE: this guards load-vs-load only. It does NOT retire an in-flight read when a MUTATION
+  // lands — the store owns the optimistic writes and cannot reach this component-local counter, so
+  // a GET already in flight still commits its pre-mutation snapshot. recipeListStore solves that by
+  // advancing its own loadSeq before each optimistic write; doing the same here means moving this
+  // token into the store. Tracked separately — do not read this guard as covering that case.
+  let boardLoadSeq = 0;
+
   async function loadBoard() {
+    const seq = ++boardLoadSeq;
     try {
       // Keep the spinner only for the FIRST load; liveness refreshes are silent.
       if (store.board == null) store.loading = true;
       store.error = null;
-      store.setBoard(await getBoard());
+      const next = await getBoard();
+      if (seq !== boardLoadSeq) return; // a newer load superseded this one
+      store.setBoard(next);
     } catch (e) {
+      if (seq !== boardLoadSeq) return; // don't surface a superseded load's error
       if (e instanceof ApiError) {
         store.error = `Failed to load the chore board (HTTP ${e.status}).`;
       } else {
         store.error = e instanceof Error ? e.message : String(e);
       }
     } finally {
-      store.loading = false;
+      // Only the newest load owns the spinner.
+      if (seq === boardLoadSeq) store.loading = false;
     }
   }
 

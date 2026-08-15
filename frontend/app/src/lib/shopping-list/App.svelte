@@ -122,10 +122,26 @@
     rebuildCategories();
   });
 
+  // Monotonic load ids. loadList is the initial load, the list switcher, the liveness poll AND the
+  // post-mutation reconcile, so several can be in flight at once; without a token the slower/older
+  // response lands last and shows another list's items.
+  //
+  // SCOPE: load-vs-load only. It does NOT retire an in-flight read when a local mutation lands, so
+  // a GET already in flight can still replace `list` with its pre-mutation payload (un-checking an
+  // item that was just checked). Fixing that means advancing the token before each of the local
+  // write sites, the way recipeListStore does. Tracked separately — do not read this guard as
+  // covering that case.
+  let listLoadSeq = 0;
+  let listsLoadSeq = 0;
+
   async function loadLists() {
+    const seq = ++listsLoadSeq;
     try {
-      lists = await listLists();
+      const next = await listLists();
+      if (seq !== listsLoadSeq) return; // a newer load superseded this one
+      lists = next;
     } catch (e) {
+      if (seq !== listsLoadSeq) return;
       error = e instanceof Error ? e.message : String(e);
     }
   }
@@ -136,13 +152,21 @@
       loading = false;
       return;
     }
+    const seq = ++listLoadSeq;
     try {
       loading = true;
       error = null;
-      list = await getList(listId);
+      const next = await getList(listId);
+      if (seq !== listLoadSeq) return; // superseded (list switch or a newer refresh)
+      list = next;
     } catch (e) {
+      if (seq !== listLoadSeq) return; // a superseded load's failure is moot
       if (e instanceof ApiError && e.status === 404) {
         await loadLists();
+        // Re-check AFTER that await: the user can pick another list (or a visibility refresh can
+        // start a newer load) while it is pending, and this obsolete 404 handler would otherwise
+        // overwrite that newer selection — and the URL — with its own fallback.
+        if (seq !== listLoadSeq) return;
         const fallback = lists[0]?.id ?? null;
         if (fallback != null && fallback !== listId) {
           currentListId = fallback;
@@ -156,7 +180,9 @@
         error = e instanceof Error ? e.message : String(e);
       }
     } finally {
-      loading = false;
+      // Only the newest load owns the spinner. The 404-fallback path above recurses into a NEWER
+      // load, so this correctly leaves the spinner to that one.
+      if (seq === listLoadSeq) loading = false;
     }
   }
 
