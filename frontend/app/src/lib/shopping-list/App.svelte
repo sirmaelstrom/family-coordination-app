@@ -124,7 +124,13 @@
 
   // Monotonic load ids. loadList is the initial load, the list switcher, the liveness poll AND the
   // post-mutation reconcile, so several can be in flight at once; without a token the slower/older
-  // response lands last — showing another list's items, or resurrecting an item just checked off.
+  // response lands last and shows another list's items.
+  //
+  // SCOPE: load-vs-load only. It does NOT retire an in-flight read when a local mutation lands, so
+  // a GET already in flight can still replace `list` with its pre-mutation payload (un-checking an
+  // item that was just checked). Fixing that means advancing the token before each of the local
+  // write sites, the way recipeListStore does. Tracked separately — do not read this guard as
+  // covering that case.
   let listLoadSeq = 0;
   let listsLoadSeq = 0;
 
@@ -157,6 +163,10 @@
       if (seq !== listLoadSeq) return; // a superseded load's failure is moot
       if (e instanceof ApiError && e.status === 404) {
         await loadLists();
+        // Re-check AFTER that await: the user can pick another list (or a visibility refresh can
+        // start a newer load) while it is pending, and this obsolete 404 handler would otherwise
+        // overwrite that newer selection — and the URL — with its own fallback.
+        if (seq !== listLoadSeq) return;
         const fallback = lists[0]?.id ?? null;
         if (fallback != null && fallback !== listId) {
           currentListId = fallback;

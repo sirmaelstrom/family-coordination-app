@@ -69,7 +69,13 @@
 
   // Monotonic load id. loadBoard is the liveness poll, the post-mutation reconcile AND the initial
   // load, so several can be in flight at once; without this the slower/older response lands last and
-  // overwrites the newer board (and can resurrect a chore a mutation just removed).
+  // overwrites the newer board.
+  //
+  // SCOPE: this guards load-vs-load only. It does NOT retire an in-flight read when a MUTATION
+  // lands — the store owns the optimistic writes and cannot reach this component-local counter, so
+  // a GET already in flight still commits its pre-mutation snapshot. recipeListStore solves that by
+  // advancing its own loadSeq before each optimistic write; doing the same here means moving this
+  // token into the store. Tracked separately — do not read this guard as covering that case.
   let boardLoadSeq = 0;
 
   async function loadBoard() {

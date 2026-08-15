@@ -548,10 +548,13 @@ class BoardStore {
     const window = this.equityWindow;
     try {
       const result = await getEquity(window);
-      // Commit only if nothing invalidated this fetch and the window is still the one requested.
-      if (this.equityWindow === window && !this.equityStale) {
+      if (this.equityWindow === window) {
+        // Render what arrived — showing slightly-behind numbers beats an indefinite spinner. But
+        // only call it FRESH if nothing invalidated it mid-flight; that one bit is the whole bug.
+        // Marking a superseded payload `loaded` is what made stale data permanent, because nothing
+        // refetches a cache that claims to be current.
         this.equity = result;
-        this.equityLoaded = true;
+        this.equityLoaded = !this.equityStale;
       }
     } catch (e) {
       this.equityError =
@@ -559,11 +562,11 @@ class BoardStore {
           ? `Couldn't load the equity view (HTTP ${e.status}).`
           : "Couldn't load the equity view right now.";
     } finally {
+      // Deliberately NO self-retry here. App.svelte's fetch-on-open effect already re-fires when
+      // `equityLoading` clears while `equityLoaded` is false, so re-running from this finally would
+      // duplicate it — and, because every ~20s liveness board poll invalidates this cache, a fetch
+      // slower than that interval would re-enter here forever and never commit.
       this.equityLoading = false;
-      // Something changed under this fetch — go again for current truth.
-      if ((this.equityStale || this.equityWindow !== window) && this.lens === 'equity') {
-        void this.loadEquity();
-      }
     }
   }
 
@@ -606,20 +609,17 @@ class BoardStore {
     this.recapError = null;
     try {
       const result = await getRecap();
-      if (!this.recapStale) {
-        this.recap = result;
-        this.recapLoaded = true;
-      }
+      // See loadEquity: render it, but only mark it fresh if nothing invalidated it mid-flight.
+      this.recap = result;
+      this.recapLoaded = !this.recapStale;
     } catch (e) {
       this.recapError =
         e instanceof ApiError
           ? `Couldn't load the recap (HTTP ${e.status}).`
           : "Couldn't load the recap right now.";
     } finally {
+      // No self-retry — App.svelte's effect owns that. See loadEquity.
       this.recapLoading = false;
-      if (this.recapStale && this.lens === 'recap') {
-        void this.loadRecap();
-      }
     }
   }
 
@@ -652,20 +652,17 @@ class BoardStore {
     this.ledgerError = null;
     try {
       const result = await getLedger();
-      if (!this.ledgerStale) {
-        this.ledger = result;
-        this.ledgerLoaded = true;
-      }
+      // See loadEquity: render it, but only mark it fresh if nothing invalidated it mid-flight.
+      this.ledger = result;
+      this.ledgerLoaded = !this.ledgerStale;
     } catch (e) {
       this.ledgerError =
         e instanceof ApiError
           ? `Couldn't load the ledger (HTTP ${e.status}).`
           : "Couldn't load the ledger right now.";
     } finally {
+      // No self-retry — App.svelte's effect owns that. See loadEquity.
       this.ledgerLoading = false;
-      if (this.ledgerStale && this.lens === 'recap') {
-        void this.loadLedger();
-      }
     }
   }
 
