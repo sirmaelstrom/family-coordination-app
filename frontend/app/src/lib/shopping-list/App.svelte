@@ -122,10 +122,20 @@
     rebuildCategories();
   });
 
+  // Monotonic load ids. loadList is the initial load, the list switcher, the liveness poll AND the
+  // post-mutation reconcile, so several can be in flight at once; without a token the slower/older
+  // response lands last — showing another list's items, or resurrecting an item just checked off.
+  let listLoadSeq = 0;
+  let listsLoadSeq = 0;
+
   async function loadLists() {
+    const seq = ++listsLoadSeq;
     try {
-      lists = await listLists();
+      const next = await listLists();
+      if (seq !== listsLoadSeq) return; // a newer load superseded this one
+      lists = next;
     } catch (e) {
+      if (seq !== listsLoadSeq) return;
       error = e instanceof Error ? e.message : String(e);
     }
   }
@@ -136,11 +146,15 @@
       loading = false;
       return;
     }
+    const seq = ++listLoadSeq;
     try {
       loading = true;
       error = null;
-      list = await getList(listId);
+      const next = await getList(listId);
+      if (seq !== listLoadSeq) return; // superseded (list switch or a newer refresh)
+      list = next;
     } catch (e) {
+      if (seq !== listLoadSeq) return; // a superseded load's failure is moot
       if (e instanceof ApiError && e.status === 404) {
         await loadLists();
         const fallback = lists[0]?.id ?? null;
@@ -156,7 +170,9 @@
         error = e instanceof Error ? e.message : String(e);
       }
     } finally {
-      loading = false;
+      // Only the newest load owns the spinner. The 404-fallback path above recurses into a NEWER
+      // load, so this correctly leaves the spinner to that one.
+      if (seq === listLoadSeq) loading = false;
     }
   }
 

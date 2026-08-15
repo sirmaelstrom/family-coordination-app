@@ -215,6 +215,10 @@ class BoardStore {
    *  App effect loads when `lens === 'equity' && !equityLoaded`; invalidation
    *  flips this back to false so the next view (or the active lens) reloads. */
   equityLoaded = $state(false);
+  /** An invalidation arrived while a fetch was in flight, so that fetch's response predates it and
+   *  must not be committed as fresh. Without this the re-entrancy guard SILENTLY DROPS the
+   *  invalidation and the stale response still sets `equityLoaded = true`. */
+  private equityStale = false;
 
   // ── Recap lens (the second non-board fetcher — like equity, its own endpoint) ─
   //
@@ -233,14 +237,18 @@ class BoardStore {
   recapError = $state<string | null>(null);
   /** True once a recap fetch has resolved; invalidation flips it back so the App effect reloads. */
   recapLoaded = $state(false);
+  /** Mirrors `equityStale` — see it for why the re-entrancy guard alone loses invalidations. */
+  private recapStale = false;
 
   // ── Ledger lens (chore-history C surface — its own cached payload, like recap) ─
   //
   // GET /api/chores/ledger: the completion feed + weave scaffold + ghost rows +
   // gone-quiet band. Same lifecycle as recap — fetch-on-open (App.svelte $effect,
   // WP-09) + invalidated on the SAME completion/snooze/edit events (folded into
-  // `invalidateEquity`). `loadLedger()` never varies `weeks`, so a re-entrancy guard
-  // suffices — no loadSeq needed. All values are server-computed; NO client date math.
+  // `invalidateEquity`). `loadLedger()` never varies `weeks`, so no per-request token is
+  // needed — but a re-entrancy guard alone does NOT suffice: on its own it drops an
+  // invalidation that arrives mid-flight, so `ledgerStale` carries that signal. All values
+  // are server-computed; NO client date math.
 
   /** The cached ledger payload. null until first loaded (or after invalidation+reload). */
   ledger = $state<ChoreLedgerDto | null>(null);
@@ -250,6 +258,8 @@ class BoardStore {
   ledgerError = $state<string | null>(null);
   /** True once a ledger fetch has resolved; invalidation flips it back so the App effect reloads. */
   ledgerLoaded = $state(false);
+  /** Mirrors `equityStale` — see it for why the re-entrancy guard alone loses invalidations. */
+  private ledgerStale = false;
 
   /**
    * The board refetch hook, wired by App.svelte (`store.setRefresh(loadBoard)`).
@@ -525,15 +535,21 @@ class BoardStore {
    * every reactive tick.
    */
   async loadEquity(): Promise<void> {
-    if (this.equityLoading) return;
+    // A request that arrives mid-flight is REMEMBERED, not dropped. The plain re-entrancy guard used
+    // to just `return`, so an invalidateEquity() during a fetch was lost and the in-flight response —
+    // which predates the change that invalidated it — was still committed with equityLoaded = true.
+    if (this.equityLoading) {
+      this.equityStale = true;
+      return;
+    }
     this.equityLoading = true;
+    this.equityStale = false;
     this.equityError = null;
     const window = this.equityWindow;
     try {
       const result = await getEquity(window);
-      // Guard against a window switch landing mid-flight — only commit if the
-      // requested window is still the active one.
-      if (this.equityWindow === window) {
+      // Commit only if nothing invalidated this fetch and the window is still the one requested.
+      if (this.equityWindow === window && !this.equityStale) {
         this.equity = result;
         this.equityLoaded = true;
       }
@@ -544,6 +560,10 @@ class BoardStore {
           : "Couldn't load the equity view right now.";
     } finally {
       this.equityLoading = false;
+      // Something changed under this fetch — go again for current truth.
+      if ((this.equityStale || this.equityWindow !== window) && this.lens === 'equity') {
+        void this.loadEquity();
+      }
     }
   }
 
@@ -556,6 +576,9 @@ class BoardStore {
    */
   invalidateEquity(): void {
     this.equityLoaded = false;
+    // Mark BEFORE the reload attempt: any fetch already in flight now predates this change and must
+    // not be committed as fresh, whether or not the equity lens is the one on screen.
+    this.equityStale = true;
     if (this.lens === 'equity') {
       void this.loadEquity();
     }
@@ -573,12 +596,20 @@ class BoardStore {
    * Sets `recapLoaded` on success so the effect doesn't refetch every tick.
    */
   async loadRecap(): Promise<void> {
-    if (this.recapLoading) return;
+    // See loadEquity: a mid-flight invalidation must be remembered, not dropped.
+    if (this.recapLoading) {
+      this.recapStale = true;
+      return;
+    }
     this.recapLoading = true;
+    this.recapStale = false;
     this.recapError = null;
     try {
-      this.recap = await getRecap();
-      this.recapLoaded = true;
+      const result = await getRecap();
+      if (!this.recapStale) {
+        this.recap = result;
+        this.recapLoaded = true;
+      }
     } catch (e) {
       this.recapError =
         e instanceof ApiError
@@ -586,12 +617,16 @@ class BoardStore {
           : "Couldn't load the recap right now.";
     } finally {
       this.recapLoading = false;
+      if (this.recapStale && this.lens === 'recap') {
+        void this.loadRecap();
+      }
     }
   }
 
   /** Drop the cached recap; reload immediately if the recap lens is open. */
   invalidateRecap(): void {
     this.recapLoaded = false;
+    this.recapStale = true;
     if (this.lens === 'recap') {
       void this.loadRecap();
     }
@@ -603,15 +638,24 @@ class BoardStore {
    * Fetch the ledger payload (feed + weave + ghosts + gone-quiet). Called by
    * App.svelte's $effect when the history lens is open on the ledger sub-view and
    * the cache is stale (WP-09). Re-entrancy-guarded so the effect doesn't refetch
-   * every tick; `weeks` never varies at runtime, so no loadSeq guard is needed.
+   * every tick, and `ledgerStale` makes a mid-flight invalidation re-run instead of
+   * being swallowed by that guard.
    */
   async loadLedger(): Promise<void> {
-    if (this.ledgerLoading) return;
+    // See loadEquity: a mid-flight invalidation must be remembered, not dropped.
+    if (this.ledgerLoading) {
+      this.ledgerStale = true;
+      return;
+    }
     this.ledgerLoading = true;
+    this.ledgerStale = false;
     this.ledgerError = null;
     try {
-      this.ledger = await getLedger();
-      this.ledgerLoaded = true;
+      const result = await getLedger();
+      if (!this.ledgerStale) {
+        this.ledger = result;
+        this.ledgerLoaded = true;
+      }
     } catch (e) {
       this.ledgerError =
         e instanceof ApiError
@@ -619,6 +663,9 @@ class BoardStore {
           : "Couldn't load the ledger right now.";
     } finally {
       this.ledgerLoading = false;
+      if (this.ledgerStale && this.lens === 'recap') {
+        void this.loadLedger();
+      }
     }
   }
 
@@ -629,6 +676,7 @@ class BoardStore {
    */
   invalidateLedger(): void {
     this.ledgerLoaded = false;
+    this.ledgerStale = true;
     if (this.lens === 'recap') {
       void this.loadLedger();
     }

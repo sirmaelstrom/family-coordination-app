@@ -49,12 +49,17 @@
   let copying = $state(false);
   // The `${connectedId}:${recipeId}` we last fetched — reopening the same recipe reuses it.
   let loadedKey: string | null = null;
+  // Monotonic load id: opening recipe A then quickly B leaves two fetches in flight, and if A's
+  // response lands last it renders A's ingredients under B's title (and mis-sets loadedKey, causing
+  // a redundant refetch). Only the newest fetch may commit.
+  let detailLoadSeq = 0;
 
   function keyFor(s: RecipeListItemDto): string {
     return `${connectedId ?? ''}:${s.recipeId}`;
   }
 
   async function load(s: RecipeListItemDto): Promise<void> {
+    const seq = ++detailLoadSeq;
     loading = true;
     error = null;
     try {
@@ -62,16 +67,18 @@
         connectedId == null
           ? await getRecipe(s.recipeId)
           : await getConnectedRecipe(connectedId, s.recipeId);
+      if (seq !== detailLoadSeq) return; // a newer recipe was opened
       detail = full;
       scaledServings = full.servings ?? 1;
       loadedKey = keyFor(s);
     } catch (e) {
+      if (seq !== detailLoadSeq) return;
       error =
         e instanceof ApiError
           ? `Couldn't load this recipe (HTTP ${e.status}).`
           : "Couldn't load this recipe right now.";
     } finally {
-      loading = false;
+      if (seq === detailLoadSeq) loading = false;
     }
   }
 
