@@ -22,10 +22,10 @@ public interface IFeedbackService
     /// <c>POST /api/settings/feedback</c>.
     /// <para><b>Attribution is server-derived, never client-supplied:</b> <paramref name="userId"/> and
     /// <paramref name="householdId"/> come from the caller's resolved context (M1), so a caller cannot file
-    /// feedback into another household. Both are nullable — a site admin with no user row files an
-    /// unattributed item (visible to site admins only, since a non-admin's list is household-filtered), which
-    /// is exactly the anonymous case <see cref="Feedback.UserId"/>/<see cref="Feedback.HouseholdId"/> were
-    /// made nullable for.</para>
+    /// feedback into another household. Both stay nullable because the COLUMNS are (they predate this method and
+    /// hold rows whose author was deleted), but the submit endpoint always passes a resolved pair — its
+    /// unattributed branch is defensive only, and a household-less row would be visible to site admins alone
+    /// since a non-admin's list is household-filtered.</para>
     /// <para><paramref name="message"/> is stored trimmed; <paramref name="currentPage"/> and
     /// <paramref name="userAgent"/> are diagnostics truncated to their column limits (500) rather than
     /// rejected — the caller's message must never be lost to a long User-Agent string.</para>

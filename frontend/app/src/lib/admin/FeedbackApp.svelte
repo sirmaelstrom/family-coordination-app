@@ -11,7 +11,7 @@
   import { feedbackStore } from './lib/feedbackStore.svelte';
   import { formatDateTime } from './lib/dates';
   import { startLiveness } from './lib/liveness';
-  import { openFeedback } from '$lib/shared/feedback-store.svelte';
+  import { feedbackSubmitCount, openFeedback } from '$lib/shared/feedback-store.svelte';
 
   let { ctx }: { ctx: ShellContext } = $props();
   const store = feedbackStore;
@@ -41,6 +41,14 @@
     void store.load();
     const handle = startLiveness(() => store.load(), 15_000);
     return () => handle.stop();
+  });
+
+  // Refetch the moment a submission lands, rather than leaving this list stale until the next 15s poll —
+  // submitting FROM the inbox and not seeing the item is the most confusing place for that lag to show.
+  // Reads only the counter (never what load() writes), so it cannot loop; the 0 guard skips the mount run,
+  // where onMount's own load() is already in flight.
+  $effect(() => {
+    if (feedbackSubmitCount() > 0) void store.load();
   });
 
   /** Author suffix (R-C6): live user → name; deleted → "Deleted user"; anonymous → nothing. */

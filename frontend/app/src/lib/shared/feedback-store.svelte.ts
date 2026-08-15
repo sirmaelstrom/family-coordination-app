@@ -23,10 +23,11 @@ const SUBMIT_URL = '/api/settings/feedback/';
 /** Mirrors the Message column limit (FeedbackConfiguration); the server 400s past it. */
 export const FEEDBACK_MAX_LENGTH = 4000;
 
-const state = $state<{ open: boolean; submitting: boolean; error: string | null }>({
+const state = $state<{ open: boolean; submitting: boolean; error: string | null; submitted: number }>({
   open: false,
   submitting: false,
   error: null,
+  submitted: 0,
 });
 
 /** True while the dialog should be showing (reactive — read inside markup). */
@@ -42,6 +43,15 @@ export function feedbackSubmitting(): boolean {
 /** The last submit failure, shown inline in the dialog so the text isn't lost (reactive). */
 export function feedbackError(): string | null {
   return state.error;
+}
+
+/**
+ * Count of successful submissions this page-load (reactive). A surface that RENDERS feedback — the
+ * `/settings/feedback` inbox — reads this so it can refetch the moment something is submitted, instead of
+ * showing a stale list until its next 15s liveness poll. Starts at 0, so an effect can guard its first run.
+ */
+export function feedbackSubmitCount(): number {
+  return state.submitted;
 }
 
 /** Open the send-feedback dialog. Safe to call from any surface. */
@@ -93,6 +103,7 @@ export async function submitFeedback(kind: FeedbackKind, message: string): Promi
     }
 
     state.open = false;
+    state.submitted += 1;
     showToast({ message: 'Thanks — your feedback was sent.', kind: 'success' });
     return true;
   } catch {

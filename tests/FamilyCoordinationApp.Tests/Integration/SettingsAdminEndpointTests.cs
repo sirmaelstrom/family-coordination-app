@@ -22,9 +22,14 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// <para>The <c>Feedback_Submit_*</c> block covers <c>POST /api/settings/feedback</c> — the write side rebuilt after
 /// the WP-12 flip deleted the Blazor dialog that was the app's only feedback writer. Its load-bearing assertions are
 /// server-derived attribution (a body-supplied householdId/userId is ignored) and non-empty 4xx bodies (an empty one
-/// re-executes as a 405). All 13 were MEASURED failing against pre-fix HEAD <c>118866e</c>, where the route did not
-/// exist — and what a submit actually got there was <b>400 with a zero-length body and no content-type</b> (not a
-/// 404, not a 405), i.e. the empty-4xx trap was already live on this path.</para>
+/// gets re-executed through the GET-only <c>/not-found</c> page). All 13 were measured failing against pre-fix HEAD
+/// <c>118866e</c>, where the route did not exist.
+/// <para><b>Pre-fix observable, measured — not derived from the pipeline:</b> a throwaway worktree was checked out at
+/// <c>118866e</c>, these tests copied in, and a probe POSTed both <c>/api/settings/feedback/</c> and
+/// <c>/api/settings/feedback</c> through <see cref="ChoresWebAppFactory"/>. Both returned <b>400, Content-Length 0,
+/// no content-type</b>. Round-1 review expected a routing 405 and could not reproduce the 400, so the MECHANISM is
+/// unresolved and is left to the ApiResults/4xx-filter quest; only the observable is claimed here. It matters
+/// because it is what a client actually saw when the submit path was missing.</para>
 /// </summary>
 [Collection(IntegrationCollection.Name)]
 [Trait("kind", "integration")]
@@ -441,6 +446,94 @@ public sealed class SettingsAdminEndpointTests(PostgresContainerFixture postgres
 
         await using var ctx = await DbFactory.CreateDbContextAsync();
         (await ctx.Feedbacks.SingleAsync()).Type.Should().Be(expected);
+    }
+
+    /// <summary>
+    /// Round-1 council consensus (4/4 lenses), then MEASURED on a running stack: the original
+    /// <c>Enum.TryParse</c> + <c>Enum.IsDefined</c> parse accepted values the contract calls invalid — every one
+    /// of these returned <b>204</b> and stored a type the caller never named (<c>"bug,general"</c> parsed as the
+    /// flags combination <c>0|2</c> ⇒ <c>General</c>). The explicit whitelist rejects them. Each case fails
+    /// against the pre-amendment parser.
+    /// </summary>
+    [Theory]
+    [InlineData("0")]
+    [InlineData("1")]
+    [InlineData("2")]
+    [InlineData("bug,general")]
+    [InlineData("Bug , General")]
+    public async Task Feedback_Submit_RejectsNumericAndCommaFormTypes(string wire)
+    {
+        var resp = await NonAdminClient.PostAsJsonAsync(
+            $"{FeedbackUrl}/", new { type = wire, message = "undocumented type form" }, Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.BadRequest, "only bug/featureRequest/general are on the wire contract");
+        (await ReadMessageAsync(resp)).Should().NotBeNullOrWhiteSpace();
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        (await ctx.Feedbacks.CountAsync()).Should().Be(0);
+    }
+
+    /// <summary>
+    /// A caller-controlled <c>currentPage</c> whose astral character straddles the 500-char truncation boundary
+    /// used to leave a LONE high surrogate, which Npgsql's UTF-8 encoder rejected — the request became a
+    /// <b>500</b> (measured on a running stack: "Unable to translate Unicode character \\uD83D at index 499").
+    /// Truncation now steps back off the orphan. This test 500s against the pre-amendment code.
+    /// </summary>
+    [Fact]
+    public async Task Feedback_Submit_LongPageEndingMidSurrogatePair_DoesNotBlowUpTheWrite()
+    {
+        // 499 ASCII + U+1F600 (2 UTF-16 units, so the high half sits at index 499) + padding past the cut.
+        var page = new string('a', 499) + "\U0001F600" + new string('b', 200);
+        char.IsHighSurrogate(page[499]).Should().BeTrue("the probe must actually straddle the cut to be meaningful");
+
+        var resp = await NonAdminClient.PostAsJsonAsync(
+            $"{FeedbackUrl}/", new { type = "general", message = "surrogate boundary", currentPage = page }, Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        var stored = (await ctx.Feedbacks.SingleAsync()).CurrentPage!;
+        stored.Should().HaveLength(499, "the orphaned high surrogate is dropped rather than cut in half");
+        char.IsHighSurrogate(stored[^1]).Should().BeFalse("a stored value must be valid UTF-16");
+        stored.Should().Be(new string('a', 499));
+    }
+
+    /// <summary>
+    /// Guards the non-empty-4xx invariant for this file at the SOURCE, because the runtime branch is not
+    /// reachable through the pipeline: <c>.RequireAuthorization()</c>'s DefaultPolicy carries
+    /// <c>WhitelistedEmailRequirement</c>, whose handler needs a whitelisted <c>Users</c> row, so any caller that
+    /// reaches these handlers has already resolved (council round 1, three lenses). A bodiless
+    /// <c>Results.Unauthorized()</c> here would be re-executed through the GET-only <c>/not-found</c> page and the
+    /// SPA's 401 branch would never run — so the honest test is that the pattern cannot come back into this file.
+    /// </summary>
+    /// <remarks>
+    /// Comments are stripped before matching. The first version of this guard did not do that and failed
+    /// immediately — on the XML doc of the very helper it was guarding, which names the banned call in prose.
+    /// A raw-text guard matches documentation as readily as code, so it has to look at code only.
+    /// </remarks>
+    [Fact]
+    public void SettingsAdminEndpoints_ContainsNoBodilessUnauthorized()
+    {
+        var code = string.Join(
+            '\n',
+            File.ReadAllLines(EndpointsSourcePath())
+                .Where(line => !line.TrimStart().StartsWith("//", StringComparison.Ordinal)));
+
+        code.Should().NotContain("Results.Unauthorized()",
+            "an empty 401 on /api re-executes through a GET-only page; use UnauthorizedFeedback() (a JSON body)");
+        code.Should().Contain("UnauthorizedFeedback()", "the bodied helper is what the handlers should call");
+    }
+
+    /// <summary>Walk up from the test binary to the repo root, then to the endpoints file under review.</summary>
+    private static string EndpointsSourcePath()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "src", "FamilyCoordinationApp")))
+        {
+            dir = dir.Parent;
+        }
+        dir.Should().NotBeNull("the test must be able to locate the repo root");
+        return Path.Combine(dir!.FullName, "src", "FamilyCoordinationApp", "Endpoints", "SettingsAdminEndpoints.cs");
     }
 
     /// <summary>An omitted type defaults to General (the dialog's default) rather than 400ing.</summary>

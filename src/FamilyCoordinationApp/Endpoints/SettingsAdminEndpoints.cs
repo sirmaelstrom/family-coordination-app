@@ -186,8 +186,8 @@ public static class SettingsAdminEndpoints
     /// <c>FeedbackDialog</c>, the app's only writer) until this rebuild; the admin inbox could not receive
     /// anything in between.
     /// <para><b>Attribution (M1):</b> the body carries NO ids — user + household come from the caller's resolved
-    /// context, so a caller cannot file into another household. A site admin with no user row files an
-    /// unattributed item (the anonymous case the nullable columns exist for).</para>
+    /// context, so a caller cannot file into another household. In practice attribution is ALWAYS populated: see
+    /// <see cref="ResolveFeedbackScopeAsync"/> for why the unattributed branch is defensive, not a live case.</para>
     /// <para><b>Type</b> is parsed leniently from the camelCase wire value (<c>bug</c> /
     /// <c>featureRequest</c> / <c>general</c>, case-insensitive; absent ⇒ <c>General</c>) rather than model-bound,
     /// so an unknown value is OUR 400-with-body instead of the binder's — the empty-4xx trap
@@ -204,7 +204,7 @@ public static class SettingsAdminEndpoints
         CancellationToken ct)
     {
         var scope = await ResolveFeedbackScopeAsync(principal, siteAdmin, dbFactory, ct);
-        if (!scope.Authorized) return Results.Unauthorized();
+        if (!scope.Authorized) return UnauthorizedFeedback();
 
         var message = req?.Message?.Trim() ?? "";
         if (message.Length == 0)
@@ -236,17 +236,36 @@ public static class SettingsAdminEndpoints
     }
 
     /// <summary>
-    /// Parse the wire type value. Null/empty ⇒ <see cref="FeedbackType.General"/> (the dialog's default); anything
-    /// else must match an enum name case-insensitively (the wire form is camelCase, R-C10).
+    /// Parse the wire type value against an EXPLICIT three-value whitelist. Null/empty ⇒
+    /// <see cref="FeedbackType.General"/> (the dialog's default); otherwise exactly one of the camelCase wire
+    /// names (R-C10), case-insensitively.
+    /// <para><b>Why not <c>Enum.TryParse</c> + <c>Enum.IsDefined</c>:</b> that pair silently accepts values this
+    /// endpoint documents as invalid — numeric strings and comma/flags forms both round-trip to a defined member.
+    /// Measured on a running stack before this was tightened: <c>"0"</c>, <c>"1"</c>, <c>"2"</c>,
+    /// <c>"bug,general"</c> and <c>"Bug , General"</c> ALL returned 204 and stored a type the caller never named
+    /// (<c>"bug,general"</c> → <c>0|2</c> → <c>General</c>). A whitelist cannot drift that way.</para>
     /// </summary>
     private static bool TryParseFeedbackType(string? value, out FeedbackType type)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        var wire = value?.Trim();
+        switch (wire)
         {
-            type = FeedbackType.General;
-            return true;
+            case null or "":
+                type = FeedbackType.General;
+                return true;
+            case not null when wire.Equals("bug", StringComparison.OrdinalIgnoreCase):
+                type = FeedbackType.Bug;
+                return true;
+            case not null when wire.Equals("featureRequest", StringComparison.OrdinalIgnoreCase):
+                type = FeedbackType.FeatureRequest;
+                return true;
+            case not null when wire.Equals("general", StringComparison.OrdinalIgnoreCase):
+                type = FeedbackType.General;
+                return true;
+            default:
+                type = default;
+                return false;
         }
-        return Enum.TryParse(value.Trim(), ignoreCase: true, out type) && Enum.IsDefined(type);
     }
 
     /// <summary>#4 GET / — feedback for the caller (admin: all; regular: own household), + the isSiteAdmin signal.</summary>
@@ -258,7 +277,7 @@ public static class SettingsAdminEndpoints
         CancellationToken ct)
     {
         var scope = await ResolveFeedbackScopeAsync(principal, siteAdmin, dbFactory, ct);
-        if (!scope.Authorized) return Results.Unauthorized();
+        if (!scope.Authorized) return UnauthorizedFeedback();
 
         var items = await feedbackService.GetFeedbackAsync(scope.IsSiteAdmin, scope.HouseholdId, ct);
         return Results.Ok(new FeedbackListDto(scope.IsSiteAdmin, items.Select(ToFeedbackDto).ToList()));
@@ -270,7 +289,7 @@ public static class SettingsAdminEndpoints
         IFeedbackService feedbackService, IDbContextFactory<ApplicationDbContext> dbFactory, CancellationToken ct)
     {
         var scope = await ResolveFeedbackScopeAsync(principal, siteAdmin, dbFactory, ct);
-        if (!scope.Authorized) return Results.Unauthorized();
+        if (!scope.Authorized) return UnauthorizedFeedback();
 
         return await feedbackService.MarkReadAsync(id, scope.IsSiteAdmin, scope.HouseholdId, ct)
             ? Results.NoContent()
@@ -283,7 +302,7 @@ public static class SettingsAdminEndpoints
         IFeedbackService feedbackService, IDbContextFactory<ApplicationDbContext> dbFactory, CancellationToken ct)
     {
         var scope = await ResolveFeedbackScopeAsync(principal, siteAdmin, dbFactory, ct);
-        if (!scope.Authorized) return Results.Unauthorized();
+        if (!scope.Authorized) return UnauthorizedFeedback();
 
         return await feedbackService.MarkResolvedAsync(id, scope.IsSiteAdmin, scope.HouseholdId, ct)
             ? Results.NoContent()
@@ -296,7 +315,7 @@ public static class SettingsAdminEndpoints
         IFeedbackService feedbackService, IDbContextFactory<ApplicationDbContext> dbFactory, CancellationToken ct)
     {
         var scope = await ResolveFeedbackScopeAsync(principal, siteAdmin, dbFactory, ct);
-        if (!scope.Authorized) return Results.Unauthorized();
+        if (!scope.Authorized) return UnauthorizedFeedback();
 
         return await feedbackService.ReopenAsync(id, scope.IsSiteAdmin, scope.HouseholdId, ct)
             ? Results.NoContent()
@@ -319,8 +338,15 @@ public static class SettingsAdminEndpoints
 
     /// <summary>
     /// Resolve the feedback caller's scope (R-C5): isSiteAdmin from the claim email DIRECTLY + userId/householdId
-    /// from the resolver (a non-admin's M1 read scope, and the submit attribution). A site admin is authorized even
-    /// without a resolved user row — their submissions are then unattributed; a non-admin must resolve (else 401).
+    /// from the resolver (a non-admin's M1 read scope, and the submit attribution).
+    /// <para><b>The <c>Authorized == false</c> branch is DEFENSIVE, not a live path</b> (council round 1, three
+    /// lenses): reaching any handler here requires passing <c>.RequireAuthorization()</c>, whose DefaultPolicy
+    /// (Program.cs) carries <see cref="Authorization.WhitelistedEmailRequirement"/>, and its handler only succeeds
+    /// for an email with a <c>Users</c> row where <c>IsWhitelisted</c> — so a caller who gets this far has
+    /// necessarily been resolved. It survives only in the setup-incomplete window (that handler short-circuits
+    /// while no households exist) or a delete-mid-request race. It is deliberately NOT widened with a
+    /// feedback-specific policy: a site admin with no <c>Users</c> row cannot use any other part of this app
+    /// either, so "unattributed submission" is not a product case worth building an auth exception for.</para>
     /// </summary>
     private static async Task<(bool IsSiteAdmin, int? UserId, int? HouseholdId, bool Authorized)> ResolveFeedbackScopeAsync(
         ClaimsPrincipal principal,
@@ -336,6 +362,20 @@ public static class SettingsAdminEndpoints
     }
 
     private static IResult NotFoundFeedback() => Results.NotFound(new { message = "Feedback not found." });
+
+    /// <summary>
+    /// The unresolvable-caller 401 — WITH A BODY, unlike bare <see cref="Results.Unauthorized"/>.
+    /// <para>A zero-length 401 is re-executed by the global <c>UseStatusCodePagesWithReExecute("/not-found")</c>
+    /// (Program.cs) through a GET-only Razor Page, so on these POST routes the caller observes a status that is
+    /// not 401 at all and the SPA's own 401/403 "your session expired" branch never runs. Same defect class
+    /// <see cref="Authorization.ApiAwareAuthEvents"/> already writes a body to avoid.</para>
+    /// <para>Scoped deliberately to the feedback family: <c>Results.Unauthorized()</c> is the house pattern at
+    /// ~100 sites under Endpoints/, and sweeping it is the ApiResults/endpoint-filter quest's job, not this
+    /// route's. Fixing the five here keeps the file internally consistent and stops this PR adding a new instance.</para>
+    /// </summary>
+    private static IResult UnauthorizedFeedback() =>
+        Results.Json(new { message = "Your session could not be resolved — sign in again." },
+            statusCode: StatusCodes.Status401Unauthorized);
 
     // ─── Projection ───────────────────────────────────────────────────────────────
 

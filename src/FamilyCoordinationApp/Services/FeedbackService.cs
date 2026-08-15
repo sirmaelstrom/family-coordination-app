@@ -59,12 +59,26 @@ public sealed class FeedbackService(
         return feedback.Id;
     }
 
-    /// <summary>Trim + cap a diagnostic field to its column limit; whitespace-only becomes null.</summary>
+    /// <summary>
+    /// Trim + cap a diagnostic field to its column limit; whitespace-only becomes null.
+    /// <para><b>Never cuts between a surrogate pair.</b> <c>CurrentPage</c> is a request-body field, so a caller
+    /// fully controls it: a 700-char value whose astral character straddles index 500 made <c>value[..500]</c>
+    /// leave a LONE high surrogate, which is not valid UTF-16 — Npgsql's UTF-8 encoder then threw
+    /// <c>EncoderFallbackException</c> and the request became a 500 (measured on a running stack before this
+    /// guard; "Unable to translate Unicode character \\uD83D at index 499"). Dropping the orphan is safe: its low
+    /// half is beyond the cut anyway.</para>
+    /// <para>The length check is deliberately conservative — the columns are <c>varchar(500)</c>, which counts
+    /// CODE POINTS, and a UTF-16 length is always ≥ the code-point count, so this can never overflow the column.</para>
+    /// </summary>
     private static string? Truncate(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
         var trimmed = value.Trim();
-        return trimmed.Length <= DiagnosticMaxLength ? trimmed : trimmed[..DiagnosticMaxLength];
+        if (trimmed.Length <= DiagnosticMaxLength) return trimmed;
+
+        var cut = DiagnosticMaxLength;
+        if (char.IsHighSurrogate(trimmed[cut - 1])) cut--;
+        return trimmed[..cut];
     }
 
     public async Task<IReadOnlyList<Feedback>> GetFeedbackAsync(bool isSiteAdmin, int? householdId, CancellationToken cancellationToken = default)

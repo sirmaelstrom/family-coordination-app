@@ -68,8 +68,9 @@
   }
 
   /**
-   * Esc / backdrop dismissal routes through the store so a mid-submit close is
-   * refused there too — otherwise `<dialog>`'s native Esc would bypass the guard.
+   * `<dialog>` fires `cancel` for the Esc key (a modal dialog is NOT dismissed by
+   * backdrop clicks — there is no such native behaviour to intercept). Blocking it
+   * mid-submit is what stops Esc bypassing closeFeedback()'s own guard.
    */
   function handleCancel(e: Event) {
     if (submitting) e.preventDefault();
