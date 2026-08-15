@@ -356,76 +356,126 @@ public class SecurityTests
 
     #endregion
 
-    #region Path Traversal Prevention Tests (ImageService)
+    #region Path Traversal + Tenant Scoping (ImageService.DeleteImageAsync)
 
-    [Theory]
-    [InlineData("/../../../etc/passwd")]
-    [InlineData("/uploads/../../../etc/passwd")]
-    [InlineData("/uploads/1/../../etc/passwd")]
-    public async Task DeleteImageAsync_PathTraversal_IsBlocked(string maliciousPath)
+    // These run against a REAL temporary wwwroot and assert on THE FILE. The previous versions asserted only
+    // "does not throw" — which every input satisfies whether it was blocked or deleted, so they could not
+    // distinguish the two; and with the mocked "/var/www/app/wwwroot" root, Path.GetFullPath on Windows
+    // rebased every path to C:\var\www\… so even the "valid path is allowed" case was silently taking the
+    // blocked branch. Observing the file is what makes the boundary testable at all.
+
+    [Fact]
+    public async Task DeleteImageAsync_OwnHouseholdPath_DeletesTheFile()
     {
-        // Arrange
-        var mockEnv = new Mock<IWebHostEnvironment>();
-        mockEnv.Setup(e => e.WebRootPath).Returns("/var/www/app/wwwroot");
+        using var root = new TempWebRoot();
+        var file = root.WriteUpload(householdId: 1, fileName: "photo.jpg");
 
-        var mockLogger = new Mock<ILogger<ImageService>>();
-        var service = new ImageService(mockEnv.Object, mockLogger.Object);
+        await NewImageService(root.Path).DeleteImageAsync("/uploads/1/photo.jpg", householdId: 1);
 
-        // Act - should not throw, should silently block
-        // The method gracefully handles path traversal attempts without throwing
-        var exception = await Record.ExceptionAsync(() => service.DeleteImageAsync(maliciousPath));
-
-        // Assert - no exception means the path traversal was handled gracefully
-        exception.Should().BeNull();
-    }
-
-    [Theory]
-    [InlineData("/uploads/1/valid-image.jpg")]
-    [InlineData("/uploads/123/photo.png")]
-    public async Task DeleteImageAsync_ValidPath_IsAllowed(string validPath)
-    {
-        // Arrange
-        var mockEnv = new Mock<IWebHostEnvironment>();
-        mockEnv.Setup(e => e.WebRootPath).Returns("/var/www/app/wwwroot");
-
-        var mockLogger = new Mock<ILogger<ImageService>>();
-        var service = new ImageService(mockEnv.Object, mockLogger.Object);
-
-        // Act - should not throw for valid paths
-        var exception = await Record.ExceptionAsync(() => service.DeleteImageAsync(validPath));
-
-        // Assert - valid paths are handled gracefully (file may not exist, but no exception)
-        exception.Should().BeNull();
+        File.Exists(file).Should().BeFalse();
     }
 
     [Fact]
-    public async Task DeleteImageAsync_NullPath_HandledGracefully()
+    public async Task DeleteImageAsync_OtherHouseholdPath_LeavesFileIntact()
     {
-        // Arrange
-        var mockEnv = new Mock<IWebHostEnvironment>();
-        mockEnv.Setup(e => e.WebRootPath).Returns("/var/www/app/wwwroot");
+        // The A5 tenant boundary. This path is traversal-free and inside WebRootPath, so the old
+        // WebRootPath-only guard accepted it and the file WAS deleted.
+        using var root = new TempWebRoot();
+        var victim = root.WriteUpload(householdId: 2, fileName: "photo.jpg");
 
-        var mockLogger = new Mock<ILogger<ImageService>>();
-        var service = new ImageService(mockEnv.Object, mockLogger.Object);
+        await NewImageService(root.Path).DeleteImageAsync("/uploads/2/photo.jpg", householdId: 1);
 
-        // Act & Assert - should not throw
-        await service.Invoking(s => s.DeleteImageAsync(null!))
-            .Should().NotThrowAsync();
+        File.Exists(victim).Should().BeTrue();
     }
 
     [Fact]
-    public async Task DeleteImageAsync_EmptyPath_HandledGracefully()
+    public async Task DeleteImageAsync_SiblingHouseholdWithPrefixedId_LeavesFileIntact()
     {
-        // Arrange
-        var mockEnv = new Mock<IWebHostEnvironment>();
-        mockEnv.Setup(e => e.WebRootPath).Returns("/var/www/app/wwwroot");
+        // "uploads/12" starts with "uploads/1", so a StartsWith check without a trailing separator treats
+        // household 12's directory as being inside household 1's.
+        using var root = new TempWebRoot();
+        var victim = root.WriteUpload(householdId: 12, fileName: "photo.jpg");
 
-        var mockLogger = new Mock<ILogger<ImageService>>();
-        var service = new ImageService(mockEnv.Object, mockLogger.Object);
+        await NewImageService(root.Path).DeleteImageAsync("/uploads/12/photo.jpg", householdId: 1);
 
-        // Act & Assert - should not throw
-        await service.Invoking(s => s.DeleteImageAsync(""))
+        File.Exists(victim).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("/../outside.jpg")]
+    [InlineData("/uploads/../outside.jpg")]
+    [InlineData("/uploads/1/../../outside.jpg")]
+    public async Task DeleteImageAsync_PathTraversal_LeavesFileIntact(string maliciousPath)
+    {
+        using var root = new TempWebRoot();
+        // The traversal target: a real file the escape would reach if the guard let it through.
+        var outside = Path.Combine(root.Path, "outside.jpg");
+        File.WriteAllText(outside, "x");
+
+        await NewImageService(root.Path).DeleteImageAsync(maliciousPath, householdId: 1);
+
+        File.Exists(outside).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task DeleteImageAsync_BlankPath_HandledGracefully(string? blankPath)
+    {
+        using var root = new TempWebRoot();
+
+        await NewImageService(root.Path).Invoking(s => s.DeleteImageAsync(blankPath!, householdId: 1))
             .Should().NotThrowAsync();
+    }
+
+    [Theory]
+    [InlineData("https://evil.example/x.jpg")]  // PhotoPath is unvalidated client input on chore/room write
+    [InlineData("C:\\Windows\\System32\\drivers\\etc\\hosts")]
+    [InlineData("/uploads/1/\u0000name.jpg")]
+    [InlineData("//////")]
+    public async Task DeleteImageAsync_MalformedPath_DoesNotThrow(string malformedPath)
+    {
+        // These reach DeleteImageAsync directly: chore/room PhotoPath is stored verbatim from the request
+        // body and replayed here by delete-on-replace. A path the OS refuses to parse must be refused, not
+        // surfaced as a 500 on an otherwise-valid update.
+        using var root = new TempWebRoot();
+
+        await NewImageService(root.Path).Invoking(s => s.DeleteImageAsync(malformedPath, householdId: 1))
+            .Should().NotThrowAsync();
+    }
+
+    private static ImageService NewImageService(string webRootPath)
+    {
+        var mockEnv = new Mock<IWebHostEnvironment>();
+        mockEnv.Setup(e => e.WebRootPath).Returns(webRootPath);
+        return new ImageService(mockEnv.Object, new Mock<ILogger<ImageService>>().Object);
+    }
+
+    /// <summary>A throwaway wwwroot on disk, so a delete either happens or does not and the test can see which.</summary>
+    private sealed class TempWebRoot : IDisposable
+    {
+        public string Path { get; }
+
+        public TempWebRoot()
+        {
+            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "fca-imagesvc-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path);
+        }
+
+        public string WriteUpload(int householdId, string fileName)
+        {
+            var dir = System.IO.Path.Combine(Path, "uploads", householdId.ToString());
+            Directory.CreateDirectory(dir);
+            var fullPath = System.IO.Path.Combine(dir, fileName);
+            File.WriteAllText(fullPath, "x");
+            return fullPath;
+        }
+
+        public void Dispose()
+        {
+            try { Directory.Delete(Path, recursive: true); } catch { /* best-effort temp cleanup */ }
+        }
     }
 
     #endregion

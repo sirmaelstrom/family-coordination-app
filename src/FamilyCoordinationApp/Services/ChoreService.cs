@@ -133,7 +133,7 @@ public class ChoreService(
         // Delete-on-replace for the photo (M8) — drop the old file when the path changes.
         if (!string.Equals(chore.PhotoPath, cmd.PhotoPath, StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(chore.PhotoPath))
         {
-            await imageService.DeleteImageAsync(chore.PhotoPath, cancellationToken);
+            await imageService.DeleteImageAsync(chore.PhotoPath, householdId, cancellationToken);
         }
 
         chore.Name = cmd.Name.Trim();
@@ -189,7 +189,7 @@ public class ChoreService(
         // filesystem). No-op safe when PhotoPath is null/empty.
         if (!string.IsNullOrWhiteSpace(chore.PhotoPath))
         {
-            await imageService.DeleteImageAsync(chore.PhotoPath, cancellationToken);
+            await imageService.DeleteImageAsync(chore.PhotoPath, householdId, cancellationToken);
         }
 
         // Remove the chore's room memberships FIRST (M4). The ChoreRoom→Chore FK is ClientNoAction (WP-01),

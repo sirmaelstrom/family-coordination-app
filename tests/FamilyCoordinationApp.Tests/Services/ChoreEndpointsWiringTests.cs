@@ -112,7 +112,7 @@ public class ChoreDefaultViewSetterTests
         SeedUser(options, userId: 1, householdId: 1, view: null);
 
         var (outcome, normalized) =
-            await ChoresEndpoints.ApplyDefaultViewAsync(factory, userId: 1, ChoreLens.Mine, CancellationToken.None);
+            await ChoresEndpoints.ApplyDefaultViewAsync(factory, householdId: 1, userId: 1, ChoreLens.Mine, CancellationToken.None);
 
         outcome.Should().Be(ChoresEndpoints.DefaultViewOutcome.Ok);
         normalized.Should().Be(ChoreLens.Mine);
@@ -126,7 +126,7 @@ public class ChoreDefaultViewSetterTests
         SeedUser(options, userId: 1, householdId: 1, view: ChoreLens.Rooms);
 
         var (outcome, normalized) =
-            await ChoresEndpoints.ApplyDefaultViewAsync(factory, userId: 1, null, CancellationToken.None);
+            await ChoresEndpoints.ApplyDefaultViewAsync(factory, householdId: 1, userId: 1, null, CancellationToken.None);
 
         outcome.Should().Be(ChoresEndpoints.DefaultViewOutcome.Ok);
         normalized.Should().BeNull();
@@ -140,7 +140,7 @@ public class ChoreDefaultViewSetterTests
         SeedUser(options, userId: 1, householdId: 1, view: ChoreLens.Mine);
 
         var (outcome, normalized) =
-            await ChoresEndpoints.ApplyDefaultViewAsync(factory, userId: 1, "all-the-chores", CancellationToken.None);
+            await ChoresEndpoints.ApplyDefaultViewAsync(factory, householdId: 1, userId: 1, "all-the-chores", CancellationToken.None);
 
         outcome.Should().Be(ChoresEndpoints.DefaultViewOutcome.InvalidLens);
         normalized.Should().BeNull();
@@ -154,10 +154,28 @@ public class ChoreDefaultViewSetterTests
         SeedUser(options, userId: 1, householdId: 1, view: null);
         SeedUser(options, userId: 2, householdId: 1, view: ChoreLens.Rooms);
 
-        await ChoresEndpoints.ApplyDefaultViewAsync(factory, userId: 1, ChoreLens.UpForGrabs, CancellationToken.None);
+        await ChoresEndpoints.ApplyDefaultViewAsync(factory, householdId: 1, userId: 1, ChoreLens.UpForGrabs, CancellationToken.None);
 
         ReadView(options, userId: 1).Should().Be(ChoreLens.UpForGrabs);
         ReadView(options, userId: 2).Should().Be(ChoreLens.Rooms); // other caller untouched
+    }
+
+    [Fact]
+    public async Task ApplyDefaultView_IsScopedToHousehold_DoesNotTouchUserInAnotherHousehold()
+    {
+        // The tenant boundary, not merely the per-user one (A5): user 2 lives in household 2, so a caller
+        // resolved to household 1 must not be able to write that row even when handed its user id. Before the
+        // household predicate this lookup was `u.Id == userId` alone and this write LANDED.
+        var (factory, _) = NewFactory(out var options);
+        SeedUser(options, userId: 1, householdId: 1, view: null);
+        SeedUser(options, userId: 2, householdId: 2, view: ChoreLens.Rooms);
+
+        var (outcome, normalized) =
+            await ChoresEndpoints.ApplyDefaultViewAsync(factory, householdId: 1, userId: 2, ChoreLens.UpForGrabs, CancellationToken.None);
+
+        outcome.Should().Be(ChoresEndpoints.DefaultViewOutcome.UserMissing);
+        normalized.Should().BeNull();
+        ReadView(options, userId: 2).Should().Be(ChoreLens.Rooms); // the other household's row is untouched
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────────────────
