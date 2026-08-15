@@ -128,6 +128,45 @@ public sealed class UploadsGateIntegrationTests(PostgresContainerFixture postgre
     }
 
     [Fact]
+    public async Task Anonymous_DenialCarriesABody()
+    {
+        // An empty 4xx re-executes through the GET-only /not-found page; the gate's own doc mandates a body.
+        using var client = _factory.CreateAnonymousClient();
+
+        var response = await client.GetAsync($"/uploads/{ChoresWebAppFactory.HouseholdAId}/{HouseholdAFile}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await response.Content.ReadAsStringAsync()).Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task Head_IsServed_LikeTheStaticFileMiddlewareUsedTo()
+    {
+        // MapMethods registers GET + HEAD: the middleware this endpoint replaced answered both.
+        using var client = _factory.CreateClientAs(ChoresWebAppFactory.UserAEmail);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Head, $"/uploads/{ChoresWebAppFactory.HouseholdAId}/{HouseholdAFile}");
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Theory]
+    [InlineData("..%2F..%2Fappsettings.json")]
+    [InlineData("..%5C..%5Cappsettings.json")]
+    [InlineData("%2e%2e%2fappsettings.json")]
+    public async Task EncodedTraversalInTheFileNameSegment_NeverServesAFile(string encodedFileName)
+    {
+        // The route parameter cannot hold a raw '/', so these are the shapes that actually reach the handler.
+        using var client = _factory.CreateClientAs(ChoresWebAppFactory.UserAEmail);
+
+        var response = await client.GetAsync($"/uploads/{ChoresWebAppFactory.HouseholdAId}/{encodedFileName}");
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task NonImageExtension_IsRefused()
     {
         WriteUpload(ChoresWebAppFactory.HouseholdAId, "notes.txt");
