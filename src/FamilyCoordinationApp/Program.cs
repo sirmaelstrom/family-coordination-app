@@ -405,6 +405,13 @@ app.Use(async (context, next) =>
         path.StartsWith("/account") ||
         path.StartsWith("/household") ||
         path.StartsWith("/_") ||   // /_app SPA assets (Blazor's /_framework and /_blazor died in WP-12)
+        // Household user content. REQUIRED, not an optimization: these paths used to be short-circuited by
+        // UseStaticFiles above, and branching them past it (so they can be authorization-gated) also walks
+        // them into this middleware. The suffix list below covers .png but NOT .jpg/.jpeg/.gif/.webp, which
+        // ImageService equally accepts — so without this line a recipe grid of .jpg thumbnails runs one
+        // SetupService.IsSetupCompleteAsync (and therefore one Database.MigrateAsync) PER IMAGE, before
+        // authorization. MapUploadsEndpoints gates these paths itself.
+        path.StartsWith("/uploads") ||
         path.StartsWith("/health") ||
         path.StartsWith("/lib") ||
         path.StartsWith("/css") ||

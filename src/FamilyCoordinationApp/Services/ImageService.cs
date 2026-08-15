@@ -216,7 +216,9 @@ public class ImageService(
 
     public Task<IEnumerable<string>> ListImagesAsync(int householdId, CancellationToken cancellationToken = default)
     {
-        var uploadsPath = Path.Combine(environment.WebRootPath, "uploads", householdId.ToString());
+        // Same helper as the write path, the delete guard and the read gate — one definition of where a
+        // household's uploads live, so a change to the layout cannot leave this one behind.
+        var uploadsPath = UploadRootFor(environment.WebRootPath, householdId);
 
         if (!Directory.Exists(uploadsPath))
         {

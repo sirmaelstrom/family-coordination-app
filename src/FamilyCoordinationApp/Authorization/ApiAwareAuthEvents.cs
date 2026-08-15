@@ -25,14 +25,24 @@ public static class ApiAwareAuthEvents
     public static readonly PathString ApiPrefix = "/api";
 
     /// <summary>
-    /// If the request targets <c>/api</c>, write <paramref name="apiStatusCode"/> and suppress the redirect;
-    /// otherwise perform the normal redirect. Works for any auth scheme's <see cref="RedirectContext{TOptions}"/>
-    /// (cookie login / access-denied and the Google authorization-endpoint challenge all share this shape).
+    /// Household user content, authorization-gated by <c>MapUploadsEndpoints</c>. Treated like <c>/api</c>
+    /// here: these paths are only ever fetched as <c>&lt;img src&gt;</c>, never navigated to, so redirecting
+    /// them starts a full Google OAuth challenge (writing a correlation cookie) per image the moment a session
+    /// expires — and the image still does not render. A status code is both cheaper and honest.
+    /// </summary>
+    public static readonly PathString UploadsPrefix = "/uploads";
+
+    /// <summary>
+    /// If the request targets <c>/api</c> or <c>/uploads</c>, write <paramref name="apiStatusCode"/> and
+    /// suppress the redirect; otherwise perform the normal redirect. Works for any auth scheme's
+    /// <see cref="RedirectContext{TOptions}"/> (cookie login / access-denied and the Google
+    /// authorization-endpoint challenge all share this shape).
     /// </summary>
     public static Task StatusForApiElseRedirect<TOptions>(RedirectContext<TOptions> context, int apiStatusCode)
         where TOptions : AuthenticationSchemeOptions
     {
-        if (context.Request.Path.StartsWithSegments(ApiPrefix))
+        if (context.Request.Path.StartsWithSegments(ApiPrefix) ||
+            context.Request.Path.StartsWithSegments(UploadsPrefix))
         {
             context.Response.StatusCode = apiStatusCode;
             // The body must be non-empty: UseStatusCodePagesWithReExecute re-executes any empty-body 4xx
