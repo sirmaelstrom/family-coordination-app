@@ -19,6 +19,12 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// test: R-C1 (feedback IDOR is blocked), R-C2 (approve is atomic — a forced mid-approve failure rolls back fully),
 /// R-C3 (an already-reviewed request is a 409, never a second household); plus the 403 site-admin gate and the
 /// dual-mode feedback visibility.
+/// <para>The <c>Feedback_Submit_*</c> block covers <c>POST /api/settings/feedback</c> — the write side rebuilt after
+/// the WP-12 flip deleted the Blazor dialog that was the app's only feedback writer. Its load-bearing assertions are
+/// server-derived attribution (a body-supplied householdId/userId is ignored) and non-empty 4xx bodies (an empty one
+/// re-executes as a 405). All 13 were MEASURED failing against pre-fix HEAD <c>118866e</c>, where the route did not
+/// exist — and what a submit actually got there was <b>400 with a zero-length body and no content-type</b> (not a
+/// 404, not a 405), i.e. the empty-4xx trap was already live on this path.</para>
 /// </summary>
 [Collection(IntegrationCollection.Name)]
 [Trait("kind", "integration")]
@@ -347,5 +353,202 @@ public sealed class SettingsAdminEndpointTests(PostgresContainerFixture postgres
     {
         (await AdminClient.PostAsync($"{FeedbackUrl}/999999/read", null))
             .StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // ─── Feedback SUBMIT (POST /) — the write side rebuilt after the WP-12 flip ────
+    //
+    // All 13 below were measured failing against pre-fix HEAD 118866e: the route did not
+    // exist, so the app shipped a feedback INBOX with no reachable writer (zero
+    // `Feedbacks.Add` in src/ since the WP-12 flip deleted FeedbackDialog.razor).
+
+    /// <summary>
+    /// The whole point of the route: a regular user's submission is stored, attributed to THEM, and comes back on
+    /// their own dual-mode GET. This is the end-to-end "the bug-report channel works again" assertion.
+    /// </summary>
+    [Fact]
+    public async Task Feedback_Submit_StoresItem_AttributedToCaller_AndItAppearsInTheirOwnList()
+    {
+        var resp = await NonAdminClient.PostAsJsonAsync(
+            $"{FeedbackUrl}/",
+            new { type = "bug", message = "  The shopping list drops items.  ", currentPage = "/shopping-list" },
+            Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using (var ctx = await DbFactory.CreateDbContextAsync())
+        {
+            var stored = await ctx.Feedbacks.SingleAsync();
+            stored.Message.Should().Be("The shopping list drops items.", "the message is stored trimmed");
+            stored.Type.Should().Be(FeedbackType.Bug);
+            stored.CurrentPage.Should().Be("/shopping-list");
+            stored.UserId.Should().Be(ChoresWebAppFactory.UserBId, "attribution comes from the caller's cookie");
+            stored.HouseholdId.Should().Be(ChoresWebAppFactory.HouseholdBId);
+            stored.IsRead.Should().BeFalse();
+            stored.IsResolved.Should().BeFalse();
+        }
+
+        var list = (await NonAdminClient.GetFromJsonAsync<FeedbackListWire>($"{FeedbackUrl}/", Json))!;
+        list.items.Should().ContainSingle().Which.message.Should().Be("The shopping list drops items.");
+    }
+
+    /// <summary>
+    /// M1: the submit body carries no ids, and a caller cannot smuggle one in — extra fields are ignored and the row
+    /// still lands in the CALLER's household, invisible to the other one.
+    /// </summary>
+    [Fact]
+    public async Task Feedback_Submit_IgnoresClientSuppliedScope_AndLandsInTheCallersHousehold()
+    {
+        // Alice (site admin, household A) submits while claiming to be bob in household B.
+        var resp = await AdminClient.PostAsJsonAsync(
+            $"{FeedbackUrl}/",
+            new
+            {
+                type = "general",
+                message = "Attribution probe.",
+                householdId = ChoresWebAppFactory.HouseholdBId,
+                userId = ChoresWebAppFactory.UserBId,
+                isRead = true,
+                isResolved = true,
+            },
+            Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using (var ctx = await DbFactory.CreateDbContextAsync())
+        {
+            var stored = await ctx.Feedbacks.SingleAsync();
+            stored.HouseholdId.Should().Be(ChoresWebAppFactory.HouseholdAId, "the household comes from the cookie, not the body");
+            stored.UserId.Should().Be(ChoresWebAppFactory.UserAId);
+            stored.IsRead.Should().BeFalse("lifecycle flags are admin-only mutations, not submit fields");
+            stored.IsResolved.Should().BeFalse();
+        }
+
+        // And it is invisible to the other household (the M1 read scope still holds for submitted items).
+        var bobList = (await NonAdminClient.GetFromJsonAsync<FeedbackListWire>($"{FeedbackUrl}/", Json))!;
+        bobList.items.Should().BeEmpty();
+    }
+
+    /// <summary>The three camelCase wire values map to the enum (R-C10), case-insensitively.</summary>
+    [Theory]
+    [InlineData("bug", FeedbackType.Bug)]
+    [InlineData("featureRequest", FeedbackType.FeatureRequest)]
+    [InlineData("FeatureRequest", FeedbackType.FeatureRequest)]
+    [InlineData("general", FeedbackType.General)]
+    public async Task Feedback_Submit_ParsesWireType(string wire, FeedbackType expected)
+    {
+        (await NonAdminClient.PostAsJsonAsync($"{FeedbackUrl}/", new { type = wire, message = "x" }, Json))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        (await ctx.Feedbacks.SingleAsync()).Type.Should().Be(expected);
+    }
+
+    /// <summary>An omitted type defaults to General (the dialog's default) rather than 400ing.</summary>
+    [Fact]
+    public async Task Feedback_Submit_OmittedType_DefaultsToGeneral()
+    {
+        (await NonAdminClient.PostAsJsonAsync($"{FeedbackUrl}/", new { message = "no type field" }, Json))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        (await ctx.Feedbacks.SingleAsync()).Type.Should().Be(FeedbackType.General);
+    }
+
+    /// <summary>
+    /// Every rejection is a 400 WITH A BODY. An empty non-GET 4xx re-executes through the GET-only /not-found page
+    /// and surfaces to the caller as a 405, so "400" alone is not the assertion — the body is
+    /// (CLAUDE.md non-empty /api error bodies; memory <c>fca-empty-404-surfaces-as-405-on-delete</c>).
+    /// </summary>
+    [Theory]
+    [InlineData("", "blank message")]
+    [InlineData("     ", "whitespace-only message")]
+    public async Task Feedback_Submit_BlankMessage_Returns400_WithBody(string message, string because)
+    {
+        var resp = await NonAdminClient.PostAsJsonAsync($"{FeedbackUrl}/", new { type = "bug", message }, Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.BadRequest, because);
+        (await ReadMessageAsync(resp)).Should().NotBeNullOrWhiteSpace("an empty 4xx body would surface as a 405");
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        (await ctx.Feedbacks.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Feedback_Submit_UnknownType_Returns400_WithBody_AndStoresNothing()
+    {
+        var resp = await NonAdminClient.PostAsJsonAsync(
+            $"{FeedbackUrl}/", new { type = "complaint", message = "not a real type" }, Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ReadMessageAsync(resp)).Should().NotBeNullOrWhiteSpace();
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        (await ctx.Feedbacks.CountAsync()).Should().Be(0);
+    }
+
+    /// <summary>
+    /// The Message column is varchar(4000): an oversized direct-API message must be a clean 400, not a
+    /// varchar-overflow 500 (parity with RejectRequest's 500-char guard). 4000 exactly is accepted.
+    /// </summary>
+    [Fact]
+    public async Task Feedback_Submit_OversizedMessage_Returns400_WithBody_But4000ExactlyIsAccepted()
+    {
+        var tooLong = new string('x', 4001);
+        var resp = await NonAdminClient.PostAsJsonAsync($"{FeedbackUrl}/", new { type = "bug", message = tooLong }, Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ReadMessageAsync(resp)).Should().NotBeNullOrWhiteSpace();
+
+        var atLimit = new string('y', 4000);
+        (await NonAdminClient.PostAsJsonAsync($"{FeedbackUrl}/", new { type = "bug", message = atLimit }, Json))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        (await ctx.Feedbacks.SingleAsync()).Message.Should().HaveLength(4000);
+    }
+
+    /// <summary>
+    /// UserAgent is read from the request headers (a client-supplied one is worthless as a diagnostic) and, like
+    /// CurrentPage, is TRUNCATED to its 500-char column rather than rejected — a long User-Agent or path must never
+    /// cost the user their bug report.
+    /// </summary>
+    [Fact]
+    public async Task Feedback_Submit_CapturesUserAgentFromHeaders_AndTruncatesDiagnosticsTo500()
+    {
+        var longPath = "/recipes/" + new string('p', 600);
+        var request = new HttpRequestMessage(HttpMethod.Post, $"{FeedbackUrl}/")
+        {
+            Content = JsonContent.Create(new { type = "bug", message = "diagnostics", currentPage = longPath }, options: Json),
+        };
+        request.Headers.TryAddWithoutValidation("User-Agent", new string('u', 700));
+
+        (await NonAdminClient.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        var stored = await ctx.Feedbacks.SingleAsync();
+        stored.UserAgent.Should().HaveLength(500, "the 500-char column is a truncation boundary, not a rejection");
+        stored.UserAgent.Should().Be(new string('u', 500));
+        stored.CurrentPage.Should().HaveLength(500);
+        stored.CurrentPage.Should().Be(longPath[..500]);
+    }
+
+    /// <summary>A submission with no page context stores null, not "" — the DTO's `currentPage` stays absent.</summary>
+    [Fact]
+    public async Task Feedback_Submit_MissingCurrentPage_StoresNull()
+    {
+        (await NonAdminClient.PostAsJsonAsync($"{FeedbackUrl}/", new { type = "general", message = "no page" }, Json))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        (await ctx.Feedbacks.SingleAsync()).CurrentPage.Should().BeNull();
+    }
+
+    /// <summary>Reads the `{ message }` field every 4xx on this surface is required to carry.</summary>
+    private static async Task<string?> ReadMessageAsync(HttpResponseMessage resp)
+    {
+        var text = await resp.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        using var doc = JsonDocument.Parse(text);
+        return doc.RootElement.TryGetProperty("message", out var m) ? m.GetString() : null;
     }
 }

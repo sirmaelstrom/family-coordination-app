@@ -1,8 +1,9 @@
 <script lang="ts">
   // Top app bar. Mirrors MainLayout.razor's MudAppBar: brand title, right-aligned
-  // presence (placeholder — wired in WP-02), dark-mode toggle, site-admin chip,
-  // user name + avatar, logout. Identity comes from the canonical session store;
-  // dark mode from the theme store.
+  // presence roster (wired in WP-02), send-feedback, dark-mode toggle, site-admin
+  // chip, user name + avatar, logout. Identity comes from the canonical session
+  // store; dark mode from the theme store; the feedback dialog is the single
+  // shared instance mounted in +layout.svelte.
   import { onMount } from 'svelte';
   import { session } from '$lib/session.svelte';
   import { theme } from '$lib/theme.svelte';
@@ -10,6 +11,7 @@
   import { sidebar } from './sidebar.svelte';
   import Icon from './Icon.svelte';
   import UserAvatar from '$lib/shared/UserAvatar.svelte';
+  import { openFeedback } from '$lib/shared/feedback-store.svelte';
 
   // The header is the single always-present consumer of presence, so it owns the
   // poller lifecycle: start the 30s heartbeat + roster poll on mount, stop on teardown.
@@ -56,6 +58,20 @@
         aria-label={presence.online ? 'Synced' : 'Offline'}
       ></span>
     </div>
+
+    <!-- The feedback entry point. Lives in the always-present header rather than
+         the old Blazor desktop-only FAB, so mobile — which never had a writer at
+         all — can reach it too, and so it can't collide with the chores /
+         shopping-list FABs that already own the bottom-right corner. -->
+    <button
+      type="button"
+      class="sh-icon-btn"
+      onclick={() => openFeedback()}
+      title="Send feedback"
+      aria-label="Send feedback"
+    >
+      <Icon name="feedback" />
+    </button>
 
     <button
       type="button"
