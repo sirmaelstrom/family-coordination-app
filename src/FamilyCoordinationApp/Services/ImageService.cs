@@ -14,7 +14,13 @@ public interface IImageService
     /// </summary>
     Task<string> SaveImageAsync(IFormFile file, int householdId, CancellationToken cancellationToken = default);
 
-    Task DeleteImageAsync(string imagePath, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Deletes a stored upload. <paramref name="householdId"/> is the tenant boundary, not a hint: the path is
+    /// resolved and must land inside <c>wwwroot/uploads/{householdId}/</c> or the delete is refused. A path that
+    /// is traversal-free but belongs to another household (<c>/uploads/{other}/x.jpg</c>) is a legitimate
+    /// filesystem path and the old WebRootPath-only guard accepted it.
+    /// </summary>
+    Task DeleteImageAsync(string imagePath, int householdId, CancellationToken cancellationToken = default);
     string GetImageUrl(string? imagePath);
     Task<IEnumerable<string>> ListImagesAsync(int householdId, CancellationToken cancellationToken = default);
 }
@@ -25,7 +31,11 @@ public class ImageService(
 {
     private const long MaxFileSize = 10 * 1024 * 1024; // 10 MB
 
-    private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    /// <summary>
+    /// The extensions this app accepts on upload. <c>UploadsEndpoints.ContentTypes</c> must be able to serve
+    /// every one of them; <c>UploadsContentTypeTests</c> locks the two sets together.
+    /// </summary>
+    internal static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".jpg", ".jpeg", ".png", ".gif", ".webp"
     };
@@ -85,7 +95,9 @@ public class ImageService(
 
         // Generate unique filename
         var trustedFileName = $"{Guid.NewGuid()}{extension}";
-        var uploadsPath = Path.Combine(environment.WebRootPath, "uploads", householdId.ToString());
+        // Same helper the delete guard and the read gate use — the write path and the boundary check cannot
+        // disagree about where a household's uploads live.
+        var uploadsPath = UploadRootFor(environment.WebRootPath, householdId);
 
         // Ensure directory exists
         Directory.CreateDirectory(uploadsPath);
@@ -118,20 +130,39 @@ public class ImageService(
         }
     }
 
-    public Task DeleteImageAsync(string imagePath, CancellationToken cancellationToken = default)
+    public Task DeleteImageAsync(string imagePath, int householdId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(imagePath))
             return Task.CompletedTask;
 
         // Convert URL path to filesystem path
         // imagePath format: /uploads/{householdId}/{filename}
-        var relativePath = imagePath.TrimStart('/');
-        var fullPath = Path.GetFullPath(Path.Combine(environment.WebRootPath, relativePath));
-
-        // Prevent path traversal attacks - ensure resolved path is within WebRootPath
-        if (!fullPath.StartsWith(environment.WebRootPath, StringComparison.OrdinalIgnoreCase))
+        // Resolution itself can throw: this string is unvalidated client input (chore/room PhotoPath is
+        // stored verbatim from the request body and replayed here by delete-on-replace), and e.g. an
+        // embedded NUL makes Path.GetFullPath throw — which would surface as a 500 on an otherwise-valid
+        // update. A path the OS will not parse is a path we refuse, not one we propagate.
+        string fullPath;
+        try
         {
-            logger.LogWarning("Path traversal attempt blocked: {ImagePath}", imagePath);
+            var relativePath = imagePath.TrimStart('/');
+            fullPath = Path.GetFullPath(Path.Combine(environment.WebRootPath, relativePath));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            logger.LogWarning(ex, "Blocked delete of an unresolvable image path for household {HouseholdId}", householdId);
+            return Task.CompletedTask;
+        }
+
+        // The tenant boundary: the resolved path must be inside THIS household's upload directory. This
+        // subsumes the old WebRootPath-only traversal guard (the household directory is inside WebRootPath)
+        // and additionally refuses a traversal-free cross-household path.
+        var householdRoot = UploadRootFor(environment.WebRootPath, householdId);
+        if (!IsWithinDirectory(householdRoot, fullPath))
+        {
+            logger.LogWarning(
+                "Blocked delete of {ImagePath}: outside household {HouseholdId}'s upload directory",
+                imagePath,
+                householdId);
             return Task.CompletedTask;
         }
 
@@ -152,6 +183,26 @@ public class ImageService(
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// The one directory a household's uploads may live in: <c>{webRoot}/uploads/{householdId}</c>. Shared with
+    /// the read gate (<c>UploadsEndpoints</c>) so the write side and the serve side cannot drift apart.
+    /// </summary>
+    internal static string UploadRootFor(string webRootPath, int householdId) =>
+        Path.GetFullPath(Path.Combine(webRootPath, "uploads", householdId.ToString()));
+
+    /// <summary>
+    /// True when <paramref name="candidateFullPath"/> is a file inside <paramref name="directoryFullPath"/>.
+    /// The trailing separator matters: a bare <c>StartsWith</c> also accepts a SIBLING whose name merely starts
+    /// with the directory's name (<c>…/uploads/1</c> vs <c>…/uploads/12</c>) — which, with household ids in the
+    /// path, is exactly a cross-tenant match.
+    /// </summary>
+    internal static bool IsWithinDirectory(string directoryFullPath, string candidateFullPath)
+    {
+        var root = directoryFullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                   + Path.DirectorySeparatorChar;
+        return candidateFullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase);
+    }
+
     public string GetImageUrl(string? imagePath)
     {
         if (string.IsNullOrWhiteSpace(imagePath))
@@ -165,7 +216,9 @@ public class ImageService(
 
     public Task<IEnumerable<string>> ListImagesAsync(int householdId, CancellationToken cancellationToken = default)
     {
-        var uploadsPath = Path.Combine(environment.WebRootPath, "uploads", householdId.ToString());
+        // Same helper as the write path, the delete guard and the read gate — one definition of where a
+        // household's uploads live, so a change to the layout cannot leave this one behind.
+        var uploadsPath = UploadRootFor(environment.WebRootPath, householdId);
 
         if (!Directory.Exists(uploadsPath))
         {

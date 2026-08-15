@@ -592,7 +592,7 @@ public static class ChoresEndpoints
         var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (user is null) return Results.Unauthorized();
 
-        var (outcome, normalized) = await ApplyDefaultViewAsync(dbFactory, user.UserId, req.View, ct);
+        var (outcome, normalized) = await ApplyDefaultViewAsync(dbFactory, user.HouseholdId, user.UserId, req.View, ct);
         return outcome switch
         {
             DefaultViewOutcome.Ok => Results.Ok(new { view = normalized }),
@@ -608,10 +608,13 @@ public static class ChoresEndpoints
     /// Core of <see cref="SetDefaultView"/>, extracted so it is unit-testable without a WebApplicationFactory
     /// (council M10). null/blank clears the preference to the default (Needs-attention); a non-null value MUST
     /// be a canonical lens id (council M6 — anything else is rejected, never coerced, MN8); the write is scoped
-    /// to <paramref name="userId"/> only (the resolved caller, M1).
+    /// to <paramref name="userId"/> WITHIN <paramref name="householdId"/> (the resolved caller, M1). Both come
+    /// from the resolver, never from client input — the household predicate makes the tenant boundary explicit
+    /// in the query rather than an invariant held only by the caller.
     /// </summary>
     internal static async Task<(DefaultViewOutcome Outcome, string? Normalized)> ApplyDefaultViewAsync(
         IDbContextFactory<ApplicationDbContext> dbFactory,
+        int householdId,
         int userId,
         string? requestedView,
         CancellationToken ct)
@@ -623,7 +626,7 @@ public static class ChoresEndpoints
         }
 
         await using var context = await dbFactory.CreateDbContextAsync(ct);
-        var entity = await context.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        var entity = await context.Users.FirstOrDefaultAsync(u => u.Id == userId && u.HouseholdId == householdId, ct);
         if (entity is null) return (DefaultViewOutcome.UserMissing, null);
 
         entity.ChoresDefaultView = view;
@@ -643,7 +646,7 @@ public static class ChoresEndpoints
         var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (user is null) return Results.Unauthorized();
 
-        var (outcome, normalized) = await ApplyCapacityAsync(dbFactory, user.UserId, req.Tier, ct);
+        var (outcome, normalized) = await ApplyCapacityAsync(dbFactory, user.HouseholdId, user.UserId, req.Tier, ct);
         return outcome switch
         {
             CapacityOutcome.Ok => Results.Ok(new { tier = normalized }),
@@ -659,10 +662,13 @@ public static class ChoresEndpoints
     /// (mirrors <see cref="ApplyDefaultViewAsync"/>). A non-null tier MUST be a canonical
     /// <see cref="CapacityTier"/> value — anything else is rejected, never coerced (D2). <c>null</c> is the
     /// pre-migration default (treated as Full) and there is no client clear-to-null path. The write is scoped
-    /// to <paramref name="userId"/> only (the resolved caller, MN5).
+    /// to <paramref name="userId"/> WITHIN <paramref name="householdId"/> (the resolved caller, MN5) — both come
+    /// from the resolver, never from client input, and the household predicate makes the tenant boundary
+    /// explicit in the query rather than an invariant held only by the caller.
     /// </summary>
     internal static async Task<(CapacityOutcome Outcome, string? Normalized)> ApplyCapacityAsync(
         IDbContextFactory<ApplicationDbContext> dbFactory,
+        int householdId,
         int userId,
         string? requestedTier,
         CancellationToken ct)
@@ -674,7 +680,7 @@ public static class ChoresEndpoints
         }
 
         await using var context = await dbFactory.CreateDbContextAsync(ct);
-        var entity = await context.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        var entity = await context.Users.FirstOrDefaultAsync(u => u.Id == userId && u.HouseholdId == householdId, ct);
         if (entity is null) return (CapacityOutcome.UserMissing, null);
 
         entity.PhysicalCapacityTier = tier;

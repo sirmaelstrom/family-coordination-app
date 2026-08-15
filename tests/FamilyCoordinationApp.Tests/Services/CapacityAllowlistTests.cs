@@ -27,7 +27,7 @@ public class CapacityAllowlistTests
         SeedUser(options, userId: 1, householdId: 1, tier: null);
 
         var (outcome, normalized) =
-            await ChoresEndpoints.ApplyCapacityAsync(factory, userId: 1, tier, CancellationToken.None);
+            await ChoresEndpoints.ApplyCapacityAsync(factory, householdId: 1, userId: 1, tier, CancellationToken.None);
 
         outcome.Should().Be(ChoresEndpoints.CapacityOutcome.Ok);
         normalized.Should().Be(tier);
@@ -41,7 +41,7 @@ public class CapacityAllowlistTests
         SeedUser(options, userId: 1, householdId: 1, tier: null);
 
         var (outcome, normalized) =
-            await ChoresEndpoints.ApplyCapacityAsync(factory, userId: 1, CapacityTier.Reduced, CancellationToken.None);
+            await ChoresEndpoints.ApplyCapacityAsync(factory, householdId: 1, userId: 1, CapacityTier.Reduced, CancellationToken.None);
 
         outcome.Should().Be(ChoresEndpoints.CapacityOutcome.Ok);
         normalized.Should().Be(CapacityTier.Reduced);
@@ -55,7 +55,7 @@ public class CapacityAllowlistTests
         SeedUser(options, userId: 1, householdId: 1, tier: CapacityTier.Full);
 
         var (outcome, normalized) =
-            await ChoresEndpoints.ApplyCapacityAsync(factory, userId: 1, "Halftime", CancellationToken.None);
+            await ChoresEndpoints.ApplyCapacityAsync(factory, householdId: 1, userId: 1, "Halftime", CancellationToken.None);
 
         outcome.Should().Be(ChoresEndpoints.CapacityOutcome.InvalidTier);
         normalized.Should().BeNull();
@@ -70,7 +70,7 @@ public class CapacityAllowlistTests
         SeedUser(options, userId: 1, householdId: 1, tier: null);
 
         var (outcome, _) =
-            await ChoresEndpoints.ApplyCapacityAsync(factory, userId: 1, "reduced", CancellationToken.None);
+            await ChoresEndpoints.ApplyCapacityAsync(factory, householdId: 1, userId: 1, "reduced", CancellationToken.None);
 
         outcome.Should().Be(ChoresEndpoints.CapacityOutcome.InvalidTier);
         ReadTier(options, userId: 1).Should().BeNull(); // unchanged
@@ -83,10 +83,28 @@ public class CapacityAllowlistTests
         SeedUser(options, userId: 1, householdId: 1, tier: null);
         SeedUser(options, userId: 2, householdId: 1, tier: CapacityTier.Full);
 
-        await ChoresEndpoints.ApplyCapacityAsync(factory, userId: 1, CapacityTier.Minimal, CancellationToken.None);
+        await ChoresEndpoints.ApplyCapacityAsync(factory, householdId: 1, userId: 1, CapacityTier.Minimal, CancellationToken.None);
 
         ReadTier(options, userId: 1).Should().Be(CapacityTier.Minimal);
         ReadTier(options, userId: 2).Should().Be(CapacityTier.Full); // other caller untouched (MN5)
+    }
+
+    [Fact]
+    public async Task ApplyCapacity_IsScopedToHousehold_DoesNotTouchUserInAnotherHousehold()
+    {
+        // The tenant boundary, not merely the per-user one (A5): user 2 lives in household 2, so a caller
+        // resolved to household 1 must not be able to write that row even when handed its user id. Before the
+        // household predicate this lookup was `u.Id == userId` alone and this write LANDED.
+        var (factory, _) = NewFactory(out var options);
+        SeedUser(options, userId: 1, householdId: 1, tier: CapacityTier.Full);
+        SeedUser(options, userId: 2, householdId: 2, tier: CapacityTier.Full);
+
+        var (outcome, normalized) =
+            await ChoresEndpoints.ApplyCapacityAsync(factory, householdId: 1, userId: 2, CapacityTier.Minimal, CancellationToken.None);
+
+        outcome.Should().Be(ChoresEndpoints.CapacityOutcome.UserMissing);
+        normalized.Should().BeNull();
+        ReadTier(options, userId: 2).Should().Be(CapacityTier.Full); // the other household's row is untouched
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────────────────

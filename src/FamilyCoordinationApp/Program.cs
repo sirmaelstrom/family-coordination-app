@@ -350,7 +350,13 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseStatusCodePagesWithReExecute("/not-found");
 app.UseHttpsRedirection();
-app.UseStaticFiles();
+// /uploads/{householdId}/* is household user content and must NOT be served by this middleware: it runs
+// BEFORE UseAuthentication (below), so anything it serves is served anonymously. Branch those paths past it
+// and let the authorization-gated MapUploadsEndpoints route own them (see UploadsEndpoints for the rules).
+// UseWhen rejoins the main pipeline, so every OTHER path still gets the static-file middleware unchanged.
+app.UseWhen(
+    static context => !context.Request.Path.StartsWithSegments("/uploads"),
+    static branch => branch.UseStaticFiles());
 app.UseRouting();
 app.UseAntiforgery();
 
@@ -399,6 +405,13 @@ app.Use(async (context, next) =>
         path.StartsWith("/account") ||
         path.StartsWith("/household") ||
         path.StartsWith("/_") ||   // /_app SPA assets (Blazor's /_framework and /_blazor died in WP-12)
+        // Household user content. REQUIRED, not an optimization: these paths used to be short-circuited by
+        // UseStaticFiles above, and branching them past it (so they can be authorization-gated) also walks
+        // them into this middleware. The suffix list below covers .png but NOT .jpg/.jpeg/.gif/.webp, which
+        // ImageService equally accepts — so without this line a recipe grid of .jpg thumbnails runs one
+        // SetupService.IsSetupCompleteAsync (and therefore one Database.MigrateAsync) PER IMAGE, before
+        // authorization. MapUploadsEndpoints gates these paths itself.
+        path.StartsWith("/uploads") ||
         path.StartsWith("/health") ||
         path.StartsWith("/lib") ||
         path.StartsWith("/css") ||
@@ -432,6 +445,9 @@ app.MapStaticAssets();
 
 // De-Blazor WP-10/WP-11: static Razor Pages (login/legal/error/onboarding).
 app.MapRazorPages();
+
+// Household user content (/uploads/*) — authorization-gated; replaces the anonymous static-file path above.
+app.MapUploadsEndpoints();
 
 app.MapMeEndpoints();
 app.MapPresenceEndpoints();

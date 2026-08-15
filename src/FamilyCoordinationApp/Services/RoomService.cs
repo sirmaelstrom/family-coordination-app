@@ -81,7 +81,7 @@ public class RoomService(
         var oldPhotoPath = room.PhotoPath;
         if (!string.Equals(oldPhotoPath, photoPath, StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(oldPhotoPath))
         {
-            await imageService.DeleteImageAsync(oldPhotoPath, cancellationToken);
+            await imageService.DeleteImageAsync(oldPhotoPath, householdId, cancellationToken);
         }
 
         room.Name = name.Trim();
@@ -117,7 +117,7 @@ public class RoomService(
         // filesystem). No-op safe when PhotoPath is null/empty (DeleteImageAsync short-circuits).
         if (!string.IsNullOrWhiteSpace(room.PhotoPath))
         {
-            await imageService.DeleteImageAsync(room.PhotoPath, cancellationToken);
+            await imageService.DeleteImageAsync(room.PhotoPath, householdId, cancellationToken);
         }
 
         context.Rooms.Remove(room);
