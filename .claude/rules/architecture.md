@@ -46,6 +46,7 @@ frontend/app/              # The SvelteKit SPA (the app's entire UI)
   src/lib/presence.svelte.ts # 30s heartbeat + roster poller (401/403 → stop + redirect)
   src/lib/shell/           #   Header/Nav/MobileBottomNav/Footer
   src/lib/shared/          #   ConfirmDialog, PromptDialog, Toasts, avatars, toast-store
+  src/lib/api/             #   M9 wire-contract pin: shape.ts + contracts.ts + contracts.test.ts
   src/lib/<surface>/       #   per-surface app + stores (chores, meal-plan, recipes, …)
   static/                  #   manifest.json + service-worker.js (root-scoped PWA)
 
@@ -71,6 +72,8 @@ tests/FamilyCoordinationApp.Tests/
 **Dev-auth bypass (Development only)**: `DevAuthBypassMiddleware` injects a config/first-DB-user identity for anonymous requests — registration is env-gated, the middleware re-checks `IsDevelopment()`, and `DevAuthStartupGuard` fail-closes startup if `DEV_AUTH_BYPASS` is set outside Development.
 
 **Session contract (M8)**: SPA routes read identity from the canonical `$lib/session` store and build a `ShellContext` via `ctx()` — never per-route `/api/me` fetches. Shared components live only in `$lib/shared/`. Presence decay (Online→Away→Offline) is read-driven: `GET /api/presence/users` runs `PresenceService.UpdatePresence()` before reading.
+
+**Wire contract (M9), both halves pinned**: each response DTO **that has a checked-in JSON fixture** under `tests/FamilyCoordinationApp.Tests/Fixtures/` is serialized and compared to it by a `*DtoContractTests` class. The SPA half is pinned in `$lib/api`: `contracts.ts` pairs each fixture with a `Shape` (the runtime stand-in for an erased TS type), `Expect<Equals<…>>` holds the Shape to the island's `interface` under `npm run check`, and `contracts.test.ts` validates the fixture against it under `npm test`. **A field rename must therefore land in the DTO, the fixture AND the island's `types.ts`** — updating only the first two leaves TS type-checking TS and the field arrives `undefined` at runtime, which is the gap this closes. Undeclared and missing keys both fail; a new JSON fixture must gain a pin or be named in `SERVER_ONLY_FIXTURES`, or the coverage test fails. It is a fixture-driven guard, not complete coverage: request bodies and fixture-less responses (e.g. `ShoppingListSummaryDto`) are outside it and need a C# fixture first.
 
 **Recipe import pipeline**: `RecipeScraperService` (HTTP + AngleSharp) → `RecipeImportService` (JSON-LD schema.org) → `IngredientParser`. Polly resilience on HTTP calls.
 

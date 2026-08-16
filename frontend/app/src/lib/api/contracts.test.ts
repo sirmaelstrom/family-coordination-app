@@ -1,0 +1,31 @@
+import { describe, expect, it } from 'vitest';
+import { CONTRACT_PINS, SERVER_ONLY_FIXTURES } from './contracts';
+
+const FIXTURE_MODULES = import.meta.glob<unknown>(
+  '../../../../../tests/FamilyCoordinationApp.Tests/Fixtures/**/*.json',
+  { eager: true, import: 'default' }
+);
+
+/** Keyed by the fixture's path below Fixtures/, matching CONTRACT_PINS. */
+const fixtures = new Map(
+  Object.entries(FIXTURE_MODULES).map(([key, value]) => [key.split('Fixtures/')[1], value])
+);
+
+describe('M9 wire contract', () => {
+  it.each(CONTRACT_PINS)('$fixture matches $type', ({ fixture, shape }) => {
+    const json = fixtures.get(fixture);
+    expect(json, `${fixture} is pinned but not checked in`).toBeDefined();
+    expect(shape.check(json, fixture.replace('.json', ''))).toEqual([]);
+  });
+
+  // Without this, deleting a pin — or adding a fixture nobody pins — reads as a pass.
+  it('pins every checked-in JSON fixture', () => {
+    const declared = [...CONTRACT_PINS.map((p) => p.fixture), ...SERVER_ONLY_FIXTURES];
+
+    const unaccounted = [...fixtures.keys()].filter((f) => !declared.includes(f));
+    expect(unaccounted, 'add a pin in contracts.ts, or name it in SERVER_ONLY_FIXTURES').toEqual([]);
+
+    const stale = declared.filter((f) => !fixtures.has(f));
+    expect(stale, 'declared in contracts.ts but absent on disk — renamed or deleted').toEqual([]);
+  });
+});
