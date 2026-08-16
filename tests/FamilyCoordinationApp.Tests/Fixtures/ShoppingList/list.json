@@ -1,0 +1,50 @@
+{
+  "id": 4,
+  "name": "Weekly Shop",
+  "isFavorite": true,
+  "isArchived": false,
+  "items": [
+    {
+      "id": 1,
+      "name": "Bananas",
+      "quantity": 2.5,
+      "unit": "lb",
+      "category": "Produce",
+      "isChecked": false,
+      "checkedAt": null,
+      "sortOrder": 1,
+      "addedByName": "Alice",
+      "addedByInitials": "AA",
+      "addedByPictureUrl": "https://pic.test/alice.jpg",
+      "version": 7
+    },
+    {
+      "id": 2,
+      "name": "Milk",
+      "quantity": null,
+      "unit": null,
+      "category": "Dairy",
+      "isChecked": true,
+      "checkedAt": "2026-06-20T14:30:00Z",
+      "sortOrder": 2,
+      "addedByName": "Bob",
+      "addedByInitials": "BB",
+      "addedByPictureUrl": null,
+      "version": 3
+    },
+    {
+      "id": 3,
+      "name": "Paper towels",
+      "quantity": 1,
+      "unit": null,
+      "category": "Household",
+      "isChecked": false,
+      "checkedAt": null,
+      "sortOrder": 3,
+      "addedByName": null,
+      "addedByInitials": null,
+      "addedByPictureUrl": null,
+      "version": 1
+    }
+  ]
+}
