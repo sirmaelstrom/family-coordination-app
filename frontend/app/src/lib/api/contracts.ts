@@ -8,13 +8,15 @@
 // Shape; `Expect<Equals<…>>` holds the Shape to the interface at compile time and
 // contracts.test.ts holds it to the fixture at run time.
 //
-// Adding a fixture: add its pin here, or name it in SERVER_ONLY_FIXTURES. The
-// test fails on any fixture that is in neither, so the pin cannot silently
-// fall behind the fixture tree.
+// Adding a JSON fixture: add its pin here, or name it in SERVER_ONLY_FIXTURES. The
+// test fails on any JSON fixture that is in neither, so the pin cannot silently fall
+// behind the fixture tree.
 //
-// Scope: response DTOs that HAVE a fixture. Request/write bodies and fixture-less
-// responses (ShoppingListSummaryDto, RecipeWriteRequest, DigestSettingsView, …) are
-// unpinned — they need a C# fixture first.
+// Scope — this is a fixture-driven guard, not complete SPA-response coverage:
+//   - only .json is walked; the .txt/.srv1 fixtures are parser inputs, not payloads
+//   - only response DTOs that HAVE a fixture. Request/write bodies and fixture-less
+//     responses (ShoppingListSummaryDto, RecipeWriteRequest, DigestSettingsView, …)
+//     are unpinned — they need a C# fixture before they can be pinned here.
 // ─────────────────────────────────────────────────────────────────────────
 import {
   arrayOf,

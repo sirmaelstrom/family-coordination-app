@@ -1,5 +1,5 @@
-// The 15 pins in contracts.test.ts all PASS, so they exercise none of the matcher's
-// failure paths. These do — one case per way a Shape must be able to fail.
+// The contract pins all PASS, so they exercise none of the matcher's failure paths.
+// These do — one case per way a Shape must be able to fail.
 import { describe, expect, it } from 'vitest';
 import { arrayOf, bool, nullable, num, objectOf, oneOf, str } from './shape';
 

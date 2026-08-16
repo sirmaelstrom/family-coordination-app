@@ -19,11 +19,13 @@ describe('M9 wire contract', () => {
   });
 
   // Without this, deleting a pin — or adding a fixture nobody pins — reads as a pass.
-  it('pins every checked-in fixture', () => {
-    const accounted = new Set([...CONTRACT_PINS.map((p) => p.fixture), ...SERVER_ONLY_FIXTURES]);
-    const unpinned = [...fixtures.keys()].filter((f) => !accounted.has(f));
+  it('pins every checked-in JSON fixture', () => {
+    const declared = [...CONTRACT_PINS.map((p) => p.fixture), ...SERVER_ONLY_FIXTURES];
 
-    expect(unpinned, 'add a pin in contracts.ts, or name it in SERVER_ONLY_FIXTURES').toEqual([]);
-    expect(fixtures.size).toBe(accounted.size);
+    const unaccounted = [...fixtures.keys()].filter((f) => !declared.includes(f));
+    expect(unaccounted, 'add a pin in contracts.ts, or name it in SERVER_ONLY_FIXTURES').toEqual([]);
+
+    const stale = declared.filter((f) => !fixtures.has(f));
+    expect(stale, 'declared in contracts.ts but absent on disk — renamed or deleted').toEqual([]);
   });
 });
