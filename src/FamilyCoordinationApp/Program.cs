@@ -57,7 +57,7 @@ else
     Console.WriteLine("Data Protection: Keys unprotected (development only)");
 }
 
-// Database configuration - DbContextFactory for Blazor Server thread safety
+// Database configuration - DbContextFactory so every caller owns a short-lived context
 // Read password from Docker secret file if available, inject into connection string
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Database connection string not configured. Set ConnectionStrings__DefaultConnection environment variable.");
@@ -134,7 +134,7 @@ builder.Services.AddScoped<IChoreHistoryService, ChoreHistoryService>();
 
 // Chore/Room HTTP endpoints serialize enum DTOs (colorTier/dueState/assignmentKind/rollup status) as
 // camelCase strings so responses match the island TS unions + the WP-05 board.json fixture (council M5/M11).
-// Additive to the Minimal-API JSON options only — Blazor Server component rendering is unaffected.
+// Additive to the Minimal-API JSON options only.
 builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter(
         System.Text.Json.JsonNamingPolicy.CamelCase)));
@@ -487,9 +487,6 @@ app.MapFallbackToFile("/shopping-list/{**slug}", "index.html");
 app.MapFallbackToFile("/meal-plan/{**slug}", "index.html");
 app.MapFallbackToFile("/recipes/{**slug}", "index.html");
 app.MapFallbackToFile("/settings/{**slug}", "index.html");
-
-// Old Blazor route → SPA route, so pre-flip bookmarks don't 404.
-app.MapGet("/shoppinglists", () => Results.Redirect("/shopping-list", permanent: true));
 
 // Health check endpoint for Docker
 app.MapGet("/health", () => Results.Ok("healthy"));

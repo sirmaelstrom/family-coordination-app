@@ -12,10 +12,9 @@ using FamilyCoordinationApp.Services;
 namespace FamilyCoordinationApp.Tests.Services;
 
 /// <summary>
-/// WP-06 backend tests for the new <see cref="IImageService.SaveImageAsync(IFormFile, int, CancellationToken)"/>
-/// overload (the Minimal-API multipart upload path, A1). Asserts it enforces the SAME size / extension /
-/// content-type validation as the <see cref="Microsoft.AspNetCore.Components.Forms.IBrowserFile"/> path so the
-/// new door is not weaker (M8). Class name contains "ImageService" so the WP verification filter
+/// Backend tests for <see cref="IImageService.SaveImageAsync(IFormFile, int, CancellationToken)"/> — the
+/// Minimal-API multipart upload path, and since the Blazor overload's removal the only one. Asserts it
+/// enforces the size / extension / content-type rules (M8). Class name contains "ImageService" so the filter
 /// (<c>--filter "FullyQualifiedName~ImageService"</c>) selects it.
 /// </summary>
 public class ImageServiceFormFileTests : IDisposable

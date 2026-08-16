@@ -54,10 +54,8 @@ public static class RecipesEndpoints
         group.MapPost("/images", UploadImage);
         group.MapGet("/images", ListImages);
 
-        // Import (literal). /import/preview scrapes + parses WITHOUT persisting (the SPA previews the
-        // result and confirms via the plain create endpoint); /import is the legacy scrape-and-create
-        // (kept working — a stale service-worker-cached SPA may still call it during rollout).
-        group.MapPost("/import", ImportRecipe);
+        // Import (literal). Scrapes + parses WITHOUT persisting; the SPA previews the result and confirms
+        // via the plain create endpoint.
         group.MapPost("/import/preview", PreviewImport);
 
         // Connected households (literal prefix)
@@ -348,66 +346,10 @@ public static class RecipesEndpoints
 
     // ─── Import ──────────────────────────────────────────────────────────────────
 
-    private static async Task<IResult> ImportRecipe(
-        ImportRequest req,
-        ClaimsPrincipal principal,
-        IRecipeImportService importService,
-        IRecipeService recipeService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
-        CancellationToken ct)
-    {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        if (string.IsNullOrWhiteSpace(req.Url))
-        {
-            return Results.BadRequest(new { message = "A recipe URL is required." });
-        }
-
-        // Endpoint-level duplicate detection (exact SourceUrl match; the global filter excludes deleted). `force`
-        // bypasses ONLY this check (ImportFromUrlAsync has no force param) — mirrors ImportRecipeDialog.
-        if (!req.Force)
-        {
-            var existing = await FindExistingBySourceUrlAsync(dbFactory, user.HouseholdId, req.Url, ct);
-            if (existing is not null)
-            {
-                return Results.Ok(new RecipeImportResultDto(
-                    Success: false,
-                    RecipeId: null,
-                    ErrorMessage: $"This recipe has already been imported as \"{existing.Value.Name}\".",
-                    ErrorType: null,
-                    ExistingRecipeId: existing.Value.RecipeId,
-                    ExistingRecipeName: existing.Value.Name,
-                    PartialData: null));
-            }
-        }
-
-        var result = await importService.ImportFromUrlAsync(req.Url, user.HouseholdId, user.UserId, ct);
-
-        if (result.Success && result.Recipe is not null)
-        {
-            // ImportFromUrlAsync returns an UNSAVED entity — persist it, then return the assigned id.
-            var created = await recipeService.CreateRecipeAsync(result.Recipe, ct);
-            return Results.Ok(new RecipeImportResultDto(
-                Success: true, RecipeId: created.RecipeId, ErrorMessage: null, ErrorType: null,
-                ExistingRecipeId: null, ExistingRecipeName: null, PartialData: null));
-        }
-
-        return Results.Ok(new RecipeImportResultDto(
-            Success: false,
-            RecipeId: null,
-            ErrorMessage: result.ErrorMessage,
-            ErrorType: result.ErrorType.ToString(),
-            ExistingRecipeId: null,
-            ExistingRecipeName: null,
-            PartialData: MapPartial(result.PartialData)));
-    }
-
     /// <summary>
     /// Scrape + parse a URL and return the result WITHOUT persisting anything (the preview step of the
-    /// scrape → preview → confirm flow; confirm is the plain create endpoint). Same duplicate detection /
-    /// force semantics and the same 200-envelope failure contract as <see cref="ImportRecipe"/> — a scrape
-    /// failure is <c>success:false</c> + errorMessage (+ partialData when extraction got that far), so the
+    /// scrape → preview → confirm flow; confirm is the plain create endpoint). A scrape failure is a
+    /// 200-envelope <c>success:false</c> + errorMessage (+ partialData when extraction got that far), so the
     /// SPA can still preview a partial parse.
     /// </summary>
     private static async Task<IResult> PreviewImport(
@@ -673,8 +615,8 @@ public static class RecipesEndpoints
             .ToList());
 
     /// <summary>
-    /// Household-scoped exact-SourceUrl duplicate lookup (shared by import + import/preview; the EF global
-    /// filter excludes soft-deleted rows).
+    /// Household-scoped exact-SourceUrl duplicate lookup behind import/preview (the EF global filter
+    /// excludes soft-deleted rows).
     /// </summary>
     private static async Task<(int RecipeId, string Name)?> FindExistingBySourceUrlAsync(
         IDbContextFactory<ApplicationDbContext> dbFactory, int householdId, string url, CancellationToken ct)

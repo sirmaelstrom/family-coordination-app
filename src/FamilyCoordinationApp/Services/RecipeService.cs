@@ -249,21 +249,6 @@ public class RecipeService(
         await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<List<Recipe>> GetFavoriteRecipesAsync(int userId, int householdId, CancellationToken cancellationToken = default)
-    {
-        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
-
-        return await context.UserFavorites
-            .Where(f => f.UserId == userId && f.HouseholdId == householdId)
-            .Include(f => f.Recipe)
-                .ThenInclude(r => r.Ingredients.OrderBy(i => i.SortOrder))
-            .Include(f => f.Recipe)
-                .ThenInclude(r => r.CreatedBy)
-            .Select(f => f.Recipe)
-            .OrderBy(r => r.Name)
-            .ToListAsync(cancellationToken);
-    }
-
     // Connected household recipe browsing
 
     public async Task<List<Recipe>> GetRecipesFromConnectedHouseholdAsync(

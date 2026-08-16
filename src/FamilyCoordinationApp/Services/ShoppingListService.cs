@@ -168,36 +168,6 @@ public class ShoppingListService(
             "ShoppingListItem");
     }
 
-    public async Task UpdateItemAsync(ShoppingListItem item, CancellationToken cancellationToken = default)
-    {
-        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
-
-        var existing = await context.ShoppingListItems
-            .FirstOrDefaultAsync(i =>
-                i.HouseholdId == item.HouseholdId &&
-                i.ShoppingListId == item.ShoppingListId &&
-                i.ItemId == item.ItemId, cancellationToken);
-
-        if (existing == null)
-        {
-            throw new InvalidOperationException($"Item {item.ItemId} not found in ShoppingList {item.ShoppingListId} for household {item.HouseholdId}");
-        }
-
-        existing.Name = item.Name;
-        existing.Quantity = item.Quantity;
-        existing.Unit = item.Unit;
-        existing.Category = item.Category;
-        existing.IsChecked = item.IsChecked;
-        existing.CheckedAt = item.CheckedAt;
-        existing.UpdatedByUserId = item.UpdatedByUserId;
-        existing.UpdatedAt = DateTime.UtcNow;
-
-        await context.SaveChangesAsync(cancellationToken);
-
-        logger.LogInformation("Updated item {ItemId} in ShoppingList {ShoppingListId} for household {HouseholdId}",
-            item.ItemId, item.ShoppingListId, item.HouseholdId);
-    }
-
     /// <summary>
     /// Updates a shopping list item with optimistic concurrency handling.
     /// Uses "checked wins" strategy: if either user checked the item, it stays checked.
@@ -330,33 +300,6 @@ public class ShoppingListService(
 
         logger.LogInformation("Deleted item {ItemId} from ShoppingList {ShoppingListId} for household {HouseholdId}",
             itemId, shoppingListId, householdId);
-    }
-
-    public async Task<ShoppingListItem> ToggleItemCheckedAsync(int householdId, int shoppingListId, int itemId, CancellationToken cancellationToken = default)
-    {
-        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
-
-        var item = await context.ShoppingListItems
-            .FirstOrDefaultAsync(i =>
-                i.HouseholdId == householdId &&
-                i.ShoppingListId == shoppingListId &&
-                i.ItemId == itemId, cancellationToken);
-
-        if (item == null)
-        {
-            throw new InvalidOperationException($"Item {itemId} not found in ShoppingList {shoppingListId} for household {householdId}");
-        }
-
-        item.IsChecked = !item.IsChecked;
-        item.CheckedAt = item.IsChecked ? DateTime.UtcNow : null;
-        item.UpdatedAt = DateTime.UtcNow;
-
-        await context.SaveChangesAsync(cancellationToken);
-
-        logger.LogInformation("Toggled item {ItemId} checked state to {IsChecked} in ShoppingList {ShoppingListId} for household {HouseholdId}",
-            itemId, item.IsChecked, shoppingListId, householdId);
-
-        return item;
     }
 
     public async Task<ShoppingList> ToggleFavoriteAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default)

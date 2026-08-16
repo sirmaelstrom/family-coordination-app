@@ -62,7 +62,7 @@ Open <http://localhost:5077> (the HTTPS profile is `https://localhost:7130` — 
 # Backend build
 dotnet build src/FamilyCoordinationApp/FamilyCoordinationApp.csproj
 
-# Tests (xUnit + FluentAssertions + Moq + Bogus)
+# Tests (xUnit + FluentAssertions + Moq)
 dotnet test tests/FamilyCoordinationApp.Tests/FamilyCoordinationApp.Tests.csproj
 
 # Frontend type-check + build

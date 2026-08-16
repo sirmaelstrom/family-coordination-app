@@ -19,6 +19,13 @@ public record ConsolidationResult
 public interface IShoppingListGenerator
 {
     Task<ShoppingList> GenerateFromMealPlanAsync(int householdId, int mealPlanId, string listName, DateOnly? startDate = null, DateOnly? endDate = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Unwired, not dead — held for the past-lists feature alongside the archive trio on
+    /// <see cref="Interfaces.IShoppingListService"/>. Refreshes a list from its linked meal plan while
+    /// preserving manually-added items and re-applying each edited item's QuantityDelta. Needs a route
+    /// and UI, not new logic.
+    /// </summary>
     Task<ShoppingList> RegenerateShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default);
     Task<List<ConsolidationResult>> ConsolidateIngredientsAsync(List<RecipeIngredient> ingredients, bool autoConsolidate = true);
 }

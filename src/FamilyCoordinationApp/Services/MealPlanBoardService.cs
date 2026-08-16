@@ -9,7 +9,7 @@ namespace FamilyCoordinationApp.Services;
 /// <summary>
 /// Read + projection for the meal-plan island board (mirrors <see cref="ChoreBoardService"/>). Owns the ONE
 /// entry projection shared by the board read and the add-entry response so the two cannot drift (M9). All
-/// reads create short-lived contexts via the factory (Blazor Server circuit safety) and filter by
+/// reads create short-lived contexts via the factory and filter by
 /// <c>HouseholdId</c> (M1).
 /// </summary>
 public class MealPlanBoardService(IDbContextFactory<ApplicationDbContext> dbFactory) : IMealPlanBoardService

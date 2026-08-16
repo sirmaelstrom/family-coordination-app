@@ -6,10 +6,9 @@ namespace FamilyCoordinationApp.Endpoints;
 
 /// <summary>
 /// Resolves the authenticated caller's household + user id from their cookie claims (M1: the HouseholdId
-/// the endpoints filter by comes ONLY from here, never from client input). A shared copy of the logic that
-/// is private to <c>ShoppingListEndpoints.ResolveUserAsync</c> (council M12) — extracted here so the new
-/// Chores/Rooms endpoint groups can reuse it without editing the untouchable <c>ShoppingListEndpoints</c>
-/// (MN7). The original is intentionally left in place.
+/// the endpoints filter by comes ONLY from here, never from client input). <c>ShoppingListEndpoints</c>
+/// still carries its own private <c>ResolveUserAsync</c> copy of this logic — a fork that predates the
+/// de-Blazor flip and outlived the constraint that caused it. Folding it in is quest 9101a410.
 /// </summary>
 public static class UserContextResolver
 {
