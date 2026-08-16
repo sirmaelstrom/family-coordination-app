@@ -348,7 +348,19 @@ if (!app.Environment.IsDevelopment())
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
-app.UseStatusCodePagesWithReExecute("/not-found");
+// /api answers in JSON and is never re-executed through a page. UseStatusCodePagesWithReExecute re-runs the
+// request through the GET-only /not-found Razor Page, which changes the status a non-GET caller observes — a
+// bodiless 4xx on /api does not arrive as itself. Branching /api to UseStatusCodePages instead BACKFILLS a JSON
+// body on any error response that wrote none and leaves the status alone, so it covers routing (404/405) and the
+// auth pipeline, not only what a handler returns. A response that already wrote a body is untouched.
+app.UseWhen(
+    static context => context.Request.Path.StartsWithSegments("/api"),
+    static branch => branch.UseStatusCodePages(static async context =>
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new { message = ApiStatusMessages.For(context.HttpContext.Response.StatusCode) })));
+app.UseWhen(
+    static context => !context.Request.Path.StartsWithSegments("/api"),
+    static branch => branch.UseStatusCodePagesWithReExecute("/not-found"));
 app.UseHttpsRedirection();
 // /uploads/{householdId}/* is household user content and must NOT be served by this middleware: it runs
 // BEFORE UseAuthentication (below), so anything it serves is served anonymously. Branch those paths past it
