@@ -55,7 +55,8 @@ public sealed class LoginProfileWiringTests(PostgresContainerFixture postgres)
             [
                 new Claim(ClaimTypes.Email, "signin@a.test"),
                 new Claim(ClaimTypes.Name, "Sign In"),
-                new Claim("urn:google:picture", "https://pic.test/s.jpg")
+                new Claim("urn:google:picture", "https://pic.test/s.jpg"),
+                new Claim(ClaimTypes.NameIdentifier, "google-subject-42")
             ],
             GoogleDefaults.AuthenticationScheme));
 
@@ -78,5 +79,7 @@ public sealed class LoginProfileWiringTests(PostgresContainerFixture postgres)
         user.Initials.Should().Be("SI");
         user.PictureUrl.Should().Be("https://pic.test/s.jpg");
         user.LastLoginAt.Should().NotBeNull();
+        // The row was created with GoogleId null, as invited and admin-added users are.
+        user.GoogleId.Should().Be("google-subject-42");
     }
 }
