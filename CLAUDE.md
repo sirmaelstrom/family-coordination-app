@@ -14,7 +14,7 @@ Family Coordination App — a household coordination app (meal planning, recipe 
 # Build
 dotnet build src/FamilyCoordinationApp/FamilyCoordinationApp.csproj
 
-# Run all tests (xUnit + FluentAssertions + Moq + Bogus)
+# Run all tests (xUnit + FluentAssertions + Moq)
 dotnet test tests/FamilyCoordinationApp.Tests/FamilyCoordinationApp.Tests.csproj
 
 # Run a single test

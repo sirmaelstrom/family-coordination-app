@@ -140,8 +140,7 @@ export async function listImages(): Promise<string[]> {
  * parsed recipe payload (create-compatible: confirm by POSTing it to createRecipe).
  * On a duplicate returns existingRecipeId/Name (unless `force`). On failure,
  * errorType + partialData (still previewable). May take ≤60s (Polly) — do NOT add
- * a shorter client timeout. (The legacy scrape-and-create POST /import still
- * exists server-side but the SPA no longer calls it.)
+ * a shorter client timeout.
  */
 export async function previewImport(url: string, force = false): Promise<RecipeImportPreviewDto> {
   return request<RecipeImportPreviewDto>(`${BASE}/import/preview`, { method: 'POST', ...jsonBody({ url, force }) });

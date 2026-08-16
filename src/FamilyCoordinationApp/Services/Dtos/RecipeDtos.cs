@@ -97,20 +97,6 @@ public sealed record CategoryDto(string Name);
 /// <summary>A connected household for the selector. Intentionally drops ConnectedHouseholdInfo.ConnectedAt.</summary>
 public sealed record ConnectedHouseholdDto(int HouseholdId, string HouseholdName);
 
-/// <summary>
-/// Result of a URL import. On success, <see cref="RecipeId"/> is the SAVED recipe's id (the endpoint persists
-/// the unsaved entity via CreateRecipeAsync). On a duplicate, <see cref="ExistingRecipeId"/> / Name are set. On
-/// failure, <see cref="ErrorType"/> (the RecipeImportErrorType name) + optional <see cref="PartialData"/>.
-/// </summary>
-public sealed record RecipeImportResultDto(
-    bool Success,
-    int? RecipeId,
-    string? ErrorMessage,
-    string? ErrorType,
-    int? ExistingRecipeId,
-    string? ExistingRecipeName,
-    PartialRecipeDataDto? PartialData);
-
 /// <summary>Partially-extracted import data for manual completion when full extraction fails.</summary>
 public sealed record PartialRecipeDataDto(
     string? Name,
@@ -123,10 +109,10 @@ public sealed record PartialRecipeDataDto(
     int? Servings);
 
 /// <summary>
-/// Result of <c>POST /import/preview</c> — the scrape + parse WITHOUT persisting anything. Mirrors
-/// <see cref="RecipeImportResultDto"/>'s duplicate/failure surface, but success carries the parsed
-/// recipe (<see cref="RecipePreviewDto"/>, create-request shaped) instead of a saved id: the SPA
-/// previews it and, on confirm, POSTs the payload to the existing create endpoint.
+/// Result of <c>POST /import/preview</c> — the scrape + parse WITHOUT persisting anything. Success carries
+/// the parsed recipe (<see cref="RecipePreviewDto"/>, create-request shaped) rather than a saved id: the SPA
+/// previews it and, on confirm, POSTs the payload to the existing create endpoint. On a duplicate,
+/// <see cref="RecipeImportPreviewDto.ExistingRecipeId"/> / Name are set; on failure, ErrorType + optional PartialData.
 /// </summary>
 public sealed record RecipeImportPreviewDto(
     bool Success,

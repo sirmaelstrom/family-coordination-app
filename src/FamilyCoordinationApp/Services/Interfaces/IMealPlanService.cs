@@ -18,5 +18,4 @@ public interface IMealPlanService
 
     Task RemoveMealAsync(int householdId, int mealPlanId, int entryId, CancellationToken cancellationToken = default);
     DateOnly GetWeekStartDate(DateOnly date);
-    DateOnly[] GetWeekDays(DateOnly weekStart);
 }

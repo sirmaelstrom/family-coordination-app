@@ -1,16 +1,11 @@
-using Microsoft.AspNetCore.Components.Forms;
-
 namespace FamilyCoordinationApp.Services;
 
 public interface IImageService
 {
-    Task<string> SaveImageAsync(IBrowserFile file, int householdId, CancellationToken cancellationToken = default);
-
     /// <summary>
-    /// Saves an uploaded <see cref="IFormFile"/> (the Minimal-API multipart path used by the chore/room
-    /// island, A1). Enforces the SAME size / extension / content-type validation and traversal-safe writer as
-    /// the <see cref="IBrowserFile"/> overload (M8) and returns the stored <c>/uploads/{householdId}/{guid}.{ext}</c>
-    /// URL.
+    /// Saves an uploaded <see cref="IFormFile"/> (the Minimal-API multipart path). Enforces size / extension /
+    /// content-type validation via the traversal-safe writer and returns the stored
+    /// <c>/uploads/{householdId}/{guid}.{ext}</c> URL.
     /// </summary>
     Task<string> SaveImageAsync(IFormFile file, int householdId, CancellationToken cancellationToken = default);
 
@@ -45,15 +40,6 @@ public class ImageService(
         "image/jpeg", "image/png", "image/gif", "image/webp"
     };
 
-    public Task<string> SaveImageAsync(IBrowserFile file, int householdId, CancellationToken cancellationToken = default) =>
-        SaveValidatedAsync(
-            file.Size,
-            file.Name,
-            file.ContentType,
-            (maxSize, ct) => file.OpenReadStream(maxSize, ct),
-            householdId,
-            cancellationToken);
-
     public Task<string> SaveImageAsync(IFormFile file, int householdId, CancellationToken cancellationToken = default) =>
         SaveValidatedAsync(
             file.Length,
@@ -64,9 +50,9 @@ public class ImageService(
             cancellationToken);
 
     /// <summary>
-    /// Shared validation + traversal-safe writer for both upload overloads (<see cref="IBrowserFile"/> and
-    /// <see cref="IFormFile"/>). Enforces identical size / extension / content-type rules so neither path can
-    /// be a weaker door (M8); the only per-overload difference is how the source stream is opened.
+    /// Validation + traversal-safe writer behind <see cref="SaveImageAsync(IFormFile, int, CancellationToken)"/>.
+    /// Takes the stream opener as a parameter so a second upload path could reuse it without relaxing the
+    /// size / extension / content-type rules (M8).
     /// </summary>
     private async Task<string> SaveValidatedAsync(
         long size,

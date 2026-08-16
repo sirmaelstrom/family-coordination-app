@@ -45,9 +45,6 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
         string? sharedFromHouseholdName, List<IngredientFull> ingredients);
     private sealed record Parsed(
         decimal? quantity, string? unit, string name, string? notes, bool isComplete, string suggestedCategory);
-    private sealed record ImportResult(
-        bool success, int? recipeId, string? errorMessage, string? errorType,
-        int? existingRecipeId, string? existingRecipeName);
     private sealed record Connected(int householdId, string householdName);
     private sealed record FavoriteResult(bool isFavorite);
     private sealed record ImagePathResult(string imagePath);
@@ -383,23 +380,6 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
         resp.StatusCode.Should().Be(HttpStatusCode.OK);
         var images = await resp.Content.ReadFromJsonAsync<List<string>>(Json);
         images.Should().NotBeNull();
-    }
-
-    // ── Import (duplicate detection — no network) ──────────────────────────────────
-
-    [Fact]
-    public async Task Import_DuplicateUrl_ReturnsExisting()
-    {
-        const string url = "https://dup.test/recipe-already-here";
-        var created = await CreateAsync(ClientA, WriteBody("Import Dup Source", sourceUrl: url));
-
-        var resp = await ClientA.PostAsJsonAsync("/api/recipes/import", new { url, force = false }, Json);
-        resp.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await resp.Content.ReadFromJsonAsync<ImportResult>(Json);
-
-        result!.success.Should().BeFalse();
-        result.existingRecipeId.Should().Be(created.recipeId);
-        result.existingRecipeName.Should().Be("Import Dup Source");
     }
 
     // ── Connected households ───────────────────────────────────────────────────────

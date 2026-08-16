@@ -238,13 +238,6 @@ public class MealPlanService(
         return date.AddDays(-daysFromMonday);
     }
 
-    public DateOnly[] GetWeekDays(DateOnly weekStart)
-    {
-        return Enumerable.Range(0, 7)
-            .Select(i => weekStart.AddDays(i))
-            .ToArray();
-    }
-
     private static async Task<int> GetNextMealPlanIdAsync(ApplicationDbContext context, int householdId, CancellationToken cancellationToken)
     {
         var maxId = await context.MealPlans

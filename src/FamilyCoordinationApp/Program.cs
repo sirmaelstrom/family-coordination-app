@@ -488,9 +488,6 @@ app.MapFallbackToFile("/meal-plan/{**slug}", "index.html");
 app.MapFallbackToFile("/recipes/{**slug}", "index.html");
 app.MapFallbackToFile("/settings/{**slug}", "index.html");
 
-// Old Blazor route → SPA route, so pre-flip bookmarks don't 404.
-app.MapGet("/shoppinglists", () => Results.Redirect("/shopping-list", permanent: true));
-
 // Health check endpoint for Docker
 app.MapGet("/health", () => Results.Ok("healthy"));
 
