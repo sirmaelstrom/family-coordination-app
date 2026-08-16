@@ -205,6 +205,66 @@ public class MealPlanService(
         return entry;
     }
 
+    /// <summary>Upper bound on a per-entry servings override; mirrored client-side in lib/servings.ts.</summary>
+    public const int MaxServings = 1000;
+
+    public async Task<MealPlanEntry> SetMealServingsAsync(
+        int householdId,
+        int mealPlanId,
+        int entryId,
+        int? servings,
+        int? userId = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        // Household-scoped — a cross-household id finds nothing ⇒ not found (M1). Recipe nav is loaded so the
+        // caller can project the response without a second query (parity MoveMealAsync).
+        var entry = await context.MealPlanEntries
+            .Include(e => e.Recipe)
+            .FirstOrDefaultAsync(e =>
+                e.HouseholdId == householdId &&
+                e.MealPlanId == mealPlanId &&
+                e.EntryId == entryId, cancellationToken);
+
+        if (entry == null)
+        {
+            throw new InvalidOperationException($"Meal entry {entryId} not found in plan {mealPlanId} for household {householdId}");
+        }
+
+        if (servings is <= 0)
+        {
+            throw new ArgumentException("Servings must be a positive number, or null to cook the recipe as written.");
+        }
+
+        // Bounded because the value becomes a MULTIPLIER on every ingredient of that meal, and
+        // ShoppingListItem.Quantity is decimal(10,2) — an unbounded servings count turns a generate into a
+        // numeric-overflow 500 rather than a silly list. 1000 is far past any real household.
+        if (servings > MaxServings)
+        {
+            throw new ArgumentException($"Servings must be {MaxServings} or fewer.");
+        }
+
+        entry.Servings = servings;
+        entry.UpdatedAt = DateTime.UtcNow;
+        entry.UpdatedByUserId = userId;
+
+        // Update parent MealPlan timestamp for polling (parity MoveMealAsync — the board polls on it).
+        var mealPlan = await context.MealPlans
+            .FirstOrDefaultAsync(mp => mp.HouseholdId == householdId && mp.MealPlanId == mealPlanId, cancellationToken);
+        if (mealPlan != null)
+        {
+            mealPlan.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("Set servings to {Servings} on meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
+            servings, entryId, mealPlanId, householdId);
+
+        return entry;
+    }
+
     public async Task RemoveMealAsync(int householdId, int mealPlanId, int entryId, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);

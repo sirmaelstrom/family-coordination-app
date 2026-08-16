@@ -15,11 +15,13 @@
     weekStart: string;
     onSlotAdd: (date: string, mealType: MealType) => void;
     onRemove: (entry: MealPlanEntryDto) => void;
+    /** Change how many this meal is cooked for (prompts in the parent). */
+    onSetServings: (entry: MealPlanEntryDto) => void;
     onViewRecipe: (entry: MealPlanEntryDto) => void;
     onViewCustom: (entry: MealPlanEntryDto) => void;
   }
 
-  let { weekStart, onSlotAdd, onRemove, onViewRecipe, onViewCustom }: Props = $props();
+  let { weekStart, onSlotAdd, onRemove, onSetServings, onViewRecipe, onViewCustom }: Props = $props();
 
   const store = mealPlanStore;
   let days = $derived(weekDays(weekStart));
@@ -52,6 +54,7 @@
           entries={store.zoneFor(day, mealType)}
           onAdd={() => onSlotAdd(day, mealType)}
           {onRemove}
+          {onSetServings}
           {onViewRecipe}
           {onViewCustom}
           onDnd={(items, phase) =>

@@ -43,6 +43,8 @@
     onAdd: () => void;
     /** Remove an entry (confirms in the parent). */
     onRemove: (entry: MealPlanEntryDto) => void;
+    /** Change how many this meal is cooked for (prompts in the parent). */
+    onSetServings: (entry: MealPlanEntryDto) => void;
     /** View a recipe entry's detail. */
     onViewRecipe: (entry: MealPlanEntryDto) => void;
     /** View a custom-meal entry's notes. */
@@ -51,7 +53,16 @@
     onDnd: (items: DragEntry[], phase: 'consider' | 'finalize') => void;
   }
 
-  let { compact = false, entries, onAdd, onRemove, onViewRecipe, onViewCustom, onDnd }: Props = $props();
+  let {
+    compact = false,
+    entries,
+    onAdd,
+    onRemove,
+    onSetServings,
+    onViewRecipe,
+    onViewCustom,
+    onDnd,
+  }: Props = $props();
 
   // REAL entries only: while a drag hovers an empty slot the zone briefly holds
   // the library's shadow placeholder — that must NOT flip the slot to its
@@ -130,6 +141,23 @@
                 {/if}
               </span>
             </button>
+            {#if entry.recipe.servings && entry.recipe.servings > 0}
+              <!--
+                Only offered when the recipe declares its own yield: without a denominator an override
+                scales nothing, and a control that silently does nothing is worse than no control.
+              -->
+              <button
+                type="button"
+                class="mp-entry-servings"
+                class:mp-entry-servings-set={entry.servings != null}
+                aria-label={entry.servings != null
+                  ? `Cooking for ${entry.servings}; recipe serves ${entry.recipe.servings}. Change`
+                  : `Recipe serves ${entry.recipe.servings}. Cook for a different number`}
+                onclick={() => onSetServings(entry)}
+              >
+                {entry.servings != null ? `for ${entry.servings}` : `serves ${entry.recipe.servings}`}
+              </button>
+            {/if}
             <button
               type="button"
               class="mp-entry-remove"
@@ -347,6 +375,37 @@
     color: var(--color-text-muted);
     border: 1px solid var(--color-line);
   }
+  /* Reads as the chip's sibling, but it is a button — so it also carries a hit target and a set state.
+     The right margin is load-bearing in the DAY-LIST (non-compact) layout: .mp-entry is a flex row there
+     and .mp-entry-remove is absolutely positioned at top/right 2px with a 26px box, so a chip flowing to
+     the end of the row would sit underneath the remove button once it fades in on hover. Reserving the
+     button's footprint makes the overlap impossible rather than unlikely. The compact (calendar) layout
+     stacks — .mp-slot-compact .mp-entry is display:block — so the chip is already on its own line there
+     and the reservation is dropped below. */
+  .mp-entry-servings {
+    flex: none;
+    align-self: center;
+    margin-right: 30px;
+    font-size: 0.65rem;
+    line-height: 1;
+    padding: 4px 7px;
+    border-radius: 9px;
+    background: none;
+    color: var(--color-text-muted);
+    border: 1px solid var(--color-line);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .mp-entry-servings:hover {
+    color: var(--color-text);
+    border-color: var(--color-text-muted);
+  }
+  /* An override is a deliberate act — it should be visible at a glance across the week. */
+  .mp-entry-servings-set {
+    color: var(--color-accent, var(--color-text));
+    border-color: currentColor;
+    font-weight: 600;
+  }
   .mp-entry-notes {
     font-size: 0.75rem;
     font-style: italic;
@@ -392,6 +451,10 @@
      class variant and not a container query.) */
   .mp-slot-compact .mp-entry {
     display: block;
+  }
+  /* Stacked layout: the chip has its own line, so it never reaches the overlaid remove button. */
+  .mp-slot-compact .mp-entry-servings {
+    margin-right: 0;
   }
   .mp-slot-compact .mp-entry-main {
     width: 100%;

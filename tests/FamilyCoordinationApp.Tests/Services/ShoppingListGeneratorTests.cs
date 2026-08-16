@@ -592,4 +592,230 @@ public class ShoppingListGeneratorTests : IDisposable
         results.Should().HaveCount(1);
         results.First().Quantity.Should().Be(5m); // 2 + 3 cloves
     }
+
+    // ─── Servings-aware generation (F2) ──────────────────────────────────────
+
+    [Theory]
+    // The whole point: an override against a recipe that declares its yield.
+    [InlineData(8, 4, 2.0)]
+    [InlineData(2, 4, 0.5)]
+    [InlineData(4, 4, 1.0)]
+    // Nothing to scale against ⇒ exactly 1, i.e. the pre-feature behaviour. Every one of these is a
+    // real row in this database today: most entries carry no override, and Recipe.Servings is nullable.
+    [InlineData(null, 4, 1.0)]
+    [InlineData(8, null, 1.0)]
+    [InlineData(null, null, 1.0)]
+    // Non-positive on either side is meaningless, not a licence to divide by zero or zero the list out.
+    [InlineData(0, 4, 1.0)]
+    [InlineData(8, 0, 1.0)]
+    [InlineData(-2, 4, 1.0)]
+    public void ScaleFactorFor_IsOneWheneverThereIsNothingToScaleAgainst(
+        int? entryServings, int? recipeServings, double expected)
+    {
+        ShoppingListGenerator.ScaleFactorFor(entryServings, recipeServings)
+            .Should().Be((decimal)expected);
+    }
+
+    [Fact]
+    public async Task ConsolidateScaledIngredients_ScalesEachSourceByItsOwnFactor()
+    {
+        // The case that forces the factor to travel INTO consolidation rather than being applied per
+        // recipe beforehand: one recipe planned twice in the same week at different servings. Grouping by
+        // ingredient name destroys the entry association, so a factor applied any later is unattributable.
+        var recipe = new Recipe { HouseholdId = 1, RecipeId = 200, Name = "Chili", Servings = 4 };
+        var ingredient = new RecipeIngredient
+        {
+            HouseholdId = 1,
+            RecipeId = 200,
+            IngredientId = 1,
+            Name = "beans",
+            Quantity = 2m,
+            Unit = "cup",
+            Category = "Pantry",
+            Recipe = recipe
+        };
+
+        var scaled = new List<ScaledIngredient>
+        {
+            new(ingredient, ShoppingListGenerator.ScaleFactorFor(8, recipe.Servings)),   // ×2 → 4 cups
+            new(ingredient, ShoppingListGenerator.ScaleFactorFor(2, recipe.Servings)),   // ×0.5 → 1 cup
+        };
+
+        var results = await _generator.ConsolidateScaledIngredientsAsync(scaled, autoConsolidate: true);
+
+        results.Should().HaveCount(1);
+        results[0].Quantity.Should().Be(5m, "4 cups for the party plus 1 cup for the small night");
+        results[0].Unit.Should().Be("cup");
+        // The per-source breakdown must show the amounts actually being bought, not the recipe's own.
+        results[0].OriginalUnits.Should().Be("4 cup + 1 cup");
+    }
+
+    [Fact]
+    public async Task ConsolidateScaledIngredients_RoundsToTheStoredPrecision()
+    {
+        // ShoppingListItem.Quantity is decimal(10,2). A factor of 1/3 is exactly the kind of value that
+        // would otherwise be computed at full precision and silently rounded on write, so the number in
+        // the result would not be the number in the list.
+        var recipe = new Recipe { HouseholdId = 1, RecipeId = 201, Name = "Thirds", Servings = 3 };
+        var ingredient = new RecipeIngredient
+        {
+            HouseholdId = 1,
+            RecipeId = 201,
+            IngredientId = 1,
+            Name = "flour",
+            Quantity = 1m,
+            Unit = "cup",
+            Category = "Pantry",
+            Recipe = recipe
+        };
+
+        var results = await _generator.ConsolidateScaledIngredientsAsync(
+            [new ScaledIngredient(ingredient, ShoppingListGenerator.ScaleFactorFor(1, 3))],
+            autoConsolidate: true);
+
+        results.Should().HaveCount(1);
+        results[0].Quantity.Should().Be(0.33m);
+    }
+
+    [Fact]
+    public async Task ConsolidateScaledIngredients_ScalesItemsKeptSeparate()
+    {
+        // The keep-separate branch is a different code path from the consolidating one, and it was just as
+        // capable of ignoring the factor. Volume vs weight is the pair the existing incompatible-units test
+        // uses, so it is known to survive FindCommonUnit rather than being an assumption of this test.
+        var recipe = new Recipe { HouseholdId = 1, RecipeId = 202, Name = "Mixed", Servings = 2 };
+        RecipeIngredient Ing(int id, string unit) => new()
+        {
+            HouseholdId = 1,
+            RecipeId = 202,
+            IngredientId = id,
+            Name = "olive oil",
+            Quantity = 3m,
+            Unit = unit,
+            Category = "Pantry",
+            Recipe = recipe
+        };
+
+        var results = await _generator.ConsolidateScaledIngredientsAsync(
+            [
+                new ScaledIngredient(Ing(1, "cups"), 2m),
+                new ScaledIngredient(Ing(2, "g"), 2m),
+            ],
+            autoConsolidate: true);
+
+        results.Should().HaveCount(2, "volume and weight have no common unit");
+        results.Should().OnlyContain(r => r.Quantity == 6m, "both sides of the split must honour the factor");
+    }
+
+    [Fact]
+    public async Task GenerateFromMealPlan_ScalesOnlyTheEntriesThatAskForIt()
+    {
+        // End-to-end through the real entity graph: two entries in one plan, one overridden and one not.
+        // The un-overridden entry is the regression guard for the promise this feature makes — a recipe
+        // deliberately batch-sized for leftovers must not be silently rescaled.
+        var scaled = new Recipe { HouseholdId = 1, RecipeId = 300, Name = "Curry", Servings = 4 };
+        var untouched = new Recipe { HouseholdId = 1, RecipeId = 301, Name = "Soup", Servings = 4 };
+        _context.Recipes.AddRange(scaled, untouched);
+        _context.RecipeIngredients.AddRange(
+            new RecipeIngredient
+            {
+                HouseholdId = 1, RecipeId = 300, IngredientId = 1,
+                Name = "rice", Quantity = 2m, Unit = "cup", Category = "Pantry"
+            },
+            new RecipeIngredient
+            {
+                HouseholdId = 1, RecipeId = 301, IngredientId = 1,
+                Name = "stock", Quantity = 2m, Unit = "cup", Category = "Pantry"
+            });
+
+        var plan = new MealPlan { HouseholdId = 1, MealPlanId = 900, WeekStartDate = new DateOnly(2026, 6, 1) };
+        _context.MealPlans.Add(plan);
+        _context.MealPlanEntries.AddRange(
+            new MealPlanEntry
+            {
+                HouseholdId = 1, MealPlanId = 900, EntryId = 1,
+                Date = new DateOnly(2026, 6, 1), MealType = MealType.Dinner,
+                RecipeId = 300, Servings = 12   // ×3 against a recipe that yields 4
+            },
+            new MealPlanEntry
+            {
+                HouseholdId = 1, MealPlanId = 900, EntryId = 2,
+                Date = new DateOnly(2026, 6, 2), MealType = MealType.Dinner,
+                RecipeId = 301, Servings = null // as written
+            });
+        await _context.SaveChangesAsync();
+
+        var created = new ShoppingList { HouseholdId = 1, ShoppingListId = 77, Name = "Week" };
+        _shoppingListServiceMock
+            .Setup(s => s.CreateShoppingListAsync(1, "Week", 900, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(created);
+        var added = new List<ShoppingListItem>();
+        _shoppingListServiceMock
+            .Setup(s => s.AddManualItemAsync(It.IsAny<ShoppingListItem>(), It.IsAny<CancellationToken>()))
+            .Callback<ShoppingListItem, CancellationToken>((i, _) => added.Add(i))
+            .ReturnsAsync((ShoppingListItem i, CancellationToken _) => i);
+
+        await _generator.GenerateFromMealPlanAsync(1, 900, "Week");
+
+        added.Single(i => i.Name == "rice").Quantity.Should().Be(6m, "12 servings of a recipe that yields 4");
+        added.Single(i => i.Name == "stock").Quantity.Should().Be(2m, "no override — exactly as before this feature");
+
+        // Settles a review claim that the Include chain leaves RecipeIngredient.Recipe null (which would
+        // silently drop attribution): the chain loads Recipe.Ingredients, and EF relationship fixup
+        // populates the inverse. Asserted against the real graph rather than argued.
+        added.Single(i => i.Name == "rice").SourceRecipes.Should().Be("Curry");
+        added.Single(i => i.Name == "stock").SourceRecipes.Should().Be("Soup");
+    }
+
+    [Fact]
+    public async Task GenerateFromMealPlan_DeduplicatesIngredientIdsWhenARecipeIsPlannedTwice()
+    {
+        // The same recipe on two nights yields the same RecipeIngredient rows twice. Quantities SHOULD
+        // double; the id list is a set of identities and should not.
+        var recipe = new Recipe { HouseholdId = 1, RecipeId = 400, Name = "Tacos", Servings = 4 };
+        _context.Recipes.Add(recipe);
+        _context.RecipeIngredients.Add(new RecipeIngredient
+        {
+            HouseholdId = 1, RecipeId = 400, IngredientId = 1,
+            // A convertible unit. An ingredient whose unit is empty or unrecognised ("each") finds no
+            // common unit and takes the keep-separate branch, so it would never consolidate and this test
+            // would silently be measuring that instead. (Unitless lines duplicating rather than summing is
+            // its own pre-existing question — noted on quest a3c1243c.)
+            Name = "salsa", Quantity = 1m, Unit = "cup", Category = "Pantry"
+        });
+
+        _context.MealPlans.Add(new MealPlan
+        {
+            HouseholdId = 1, MealPlanId = 901, WeekStartDate = new DateOnly(2026, 6, 8)
+        });
+        _context.MealPlanEntries.AddRange(
+            new MealPlanEntry
+            {
+                HouseholdId = 1, MealPlanId = 901, EntryId = 1,
+                Date = new DateOnly(2026, 6, 8), MealType = MealType.Dinner, RecipeId = 400
+            },
+            new MealPlanEntry
+            {
+                HouseholdId = 1, MealPlanId = 901, EntryId = 2,
+                Date = new DateOnly(2026, 6, 9), MealType = MealType.Dinner, RecipeId = 400
+            });
+        await _context.SaveChangesAsync();
+
+        var created = new ShoppingList { HouseholdId = 1, ShoppingListId = 78, Name = "Tacos week" };
+        _shoppingListServiceMock
+            .Setup(s => s.CreateShoppingListAsync(1, "Tacos week", 901, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(created);
+        var added = new List<ShoppingListItem>();
+        _shoppingListServiceMock
+            .Setup(s => s.AddManualItemAsync(It.IsAny<ShoppingListItem>(), It.IsAny<CancellationToken>()))
+            .Callback<ShoppingListItem, CancellationToken>((i, _) => added.Add(i))
+            .ReturnsAsync((ShoppingListItem i, CancellationToken _) => i);
+
+        await _generator.GenerateFromMealPlanAsync(1, 901, "Tacos week");
+
+        var salsa = added.Single(i => i.Name == "salsa");
+        salsa.Quantity.Should().Be(2m, "two dinners of the same recipe need twice the salsa");
+        salsa.RecipeIngredientIds.Should().Be("1:400:1", "identities, not occurrences");
+        salsa.SourceRecipes.Should().Be("Tacos");
+    }
 }

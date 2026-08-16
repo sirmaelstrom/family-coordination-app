@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
@@ -16,6 +17,13 @@ public record ConsolidationResult
     public List<string> RecipeIngredientIds { get; set; } = new();
 }
 
+/// <summary>
+/// A recipe ingredient paired with the factor the meal it was planned for asks for. 1 means "as the recipe is
+/// written". The pairing has to be carried into consolidation because grouping by ingredient name destroys the
+/// entry association, and two entries can plan the SAME recipe at different servings.
+/// </summary>
+public readonly record struct ScaledIngredient(RecipeIngredient Ingredient, decimal Factor);
+
 public interface IShoppingListGenerator
 {
     Task<ShoppingList> GenerateFromMealPlanAsync(int householdId, int mealPlanId, string listName, DateOnly? startDate = null, DateOnly? endDate = null, CancellationToken cancellationToken = default);
@@ -27,7 +35,12 @@ public interface IShoppingListGenerator
     /// and UI, not new logic.
     /// </summary>
     Task<ShoppingList> RegenerateShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default);
+
+    /// <summary>Consolidate ingredients as written — equivalent to every factor being 1.</summary>
     Task<List<ConsolidationResult>> ConsolidateIngredientsAsync(List<RecipeIngredient> ingredients, bool autoConsolidate = true);
+
+    /// <summary>Consolidate ingredients after scaling each by the factor its planned meal asks for.</summary>
+    Task<List<ConsolidationResult>> ConsolidateScaledIngredientsAsync(List<ScaledIngredient> ingredients, bool autoConsolidate = true);
 }
 
 public class ShoppingListGenerator(
@@ -71,14 +84,17 @@ public class ShoppingListGenerator(
             entries = entries.Where(e => e.Date <= endDate.Value);
         }
 
-        // Collect all RecipeIngredients from filtered entries (skip entries with CustomMealName only)
+        // Collect all RecipeIngredients from filtered entries (skip entries with CustomMealName only), each
+        // carrying the factor its own entry asks for — the same recipe planned twice at different servings
+        // contributes twice, at different scales.
         var allIngredients = entries
             .Where(e => e.Recipe != null)
-            .SelectMany(e => e.Recipe!.Ingredients)
+            .SelectMany(e => e.Recipe!.Ingredients.Select(i =>
+                new ScaledIngredient(i, ScaleFactorFor(e.Servings, e.Recipe!.Servings))))
             .ToList();
 
         // Consolidate ingredients
-        var consolidationResults = await ConsolidateIngredientsAsync(allIngredients, autoConsolidate: true);
+        var consolidationResults = await ConsolidateScaledIngredientsAsync(allIngredients, autoConsolidate: true);
 
         // Create shopping list via service
         var shoppingList = await shoppingListService.CreateShoppingListAsync(
@@ -154,13 +170,15 @@ public class ShoppingListGenerator(
             throw new InvalidOperationException($"MealPlan {existingList.MealPlanId} not found for household {householdId}");
         }
 
-        // Generate fresh consolidation from meal plan
+        // Generate fresh consolidation from meal plan, honouring each entry's servings the same way generation
+        // does — so a regenerate after changing an entry's servings reflects the change.
         var allIngredients = mealPlan.Entries
             .Where(e => e.Recipe != null)
-            .SelectMany(e => e.Recipe!.Ingredients)
+            .SelectMany(e => e.Recipe!.Ingredients.Select(i =>
+                new ScaledIngredient(i, ScaleFactorFor(e.Servings, e.Recipe!.Servings))))
             .ToList();
 
-        var consolidationResults = await ConsolidateIngredientsAsync(allIngredients, autoConsolidate: true);
+        var consolidationResults = await ConsolidateScaledIngredientsAsync(allIngredients, autoConsolidate: true);
 
         // Clear existing non-manual items
         foreach (var item in existingList.Items.Where(i => !i.IsManuallyAdded).ToList())
@@ -209,18 +227,37 @@ public class ShoppingListGenerator(
             ?? existingList;
     }
 
-    public async Task<List<ConsolidationResult>> ConsolidateIngredientsAsync(
+    /// <summary>
+    /// What one planned meal asks for, relative to the recipe as written. 1 whenever there is nothing to scale
+    /// against — no override, or a recipe that never declared its own yield. Both are the common case, and both
+    /// must leave quantities exactly as they were before this feature existed.
+    /// </summary>
+    public static decimal ScaleFactorFor(int? entryServings, int? recipeServings) =>
+        entryServings is > 0 && recipeServings is > 0
+            ? (decimal)entryServings.Value / recipeServings.Value
+            : 1m;
+
+    /// <summary>Quantities are persisted as <c>decimal(10,2)</c>; round here so the computed value is the stored one.</summary>
+    private static decimal Round(decimal quantity) => Math.Round(quantity, 2, MidpointRounding.AwayFromZero);
+
+    public Task<List<ConsolidationResult>> ConsolidateIngredientsAsync(
         List<RecipeIngredient> ingredients,
+        bool autoConsolidate = true) =>
+        ConsolidateScaledIngredientsAsync(
+            ingredients.Select(i => new ScaledIngredient(i, 1m)).ToList(), autoConsolidate);
+
+    public async Task<List<ConsolidationResult>> ConsolidateScaledIngredientsAsync(
+        List<ScaledIngredient> ingredients,
         bool autoConsolidate = true)
     {
         await Task.CompletedTask; // For async signature consistency
 
         // Group ingredients by (NormalizedName, Category)
         var groups = ingredients
-            .GroupBy(i => new
+            .GroupBy(si => new
             {
-                NormalizedName = NormalizeIngredientName(i.Name),
-                Category = i.Category
+                NormalizedName = NormalizeIngredientName(si.Ingredient.Name),
+                Category = si.Ingredient.Category
             })
             .ToList();
 
@@ -231,7 +268,7 @@ public class ShoppingListGenerator(
             var items = group.ToList();
 
             // Find common unit via UnitConverter
-            var units = items.Select(i => i.Unit).ToList();
+            var units = items.Select(si => si.Ingredient.Unit).ToList();
             var commonUnit = unitConverter.FindCommonUnit(units);
 
             if (commonUnit != null && autoConsolidate)
@@ -242,19 +279,27 @@ public class ShoppingListGenerator(
                 var sourceRecipes = new List<string>();
                 var recipeIngredientIds = new List<string>();
 
-                foreach (var item in items)
+                foreach (var scaled in items)
                 {
-                    // Convert quantity to common unit
-                    var convertedQuantity = item.Quantity.HasValue && !string.IsNullOrWhiteSpace(item.Unit)
-                        ? unitConverter.Convert(item.Quantity.Value, item.Unit, commonUnit)
-                        : item.Quantity ?? 0;
+                    var item = scaled.Ingredient;
+
+                    // Scale to what the meal asks for BEFORE converting units, so the conversion and the sum
+                    // both operate on the amount actually being cooked.
+                    var scaledQuantity = item.Quantity.HasValue ? item.Quantity.Value * scaled.Factor : (decimal?)null;
+
+                    var convertedQuantity = scaledQuantity.HasValue && !string.IsNullOrWhiteSpace(item.Unit)
+                        ? unitConverter.Convert(scaledQuantity.Value, item.Unit, commonUnit)
+                        : scaledQuantity ?? 0;
 
                     totalQuantity += convertedQuantity;
 
-                    // Track original units
-                    if (item.Quantity.HasValue && !string.IsNullOrWhiteSpace(item.Unit))
+                    // Track original units — the per-source amounts this list is actually built from.
+                    // "0.##" rather than the raw decimal: scaling changes a value's SCALE as well as its
+                    // magnitude (2 × 0.5 is 1.0, not 1), and the trailing zero would surface in the breakdown.
+                    if (scaledQuantity.HasValue && !string.IsNullOrWhiteSpace(item.Unit))
                     {
-                        originalUnits.Add($"{item.Quantity} {item.Unit}");
+                        originalUnits.Add(
+                            $"{Round(scaledQuantity.Value).ToString("0.##", CultureInfo.InvariantCulture)} {item.Unit}");
                     }
 
                     // Track source recipes
@@ -269,24 +314,28 @@ public class ShoppingListGenerator(
 
                 results.Add(new ConsolidationResult
                 {
-                    Name = items.First().Name,
-                    Quantity = totalQuantity,
+                    Name = items.First().Ingredient.Name,
+                    Quantity = Round(totalQuantity),
                     Unit = commonUnit,
-                    Category = items.First().Category,
+                    Category = items.First().Ingredient.Category,
                     SourceRecipes = sourceRecipes.Distinct().ToList(),
                     OriginalUnits = originalUnits.Count > 1 ? string.Join(" + ", originalUnits) : null,
-                    RecipeIngredientIds = recipeIngredientIds
+                    // Distinct for the same reason SourceRecipes is: one recipe planned twice in a week
+                    // contributes the same RecipeIngredient rows twice, and these are identities, not counts.
+                    RecipeIngredientIds = recipeIngredientIds.Distinct().ToList()
                 });
             }
             else
             {
                 // Keep items separate (incompatible units or imprecise quantities)
-                foreach (var item in items)
+                foreach (var scaled in items)
                 {
+                    var item = scaled.Ingredient;
+
                     results.Add(new ConsolidationResult
                     {
                         Name = item.Name,
-                        Quantity = item.Quantity ?? 0,
+                        Quantity = Round((item.Quantity ?? 0) * scaled.Factor),
                         Unit = item.Unit ?? string.Empty,
                         Category = item.Category,
                         SourceRecipes = item.Recipe != null && !string.IsNullOrWhiteSpace(item.Recipe.Name)

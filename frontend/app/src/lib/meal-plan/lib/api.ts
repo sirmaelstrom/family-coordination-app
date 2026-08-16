@@ -105,6 +105,22 @@ export async function moveEntry(
   });
 }
 
+/**
+ * Set how many people a planned meal is being cooked for; `null` clears it back to the recipe as written.
+ * Shopping-list generation scales that entry's ingredients by `servings / recipe.servings`.
+ * A non-positive number → 400; a missing entry → 404.
+ */
+export async function setEntryServings(
+  mealPlanId: number,
+  entryId: number,
+  servings: number | null,
+): Promise<MealPlanEntryDto> {
+  return request<MealPlanEntryDto>(`${BASE}/entries/${mealPlanId}/${entryId}/servings`, {
+    method: 'PATCH',
+    ...jsonBody({ servings }),
+  });
+}
+
 /** Remove an entry. DELETE → 204 (no body); a missing entry → 404/empty-400. */
 export async function removeEntry(mealPlanId: number, entryId: number): Promise<void> {
   await request<void>(`${BASE}/entries/${mealPlanId}/${entryId}`, { method: 'DELETE' });

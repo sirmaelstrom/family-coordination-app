@@ -4,12 +4,15 @@
   import { mealPlanStore } from './lib/state.svelte';
   import { startLiveness, type LivenessHandle } from './lib/liveness';
   import { weekdayShort, monthDay, todayMonday } from './lib/dates';
+  import { parseServingsInput } from './lib/servings';
   import WeekNav from './lib/components/WeekNav.svelte';
   import CalendarGrid from './lib/components/CalendarGrid.svelte';
   import DayList from './lib/components/DayList.svelte';
   import RecipePickerSheet, { type PickerResult } from './lib/components/RecipePickerSheet.svelte';
   import RecipeDetailSheet from './lib/components/RecipeDetailSheet.svelte';
   import ConfirmDialog from '$lib/shared/ConfirmDialog.svelte';
+  import PromptDialog from '$lib/shared/PromptDialog.svelte';
+  import { showToast } from '$lib/shared/toast-store.svelte';
 
   // ───────────────────────────────────────────────────────────────────────
   // Root of the meal-plan island. Reads the ShellContext from #meal-plan-root
@@ -59,6 +62,15 @@
   let confirmEntry = $state<MealPlanEntryDto | null>(null);
   let confirmMessage = $derived(
     confirmEntry ? `Remove this meal from ${monthDay(confirmEntry.date)}?` : '',
+  );
+
+  // ── Servings-override state ───────────────────────────────────────────────
+  let servingsOpen = $state(false);
+  let servingsEntry = $state<MealPlanEntryDto | null>(null);
+  let servingsLabel = $derived(
+    servingsEntry?.recipe
+      ? `Cooking for how many? (the recipe serves ${servingsEntry.recipe.servings}) — blank to cook it as written`
+      : 'Cooking for how many?',
   );
 
   function mealLabel(m: MealType): string {
@@ -115,6 +127,31 @@
     confirmOpen = false;
     confirmEntry = null;
     if (entry) await store.removeEntry(entry.mealPlanId, entry.entryId);
+  }
+
+  function handleSetServings(entry: MealPlanEntryDto): void {
+    servingsEntry = entry;
+    servingsOpen = true;
+  }
+
+  /**
+   * Blank clears the override (back to the recipe as written) — which is why the dialog is opened with
+   * `allowEmpty`. Parsing lives in lib/servings.ts so the empty case is testable; the server validates
+   * independently.
+   */
+  async function handleSubmitServings(value: string): Promise<void> {
+    const entry = servingsEntry;
+    if (!entry) return;
+
+    const parsed = parseServingsInput(value);
+    if (!parsed.ok) {
+      showToast({ message: parsed.message, kind: 'error' });
+      return;
+    }
+
+    servingsOpen = false;
+    servingsEntry = null;
+    await store.setEntryServings(entry.mealPlanId, entry.entryId, parsed.servings);
   }
 
   // Rebuild the per-slot dnd zones whenever the board data or week changes —
@@ -187,6 +224,7 @@
         weekStart={store.weekStart}
         onSlotAdd={handleSlotAdd}
         onRemove={handleRemove}
+        onSetServings={handleSetServings}
         onViewRecipe={handleViewRecipe}
         onViewCustom={handleViewCustom}
       />
@@ -195,6 +233,7 @@
         weekStart={store.weekStart}
         onSlotAdd={handleSlotAdd}
         onRemove={handleRemove}
+        onSetServings={handleSetServings}
         onViewRecipe={handleViewRecipe}
         onViewCustom={handleViewCustom}
       />
@@ -232,6 +271,20 @@
     confirmEntry = null;
   }}
   onConfirm={handleConfirmRemove}
+/>
+
+<PromptDialog
+  open={servingsOpen}
+  title="Servings"
+  label={servingsLabel}
+  initial={servingsEntry?.servings != null ? String(servingsEntry.servings) : ''}
+  confirmLabel="Save"
+  allowEmpty
+  onClose={() => {
+    servingsOpen = false;
+    servingsEntry = null;
+  }}
+  onSubmit={handleSubmitServings}
 />
 
 <style>

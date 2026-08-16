@@ -19,7 +19,15 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { MealPlanBoardDto, MealPlanEntryDto, MealType, ShellContext } from './types';
-import { ApiError, addEntry, getBoard, moveEntry, removeEntry, type AddEntryBody } from './api';
+import {
+  ApiError,
+  addEntry,
+  getBoard,
+  moveEntry,
+  removeEntry,
+  setEntryServings,
+  type AddEntryBody,
+} from './api';
 import { addWeeks, mondayOf, todayMonday, weekDays } from './dates';
 import {
   applyEntryMove,
@@ -263,6 +271,39 @@ class MealPlanStore {
             fromMeal,
           );
         }
+        showToast({ message: 'Something went wrong. Please try again.', kind: 'error' });
+      }
+    }
+  }
+
+  /**
+   * Set how many people a planned meal is being cooked for; `null` clears the
+   * override back to the recipe as written. Shopping-list generation scales that
+   * entry's ingredients by `servings / recipe.servings`.
+   *
+   * NOT optimistic, unlike move/remove: this fires from a dialog the user just
+   * dismissed rather than from a drag, so there is no gesture to keep in sync and
+   * the server's projected entry is simply the truth. Same week-changed guard as
+   * the others — a response for a board we have already navigated away from is
+   * dropped, not applied.
+   */
+  async setEntryServings(
+    mealPlanId: number,
+    entryId: number,
+    servings: number | null,
+  ): Promise<void> {
+    if (!this.board) return;
+    const targetWeek = this.weekStart;
+    try {
+      const updated = await setEntryServings(mealPlanId, entryId, servings);
+      if (!this.board || this.weekStart !== targetWeek) return;
+      this.board.entries = replaceEntry(this.board.entries, updated);
+    } catch (e) {
+      if (this.weekStart !== targetWeek) return;
+      if (e instanceof ApiError) {
+        await this.reconcile();
+        showToast({ message: "Couldn't change the servings — the plan was refreshed.", kind: 'info' });
+      } else {
         showToast({ message: 'Something went wrong. Please try again.', kind: 'error' });
       }
     }

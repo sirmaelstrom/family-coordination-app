@@ -28,9 +28,10 @@ function entry(overrides: Partial<MealPlanEntryDto> = {}): MealPlanEntryDto {
     entryId: 1,
     date: '2026-07-06',
     mealType: 'dinner',
-    recipe: { recipeId: 10, name: 'Tacos', imagePath: null, recipeType: 'main' },
+    recipe: { recipeId: 10, name: 'Tacos', imagePath: null, recipeType: 'main', servings: 4 },
     customMealName: null,
     notes: null,
+    servings: null,
     ...overrides,
   };
 }

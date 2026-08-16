@@ -260,10 +260,17 @@ const mealPlanBoard = objectOf({
       date: str,
       mealType,
       recipe: nullable(
-        objectOf({ recipeId: num, name: str, imagePath: nullable(str), recipeType })
+        objectOf({
+          recipeId: num,
+          name: str,
+          imagePath: nullable(str),
+          recipeType,
+          servings: nullable(num),
+        })
       ),
       customMealName: nullable(str),
       notes: nullable(str),
+      servings: nullable(num),
     })
   ),
 });

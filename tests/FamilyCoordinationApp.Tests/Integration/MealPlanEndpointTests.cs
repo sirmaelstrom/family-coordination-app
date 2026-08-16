@@ -25,10 +25,10 @@ public sealed class MealPlanEndpointTests(PostgresContainerFixture postgres) : I
     public async Task DisposeAsync() => await _factory.DisposeAsync();
 
     // Wire shapes (subset — camelCase via JsonSerializerDefaults.Web).
-    private sealed record RecipeSummary(int recipeId, string name, string? imagePath, string recipeType);
+    private sealed record RecipeSummary(int recipeId, string name, string? imagePath, string recipeType, int? servings);
     private sealed record Entry(
         int mealPlanId, int entryId, string date, string mealType,
-        RecipeSummary? recipe, string? customMealName, string? notes);
+        RecipeSummary? recipe, string? customMealName, string? notes, int? servings);
     private sealed record Board(string weekStartDate, int? mealPlanId, List<Entry> entries);
     private sealed record IngredientLine(decimal? quantity, string? unit, string name, string? notes, int sortOrder);
     private sealed record RecipeDetail(
@@ -266,6 +266,72 @@ public sealed class MealPlanEndpointTests(PostgresContainerFixture postgres) : I
         var resp = await client.GetAsync("/api/meal-plan/board?weekStart=2026-06-01");
 
         resp.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task SetServings_RoundTrips_ClearsToNull_AndRejectsNonPositive()
+    {
+        var entry = await AddEntryAsync(ClientA, new
+        {
+            date = "2026-06-29",
+            mealType = "dinner",
+            recipeId = (int?)null,
+            customMealName = "Chili night",
+            notes = (string?)null
+        });
+        entry.servings.Should().BeNull("a new entry is cooked as the recipe is written");
+
+        var path = $"/api/meal-plan/entries/{entry.mealPlanId}/{entry.entryId}/servings";
+
+        var set = await ClientA.PatchAsJsonAsync(path, new { servings = (int?)8 }, Json);
+        set.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await set.Content.ReadFromJsonAsync<Entry>(Json))!.servings.Should().Be(8);
+
+        // It is a persisted field, not just an echo.
+        var board = await ClientA.GetFromJsonAsync<Board>("/api/meal-plan/board?weekStart=2026-06-29", Json);
+        board!.entries.Single(e => e.entryId == entry.entryId).servings.Should().Be(8);
+
+        // null is the documented "back to the recipe as written" signal — it must NOT read as "unchanged".
+        var cleared = await ClientA.PatchAsJsonAsync(path, new { servings = (int?)null }, Json);
+        cleared.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await cleared.Content.ReadFromJsonAsync<Entry>(Json))!.servings.Should().BeNull();
+
+        // 0 would mean "cook none of it" and would be a divide-by-zero waiting to happen downstream.
+        var zero = await ClientA.PatchAsJsonAsync(path, new { servings = 0 }, Json);
+        zero.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await zero.Content.ReadAsStringAsync()).Should().NotBeEmpty("every /api 4xx carries a body");
+
+        // The value is a MULTIPLIER on every ingredient of the meal, and ShoppingListItem.Quantity is
+        // decimal(10,2) — unbounded, this turns the next generate into a numeric-overflow 500.
+        var huge = await ClientA.PatchAsJsonAsync(path, new { servings = 1_000_001 }, Json);
+        huge.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // And the boundary itself is allowed, so the cap is a cap and not an off-by-one.
+        var atCap = await ClientA.PatchAsJsonAsync(path, new { servings = 1000 }, Json);
+        atCap.StatusCode.Should().Be(HttpStatusCode.OK);
+        await ClientA.PatchAsJsonAsync(path, new { servings = (int?)null }, Json);
+    }
+
+    [Fact]
+    public async Task SetServings_IsHouseholdScoped()
+    {
+        var aEntry = await AddEntryAsync(ClientA, new
+        {
+            date = "2026-07-06",
+            mealType = "dinner",
+            recipeId = (int?)null,
+            customMealName = "A's dinner",
+            notes = (string?)null
+        });
+
+        // B scoping its own household finds nothing ⇒ a clean 404, and A's entry is untouched (M1).
+        var resp = await ClientB.PatchAsJsonAsync(
+            $"/api/meal-plan/entries/{aEntry.mealPlanId}/{aEntry.entryId}/servings",
+            new { servings = 99 }, Json);
+        resp.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var aBoard = await ClientA.GetFromJsonAsync<Board>("/api/meal-plan/board?weekStart=2026-07-06", Json);
+        aBoard!.entries.Single(e => e.entryId == aEntry.entryId).servings.Should().BeNull();
     }
 
     [Fact]

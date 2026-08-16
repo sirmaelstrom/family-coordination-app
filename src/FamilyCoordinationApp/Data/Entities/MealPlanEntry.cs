@@ -15,6 +15,14 @@ public class MealPlanEntry
     public string? CustomMealName { get; set; }  // "Leftovers", "Eating out"
     public string? Notes { get; set; }
 
+    /// <summary>
+    /// How many people this meal is being cooked for. NULL means "as the recipe is written" — shopping-list
+    /// generation then scales that recipe's ingredients by <c>Servings / Recipe.Servings</c>, and by nothing at
+    /// all while this is null. Opt-in on purpose: a recipe deliberately batch-sized for leftovers must not be
+    /// silently shrunk to the household's headcount.
+    /// </summary>
+    public int? Servings { get; set; }
+
     // Change tracking fields
     public DateTime? UpdatedAt { get; set; }
     public int? UpdatedByUserId { get; set; }
