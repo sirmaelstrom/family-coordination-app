@@ -109,7 +109,11 @@ class MealPlanStore {
     this.zones[zoneKey(date, mealType)] = items;
     const moved = findCrossSlotEntry(items, date, mealType);
     const persist = moved
-      ? this.moveEntry(moved.mealPlanId, moved.entryId, date, mealType)
+      // moved.version is the token the dragged CARD carried when the drag began. Board loads are not
+      // gated on dragActive (only zone rebuilds are), so a liveness poll landing mid-drag can replace
+      // board.entries — re-reading the token at drop would submit one the user never saw. Same guarantee
+      // the dialogs get, just over a much shorter window.
+      ? this.moveEntry(moved.mealPlanId, moved.entryId, date, mealType, moved.version)
       : Promise.resolve();
     this.dragActive = false;
     return persist;
@@ -236,6 +240,7 @@ class MealPlanStore {
     entryId: number,
     date: string,
     mealType: MealType,
+    version: number,
   ): Promise<void> {
     if (!this.board) return;
     const original = this.board.entries.find(
@@ -251,7 +256,8 @@ class MealPlanStore {
     // before the drag gate is released).
     this.board.entries = applyEntryMove(this.board.entries, mealPlanId, entryId, date, mealType);
     try {
-      const updated = await moveEntry(mealPlanId, entryId, { date, mealType, version: original.version });
+      // Caller-supplied token (the dragged card's), NOT original.version — see zoneFinalize.
+      const updated = await moveEntry(mealPlanId, entryId, { date, mealType, version });
       // The user stepped to another week while the PATCH was in flight — this
       // board is no longer the one we moved on; the new week's GET is truth.
       if (!this.board || this.weekStart !== targetWeek) return;
