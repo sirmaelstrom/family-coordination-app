@@ -3,6 +3,7 @@ import type {
   ShoppingListItemDto,
   ShoppingListSummaryDto,
 } from './types';
+import { messageFrom } from '$lib/shared/api-message';
 
 const BASE = '/api/shopping-lists';
 
@@ -14,7 +15,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new ApiError(res.status, text || res.statusText);
+    throw new ApiError(res.status, messageFrom(text) ?? res.statusText);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

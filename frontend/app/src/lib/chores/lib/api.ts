@@ -13,6 +13,7 @@ import type {
   DigestSettingsView,
   DigestSettingsUpdate,
 } from './types';
+import { messageFrom } from '$lib/shared/api-message';
 
 const CHORES_BASE = '/api/chores';
 const ROOMS_BASE = '/api/rooms';
@@ -21,10 +22,10 @@ const ROOMS_BASE = '/api/rooms';
  * Thrown on any non-2xx response. `status` lets callers distinguish the
  * retryable concurrency conflict (409) from every other rejection.
  *
- * ⚠ WP-08 finding: the app re-executes empty-body API 404s through a Blazor
- * `/not-found` page, so a server-side "not found" can arrive on the wire as an
- * empty **400**, not 404. Therefore treat ANY 4xx as a non-retryable rejection
- * EXCEPT 409, which is the genuine xmin concurrency conflict (WP-11 refetches
+ * Since PR #90 an /api 4xx keeps its real status and always carries a JSON
+ * `{ message }` (previously a bodiless one was re-executed through a GET-only
+ * page and could arrive as an empty 400). Treat ANY 4xx as a non-retryable
+ * rejection EXCEPT 409, the genuine xmin concurrency conflict (WP-11 refetches
  * the board and retries the mutation on 409 only).
  */
 export class ApiError extends Error {
@@ -43,8 +44,7 @@ export class ApiError extends Error {
 
   /**
    * A non-retryable client rejection: validation / illegal transition / not
-   * found (which may surface as an empty 400 per the WP-08 re-execution
-   * behavior). Everything 4xx that is NOT 409.
+   * found. Everything 4xx that is NOT 409.
    */
   get isClientRejection(): boolean {
     return this.status >= 400 && this.status < 500 && this.status !== 409;
@@ -60,7 +60,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new ApiError(res.status, text || res.statusText);
+    throw new ApiError(res.status, messageFrom(text) ?? res.statusText);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

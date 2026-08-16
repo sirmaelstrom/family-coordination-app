@@ -6,18 +6,17 @@ import type {
   MealType,
   RecipeType,
 } from './types';
+import { messageFrom } from '$lib/shared/api-message';
 
 const BASE = '/api/meal-plan';
 
 /**
  * Thrown on any non-2xx response. `status` lets callers react to a rejection.
  *
- * ⚠ WP-08 finding (carried from chores/shopping-list): the app re-executes
- * empty-body API 404s through a Blazor `/not-found` page, so a server-side
- * "not found" can arrive on the wire as an empty **400**, not 404. Since the
- * meal-plan island is VERSIONLESS (no 409 concurrency dance), the rule is even
- * simpler: treat ANY 4xx as a non-retryable client rejection → refetch the
- * week + calm toast. There is no retry branch.
+ * Since PR #90 an /api 4xx keeps its real status and always carries a JSON
+ * `{ message }`. The meal-plan island is VERSIONLESS (no 409 concurrency
+ * dance), so the rule is simple: treat ANY 4xx as a non-retryable client
+ * rejection → refetch the week + calm toast. There is no retry branch.
  */
 export class ApiError extends Error {
   constructor(
@@ -29,8 +28,7 @@ export class ApiError extends Error {
   }
 
   /**
-   * A non-retryable client rejection: validation / not found (which may surface
-   * as an empty 400 per the WP-08 re-execution behavior). Any 4xx.
+   * A non-retryable client rejection: validation / not found. Any 4xx.
    */
   get isClientRejection(): boolean {
     return this.status >= 400 && this.status < 500;
@@ -46,7 +44,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new ApiError(res.status, text || res.statusText);
+    throw new ApiError(res.status, messageFrom(text) ?? res.statusText);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
