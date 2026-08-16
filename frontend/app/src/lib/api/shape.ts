@@ -74,12 +74,16 @@ export function objectOf<F extends Record<string, Shape<unknown>>>(
     }
     const actual = v as Record<string, unknown>;
     const errors: string[] = [];
+    // hasOwn, not `in`: `in` consults the prototype chain, so a field named for an
+    // inherited member would read as present (or as declared) without ever being either.
     for (const key of Object.keys(fields)) {
-      if (key in actual) errors.push(...fields[key].check(actual[key], `${p}.${key}`));
+      if (Object.hasOwn(actual, key)) errors.push(...fields[key].check(actual[key], `${p}.${key}`));
       else errors.push(`${p}.${key}: declared in types.ts, missing from the fixture`);
     }
     for (const key of Object.keys(actual)) {
-      if (!(key in fields)) errors.push(`${p}.${key}: in the fixture, not declared in types.ts`);
+      if (!Object.hasOwn(fields, key)) {
+        errors.push(`${p}.${key}: in the fixture, not declared in types.ts`);
+      }
     }
     return errors;
   });
