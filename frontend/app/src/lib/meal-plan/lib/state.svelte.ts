@@ -257,13 +257,18 @@ class MealPlanStore {
     } catch (e) {
       if (this.weekStart !== targetWeek) return;
       if (e instanceof ApiError) {
-        // Any 4xx — the server rejected the move; resync to truth. A 409 is specifically "someone else
-        // got there first", which is worth saying plainly rather than as a generic rejection.
+        // Any 4xx — the server rejected the move; resync to truth.
+        //
+        // A 409 means the token we sent was stale. USUALLY that is another member, but it is not only
+        // that: the version is read from our cached entry, and nothing serializes mutations on the same
+        // entry, so a second action taken before the first response lands sends the same (now stale)
+        // token. The copy therefore says what we actually know — the meal changed — rather than blaming
+        // a person who may be this user. Non-destructive either way: the reconcile shows server truth.
         await this.reconcile();
         showToast({
           message:
             e.status === 409
-              ? 'Someone else moved that meal — the plan was refreshed.'
+              ? 'That meal just changed — the plan was refreshed. Try again.'
               : "Couldn't move that meal — the plan was refreshed.",
           kind: 'info',
         });
@@ -316,7 +321,7 @@ class MealPlanStore {
         showToast({
           message:
             e.status === 409
-              ? 'Someone else changed that meal — the plan was refreshed.'
+              ? 'That meal just changed — the plan was refreshed. Try again.'
               : "Couldn't change the servings — the plan was refreshed.",
           kind: 'info',
         });
@@ -352,7 +357,7 @@ class MealPlanStore {
         showToast({
           message:
             e.status === 409
-              ? 'Someone else changed that meal — the plan was refreshed.'
+              ? 'That meal just changed — the plan was refreshed. Try again.'
               : 'That meal changed — the plan was refreshed.',
           kind: 'info',
         });
