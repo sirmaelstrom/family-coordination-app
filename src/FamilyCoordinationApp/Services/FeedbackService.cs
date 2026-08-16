@@ -6,15 +6,72 @@ using Microsoft.EntityFrameworkCore;
 namespace FamilyCoordinationApp.Services;
 
 /// <summary>
-/// Feedback administration (strangler — lifts <c>FeedbackAdmin.razor</c>'s direct-EF logic into a testable,
-/// dual-mode service). Short-lived contexts via the factory. Every read and mutation is household-scoped for a
-/// non-admin (R-C1, the IDOR fix): the scope is part of the query, so a non-admin posting another household's id
-/// finds nothing → the endpoint 404s with no existence leak. A site admin is unscoped (sees/acts on any item).
+/// The feedback surface: <see cref="SubmitAsync"/> writes; the reads/mutations are the strangler lift of
+/// <c>FeedbackAdmin.razor</c>'s direct-EF logic into a testable, dual-mode service. Short-lived contexts via the
+/// factory. Every read and mutation is household-scoped for a non-admin (R-C1, the IDOR fix): the scope is part of
+/// the query, so a non-admin posting another household's id finds nothing → the endpoint 404s with no existence
+/// leak. A site admin is unscoped (sees/acts on any item).
 /// </summary>
 public sealed class FeedbackService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     ILogger<FeedbackService> logger) : IFeedbackService
 {
+    /// <summary>Column limit for <c>CurrentPage</c> and <c>UserAgent</c> (<c>FeedbackConfiguration</c>).</summary>
+    private const int DiagnosticMaxLength = 500;
+
+    /// <summary>Column limit for <c>Message</c> (<c>FeedbackConfiguration</c>); the endpoint 400s past it.</summary>
+    public const int MessageMaxLength = 4000;
+
+    public async Task<int> SubmitAsync(
+        FeedbackType type,
+        string message,
+        string? currentPage,
+        string? userAgent,
+        int? userId,
+        int? householdId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        var feedback = new Feedback
+        {
+            UserId = userId,
+            HouseholdId = householdId,
+            Type = type,
+            Message = message.Trim(),
+            CurrentPage = Truncate(currentPage),
+            UserAgent = Truncate(userAgent),
+            CreatedAt = DateTime.UtcNow,
+        };
+
+        context.Feedbacks.Add(feedback);
+        await context.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation(
+            "Feedback {FeedbackId} submitted (type={Type}, household={HouseholdId}, user={UserId})",
+            feedback.Id, type, householdId, userId);
+
+        return feedback.Id;
+    }
+
+    /// <summary>
+    /// Trim + cap a caller-controlled diagnostic to its column limit; whitespace-only ⇒ null.
+    /// <para><b>Never cuts between a surrogate pair</b> — a lone high surrogate is invalid UTF-16 and Npgsql's
+    /// encoder rejects it with <c>EncoderFallbackException</c> (⇒ 500). Dropping the orphan is safe: its low half
+    /// is past the cut anyway. Capping by UTF-16 length is conservative for a <c>varchar(500)</c>, which counts
+    /// code points.</para>
+    /// </summary>
+    private static string? Truncate(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var trimmed = value.Trim();
+        if (trimmed.Length <= DiagnosticMaxLength) return trimmed;
+
+        var cut = DiagnosticMaxLength;
+        if (char.IsHighSurrogate(trimmed[cut - 1])) cut--;
+        return trimmed[..cut];
+    }
+
     public async Task<IReadOnlyList<Feedback>> GetFeedbackAsync(bool isSiteAdmin, int? householdId, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);

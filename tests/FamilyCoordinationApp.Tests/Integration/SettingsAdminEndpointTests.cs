@@ -19,6 +19,10 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// test: R-C1 (feedback IDOR is blocked), R-C2 (approve is atomic — a forced mid-approve failure rolls back fully),
 /// R-C3 (an already-reviewed request is a 409, never a second household); plus the 403 site-admin gate and the
 /// dual-mode feedback visibility.
+/// <para>The <c>Feedback_Submit_*</c> block covers <c>POST /api/settings/feedback</c>. Its load-bearing assertions
+/// are server-derived attribution (a body-supplied householdId/userId is ignored) and a non-empty body on every 4xx
+/// (an empty one is re-executed through the GET-only <c>/not-found</c> page and reaches the caller as some other
+/// status).</para>
 /// </summary>
 [Collection(IntegrationCollection.Name)]
 [Trait("kind", "integration")]
@@ -347,5 +351,224 @@ public sealed class SettingsAdminEndpointTests(PostgresContainerFixture postgres
     {
         (await AdminClient.PostAsync($"{FeedbackUrl}/999999/read", null))
             .StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // ─── Feedback SUBMIT (POST /) ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// The end-to-end assertion: a regular user's submission is stored, attributed to THEM, and comes back on
+    /// their own dual-mode GET.
+    /// </summary>
+    [Fact]
+    public async Task Feedback_Submit_StoresItem_AttributedToCaller_AndItAppearsInTheirOwnList()
+    {
+        var resp = await NonAdminClient.PostAsJsonAsync(
+            $"{FeedbackUrl}/",
+            new { type = "bug", message = "  The shopping list drops items.  ", currentPage = "/shopping-list" },
+            Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using (var ctx = await DbFactory.CreateDbContextAsync())
+        {
+            var stored = await ctx.Feedbacks.SingleAsync();
+            stored.Message.Should().Be("The shopping list drops items.", "the message is stored trimmed");
+            stored.Type.Should().Be(FeedbackType.Bug);
+            stored.CurrentPage.Should().Be("/shopping-list");
+            stored.UserId.Should().Be(ChoresWebAppFactory.UserBId, "attribution comes from the caller's cookie");
+            stored.HouseholdId.Should().Be(ChoresWebAppFactory.HouseholdBId);
+            stored.IsRead.Should().BeFalse();
+            stored.IsResolved.Should().BeFalse();
+        }
+
+        var list = (await NonAdminClient.GetFromJsonAsync<FeedbackListWire>($"{FeedbackUrl}/", Json))!;
+        list.items.Should().ContainSingle().Which.message.Should().Be("The shopping list drops items.");
+    }
+
+    /// <summary>
+    /// M1: the submit body carries no ids, and a caller cannot smuggle one in — extra fields are ignored and the row
+    /// still lands in the CALLER's household, invisible to the other one.
+    /// </summary>
+    [Fact]
+    public async Task Feedback_Submit_IgnoresClientSuppliedScope_AndLandsInTheCallersHousehold()
+    {
+        // Alice (site admin, household A) submits while claiming to be bob in household B.
+        var resp = await AdminClient.PostAsJsonAsync(
+            $"{FeedbackUrl}/",
+            new
+            {
+                type = "general",
+                message = "Attribution probe.",
+                householdId = ChoresWebAppFactory.HouseholdBId,
+                userId = ChoresWebAppFactory.UserBId,
+                isRead = true,
+                isResolved = true,
+            },
+            Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using (var ctx = await DbFactory.CreateDbContextAsync())
+        {
+            var stored = await ctx.Feedbacks.SingleAsync();
+            stored.HouseholdId.Should().Be(ChoresWebAppFactory.HouseholdAId, "the household comes from the cookie, not the body");
+            stored.UserId.Should().Be(ChoresWebAppFactory.UserAId);
+            stored.IsRead.Should().BeFalse("lifecycle flags are admin-only mutations, not submit fields");
+            stored.IsResolved.Should().BeFalse();
+        }
+
+        // And it is invisible to the other household (the M1 read scope still holds for submitted items).
+        var bobList = (await NonAdminClient.GetFromJsonAsync<FeedbackListWire>($"{FeedbackUrl}/", Json))!;
+        bobList.items.Should().BeEmpty();
+    }
+
+    /// <summary>The three camelCase wire values map to the enum (R-C10), case-insensitively.</summary>
+    [Theory]
+    [InlineData("bug", FeedbackType.Bug)]
+    [InlineData("featureRequest", FeedbackType.FeatureRequest)]
+    [InlineData("FeatureRequest", FeedbackType.FeatureRequest)]
+    [InlineData("general", FeedbackType.General)]
+    public async Task Feedback_Submit_ParsesWireType(string wire, FeedbackType expected)
+    {
+        (await NonAdminClient.PostAsJsonAsync($"{FeedbackUrl}/", new { type = wire, message = "x" }, Json))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        (await ctx.Feedbacks.SingleAsync()).Type.Should().Be(expected);
+    }
+
+    /// <summary>
+    /// One case per way a type can be invalid. The numeric and comma forms are the reason the parse is a
+    /// whitelist and not <c>Enum.TryParse</c>+<c>IsDefined</c>, which accepted both (<c>"bug,general"</c> ⇒
+    /// <c>0|2</c> ⇒ <c>General</c>, stored under a type the caller never named).
+    /// </summary>
+    [Theory]
+    [InlineData("0", "numeric")]
+    [InlineData("bug,general", "comma/flags")]
+    [InlineData("complaint", "plain unknown")]
+    public async Task Feedback_Submit_RejectsInvalidType(string wire, string form)
+    {
+        var resp = await NonAdminClient.PostAsJsonAsync(
+            $"{FeedbackUrl}/", new { type = wire, message = "invalid type" }, Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.BadRequest, "{0} is not on the wire contract", form);
+        (await ReadMessageAsync(resp)).Should().NotBeNullOrWhiteSpace();
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        (await ctx.Feedbacks.CountAsync()).Should().Be(0);
+    }
+
+    /// <summary>
+    /// Truncating mid-surrogate-pair leaves invalid UTF-16 that Npgsql's encoder rejects, turning a
+    /// caller-controlled <c>currentPage</c> into a 500. Without the boundary step-back this test 500s.
+    /// </summary>
+    [Fact]
+    public async Task Feedback_Submit_LongPageEndingMidSurrogatePair_DoesNotBlowUpTheWrite()
+    {
+        // 499 ASCII + U+1F600 (2 UTF-16 units, so the high half sits at index 499) + padding past the cut.
+        var page = new string('a', 499) + "\U0001F600" + new string('b', 200);
+        char.IsHighSurrogate(page[499]).Should().BeTrue("the probe must actually straddle the cut to be meaningful");
+
+        var resp = await NonAdminClient.PostAsJsonAsync(
+            $"{FeedbackUrl}/", new { type = "general", message = "surrogate boundary", currentPage = page }, Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        var stored = (await ctx.Feedbacks.SingleAsync()).CurrentPage!;
+        stored.Should().HaveLength(499, "the orphaned high surrogate is dropped rather than cut in half");
+        char.IsHighSurrogate(stored[^1]).Should().BeFalse("a stored value must be valid UTF-16");
+        stored.Should().Be(new string('a', 499));
+    }
+
+    /// <summary>An omitted type defaults to General (the dialog's default) rather than 400ing.</summary>
+    [Fact]
+    public async Task Feedback_Submit_OmittedType_DefaultsToGeneral()
+    {
+        (await NonAdminClient.PostAsJsonAsync($"{FeedbackUrl}/", new { message = "no type field" }, Json))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        (await ctx.Feedbacks.SingleAsync()).Type.Should().Be(FeedbackType.General);
+    }
+
+    /// <summary>
+    /// The body is as much the assertion as the status: an empty non-GET 4xx re-executes through the GET-only
+    /// /not-found page and reaches the caller as something else entirely. Both cases matter — dropping the
+    /// endpoint's <c>.Trim()</c> would break only the whitespace-only one.
+    /// </summary>
+    [Theory]
+    [InlineData("", "blank message")]
+    [InlineData("     ", "whitespace-only message")]
+    public async Task Feedback_Submit_BlankMessage_Returns400_WithBody(string message, string because)
+    {
+        var resp = await NonAdminClient.PostAsJsonAsync($"{FeedbackUrl}/", new { type = "bug", message }, Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.BadRequest, because);
+        (await ReadMessageAsync(resp)).Should().NotBeNullOrWhiteSpace("an empty 4xx body would surface as a 405");
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        (await ctx.Feedbacks.CountAsync()).Should().Be(0);
+    }
+
+    /// <summary>
+    /// The Message column is varchar(4000): an oversized direct-API message must be a clean 400, not a
+    /// varchar-overflow 500 (parity with RejectRequest's 500-char guard). 4000 exactly is accepted.
+    /// </summary>
+    [Fact]
+    public async Task Feedback_Submit_OversizedMessage_Returns400_WithBody_But4000ExactlyIsAccepted()
+    {
+        var tooLong = new string('x', 4001);
+        var resp = await NonAdminClient.PostAsJsonAsync($"{FeedbackUrl}/", new { type = "bug", message = tooLong }, Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ReadMessageAsync(resp)).Should().NotBeNullOrWhiteSpace();
+
+        var atLimit = new string('y', 4000);
+        (await NonAdminClient.PostAsJsonAsync($"{FeedbackUrl}/", new { type = "bug", message = atLimit }, Json))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+        (await ctx.Feedbacks.SingleAsync()).Message.Should().HaveLength(4000);
+    }
+
+    /// <summary>
+    /// UserAgent is read from the request headers (a client-supplied one is worthless as a diagnostic) and, like
+    /// CurrentPage, is TRUNCATED to its 500-char column rather than rejected — a long User-Agent or path must never
+    /// cost the user their bug report.
+    /// </summary>
+    [Fact]
+    public async Task Feedback_Submit_CapturesUserAgentFromHeaders_AndTruncatesDiagnosticsTo500()
+    {
+        var longPath = "/recipes/" + new string('p', 600);
+        var request = new HttpRequestMessage(HttpMethod.Post, $"{FeedbackUrl}/")
+        {
+            Content = JsonContent.Create(new { type = "bug", message = "diagnostics", currentPage = longPath }, options: Json),
+        };
+        request.Headers.TryAddWithoutValidation("User-Agent", new string('u', 700));
+
+        (await NonAdminClient.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Same test, second case: an absent diagnostic must store null, not "".
+        (await NonAdminClient.PostAsJsonAsync($"{FeedbackUrl}/", new { type = "general", message = "no page" }, Json))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using var ctx = await DbFactory.CreateDbContextAsync();
+
+        var truncated = await ctx.Feedbacks.SingleAsync(f => f.Message == "diagnostics");
+        truncated.UserAgent.Should().Be(new string('u', 500), "the 500-char column is a truncation boundary, not a rejection");
+        truncated.CurrentPage.Should().Be(longPath[..500]);
+
+        var noPage = await ctx.Feedbacks.SingleAsync(f => f.Message == "no page");
+        noPage.CurrentPage.Should().BeNull("an empty diagnostic is null, else the DTO renders an empty page link");
+    }
+
+    /// <summary>Reads the `{ message }` field every 4xx on this surface is required to carry.</summary>
+    private static async Task<string?> ReadMessageAsync(HttpResponseMessage resp)
+    {
+        var text = await resp.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        using var doc = JsonDocument.Parse(text);
+        return doc.RootElement.TryGetProperty("message", out var m) ? m.GetString() : null;
     }
 }

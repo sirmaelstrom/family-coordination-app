@@ -1,6 +1,7 @@
 <script lang="ts">
   // The real app shell. Renders the chrome (Header / Nav / MobileBottomNav /
-  // Footer) around every route, plus the canonical shared Toasts region. Boots
+  // Footer) around every route, plus the canonical shared Toasts region and the
+  // single send-feedback dialog instance. Boots
   // the canonical session store (fetches /api/me once) and the theme store on
   // mount. ssr=false (see +layout.ts) so this all runs client-side.
   import { onMount } from 'svelte';
@@ -12,6 +13,7 @@
   import MobileBottomNav from '$lib/shell/MobileBottomNav.svelte';
   import Footer from '$lib/shell/Footer.svelte';
   import Toasts from '$lib/shared/Toasts.svelte';
+  import FeedbackDialog from '$lib/shared/FeedbackDialog.svelte';
 
   let { children } = $props();
 
@@ -50,6 +52,9 @@
   </div>
 
   <Toasts />
+
+  <!-- One shared instance; any surface opens it via openFeedback(). -->
+  <FeedbackDialog />
 </div>
 
 <style>

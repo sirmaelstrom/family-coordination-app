@@ -18,7 +18,8 @@ namespace FamilyCoordinationApp.Endpoints;
 /// These are GLOBAL reads/writes — no HouseholdId, gated by the 403, not by M1 (R-C8).</item>
 /// <item><c>/api/settings/feedback</c> — <b>DUAL-MODE</b>. A site admin sees/acts on all households' feedback; a
 /// regular user only their own household's (server-scoped, R-C1 — the circuit→REST lift would otherwise be an
-/// IDOR). The <c>isSiteAdmin</c> flag rides in the list payload for the island's affordances.</item>
+/// IDOR). The <c>isSiteAdmin</c> flag rides in the list payload for the island's affordances. <b>POST /</b> is the
+/// SUBMIT route — any authenticated caller, not just an admin.</item>
 /// </list>
 ///
 /// <para><b>Email plumbing (R-C5):</b> <see cref="UserContextResolver"/> intentionally drops the email (returns
@@ -53,6 +54,7 @@ public static class SettingsAdminEndpoints
         var feedback = app.MapGroup("/api/settings/feedback")
             .RequireAuthorization()
             .DisableAntiforgery();
+        feedback.MapPost("/", SubmitFeedback);
         feedback.MapGet("/", GetFeedback);
         feedback.MapPost("/{id:int}/read", MarkFeedbackRead);
         feedback.MapPost("/{id:int}/resolve", MarkFeedbackResolved);
@@ -178,6 +180,81 @@ public static class SettingsAdminEndpoints
 
     // ─── Feedback (dual-mode) ─────────────────────────────────────────────────────
 
+    /// <summary>
+    /// #3c POST / — submit feedback. Any authenticated caller, not just an admin.
+    /// <para><b>Attribution (M1):</b> the body carries NO ids — user + household come from the caller's resolved
+    /// context, so a caller cannot file into another household. <b>Type</b> is parsed from the wire string rather
+    /// than model-bound, so an unknown value is OUR 400-with-body and not the binder's empty one (R-C5).</para>
+    /// 401 (unresolvable caller) / 400 (blank or over-long message, unknown type) / else 204.
+    /// </summary>
+    private static async Task<IResult> SubmitFeedback(
+        SubmitFeedbackRequest? req,
+        HttpContext http,
+        ClaimsPrincipal principal,
+        ISiteAdminService siteAdmin,
+        IFeedbackService feedbackService,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var scope = await ResolveFeedbackScopeAsync(principal, siteAdmin, dbFactory, ct);
+        if (!scope.Authorized) return UnauthorizedFeedback();
+
+        var message = req?.Message?.Trim() ?? "";
+        if (message.Length == 0)
+        {
+            return Results.BadRequest(new { message = "Feedback message is required." });
+        }
+        // Clean 400 rather than a varchar-overflow 500 (parity: RejectRequest's 500-char guard).
+        if (message.Length > FeedbackService.MessageMaxLength)
+        {
+            return Results.BadRequest(new { message = $"Feedback message must be {FeedbackService.MessageMaxLength} characters or fewer." });
+        }
+        if (!TryParseFeedbackType(req?.Type, out var type))
+        {
+            return Results.BadRequest(new { message = "Feedback type must be one of: bug, featureRequest, general." });
+        }
+
+        await feedbackService.SubmitAsync(
+            type,
+            message,
+            req?.CurrentPage,
+            // Server-read: a client-supplied User-Agent is worthless as a diagnostic.
+            http.Request.Headers.UserAgent.ToString(),
+            scope.UserId,
+            scope.HouseholdId,
+            ct);
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Wire value → enum against an EXPLICIT whitelist; null/empty ⇒ <see cref="FeedbackType.General"/> (R-C10).
+    /// Not <c>Enum.TryParse</c>+<c>IsDefined</c>: that also accepts numeric strings and comma/flags forms
+    /// (<c>"bug,general"</c> ⇒ <c>0|2</c> ⇒ <c>General</c>), which the wire contract rejects.
+    /// </summary>
+    private static bool TryParseFeedbackType(string? value, out FeedbackType type)
+    {
+        var wire = value?.Trim();
+        switch (wire)
+        {
+            case null or "":
+                type = FeedbackType.General;
+                return true;
+            case not null when wire.Equals("bug", StringComparison.OrdinalIgnoreCase):
+                type = FeedbackType.Bug;
+                return true;
+            case not null when wire.Equals("featureRequest", StringComparison.OrdinalIgnoreCase):
+                type = FeedbackType.FeatureRequest;
+                return true;
+            case not null when wire.Equals("general", StringComparison.OrdinalIgnoreCase):
+                type = FeedbackType.General;
+                return true;
+            default:
+                type = default;
+                return false;
+        }
+    }
+
     /// <summary>#4 GET / — feedback for the caller (admin: all; regular: own household), + the isSiteAdmin signal.</summary>
     private static async Task<IResult> GetFeedback(
         ClaimsPrincipal principal,
@@ -186,11 +263,11 @@ public static class SettingsAdminEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var (isSiteAdmin, householdId, authorized) = await ResolveFeedbackScopeAsync(principal, siteAdmin, dbFactory, ct);
-        if (!authorized) return Results.Unauthorized();
+        var scope = await ResolveFeedbackScopeAsync(principal, siteAdmin, dbFactory, ct);
+        if (!scope.Authorized) return UnauthorizedFeedback();
 
-        var items = await feedbackService.GetFeedbackAsync(isSiteAdmin, householdId, ct);
-        return Results.Ok(new FeedbackListDto(isSiteAdmin, items.Select(ToFeedbackDto).ToList()));
+        var items = await feedbackService.GetFeedbackAsync(scope.IsSiteAdmin, scope.HouseholdId, ct);
+        return Results.Ok(new FeedbackListDto(scope.IsSiteAdmin, items.Select(ToFeedbackDto).ToList()));
     }
 
     /// <summary>#5 POST /{id}/read — scoped (R-C1): admin any; non-admin own-household only, else 404 (no leak).</summary>
@@ -198,10 +275,10 @@ public static class SettingsAdminEndpoints
         int id, ClaimsPrincipal principal, ISiteAdminService siteAdmin,
         IFeedbackService feedbackService, IDbContextFactory<ApplicationDbContext> dbFactory, CancellationToken ct)
     {
-        var (isSiteAdmin, householdId, authorized) = await ResolveFeedbackScopeAsync(principal, siteAdmin, dbFactory, ct);
-        if (!authorized) return Results.Unauthorized();
+        var scope = await ResolveFeedbackScopeAsync(principal, siteAdmin, dbFactory, ct);
+        if (!scope.Authorized) return UnauthorizedFeedback();
 
-        return await feedbackService.MarkReadAsync(id, isSiteAdmin, householdId, ct)
+        return await feedbackService.MarkReadAsync(id, scope.IsSiteAdmin, scope.HouseholdId, ct)
             ? Results.NoContent()
             : NotFoundFeedback();
     }
@@ -211,10 +288,10 @@ public static class SettingsAdminEndpoints
         int id, ClaimsPrincipal principal, ISiteAdminService siteAdmin,
         IFeedbackService feedbackService, IDbContextFactory<ApplicationDbContext> dbFactory, CancellationToken ct)
     {
-        var (isSiteAdmin, householdId, authorized) = await ResolveFeedbackScopeAsync(principal, siteAdmin, dbFactory, ct);
-        if (!authorized) return Results.Unauthorized();
+        var scope = await ResolveFeedbackScopeAsync(principal, siteAdmin, dbFactory, ct);
+        if (!scope.Authorized) return UnauthorizedFeedback();
 
-        return await feedbackService.MarkResolvedAsync(id, isSiteAdmin, householdId, ct)
+        return await feedbackService.MarkResolvedAsync(id, scope.IsSiteAdmin, scope.HouseholdId, ct)
             ? Results.NoContent()
             : NotFoundFeedback();
     }
@@ -224,10 +301,10 @@ public static class SettingsAdminEndpoints
         int id, ClaimsPrincipal principal, ISiteAdminService siteAdmin,
         IFeedbackService feedbackService, IDbContextFactory<ApplicationDbContext> dbFactory, CancellationToken ct)
     {
-        var (isSiteAdmin, householdId, authorized) = await ResolveFeedbackScopeAsync(principal, siteAdmin, dbFactory, ct);
-        if (!authorized) return Results.Unauthorized();
+        var scope = await ResolveFeedbackScopeAsync(principal, siteAdmin, dbFactory, ct);
+        if (!scope.Authorized) return UnauthorizedFeedback();
 
-        return await feedbackService.ReopenAsync(id, isSiteAdmin, householdId, ct)
+        return await feedbackService.ReopenAsync(id, scope.IsSiteAdmin, scope.HouseholdId, ct)
             ? Results.NoContent()
             : NotFoundFeedback();
     }
@@ -247,11 +324,15 @@ public static class SettingsAdminEndpoints
     }
 
     /// <summary>
-    /// Resolve the feedback caller's scope (R-C5): isSiteAdmin from the claim email DIRECTLY + householdId from the
-    /// resolver (for a non-admin's M1 scope). A site admin is authorized even without a resolved user row; a
-    /// non-admin must resolve to a household (else 401).
+    /// Resolve the feedback caller's scope (R-C5): isSiteAdmin from the claim email DIRECTLY + userId/householdId
+    /// from the resolver (a non-admin's M1 read scope, and the submit attribution).
+    /// <para><c>Authorized == false</c> is DEFENSIVE, not a live path: <c>.RequireAuthorization()</c>'s
+    /// DefaultPolicy carries <see cref="Authorization.WhitelistedEmailRequirement"/>, which needs a whitelisted
+    /// <c>Users</c> row, so a caller reaching these handlers has already resolved (it survives only in the
+    /// setup-incomplete window or a delete-mid-request race). Don't widen it with a feedback-specific policy —
+    /// a principal without that row cannot use the rest of the app either.</para>
     /// </summary>
-    private static async Task<(bool IsSiteAdmin, int? HouseholdId, bool Authorized)> ResolveFeedbackScopeAsync(
+    private static async Task<(bool IsSiteAdmin, int? UserId, int? HouseholdId, bool Authorized)> ResolveFeedbackScopeAsync(
         ClaimsPrincipal principal,
         ISiteAdminService siteAdmin,
         IDbContextFactory<ApplicationDbContext> dbFactory,
@@ -261,10 +342,20 @@ public static class SettingsAdminEndpoints
         var isSiteAdmin = siteAdmin.IsSiteAdmin(email);
         var caller = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         var authorized = isSiteAdmin || caller is not null;
-        return (isSiteAdmin, caller?.HouseholdId, authorized);
+        return (isSiteAdmin, caller?.UserId, caller?.HouseholdId, authorized);
     }
 
     private static IResult NotFoundFeedback() => Results.NotFound(new { message = "Feedback not found." });
+
+    /// <summary>
+    /// The unresolvable-caller 401, WITH A BODY. A bodiless one is re-executed by the global
+    /// <c>UseStatusCodePagesWithReExecute("/not-found")</c> through a GET-only page, changing the status the
+    /// caller sees and killing the SPA's own 401 branch — the defect class
+    /// <see cref="Authorization.ApiAwareAuthEvents"/> already writes a body to avoid.
+    /// </summary>
+    private static IResult UnauthorizedFeedback() =>
+        Results.Json(new { message = "Your session could not be resolved — sign in again." },
+            statusCode: StatusCodes.Status401Unauthorized);
 
     // ─── Projection ───────────────────────────────────────────────────────────────
 
@@ -313,3 +404,10 @@ public sealed record RejectReasonRequest(string? Reason);
 /// first Google login), plus an OPTIONAL display name (defaults to the email local-part). Server-validated.
 /// </summary>
 public sealed record CreateHouseholdRequest(string? HouseholdName, string? OwnerEmail, string? OwnerDisplayName);
+
+/// <summary>
+/// Submit body. Deliberately carries NO user/household/id fields — attribution comes from the caller's resolved
+/// context (M1), so there is nothing here to point at another household. <see cref="Type"/> is the camelCase wire
+/// value as a STRING (see <c>TryParseFeedbackType</c>); the User-Agent is read from headers, not from here.
+/// </summary>
+public sealed record SubmitFeedbackRequest(string? Type, string? Message, string? CurrentPage);

@@ -3,7 +3,8 @@ using FamilyCoordinationApp.Data.Entities;
 namespace FamilyCoordinationApp.Services.Interfaces;
 
 /// <summary>
-/// Feedback administration — lifted out of the direct-EF <c>FeedbackAdmin.razor</c> (review: cluster C). DUAL-MODE
+/// The feedback surface: <see cref="SubmitAsync"/> writes; the administration reads/mutations are lifted out of the
+/// direct-EF <c>FeedbackAdmin.razor</c> (review: cluster C). DUAL-MODE
 /// visibility (parity): a site admin sees ALL households' feedback; a regular user sees only their own household's.
 /// <para><b>R-C1 (IDOR must-fix):</b> the old page did <c>Feedbacks.FindAsync(id)</c> with NO household scoping
 /// before flipping flags — safe ONLY because the Blazor list never rendered another household's ids to a
@@ -14,6 +15,21 @@ namespace FamilyCoordinationApp.Services.Interfaces;
 /// </summary>
 public interface IFeedbackService
 {
+    /// <summary>
+    /// Write one feedback item and return its id. <paramref name="userId"/>/<paramref name="householdId"/> are the
+    /// caller's SERVER-RESOLVED context (M1), never client-supplied; they stay nullable only because the columns
+    /// are (older rows can have a deleted author). <paramref name="message"/> is stored trimmed;
+    /// <paramref name="currentPage"/>/<paramref name="userAgent"/> are diagnostics truncated to 500, not rejected.
+    /// </summary>
+    Task<int> SubmitAsync(
+        FeedbackType type,
+        string message,
+        string? currentPage,
+        string? userAgent,
+        int? userId,
+        int? householdId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Feedback for the caller, newest-first. <paramref name="isSiteAdmin"/> ⇒ all households; otherwise only
     /// <paramref name="householdId"/>'s (a non-admin with no resolved household sees nothing). Includes the author

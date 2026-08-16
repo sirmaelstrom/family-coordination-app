@@ -3,11 +3,13 @@
   // (the server scopes the list — admin sees all, a regular user sees own household, R-C1),
   // an all/unread/open filter, type chip + New/Resolved chips + author line, and per-item
   // mark-read / resolve / reopen. Polls at 15s while visible (R-C9).
+  // Also launches the shared send-feedback dialog — this inbox is where people come looking.
   import { onMount } from 'svelte';
   import type { ShellContext, FeedbackDto, FeedbackType } from './lib/types';
   import { feedbackStore } from './lib/feedbackStore.svelte';
   import { formatDateTime } from './lib/dates';
   import { startLiveness } from './lib/liveness';
+  import { feedbackSubmitCount, openFeedback } from '$lib/shared/feedback-store.svelte';
 
   let { ctx }: { ctx: ShellContext } = $props();
   const store = feedbackStore;
@@ -39,6 +41,12 @@
     return () => handle.stop();
   });
 
+  // Refetch on submit instead of waiting out the 15s poll. Reads only the counter (never what load() writes),
+  // so it cannot loop; the 0 guard skips the mount run, where onMount's load() is already in flight.
+  $effect(() => {
+    if (feedbackSubmitCount() > 0) void store.load();
+  });
+
   /** Author suffix (R-C6): live user → name; deleted → "Deleted user"; anonymous → nothing. */
   function authorSuffix(item: FeedbackDto): string {
     if (item.authorName) return ` — ${item.authorName}`;
@@ -50,10 +58,13 @@
 <div class="adm-page">
   <div class="adm-header">
     <h1 class="adm-title">Feedback &amp; Requests</h1>
-    <div class="adm-toggle" role="group" aria-label="Filter feedback">
-      <button type="button" class:adm-toggle-on={filter === 'all'} onclick={() => (filter = 'all')}>All</button>
-      <button type="button" class:adm-toggle-on={filter === 'unread'} onclick={() => (filter = 'unread')}>Unread</button>
-      <button type="button" class:adm-toggle-on={filter === 'open'} onclick={() => (filter = 'open')}>Open</button>
+    <div class="adm-header-actions">
+      <div class="adm-toggle" role="group" aria-label="Filter feedback">
+        <button type="button" class:adm-toggle-on={filter === 'all'} onclick={() => (filter = 'all')}>All</button>
+        <button type="button" class:adm-toggle-on={filter === 'unread'} onclick={() => (filter = 'unread')}>Unread</button>
+        <button type="button" class:adm-toggle-on={filter === 'open'} onclick={() => (filter = 'open')}>Open</button>
+      </div>
+      <button type="button" class="adm-btn-primary" onclick={() => openFeedback()}>Send feedback</button>
     </div>
   </div>
 
@@ -63,7 +74,8 @@
     <div class="adm-error">{store.error}</div>
   {:else if filtered.length === 0}
     <div class="adm-info">
-      No feedback yet. The feedback button appears in the bottom-left corner of every page.
+      No feedback yet. Use the feedback button in the top bar — or
+      <button type="button" class="adm-link" onclick={() => openFeedback()}>send some now</button>.
     </div>
   {:else}
     <div class="adm-cards">
@@ -125,11 +137,41 @@
     font-size: 1.5rem;
     font-weight: 500;
   }
+  .adm-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
   .adm-toggle {
     display: inline-flex;
     border: 1px solid var(--color-line-strong);
     border-radius: 999px;
     overflow: hidden;
+  }
+  .adm-btn-primary {
+    font: inherit;
+    font-weight: 500;
+    padding: 8px 18px;
+    min-height: 40px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--color-primary);
+    color: #fff;
+    box-shadow: var(--shadow-1);
+    cursor: pointer;
+  }
+  .adm-btn-primary:hover {
+    background: var(--color-primary-hover);
+  }
+  .adm-link {
+    font: inherit;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--color-primary);
+    text-decoration: underline;
+    cursor: pointer;
   }
   .adm-toggle button {
     font: inherit;
