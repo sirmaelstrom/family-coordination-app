@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────
 // The TS half of the M9 wire contract.
 //
-// The C# side is pinned: each DTO is serialized and byte-compared to a fixture
-// under tests/FamilyCoordinationApp.Tests/Fixtures/. Every island's types.ts
-// claims in a comment to mirror one of those fixtures; this file makes the claim
-// checkable. Each entry below states a fixture, the interface it mirrors, and a
-// Shape; `Expect<Equals<…>>` holds the Shape to the interface at compile time and
-// contracts.test.ts holds it to the fixture at run time.
+// The C# side is pinned: each DTO that HAS a fixture under
+// tests/FamilyCoordinationApp.Tests/Fixtures/ is serialized and byte-compared to it.
+// Every island's types.ts claims in a comment to mirror one of those fixtures; this
+// file makes the claim checkable. Each entry below states a fixture, the interface it
+// mirrors, and a Shape; `Expect<Equals<…>>` holds the Shape to the interface at compile
+// time and contracts.test.ts holds it to the fixture at run time.
 //
 // Adding a JSON fixture: add its pin here, or name it in SERVER_ONLY_FIXTURES. The
 // test fails on any JSON fixture that is in neither, so the pin cannot silently fall
