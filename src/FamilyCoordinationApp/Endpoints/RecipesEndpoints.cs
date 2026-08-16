@@ -615,8 +615,8 @@ public static class RecipesEndpoints
             .ToList());
 
     /// <summary>
-    /// Household-scoped exact-SourceUrl duplicate lookup (shared by import + import/preview; the EF global
-    /// filter excludes soft-deleted rows).
+    /// Household-scoped exact-SourceUrl duplicate lookup behind import/preview (the EF global filter
+    /// excludes soft-deleted rows).
     /// </summary>
     private static async Task<(int RecipeId, string Name)?> FindExistingBySourceUrlAsync(
         IDbContextFactory<ApplicationDbContext> dbFactory, int householdId, string url, CancellationToken ct)
