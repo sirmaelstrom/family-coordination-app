@@ -9,20 +9,19 @@ import type {
   RecipeDraftData,
   SaveDraftRequest,
 } from './types';
+import { messageFrom } from '$lib/shared/api-message';
 
 const BASE = '/api/recipes';
 
 /**
  * Thrown on any non-2xx response. `status` lets callers react to a rejection.
  *
- * ⚠ Carried from chores/shopping-list/meal-plan: the app re-executes empty-body
- * API 404s through a Blazor `/not-found` page, so a server-side "not found" can
- * arrive on the wire as an empty **400** (a bare DELETE 404 even surfaces as
- * 405). Every recipes endpoint therefore returns a NON-EMPTY body on not-found,
- * and the island treats ANY 4xx as a non-retryable client rejection → reconcile
- * (refetch the list) + a calm toast. Exception: a **409** on the full-form PUT
- * is a stale xmin `version` token — the edit store shows a reload banner
- * instead of navigating away (see recipeEditStore).
+ * Since PR #90 an /api 4xx keeps its real status and always carries a JSON
+ * `{ message }`; these endpoints also write their own, which is better than the
+ * pipeline's generic fallback. Treat ANY 4xx as a non-retryable client
+ * rejection → reconcile (refetch the list) + a calm toast. Exception: a **409**
+ * on the full-form PUT is a stale xmin `version` token — the edit store shows a
+ * reload banner instead of navigating away (see recipeEditStore).
  */
 export class ApiError extends Error {
   constructor(
@@ -48,7 +47,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new ApiError(res.status, text || res.statusText);
+    throw new ApiError(res.status, messageFrom(text) ?? res.statusText);
   }
   // 204 No-Content (delete, save-draft, and the "no draft" GET) ⇒ undefined.
   if (res.status === 204) return undefined as T;

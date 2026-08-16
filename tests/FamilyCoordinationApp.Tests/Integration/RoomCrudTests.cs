@@ -173,9 +173,7 @@ public sealed class RoomCrudTests(PostgresContainerFixture postgres) : IAsyncLif
         survivor!.roomIds.Should().Equal(new[] { roomB.id }, "it keeps its other room rather than falling to General");
     }
 
-    // NOTE: a "delete a nonexistent room" case is intentionally NOT covered here. The endpoint returns an
-    // empty 404, which the app-global UseStatusCodePagesWithReExecute("/not-found") re-executes through the
-    // Blazor not-found page — and because re-execution preserves the DELETE verb against a GET-only page, the
-    // wire status is 405, not 404/400. That is pre-existing global middleware behavior (the same applies to the
-    // shopping-list endpoints), not room-manager behavior, so asserting on it here would only pin plumbing.
+    // NOTE: "delete a nonexistent room" is covered in Integration/ApiErrorBodyTests, not here — it now returns a
+    // clean 404 with a JSON body (PR #90 branched /api past the re-executing status-code pages). It belongs there
+    // because what it pins is the app-wide guarantee, not room-manager behaviour.
 }

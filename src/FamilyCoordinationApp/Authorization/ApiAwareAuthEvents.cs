@@ -45,9 +45,9 @@ public static class ApiAwareAuthEvents
             context.Request.Path.StartsWithSegments(UploadsPrefix))
         {
             context.Response.StatusCode = apiStatusCode;
-            // The body must be non-empty: UseStatusCodePagesWithReExecute re-executes any empty-body 4xx
-            // through the GET-only /not-found page with the ORIGINAL method, so a non-GET /api auth failure
-            // would surface as 405 instead of 401/403 (CORRECTIONS: fca-empty-404-surfaces-as-405-on-delete).
+            // Writing the body here is what makes this response say 401/403 specifically. The /api
+            // UseStatusCodePages branch (Program.cs) would otherwise backfill a generic message; /uploads is
+            // NOT under that branch, so for it this body is the only one there will be.
             return context.Response.WriteAsJsonAsync(new
             {
                 message = apiStatusCode == StatusCodes.Status403Forbidden ? "Forbidden" : "Unauthorized",

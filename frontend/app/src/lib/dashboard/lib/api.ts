@@ -1,12 +1,12 @@
 import type { DashboardDto } from './types';
+import { messageFrom } from '$lib/shared/api-message';
 
 const BASE = '/api/dashboard';
 
 /**
  * Thrown on any non-2xx response. The dashboard is READ-ONLY (one GET), so any
  * 4xx is simply a non-retryable rejection — the store keeps its last good data
- * and surfaces a calm toast. (Carried from the other islands: the app can
- * re-execute empty-body 404s as empty 400s — `isClientRejection` covers any 4xx.)
+ * and surfaces a calm toast. `isClientRejection` covers any 4xx.
  */
 export class ApiError extends Error {
   constructor(
@@ -31,7 +31,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new ApiError(res.status, text || res.statusText);
+    throw new ApiError(res.status, messageFrom(text) ?? res.statusText);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
