@@ -81,7 +81,19 @@ tests/FamilyCoordinationApp.Tests/
 
 ## EF Core Migrations
 
-Migrations auto-apply on startup via `context.Database.MigrateAsync()`. To add a new migration:
+Migrations auto-apply **at startup, in every environment**, from the unconditional block in `Program.cs` right
+after `builder.Build()` — and that block is the **only** migrator there is: no `dotnet ef` step exists in the
+Dockerfile, docker-compose or CI. Do not re-gate it on `IsDevelopment()`. Until PR #93 it *was* dev-gated, which
+left `SetupService.IsSetupCompleteAsync`'s per-call `Database.MigrateAsync()` as production's real migrator — the
+schema landed on whichever request arrived first after a deploy, and every request thereafter re-took an
+`ACCESS EXCLUSIVE` lock on `__EFMigrationsHistory` (measured on the local stack: 10 requests to `/api/me` → 100
+history statements + 20 exclusive locks; after the move, 0). Guard: `Integration/StartupMigrationTests`.
+
+Two consequences worth knowing: a database that is unreachable at boot now fails startup instead of degrading into
+a `/setup` redirect loop (compose gates `app` on a healthy `postgres` and restarts it), and `IsSetupCompleteAsync`
+is a pure read latched by the singleton `SetupCompletionLatch` once a household is observed.
+
+To add a new migration:
 
 ```bash
 dotnet ef migrations add MigrationName --project src/FamilyCoordinationApp/FamilyCoordinationApp.csproj

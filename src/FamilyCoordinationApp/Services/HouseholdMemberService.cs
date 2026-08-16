@@ -62,6 +62,7 @@ public sealed class HouseholdMemberService(
             GoogleId = null, // set when the user first logs in with Google (parity)
             IsWhitelisted = true,
             CreatedAt = DateTime.UtcNow,
+            Initials = UserProfile.ComputeInitials(normalized.Split('@')[0]),
         };
         context.Users.Add(created);
         await context.SaveChangesAsync(cancellationToken);

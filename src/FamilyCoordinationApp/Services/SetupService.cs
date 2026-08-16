@@ -6,20 +6,29 @@ namespace FamilyCoordinationApp.Services;
 
 public class SetupService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
+    SetupCompletionLatch latch,
     ILogger<SetupService> logger)
 {
 
+    /// <summary>
+    /// Setup is complete once at least one household exists. Called twice per request (the first-run middleware
+    /// and <c>WhitelistedEmailHandler</c>), so it must stay a cheap read: migrations are applied once at startup
+    /// in <c>Program.cs</c>, not here, and the answer is latched after the first household is observed.
+    /// </summary>
     public async Task<bool> IsSetupCompleteAsync()
     {
+        if (latch.IsComplete)
+            return true;
+
         try
         {
             await using var context = await dbFactory.CreateDbContextAsync();
 
-            // Ensure database exists and is migrated
-            await context.Database.MigrateAsync();
+            var complete = await context.Households.AnyAsync();
+            if (complete)
+                latch.MarkComplete();
 
-            // Setup is complete if at least one household exists
-            return await context.Households.AnyAsync();
+            return complete;
         }
         catch (Exception ex)
         {
@@ -66,7 +75,8 @@ public class SetupService(
             GoogleId = googleId,
             IsWhitelisted = true,
             CreatedAt = DateTime.UtcNow,
-            LastLoginAt = DateTime.UtcNow
+            LastLoginAt = DateTime.UtcNow,
+            Initials = UserProfile.ComputeInitials(displayName)
         };
         context.Users.Add(user);
         await context.SaveChangesAsync();

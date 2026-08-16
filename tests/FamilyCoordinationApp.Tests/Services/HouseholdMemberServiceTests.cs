@@ -74,6 +74,7 @@ public class HouseholdMemberServiceTests : IDisposable
         result.User.DisplayName.Should().Be("newbie", "DisplayName is the email local-part (parity)");
         result.User.IsWhitelisted.Should().BeTrue();
         result.User.GoogleId.Should().BeNull();
+        result.User.Initials.Should().Be("N", "a user must be born with Initials — nothing backfills them");
     }
 
     [Fact]
