@@ -50,7 +50,8 @@ public class MealPlanBoardDtoContractTests
                 Recipe: new MealRecipeSummaryDto(10, "Overnight Oats", "/uploads/1/oats.jpg", RecipeType.Breakfast, Servings: 2),
                 CustomMealName: null,
                 Notes: null,
-                Servings: null),
+                Servings: null,
+                Version: 101),
 
             // Recipe entry WITHOUT image, with notes — dinner, day 1, a Main dish. The override case: cooked
             // for 8 against a recipe that yields 4, so generation scales this entry's ingredients by 2.
@@ -62,7 +63,8 @@ public class MealPlanBoardDtoContractTests
                 Recipe: new MealRecipeSummaryDto(11, "Spaghetti Bolognese", null, RecipeType.Main, Servings: 4),
                 CustomMealName: null,
                 Notes: "Double batch for leftovers",
-                Servings: 8),
+                Servings: 8,
+                Version: 102),
 
             // Custom meal entry — lunch, day 2. No recipe, so nothing to scale against.
             new(
@@ -73,7 +75,8 @@ public class MealPlanBoardDtoContractTests
                 Recipe: null,
                 CustomMealName: "Leftovers",
                 Notes: "Sunday's roast",
-                Servings: null),
+                Servings: null,
+                Version: 103),
         };
 
         return new MealPlanBoardDto(
@@ -116,7 +119,8 @@ public class MealPlanBoardDtoContractTests
 
         var firstEntry = root["entries"]!.AsArray()[0]!.AsObject();
         firstEntry.Select(kvp => kvp.Key).Should().BeEquivalentTo(
-            "mealPlanId", "entryId", "date", "mealType", "recipe", "customMealName", "notes", "servings");
+            "mealPlanId", "entryId", "date", "mealType", "recipe", "customMealName", "notes", "servings",
+            "version");
 
         // MealType serializes as a camelCase enum string (NOT an integer, NOT PascalCase).
         firstEntry["mealType"]!.GetValue<string>().Should().Be("breakfast");
@@ -125,6 +129,8 @@ public class MealPlanBoardDtoContractTests
         firstEntry["notes"].Should().BeNull();
         // No override: null must survive as null, not collapse to 0 — 0 would mean "cook none of it".
         firstEntry["servings"].Should().BeNull();
+        // The xmin token must go out as a NUMBER — the client sends it straight back on every mutation.
+        firstEntry["version"]!.GetValue<uint>().Should().Be(101);
 
         var firstRecipe = firstEntry["recipe"]!.AsObject();
         firstRecipe.Select(kvp => kvp.Key).Should().BeEquivalentTo(

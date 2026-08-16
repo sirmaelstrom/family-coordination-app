@@ -13,16 +13,23 @@ public interface IMealPlanService
     /// Throws <see cref="InvalidOperationException"/> when the entry is not found and
     /// <see cref="ArgumentException"/> when the target date falls outside the plan's week or the target
     /// slot already holds the same meal (mirrors the AddMealAsync duplicate guard).
+    /// Throws <see cref="MealPlanConflictException"/> when <paramref name="version"/> is stale.
     /// </summary>
-    Task<MealPlanEntry> MoveMealAsync(int householdId, int mealPlanId, int entryId, DateOnly newDate, MealType newMealType, int? userId = null, CancellationToken cancellationToken = default);
+    Task<MealPlanEntry> MoveMealAsync(int householdId, int mealPlanId, int entryId, DateOnly newDate, MealType newMealType, uint version, int? userId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Set how many people this meal is being cooked for; null clears the override back to "as the recipe is
     /// written". Shopping-list generation scales that entry's ingredients by <c>servings / Recipe.Servings</c>.
     /// Household-scoped: a cross-household id finds nothing and throws.
+    /// Throws <see cref="MealPlanConflictException"/> when <paramref name="version"/> is stale.
     /// </summary>
-    Task<MealPlanEntry> SetMealServingsAsync(int householdId, int mealPlanId, int entryId, int? servings, int? userId = null, CancellationToken cancellationToken = default);
+    Task<MealPlanEntry> SetMealServingsAsync(int householdId, int mealPlanId, int entryId, int? servings, uint version, int? userId = null, CancellationToken cancellationToken = default);
 
-    Task RemoveMealAsync(int householdId, int mealPlanId, int entryId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Remove an entry. Household-scoped (M1); throws <see cref="MealPlanConflictException"/> when
+    /// <paramref name="version"/> is stale — deleting a row someone else just changed is the same class of
+    /// silent loss as overwriting it.
+    /// </summary>
+    Task RemoveMealAsync(int householdId, int mealPlanId, int entryId, uint version, CancellationToken cancellationToken = default);
     DateOnly GetWeekStartDate(DateOnly date);
 }

@@ -10,8 +10,8 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// (reuses <see cref="ChoresWebAppFactory"/>'s two-household seed). Proves: the read-only board (empty + populated),
 /// add recipe / add custom round-trips + the add→board reflection, the XOR validation (400), remove (204) then
 /// gone, a missing remove rejected (4xx), recipe search + quick-create, recipe detail, the 401 gate, and the M1
-/// cross-household isolation invariant (a household-B caller never sees or mutates household-A's plan). Parity is
-/// versionless — no xmin token anywhere on the wire.
+/// cross-household isolation invariant (a household-B caller never sees or mutates household-A's plan), and the
+/// xmin concurrency contract — move / servings / remove refuse a stale token with a 409.
 /// </summary>
 [Collection(IntegrationCollection.Name)]
 [Trait("kind", "integration")]
@@ -28,7 +28,7 @@ public sealed class MealPlanEndpointTests(PostgresContainerFixture postgres) : I
     private sealed record RecipeSummary(int recipeId, string name, string? imagePath, string recipeType, int? servings);
     private sealed record Entry(
         int mealPlanId, int entryId, string date, string mealType,
-        RecipeSummary? recipe, string? customMealName, string? notes, int? servings);
+        RecipeSummary? recipe, string? customMealName, string? notes, int? servings, uint version);
     private sealed record Board(string weekStartDate, int? mealPlanId, List<Entry> entries);
     private sealed record IngredientLine(decimal? quantity, string? unit, string name, string? notes, int sortOrder);
     private sealed record RecipeDetail(
@@ -49,6 +49,16 @@ public sealed class MealPlanEndpointTests(PostgresContainerFixture postgres) : I
         summary.Should().NotBeNull();
         return summary!;
     }
+
+    /// <summary>
+    /// DELETE carries the entry's xmin token in the body, matching the chores DELETE (the house pattern).
+    /// </summary>
+    private static Task<HttpResponseMessage> DeleteEntryAsync(
+        HttpClient client, int mealPlanId, int entryId, uint version) =>
+        client.SendAsync(new HttpRequestMessage(HttpMethod.Delete, $"/api/meal-plan/entries/{mealPlanId}/{entryId}")
+        {
+            Content = JsonContent.Create(new { version }, options: Json)
+        });
 
     private async Task<Entry> AddEntryAsync(HttpClient client, object body)
     {
@@ -203,7 +213,7 @@ public sealed class MealPlanEndpointTests(PostgresContainerFixture postgres) : I
             notes = (string?)null
         });
 
-        var del = await client.DeleteAsync($"/api/meal-plan/entries/{entry.mealPlanId}/{entry.entryId}");
+        var del = await DeleteEntryAsync(client, entry.mealPlanId, entry.entryId, entry.version);
         del.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var board = await client.GetFromJsonAsync<Board>("/api/meal-plan/board?weekStart=2026-06-15", Json);
@@ -215,7 +225,7 @@ public sealed class MealPlanEndpointTests(PostgresContainerFixture postgres) : I
     {
         // No such entry ⇒ RemoveMealAsync throws ⇒ a clean 404 (the non-empty body bypasses the app-global
         // status-code re-execute, so this is a true 404 — not the empty-body 405 the rewrite would produce).
-        var del = await ClientA.DeleteAsync("/api/meal-plan/entries/999999/999999");
+        var del = await DeleteEntryAsync(ClientA, 999999, 999999, 1);
 
         del.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -282,34 +292,164 @@ public sealed class MealPlanEndpointTests(PostgresContainerFixture postgres) : I
         entry.servings.Should().BeNull("a new entry is cooked as the recipe is written");
 
         var path = $"/api/meal-plan/entries/{entry.mealPlanId}/{entry.entryId}/servings";
+        // Every accepted mutation bumps xmin, so the token has to be threaded from each response.
+        var version = entry.version;
 
-        var set = await ClientA.PatchAsJsonAsync(path, new { servings = (int?)8 }, Json);
+        var set = await ClientA.PatchAsJsonAsync(path, new { servings = (int?)8, version }, Json);
         set.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await set.Content.ReadFromJsonAsync<Entry>(Json))!.servings.Should().Be(8);
+        var afterSet = (await set.Content.ReadFromJsonAsync<Entry>(Json))!;
+        afterSet.servings.Should().Be(8);
+        afterSet.version.Should().NotBe(version, "an accepted write moves the row's xmin");
+        version = afterSet.version;
 
         // It is a persisted field, not just an echo.
         var board = await ClientA.GetFromJsonAsync<Board>("/api/meal-plan/board?weekStart=2026-06-29", Json);
         board!.entries.Single(e => e.entryId == entry.entryId).servings.Should().Be(8);
 
         // null is the documented "back to the recipe as written" signal — it must NOT read as "unchanged".
-        var cleared = await ClientA.PatchAsJsonAsync(path, new { servings = (int?)null }, Json);
+        var cleared = await ClientA.PatchAsJsonAsync(path, new { servings = (int?)null, version }, Json);
         cleared.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await cleared.Content.ReadFromJsonAsync<Entry>(Json))!.servings.Should().BeNull();
+        var afterClear = (await cleared.Content.ReadFromJsonAsync<Entry>(Json))!;
+        afterClear.servings.Should().BeNull();
+        version = afterClear.version;
 
         // 0 would mean "cook none of it" and would be a divide-by-zero waiting to happen downstream.
-        var zero = await ClientA.PatchAsJsonAsync(path, new { servings = 0 }, Json);
+        var zero = await ClientA.PatchAsJsonAsync(path, new { servings = 0, version }, Json);
         zero.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await zero.Content.ReadAsStringAsync()).Should().NotBeEmpty("every /api 4xx carries a body");
 
         // The value is a MULTIPLIER on every ingredient of the meal, and ShoppingListItem.Quantity is
         // decimal(10,2) — unbounded, this turns the next generate into a numeric-overflow 500.
-        var huge = await ClientA.PatchAsJsonAsync(path, new { servings = 1_000_001 }, Json);
+        var huge = await ClientA.PatchAsJsonAsync(path, new { servings = 1_000_001, version }, Json);
         huge.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-        // And the boundary itself is allowed, so the cap is a cap and not an off-by-one.
-        var atCap = await ClientA.PatchAsJsonAsync(path, new { servings = 1000 }, Json);
+        // And the boundary itself is allowed, so the cap is a cap and not an off-by-one. A rejected write
+        // must not have moved the token either — this only works if 0 and 1_000_001 truly changed nothing.
+        var atCap = await ClientA.PatchAsJsonAsync(path, new { servings = 1000, version }, Json);
         atCap.StatusCode.Should().Be(HttpStatusCode.OK);
-        await ClientA.PatchAsJsonAsync(path, new { servings = (int?)null }, Json);
+        version = (await atCap.Content.ReadFromJsonAsync<Entry>(Json))!.version;
+        await ClientA.PatchAsJsonAsync(path, new { servings = (int?)null, version }, Json);
+    }
+
+    [Fact]
+    public async Task EntryMutations_WithAStaleVersion_Are409_AndChangeNothing()
+    {
+        // The house 409 treatment, proved against real Postgres — the InMemory provider has no xmin, so the
+        // service-level tests cannot reach this at all. Two writers read the same entry; the first wins.
+        var entry = await AddEntryAsync(ClientA, new
+        {
+            date = "2026-07-13",
+            mealType = "dinner",
+            recipeId = (int?)null,
+            customMealName = "Contested meal",
+            notes = (string?)null
+        });
+        var staleVersion = entry.version;
+        var servingsPath = $"/api/meal-plan/entries/{entry.mealPlanId}/{entry.entryId}/servings";
+
+        // Writer one lands, moving xmin.
+        var first = await ClientA.PatchAsJsonAsync(servingsPath, new { servings = 4, version = staleVersion }, Json);
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        var freshVersion = (await first.Content.ReadFromJsonAsync<Entry>(Json))!.version;
+
+        // Writer two is holding the token it read before that — every mutation must refuse it.
+        var staleServings = await ClientA.PatchAsJsonAsync(servingsPath, new { servings = 99, version = staleVersion }, Json);
+        staleServings.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await staleServings.Content.ReadAsStringAsync()).Should().NotBeEmpty("a 409 carries a body");
+
+        var staleMove = await ClientA.PatchAsJsonAsync(
+            $"/api/meal-plan/entries/{entry.mealPlanId}/{entry.entryId}",
+            new { date = "2026-07-15", mealType = "lunch", version = staleVersion }, Json);
+        staleMove.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var staleDelete = await DeleteEntryAsync(ClientA, entry.mealPlanId, entry.entryId, staleVersion);
+        staleDelete.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        // Nothing the stale writer attempted took effect: still 4 servings, still in its original slot.
+        var board = await ClientA.GetFromJsonAsync<Board>("/api/meal-plan/board?weekStart=2026-07-13", Json);
+        var live = board!.entries.Single(e => e.entryId == entry.entryId);
+        live.servings.Should().Be(4);
+        live.date.Should().Be("2026-07-13");
+        live.mealType.Should().Be("dinner");
+
+        // And the fresh token still works — the row is not wedged, only the stale writer is refused.
+        var withFresh = await ClientA.PatchAsJsonAsync(servingsPath, new { servings = 6, version = freshVersion }, Json);
+        withFresh.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task ASuccessfulMove_EchoesAReusableToken()
+    {
+        // The stale-token test proves refusal. This proves the other half of the contract: a mutation
+        // hands back a token that WORKS for the next one. Without it, a client could only ever mutate an
+        // entry once per board fetch and every second action would 409 — the check passing for the wrong
+        // reason would look identical in the refusal test.
+        var entry = await AddEntryAsync(ClientA, new
+        {
+            date = "2026-07-27",
+            mealType = "dinner",
+            recipeId = (int?)null,
+            customMealName = "Chained mutations",
+            notes = (string?)null
+        });
+
+        var moved = await ClientA.PatchAsJsonAsync(
+            $"/api/meal-plan/entries/{entry.mealPlanId}/{entry.entryId}",
+            new { date = "2026-07-29", mealType = "lunch", version = entry.version }, Json);
+        moved.StatusCode.Should().Be(HttpStatusCode.OK);
+        var afterMove = (await moved.Content.ReadFromJsonAsync<Entry>(Json))!;
+        afterMove.version.Should().NotBe(entry.version, "the move moved the row's xmin");
+
+        // Second mutation, straight off the echoed token — no refetch in between.
+        var servings = await ClientA.PatchAsJsonAsync(
+            $"/api/meal-plan/entries/{entry.mealPlanId}/{entry.entryId}/servings",
+            new { servings = 3, version = afterMove.version }, Json);
+        servings.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Third, chaining again — and this one is the DELETE body path.
+        var afterServings = (await servings.Content.ReadFromJsonAsync<Entry>(Json))!;
+        var removed = await DeleteEntryAsync(
+            ClientA, entry.mealPlanId, entry.entryId, afterServings.version);
+        removed.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task AddingAMealAlreadyInTheSlot_DoesNotEraseItsNotes()
+    {
+        // Add folds into an existing entry when the same meal is already in that slot, and it is the ONE
+        // entry write with no concurrency token. So it must not be able to destroy anything: an add that
+        // omits notes previously blanked whatever another member had typed, with no conflict to notice.
+        var first = await AddEntryAsync(ClientA, new
+        {
+            date = "2026-08-03",
+            mealType = "dinner",
+            recipeId = (int?)null,
+            customMealName = "Shared dinner",
+            notes = "Ask about the allergy"
+        });
+        first.notes.Should().Be("Ask about the allergy");
+
+        var second = await AddEntryAsync(ClientA, new
+        {
+            date = "2026-08-03",
+            mealType = "dinner",
+            recipeId = (int?)null,
+            customMealName = "Shared dinner",
+            notes = (string?)null
+        });
+        second.entryId.Should().Be(first.entryId, "the duplicate folds into the existing entry");
+        second.notes.Should().Be("Ask about the allergy", "an add that says nothing must not say 'blank'");
+
+        // Supplying notes still updates them — the guard must not have frozen the field.
+        var third = await AddEntryAsync(ClientA, new
+        {
+            date = "2026-08-03",
+            mealType = "dinner",
+            recipeId = (int?)null,
+            customMealName = "Shared dinner",
+            notes = "Bring the good knives"
+        });
+        third.notes.Should().Be("Bring the good knives");
     }
 
     [Fact]
@@ -327,7 +467,7 @@ public sealed class MealPlanEndpointTests(PostgresContainerFixture postgres) : I
         // B scoping its own household finds nothing ⇒ a clean 404, and A's entry is untouched (M1).
         var resp = await ClientB.PatchAsJsonAsync(
             $"/api/meal-plan/entries/{aEntry.mealPlanId}/{aEntry.entryId}/servings",
-            new { servings = 99 }, Json);
+            new { servings = 99, version = aEntry.version }, Json);
         resp.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var aBoard = await ClientA.GetFromJsonAsync<Board>("/api/meal-plan/board?weekStart=2026-07-06", Json);
@@ -354,7 +494,7 @@ public sealed class MealPlanEndpointTests(PostgresContainerFixture postgres) : I
 
         // B cannot delete A's entry: RemoveMealAsync scopes to B's household ⇒ no match ⇒ a clean 404 (the
         // non-empty body bypasses the status-code re-execute, so the contract is a deterministic 404).
-        var del = await ClientB.DeleteAsync($"/api/meal-plan/entries/{aEntry.mealPlanId}/{aEntry.entryId}");
+        var del = await DeleteEntryAsync(ClientB, aEntry.mealPlanId, aEntry.entryId, aEntry.version);
         del.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         // A's entry survives the cross-household delete attempt.

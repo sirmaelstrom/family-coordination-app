@@ -47,7 +47,8 @@ public class MealPlanBoardService(IDbContextFactory<ApplicationDbContext> dbFact
         recipe is null ? null : ToRecipeSummary(recipe),
         entry.CustomMealName,
         entry.Notes,
-        entry.Servings);
+        entry.Servings,
+        entry.Version);
 
     public MealRecipeSummaryDto ToRecipeSummary(Recipe recipe) =>
         new(recipe.RecipeId, recipe.Name, recipe.ImagePath, recipe.RecipeType, recipe.Servings);

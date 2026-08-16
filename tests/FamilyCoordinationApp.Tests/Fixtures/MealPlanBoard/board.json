@@ -16,7 +16,8 @@
       },
       "customMealName": null,
       "notes": null,
-      "servings": null
+      "servings": null,
+      "version": 101
     },
     {
       "mealPlanId": 5,
@@ -32,7 +33,8 @@
       },
       "customMealName": null,
       "notes": "Double batch for leftovers",
-      "servings": 8
+      "servings": 8,
+      "version": 102
     },
     {
       "mealPlanId": 5,
@@ -42,7 +44,8 @@
       "recipe": null,
       "customMealName": "Leftovers",
       "notes": "Sunday's roast",
-      "servings": null
+      "servings": null,
+      "version": 103
     }
   ]
 }

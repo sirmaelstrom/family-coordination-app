@@ -32,6 +32,7 @@ function entry(overrides: Partial<MealPlanEntryDto> = {}): MealPlanEntryDto {
     customMealName: null,
     notes: null,
     servings: null,
+    version: 1,
     ...overrides,
   };
 }

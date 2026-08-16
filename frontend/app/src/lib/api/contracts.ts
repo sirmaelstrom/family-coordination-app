@@ -271,6 +271,7 @@ const mealPlanBoard = objectOf({
       customMealName: nullable(str),
       notes: nullable(str),
       servings: nullable(num),
+      version: num,
     })
   ),
 });

@@ -11,9 +11,11 @@
 // instance and export the instance — the runes live as `$state`/`$derived`
 // fields on the object, which is the supported pattern.
 //
-// Parity-first ⇒ VERSIONLESS / last-write-wins. The ops are add + remove +
-// move (drag-to-assign, same week); there is no xmin token, no 409 branch. On
-// any 4xx error we reconcile (re-GET the current week) + surface a calm toast.
+// The ops are add + move (drag-to-assign, same week) + servings + remove. All but
+// ADD send the entry's xmin token and get a 409 on a stale one (PR #95); add
+// creates the row, so it has no prior version. On any 4xx we reconcile (re-GET the
+// current week) + surface a calm toast. The token for a dialog-driven mutation is
+// supplied BY THE CALLER, not re-read here — see setEntryServings for why.
 // NO `new Date('YYYY-MM-DD')` anywhere — week stepping goes through
 // lib/dates.ts (MN4).
 // ─────────────────────────────────────────────────────────────────────────
@@ -107,7 +109,11 @@ class MealPlanStore {
     this.zones[zoneKey(date, mealType)] = items;
     const moved = findCrossSlotEntry(items, date, mealType);
     const persist = moved
-      ? this.moveEntry(moved.mealPlanId, moved.entryId, date, mealType)
+      // moved.version is the token the dragged CARD carried when the drag began. Board loads are not
+      // gated on dragActive (only zone rebuilds are), so a liveness poll landing mid-drag can replace
+      // board.entries — re-reading the token at drop would submit one the user never saw. Same guarantee
+      // the dialogs get, just over a much shorter window.
+      ? this.moveEntry(moved.mealPlanId, moved.entryId, date, mealType, moved.version)
       : Promise.resolve();
     this.dragActive = false;
     return persist;
@@ -234,6 +240,7 @@ class MealPlanStore {
     entryId: number,
     date: string,
     mealType: MealType,
+    version: number,
   ): Promise<void> {
     if (!this.board) return;
     const original = this.board.entries.find(
@@ -249,7 +256,8 @@ class MealPlanStore {
     // before the drag gate is released).
     this.board.entries = applyEntryMove(this.board.entries, mealPlanId, entryId, date, mealType);
     try {
-      const updated = await moveEntry(mealPlanId, entryId, { date, mealType });
+      // Caller-supplied token (the dragged card's), NOT original.version — see zoneFinalize.
+      const updated = await moveEntry(mealPlanId, entryId, { date, mealType, version });
       // The user stepped to another week while the PATCH was in flight — this
       // board is no longer the one we moved on; the new week's GET is truth.
       if (!this.board || this.weekStart !== targetWeek) return;
@@ -258,8 +266,20 @@ class MealPlanStore {
       if (this.weekStart !== targetWeek) return;
       if (e instanceof ApiError) {
         // Any 4xx — the server rejected the move; resync to truth.
+        //
+        // A 409 means the token we sent was stale. USUALLY that is another member, but it is not only
+        // that: the version is read from our cached entry, and nothing serializes mutations on the same
+        // entry, so a second action taken before the first response lands sends the same (now stale)
+        // token. The copy therefore says what we actually know — the meal changed — rather than blaming
+        // a person who may be this user. Non-destructive either way: the reconcile shows server truth.
         await this.reconcile();
-        showToast({ message: "Couldn't move that meal — the plan was refreshed.", kind: 'info' });
+        showToast({
+          message:
+            e.status === 409
+              ? 'That meal just changed — the plan was refreshed. Try again.'
+              : "Couldn't move that meal — the plan was refreshed.",
+          kind: 'info',
+        });
       } else {
         // Network/5xx: put the entry back in its original slot.
         if (this.board) {
@@ -291,18 +311,29 @@ class MealPlanStore {
     mealPlanId: number,
     entryId: number,
     servings: number | null,
+    version: number,
   ): Promise<void> {
     if (!this.board) return;
     const targetWeek = this.weekStart;
     try {
-      const updated = await setEntryServings(mealPlanId, entryId, servings);
+      // The token comes from the CALLER — the entry as it was when the dialog opened — not from a fresh
+      // lookup here. A ~20s liveness poll can replace the board entry while the dialog sits open, and
+      // re-sampling would submit a version the user never saw, quietly overwriting whatever the other
+      // member just changed. That is exactly the write this feature exists to refuse.
+      const updated = await setEntryServings(mealPlanId, entryId, servings, version);
       if (!this.board || this.weekStart !== targetWeek) return;
       this.board.entries = replaceEntry(this.board.entries, updated);
     } catch (e) {
       if (this.weekStart !== targetWeek) return;
       if (e instanceof ApiError) {
         await this.reconcile();
-        showToast({ message: "Couldn't change the servings — the plan was refreshed.", kind: 'info' });
+        showToast({
+          message:
+            e.status === 409
+              ? 'That meal just changed — the plan was refreshed. Try again.'
+              : "Couldn't change the servings — the plan was refreshed.",
+          kind: 'info',
+        });
       } else {
         showToast({ message: 'Something went wrong. Please try again.', kind: 'error' });
       }
@@ -314,24 +345,37 @@ class MealPlanStore {
    * calm toast. A missing entry (already removed by someone else) → 404/empty-400
    * → the refetch shows the true state.
    */
-  async removeEntry(mealPlanId: number, entryId: number): Promise<void> {
+  async removeEntry(mealPlanId: number, entryId: number, version: number): Promise<void> {
     if (!this.board) return;
     const idx = this.board.entries.findIndex(
       (e) => e.mealPlanId === mealPlanId && e.entryId === entryId,
     );
     if (idx < 0) return;
     const removed = this.board.entries[idx];
+    const targetWeek = this.weekStart;
     // Optimistic splice.
     this.board.entries = this.board.entries.filter(
       (e) => !(e.mealPlanId === mealPlanId && e.entryId === entryId),
     );
     try {
-      await removeEntry(mealPlanId, entryId);
+      // Caller-supplied token, for the same reason as setEntryServings — the confirm dialog can sit open
+      // across a liveness poll.
+      await removeEntry(mealPlanId, entryId, version);
     } catch (e) {
+      // The user stepped to another week while the DELETE was in flight; this board is no longer the one
+      // we deleted from, and restoring into it would splice a foreign entry into the visible week.
+      if (this.weekStart !== targetWeek) return;
       if (e instanceof ApiError) {
-        // Any 4xx (incl. the empty-400-from-404 quirk) — resync to truth.
+        // Any 4xx (incl. the empty-400-from-404 quirk) — resync to truth. A 409 specifically means
+        // someone else changed this entry after we read it, so say so rather than the generic line.
         await this.reconcile();
-        showToast({ message: 'That meal changed — the plan was refreshed.', kind: 'info' });
+        showToast({
+          message:
+            e.status === 409
+              ? 'That meal just changed — the plan was refreshed. Try again.'
+              : 'That meal changed — the plan was refreshed.',
+          kind: 'info',
+        });
       } else {
         // Network/5xx: the refetch may not have restored it; put it back AT ITS ORIGINAL INDEX (council R1 —
         // appending would reorder the slot's entries on a failed delete).
