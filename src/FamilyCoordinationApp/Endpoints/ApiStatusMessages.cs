@@ -6,6 +6,10 @@ namespace FamilyCoordinationApp.Endpoints;
 /// <para>These are the LAST resort, not the house style: a handler that knows why it failed should say so
 /// (<c>Results.NotFound(new { message = "Chore not found." })</c>). This exists so that a route which forgets,
 /// or a status raised by routing/auth before any handler runs, still cannot reach a client as a bodiless 4xx.</para>
+/// <para><b>The 5xx case is narrower than it looks.</b> It covers an EXPLICIT bodiless 5xx
+/// (<c>Results.StatusCode(503)</c>). It does NOT cover an unhandled exception: <c>UseExceptionHandler("/Error")</c>
+/// is registered earlier in the pipeline and writes its own response, so this branch never sees it. Making the
+/// exception path answer JSON on /api is a separate change — quest <c>ea816df2</c>.</para>
 /// </summary>
 public static class ApiStatusMessages
 {

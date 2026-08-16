@@ -36,6 +36,8 @@ public sealed class ApiErrorBodyTests(PostgresContainerFixture postgres) : IAsyn
         { "DELETE", "/api/chores/999999", """{"version":1}""", HttpStatusCode.NotFound },
         { "GET", "/api/shopping-lists/999999", null, HttpStatusCode.NotFound },
         // Raised by ROUTING, before any handler runs — the class an endpoint filter could never have covered.
+        // The 405 case depends on /api/dashboard mapping GET only (DashboardEndpoints). If a POST is ever added
+        // there this row starts failing for an unrelated reason — repoint it at another GET-only route.
         { "POST", "/api/dashboard/", null, HttpStatusCode.MethodNotAllowed },
         { "GET", "/api/no-such-route", null, HttpStatusCode.NotFound },
     };
@@ -57,6 +59,30 @@ public sealed class ApiErrorBodyTests(PostgresContainerFixture postgres) : IAsyn
         var received = await resp.Content.ReadAsStringAsync();
         received.Should().NotBeNullOrWhiteSpace();
         resp.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        JsonDocument.Parse(received).RootElement.TryGetProperty("message", out var message).Should().BeTrue();
+        message.GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
+    /// <summary>
+    /// The auth family — the largest population of bodiless results (99 `Results.Unauthorized()` call sites) and
+    /// the one reached through the pipeline rather than a handler return. Asserts the GUARANTEE (a 4xx carrying a
+    /// JSON message) rather than a specific code, because which of 401/403 a caller gets is the authorization
+    /// stack's business and is asserted by ChoreEndpointAuthTests.
+    /// </summary>
+    [Theory]
+    [InlineData("anonymous")]
+    [InlineData("authenticated-but-not-whitelisted")]
+    public async Task ApiAuthFailure_CarriesJsonBody(string caller)
+    {
+        var client = caller == "anonymous"
+            ? _factory.CreateAnonymousClient()
+            : _factory.CreateClientAs("nobody@not-a-member.test");
+
+        var resp = await client.GetAsync("/api/chores/board");
+
+        ((int)resp.StatusCode).Should().BeInRange(400, 499, "an auth failure on /api is a client rejection");
+        var received = await resp.Content.ReadAsStringAsync();
+        resp.Content.Headers.ContentType!.MediaType.Should().Be("application/json", "never HTML, never empty");
         JsonDocument.Parse(received).RootElement.TryGetProperty("message", out var message).Should().BeTrue();
         message.GetString().Should().NotBeNullOrWhiteSpace();
     }

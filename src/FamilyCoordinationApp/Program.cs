@@ -353,13 +353,14 @@ if (!app.Environment.IsDevelopment())
 // bodiless 4xx on /api does not arrive as itself. Branching /api to UseStatusCodePages instead BACKFILLS a JSON
 // body on any error response that wrote none and leaves the status alone, so it covers routing (404/405) and the
 // auth pipeline, not only what a handler returns. A response that already wrote a body is untouched.
+// Same prefix + matcher ApiAwareAuthEvents already uses, so the two cannot drift apart.
 app.UseWhen(
-    static context => context.Request.Path.StartsWithSegments("/api"),
+    static context => context.Request.Path.StartsWithSegments(ApiAwareAuthEvents.ApiPrefix),
     static branch => branch.UseStatusCodePages(static async context =>
         await context.HttpContext.Response.WriteAsJsonAsync(
             new { message = ApiStatusMessages.For(context.HttpContext.Response.StatusCode) })));
 app.UseWhen(
-    static context => !context.Request.Path.StartsWithSegments("/api"),
+    static context => !context.Request.Path.StartsWithSegments(ApiAwareAuthEvents.ApiPrefix),
     static branch => branch.UseStatusCodePagesWithReExecute("/not-found"));
 app.UseHttpsRedirection();
 // /uploads/{householdId}/* is household user content and must NOT be served by this middleware: it runs
