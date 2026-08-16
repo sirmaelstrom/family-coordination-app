@@ -88,6 +88,8 @@ export interface MoveEntryBody {
   /** "YYYY-MM-DD" — must fall inside the entry's plan week (else a 400). */
   date: string;
   mealType: MealType;
+  /** The entry's xmin token, straight off the board. Stale ⇒ 409. */
+  version: number;
 }
 
 /**
@@ -114,16 +116,27 @@ export async function setEntryServings(
   mealPlanId: number,
   entryId: number,
   servings: number | null,
+  version: number,
 ): Promise<MealPlanEntryDto> {
   return request<MealPlanEntryDto>(`${BASE}/entries/${mealPlanId}/${entryId}/servings`, {
     method: 'PATCH',
-    ...jsonBody({ servings }),
+    ...jsonBody({ servings, version }),
   });
 }
 
-/** Remove an entry. DELETE → 204 (no body); a missing entry → 404/empty-400. */
-export async function removeEntry(mealPlanId: number, entryId: number): Promise<void> {
-  await request<void>(`${BASE}/entries/${mealPlanId}/${entryId}`, { method: 'DELETE' });
+/**
+ * Remove an entry. DELETE → 204 (no body); a missing entry → 404; a stale version → 409.
+ * The version travels in the body, matching the chores DELETE (the house pattern).
+ */
+export async function removeEntry(
+  mealPlanId: number,
+  entryId: number,
+  version: number,
+): Promise<void> {
+  await request<void>(`${BASE}/entries/${mealPlanId}/${entryId}`, {
+    method: 'DELETE',
+    ...jsonBody({ version }),
+  });
 }
 
 // ─── Recipes (picker search / quick-create / detail) ─────────────────────────

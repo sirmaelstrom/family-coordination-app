@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Claims;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
+using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Dtos;
 using FamilyCoordinationApp.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
@@ -141,8 +142,12 @@ public static class MealPlanEndpoints
             // Household-scoped move to another same-week slot (drag-to-assign). The service loads the
             // Recipe nav, so the response reuses the ONE board projection (M9) with no extra query.
             var entry = await mealPlanService.MoveMealAsync(
-                user.HouseholdId, mealPlanId, entryId, req.Date, req.MealType, user.UserId, ct);
+                user.HouseholdId, mealPlanId, entryId, req.Date, req.MealType, req.Version, user.UserId, ct);
             return Results.Ok(boardService.ProjectEntry(entry, entry.Recipe));
+        }
+        catch (MealPlanConflictException ex)
+        {
+            return Results.Conflict(new { message = ex.Message });
         }
         catch (InvalidOperationException)
         {
@@ -173,8 +178,12 @@ public static class MealPlanEndpoints
         {
             // The service loads the Recipe nav, so the response reuses the ONE board projection (M9).
             var entry = await mealPlanService.SetMealServingsAsync(
-                user.HouseholdId, mealPlanId, entryId, req.Servings, user.UserId, ct);
+                user.HouseholdId, mealPlanId, entryId, req.Servings, req.Version, user.UserId, ct);
             return Results.Ok(boardService.ProjectEntry(entry, entry.Recipe));
+        }
+        catch (MealPlanConflictException ex)
+        {
+            return Results.Conflict(new { message = ex.Message });
         }
         catch (InvalidOperationException)
         {
@@ -189,6 +198,7 @@ public static class MealPlanEndpoints
     private static async Task<IResult> RemoveEntry(
         int mealPlanId,
         int entryId,
+        [FromBody] EntryVersionRequest req,
         ClaimsPrincipal principal,
         IMealPlanService mealPlanService,
         IDbContextFactory<ApplicationDbContext> dbFactory,
@@ -200,8 +210,12 @@ public static class MealPlanEndpoints
         try
         {
             // Household-scoped — a cross-household id finds nothing ⇒ throws ⇒ 404 (M1).
-            await mealPlanService.RemoveMealAsync(user.HouseholdId, mealPlanId, entryId, ct);
+            await mealPlanService.RemoveMealAsync(user.HouseholdId, mealPlanId, entryId, req.Version, ct);
             return Results.NoContent();
+        }
+        catch (MealPlanConflictException ex)
+        {
+            return Results.Conflict(new { message = ex.Message });
         }
         catch (InvalidOperationException)
         {
@@ -294,16 +308,20 @@ public static class MealPlanEndpoints
     /// <summary>
     /// Move an entry to another slot in the SAME week (drag-to-assign). <see cref="Date"/> must fall inside
     /// the entry's plan week — a cross-week target is a 400 (a plan owns exactly one week).
+    /// <see cref="Version"/> is the entry's xmin token from the board; a stale one is a 409.
     /// </summary>
-    public sealed record MoveEntryRequest(DateOnly Date, MealType MealType);
+    public sealed record MoveEntryRequest(DateOnly Date, MealType MealType, uint Version);
+
+    /// <summary>The entry's xmin token, for a mutation that carries no other payload (remove).</summary>
+    public sealed record EntryVersionRequest(uint Version);
 
     /// <summary>
     /// How many people this meal is being cooked for. <c>null</c> clears the override, putting the meal back to
     /// the recipe as written; a non-positive number is a 400. Shopping-list generation scales this entry's
     /// ingredients by <c>Servings / Recipe.Servings</c>, and by nothing when either side is missing.
-    /// Versionless — the meal-plan 409 treatment is quest f5/076a2678, which covers every entry mutation.
+    /// <see cref="Version"/> is the entry's xmin token from the board; a stale one is a 409.
     /// </summary>
-    public sealed record SetEntryServingsRequest(int? Servings);
+    public sealed record SetEntryServingsRequest(int? Servings, uint Version);
 
     /// <summary>Quick-create a bare recipe from the picker's "New Recipe" tab (details added later).</summary>
     public sealed record QuickCreateRecipeRequest(string Name, RecipeType RecipeType);

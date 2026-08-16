@@ -249,7 +249,7 @@ class MealPlanStore {
     // before the drag gate is released).
     this.board.entries = applyEntryMove(this.board.entries, mealPlanId, entryId, date, mealType);
     try {
-      const updated = await moveEntry(mealPlanId, entryId, { date, mealType });
+      const updated = await moveEntry(mealPlanId, entryId, { date, mealType, version: original.version });
       // The user stepped to another week while the PATCH was in flight — this
       // board is no longer the one we moved on; the new week's GET is truth.
       if (!this.board || this.weekStart !== targetWeek) return;
@@ -257,9 +257,16 @@ class MealPlanStore {
     } catch (e) {
       if (this.weekStart !== targetWeek) return;
       if (e instanceof ApiError) {
-        // Any 4xx — the server rejected the move; resync to truth.
+        // Any 4xx — the server rejected the move; resync to truth. A 409 is specifically "someone else
+        // got there first", which is worth saying plainly rather than as a generic rejection.
         await this.reconcile();
-        showToast({ message: "Couldn't move that meal — the plan was refreshed.", kind: 'info' });
+        showToast({
+          message:
+            e.status === 409
+              ? 'Someone else moved that meal — the plan was refreshed.'
+              : "Couldn't move that meal — the plan was refreshed.",
+          kind: 'info',
+        });
       } else {
         // Network/5xx: put the entry back in its original slot.
         if (this.board) {
@@ -293,16 +300,26 @@ class MealPlanStore {
     servings: number | null,
   ): Promise<void> {
     if (!this.board) return;
+    const current = this.board.entries.find(
+      (e) => e.mealPlanId === mealPlanId && e.entryId === entryId,
+    );
+    if (!current) return;
     const targetWeek = this.weekStart;
     try {
-      const updated = await setEntryServings(mealPlanId, entryId, servings);
+      const updated = await setEntryServings(mealPlanId, entryId, servings, current.version);
       if (!this.board || this.weekStart !== targetWeek) return;
       this.board.entries = replaceEntry(this.board.entries, updated);
     } catch (e) {
       if (this.weekStart !== targetWeek) return;
       if (e instanceof ApiError) {
         await this.reconcile();
-        showToast({ message: "Couldn't change the servings — the plan was refreshed.", kind: 'info' });
+        showToast({
+          message:
+            e.status === 409
+              ? 'Someone else changed that meal — the plan was refreshed.'
+              : "Couldn't change the servings — the plan was refreshed.",
+          kind: 'info',
+        });
       } else {
         showToast({ message: 'Something went wrong. Please try again.', kind: 'error' });
       }
@@ -326,12 +343,19 @@ class MealPlanStore {
       (e) => !(e.mealPlanId === mealPlanId && e.entryId === entryId),
     );
     try {
-      await removeEntry(mealPlanId, entryId);
+      await removeEntry(mealPlanId, entryId, removed.version);
     } catch (e) {
       if (e instanceof ApiError) {
-        // Any 4xx (incl. the empty-400-from-404 quirk) — resync to truth.
+        // Any 4xx (incl. the empty-400-from-404 quirk) — resync to truth. A 409 specifically means
+        // someone else changed this entry after we read it, so say so rather than the generic line.
         await this.reconcile();
-        showToast({ message: 'That meal changed — the plan was refreshed.', kind: 'info' });
+        showToast({
+          message:
+            e.status === 409
+              ? 'Someone else changed that meal — the plan was refreshed.'
+              : 'That meal changed — the plan was refreshed.',
+          kind: 'info',
+        });
       } else {
         // Network/5xx: the refetch may not have restored it; put it back AT ITS ORIGINAL INDEX (council R1 —
         // appending would reorder the slot's entries on a failed delete).

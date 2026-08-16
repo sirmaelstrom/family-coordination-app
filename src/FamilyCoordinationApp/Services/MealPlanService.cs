@@ -147,7 +147,7 @@ public class MealPlanService(
             "MealPlanEntry");
     }
 
-    public async Task<MealPlanEntry> MoveMealAsync(int householdId, int mealPlanId, int entryId, DateOnly newDate, MealType newMealType, int? userId = null, CancellationToken cancellationToken = default)
+    public async Task<MealPlanEntry> MoveMealAsync(int householdId, int mealPlanId, int entryId, DateOnly newDate, MealType newMealType, uint version, int? userId = null, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
@@ -197,7 +197,7 @@ public class MealPlanService(
         // Update parent MealPlan timestamp for polling
         mealPlan.UpdatedAt = DateTime.UtcNow;
 
-        await context.SaveChangesAsync(cancellationToken);
+        await SaveWithConcurrencyAsync(context, entry, version, cancellationToken);
 
         logger.LogInformation("Moved meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId} to {Date} {MealType}",
             entryId, mealPlanId, householdId, newDate, newMealType);
@@ -208,11 +208,35 @@ public class MealPlanService(
     /// <summary>Upper bound on a per-entry servings override; mirrored client-side in lib/servings.ts.</summary>
     public const int MaxServings = 1000;
 
+    /// <summary>
+    /// Save an entry mutation under optimistic concurrency (mirrors <c>ChoreService.SaveWithConcurrencyAsync</c>).
+    /// Loading the row makes EF treat the LOADED Version as the original, so a stale client token would not
+    /// conflict on its own; setting the client token as the OriginalValue makes the statement run
+    /// <c>WHERE xmin = &lt;client version&gt;</c>, so a stale token surfaces as a conflict instead of a silent
+    /// overwrite. A missing token binds to 0, which matches no row — fail-safe, not last-write-wins.
+    /// </summary>
+    private async Task SaveWithConcurrencyAsync(
+        ApplicationDbContext context, MealPlanEntry entry, uint clientVersion, CancellationToken cancellationToken)
+    {
+        context.Entry(entry).Property(e => e.Version).OriginalValue = clientVersion;
+
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new MealPlanConflictException(
+                $"Meal entry {entry.EntryId} was modified by another user; the supplied version is stale.", ex);
+        }
+    }
+
     public async Task<MealPlanEntry> SetMealServingsAsync(
         int householdId,
         int mealPlanId,
         int entryId,
         int? servings,
+        uint version,
         int? userId = null,
         CancellationToken cancellationToken = default)
     {
@@ -257,7 +281,7 @@ public class MealPlanService(
             mealPlan.UpdatedAt = DateTime.UtcNow;
         }
 
-        await context.SaveChangesAsync(cancellationToken);
+        await SaveWithConcurrencyAsync(context, entry, version, cancellationToken);
 
         logger.LogInformation("Set servings to {Servings} on meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
             servings, entryId, mealPlanId, householdId);
@@ -265,7 +289,7 @@ public class MealPlanService(
         return entry;
     }
 
-    public async Task RemoveMealAsync(int householdId, int mealPlanId, int entryId, CancellationToken cancellationToken = default)
+    public async Task RemoveMealAsync(int householdId, int mealPlanId, int entryId, uint version, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
@@ -286,7 +310,7 @@ public class MealPlanService(
         // Update parent MealPlan timestamp for polling
         await UpdateMealPlanTimestampAsync(context, householdId, mealPlanId, cancellationToken);
 
-        await context.SaveChangesAsync(cancellationToken);
+        await SaveWithConcurrencyAsync(context, entry, version, cancellationToken);
 
         logger.LogInformation("Removed meal entry {EntryId} from plan {MealPlanId} for household {HouseholdId}",
             entryId, mealPlanId, householdId);

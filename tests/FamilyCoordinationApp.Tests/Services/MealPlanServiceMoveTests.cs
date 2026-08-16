@@ -18,6 +18,14 @@ public class MealPlanServiceMoveTests : IDisposable
     // Monday of the seeded week.
     private static readonly DateOnly WeekStart = new(2026, 7, 6);
 
+    /// <summary>
+    /// The version these InMemory tests pass. The InMemory provider has no xmin, so every entity's
+    /// <c>Version</c> stays 0 and setting 0 as the OriginalValue matches — the concurrency check is
+    /// structurally inert here. The REAL stale-token behaviour is proved against Postgres in
+    /// <c>Integration/MealPlanConcurrencyTests</c>; these tests still cover move's own rules.
+    /// </summary>
+    private const uint NoConcurrencyCheck = 0;
+
     private readonly ApplicationDbContext _context;
     private readonly DbContextOptions<ApplicationDbContext> _options;
     private readonly MealPlanService _service;
@@ -109,7 +117,7 @@ public class MealPlanServiceMoveTests : IDisposable
     public async Task MoveMeal_ToAnotherSameWeekSlot_UpdatesDateAndMealType()
     {
         var newDate = WeekStart.AddDays(3); // Thursday
-        var moved = await _service.MoveMealAsync(1, 1, 1, newDate, MealType.Lunch, userId: 1);
+        var moved = await _service.MoveMealAsync(1, 1, 1, newDate, MealType.Lunch, NoConcurrencyCheck, userId: 1);
 
         moved.Date.Should().Be(newDate);
         moved.MealType.Should().Be(MealType.Lunch);
@@ -130,7 +138,7 @@ public class MealPlanServiceMoveTests : IDisposable
     [Fact]
     public async Task MoveMeal_MissingEntry_Throws()
     {
-        var act = () => _service.MoveMealAsync(1, 1, 999, WeekStart, MealType.Breakfast);
+        var act = () => _service.MoveMealAsync(1, 1, 999, WeekStart, MealType.Breakfast, NoConcurrencyCheck);
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
@@ -138,7 +146,7 @@ public class MealPlanServiceMoveTests : IDisposable
     public async Task MoveMeal_CrossHousehold_IsNotFound()
     {
         // Household 2 asking for household 1's entry — the scoped lookup must not see it (M1).
-        var act = () => _service.MoveMealAsync(2, 1, 1, WeekStart, MealType.Breakfast);
+        var act = () => _service.MoveMealAsync(2, 1, 1, WeekStart, MealType.Breakfast, NoConcurrencyCheck);
         await act.Should().ThrowAsync<InvalidOperationException>();
 
         await using var verify = new ApplicationDbContext(_options);
@@ -152,7 +160,7 @@ public class MealPlanServiceMoveTests : IDisposable
     public async Task MoveMeal_DateOutsideThePlansWeek_Throws()
     {
         var nextMonday = WeekStart.AddDays(7);
-        var act = () => _service.MoveMealAsync(1, 1, 1, nextMonday, MealType.Dinner);
+        var act = () => _service.MoveMealAsync(1, 1, 1, nextMonday, MealType.Dinner, NoConcurrencyCheck);
         await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("*outside this meal plan's week*");
     }
@@ -161,7 +169,7 @@ public class MealPlanServiceMoveTests : IDisposable
     public async Task MoveMeal_SameRecipeAlreadyInTargetSlot_Throws()
     {
         // Entry 1 (Tacos) → Wednesday dinner, where entry 2 already plans Tacos.
-        var act = () => _service.MoveMealAsync(1, 1, 1, WeekStart.AddDays(2), MealType.Dinner);
+        var act = () => _service.MoveMealAsync(1, 1, 1, WeekStart.AddDays(2), MealType.Dinner, NoConcurrencyCheck);
         await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("*already planned*");
     }
@@ -181,7 +189,7 @@ public class MealPlanServiceMoveTests : IDisposable
         });
         _context.SaveChanges();
 
-        var act = () => _service.MoveMealAsync(1, 1, 3, WeekStart.AddDays(1), MealType.Dinner);
+        var act = () => _service.MoveMealAsync(1, 1, 3, WeekStart.AddDays(1), MealType.Dinner, NoConcurrencyCheck);
         await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("*already planned*");
     }
@@ -191,7 +199,7 @@ public class MealPlanServiceMoveTests : IDisposable
     {
         // Moving the custom meal onto Monday dinner (which holds a RECIPE meal) is fine —
         // the dedupe only blocks the SAME recipe/custom name, not co-located different meals.
-        var moved = await _service.MoveMealAsync(1, 1, 3, WeekStart, MealType.Dinner);
+        var moved = await _service.MoveMealAsync(1, 1, 3, WeekStart, MealType.Dinner, NoConcurrencyCheck);
 
         moved.MealType.Should().Be(MealType.Dinner);
         await using var verify = new ApplicationDbContext(_options);

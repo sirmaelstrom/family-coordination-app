@@ -55,6 +55,11 @@ export interface MealPlanEntryDto {
    * either side is null. Never 0.
    */
   servings: number | null;
+  /**
+   * The row's xmin concurrency token. Send it back on EVERY mutation of this entry (move / servings /
+   * remove) — a stale token is a 409 the store reconciles from, rather than a silent overwrite.
+   */
+  version: number;
 }
 
 /** The week board: the Monday it covers, the plan id (null when none yet), and its entries. */

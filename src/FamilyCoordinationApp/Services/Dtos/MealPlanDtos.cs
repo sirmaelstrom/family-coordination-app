@@ -38,7 +38,12 @@ public sealed record MealPlanEntryDto(
     MealRecipeSummaryDto? Recipe,
     string? CustomMealName,
     string? Notes,
-    int? Servings);
+    int? Servings,
+    /// <summary>
+    /// The row's xmin concurrency token. Send it back on every mutation of this entry (move / servings /
+    /// remove); a stale token is a 409 rather than a silent overwrite.
+    /// </summary>
+    uint Version);
 
 /// <summary>
 /// The lightweight recipe shape a slot card renders (board payload stays lean). <see cref="Servings"/> is the
