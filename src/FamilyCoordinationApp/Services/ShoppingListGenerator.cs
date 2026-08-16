@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
@@ -297,7 +298,8 @@ public class ShoppingListGenerator(
                     // magnitude (2 × 0.5 is 1.0, not 1), and the trailing zero would surface in the breakdown.
                     if (scaledQuantity.HasValue && !string.IsNullOrWhiteSpace(item.Unit))
                     {
-                        originalUnits.Add($"{Round(scaledQuantity.Value).ToString("0.##")} {item.Unit}");
+                        originalUnits.Add(
+                            $"{Round(scaledQuantity.Value).ToString("0.##", CultureInfo.InvariantCulture)} {item.Unit}");
                     }
 
                     // Track source recipes
@@ -318,7 +320,9 @@ public class ShoppingListGenerator(
                     Category = items.First().Ingredient.Category,
                     SourceRecipes = sourceRecipes.Distinct().ToList(),
                     OriginalUnits = originalUnits.Count > 1 ? string.Join(" + ", originalUnits) : null,
-                    RecipeIngredientIds = recipeIngredientIds
+                    // Distinct for the same reason SourceRecipes is: one recipe planned twice in a week
+                    // contributes the same RecipeIngredient rows twice, and these are identities, not counts.
+                    RecipeIngredientIds = recipeIngredientIds.Distinct().ToList()
                 });
             }
             else

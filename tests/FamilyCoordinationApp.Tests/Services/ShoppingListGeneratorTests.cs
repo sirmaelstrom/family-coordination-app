@@ -759,5 +759,63 @@ public class ShoppingListGeneratorTests : IDisposable
 
         added.Single(i => i.Name == "rice").Quantity.Should().Be(6m, "12 servings of a recipe that yields 4");
         added.Single(i => i.Name == "stock").Quantity.Should().Be(2m, "no override — exactly as before this feature");
+
+        // Settles a review claim that the Include chain leaves RecipeIngredient.Recipe null (which would
+        // silently drop attribution): the chain loads Recipe.Ingredients, and EF relationship fixup
+        // populates the inverse. Asserted against the real graph rather than argued.
+        added.Single(i => i.Name == "rice").SourceRecipes.Should().Be("Curry");
+        added.Single(i => i.Name == "stock").SourceRecipes.Should().Be("Soup");
+    }
+
+    [Fact]
+    public async Task GenerateFromMealPlan_DeduplicatesIngredientIdsWhenARecipeIsPlannedTwice()
+    {
+        // The same recipe on two nights yields the same RecipeIngredient rows twice. Quantities SHOULD
+        // double; the id list is a set of identities and should not.
+        var recipe = new Recipe { HouseholdId = 1, RecipeId = 400, Name = "Tacos", Servings = 4 };
+        _context.Recipes.Add(recipe);
+        _context.RecipeIngredients.Add(new RecipeIngredient
+        {
+            HouseholdId = 1, RecipeId = 400, IngredientId = 1,
+            // A convertible unit. An ingredient whose unit is empty or unrecognised ("each") finds no
+            // common unit and takes the keep-separate branch, so it would never consolidate and this test
+            // would silently be measuring that instead. (Unitless lines duplicating rather than summing is
+            // its own pre-existing question — noted on quest a3c1243c.)
+            Name = "salsa", Quantity = 1m, Unit = "cup", Category = "Pantry"
+        });
+
+        _context.MealPlans.Add(new MealPlan
+        {
+            HouseholdId = 1, MealPlanId = 901, WeekStartDate = new DateOnly(2026, 6, 8)
+        });
+        _context.MealPlanEntries.AddRange(
+            new MealPlanEntry
+            {
+                HouseholdId = 1, MealPlanId = 901, EntryId = 1,
+                Date = new DateOnly(2026, 6, 8), MealType = MealType.Dinner, RecipeId = 400
+            },
+            new MealPlanEntry
+            {
+                HouseholdId = 1, MealPlanId = 901, EntryId = 2,
+                Date = new DateOnly(2026, 6, 9), MealType = MealType.Dinner, RecipeId = 400
+            });
+        await _context.SaveChangesAsync();
+
+        var created = new ShoppingList { HouseholdId = 1, ShoppingListId = 78, Name = "Tacos week" };
+        _shoppingListServiceMock
+            .Setup(s => s.CreateShoppingListAsync(1, "Tacos week", 901, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(created);
+        var added = new List<ShoppingListItem>();
+        _shoppingListServiceMock
+            .Setup(s => s.AddManualItemAsync(It.IsAny<ShoppingListItem>(), It.IsAny<CancellationToken>()))
+            .Callback<ShoppingListItem, CancellationToken>((i, _) => added.Add(i))
+            .ReturnsAsync((ShoppingListItem i, CancellationToken _) => i);
+
+        await _generator.GenerateFromMealPlanAsync(1, 901, "Tacos week");
+
+        var salsa = added.Single(i => i.Name == "salsa");
+        salsa.Quantity.Should().Be(2m, "two dinners of the same recipe need twice the salsa");
+        salsa.RecipeIngredientIds.Should().Be("1:400:1", "identities, not occurrences");
+        salsa.SourceRecipes.Should().Be("Tacos");
     }
 }

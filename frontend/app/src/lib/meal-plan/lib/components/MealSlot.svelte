@@ -375,10 +375,17 @@
     color: var(--color-text-muted);
     border: 1px solid var(--color-line);
   }
-  /* Reads as the chip's sibling, but it is a button — so it also carries a hit target and a set state. */
+  /* Reads as the chip's sibling, but it is a button — so it also carries a hit target and a set state.
+     The right margin is load-bearing in the DAY-LIST (non-compact) layout: .mp-entry is a flex row there
+     and .mp-entry-remove is absolutely positioned at top/right 2px with a 26px box, so a chip flowing to
+     the end of the row would sit underneath the remove button once it fades in on hover. Reserving the
+     button's footprint makes the overlap impossible rather than unlikely. The compact (calendar) layout
+     stacks — .mp-slot-compact .mp-entry is display:block — so the chip is already on its own line there
+     and the reservation is dropped below. */
   .mp-entry-servings {
     flex: none;
     align-self: center;
+    margin-right: 30px;
     font-size: 0.65rem;
     line-height: 1;
     padding: 4px 7px;
@@ -444,6 +451,10 @@
      class variant and not a container query.) */
   .mp-slot-compact .mp-entry {
     display: block;
+  }
+  /* Stacked layout: the chip has its own line, so it never reaches the overlaid remove button. */
+  .mp-slot-compact .mp-entry-servings {
+    margin-right: 0;
   }
   .mp-slot-compact .mp-entry-main {
     width: 100%;

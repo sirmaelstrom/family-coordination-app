@@ -8,6 +8,12 @@
     initial?: string;
     confirmLabel?: string;
     submitting?: boolean;
+    /**
+     * Allow submitting an empty value. Off by default — every other caller uses this dialog to NAME
+     * something. Opt in when empty is a meaningful answer rather than an abandoned one (clearing a
+     * servings override back to "as the recipe is written").
+     */
+    allowEmpty?: boolean;
     onClose: () => void;
     onSubmit: (value: string) => Promise<void> | void;
   }
@@ -19,6 +25,7 @@
     initial = '',
     confirmLabel = 'Save',
     submitting = false,
+    allowEmpty = false,
     onClose,
     onSubmit,
   }: Props = $props();
@@ -41,7 +48,10 @@
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
     const v = value.trim();
-    if (!v || submitting) return;
+    if (submitting) return;
+    // Empty is an abandoned answer for every caller that names something, and a MEANINGFUL one for a
+    // caller clearing a value. Only the latter opts in.
+    if (!v && !allowEmpty) return;
     await onSubmit(v);
   }
 </script>
@@ -51,11 +61,11 @@
     <h2>{title}</h2>
     <label>
       <span>{label}</span>
-      <input bind:this={inputEl} type="text" bind:value required autocomplete="off" />
+      <input bind:this={inputEl} type="text" bind:value required={!allowEmpty} autocomplete="off" />
     </label>
     <div class="sh-actions">
       <button type="button" class="sh-btn-ghost" onclick={onClose} disabled={submitting}>Cancel</button>
-      <button type="submit" class="sh-btn-primary" disabled={submitting || !value.trim()}>
+      <button type="submit" class="sh-btn-primary" disabled={submitting || (!allowEmpty && !value.trim())}>
         {submitting ? 'Saving…' : confirmLabel}
       </button>
     </div>

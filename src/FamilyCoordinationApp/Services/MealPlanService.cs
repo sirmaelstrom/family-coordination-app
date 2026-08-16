@@ -205,6 +205,9 @@ public class MealPlanService(
         return entry;
     }
 
+    /// <summary>Upper bound on a per-entry servings override; mirrored client-side in lib/servings.ts.</summary>
+    public const int MaxServings = 1000;
+
     public async Task<MealPlanEntry> SetMealServingsAsync(
         int householdId,
         int mealPlanId,
@@ -232,6 +235,14 @@ public class MealPlanService(
         if (servings is <= 0)
         {
             throw new ArgumentException("Servings must be a positive number, or null to cook the recipe as written.");
+        }
+
+        // Bounded because the value becomes a MULTIPLIER on every ingredient of that meal, and
+        // ShoppingListItem.Quantity is decimal(10,2) — an unbounded servings count turns a generate into a
+        // numeric-overflow 500 rather than a silly list. 1000 is far past any real household.
+        if (servings > MaxServings)
+        {
+            throw new ArgumentException($"Servings must be {MaxServings} or fewer.");
         }
 
         entry.Servings = servings;

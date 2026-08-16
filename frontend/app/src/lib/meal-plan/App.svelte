@@ -4,6 +4,7 @@
   import { mealPlanStore } from './lib/state.svelte';
   import { startLiveness, type LivenessHandle } from './lib/liveness';
   import { weekdayShort, monthDay, todayMonday } from './lib/dates';
+  import { parseServingsInput } from './lib/servings';
   import WeekNav from './lib/components/WeekNav.svelte';
   import CalendarGrid from './lib/components/CalendarGrid.svelte';
   import DayList from './lib/components/DayList.svelte';
@@ -134,27 +135,23 @@
   }
 
   /**
-   * Blank clears the override (back to the recipe as written). Anything else must parse to a positive
-   * integer — the server rejects the rest with a 400, but saying so here costs a round trip nothing.
+   * Blank clears the override (back to the recipe as written) — which is why the dialog is opened with
+   * `allowEmpty`. Parsing lives in lib/servings.ts so the empty case is testable; the server validates
+   * independently.
    */
   async function handleSubmitServings(value: string): Promise<void> {
     const entry = servingsEntry;
-    const trimmed = value.trim();
     if (!entry) return;
 
-    let servings: number | null = null;
-    if (trimmed !== '') {
-      const parsed = Number(trimmed);
-      if (!Number.isInteger(parsed) || parsed < 1) {
-        showToast({ message: 'Enter a whole number of servings, or leave it blank.', kind: 'error' });
-        return;
-      }
-      servings = parsed;
+    const parsed = parseServingsInput(value);
+    if (!parsed.ok) {
+      showToast({ message: parsed.message, kind: 'error' });
+      return;
     }
 
     servingsOpen = false;
     servingsEntry = null;
-    await store.setEntryServings(entry.mealPlanId, entry.entryId, servings);
+    await store.setEntryServings(entry.mealPlanId, entry.entryId, parsed.servings);
   }
 
   // Rebuild the per-slot dnd zones whenever the board data or week changes —
@@ -282,6 +279,7 @@
   label={servingsLabel}
   initial={servingsEntry?.servings != null ? String(servingsEntry.servings) : ''}
   confirmLabel="Save"
+  allowEmpty
   onClose={() => {
     servingsOpen = false;
     servingsEntry = null;

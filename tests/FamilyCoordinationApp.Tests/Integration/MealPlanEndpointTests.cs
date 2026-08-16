@@ -300,6 +300,16 @@ public sealed class MealPlanEndpointTests(PostgresContainerFixture postgres) : I
         var zero = await ClientA.PatchAsJsonAsync(path, new { servings = 0 }, Json);
         zero.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await zero.Content.ReadAsStringAsync()).Should().NotBeEmpty("every /api 4xx carries a body");
+
+        // The value is a MULTIPLIER on every ingredient of the meal, and ShoppingListItem.Quantity is
+        // decimal(10,2) — unbounded, this turns the next generate into a numeric-overflow 500.
+        var huge = await ClientA.PatchAsJsonAsync(path, new { servings = 1_000_001 }, Json);
+        huge.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // And the boundary itself is allowed, so the cap is a cap and not an off-by-one.
+        var atCap = await ClientA.PatchAsJsonAsync(path, new { servings = 1000 }, Json);
+        atCap.StatusCode.Should().Be(HttpStatusCode.OK);
+        await ClientA.PatchAsJsonAsync(path, new { servings = (int?)null }, Json);
     }
 
     [Fact]
