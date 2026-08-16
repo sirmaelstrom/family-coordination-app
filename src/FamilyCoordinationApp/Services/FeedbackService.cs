@@ -6,12 +6,11 @@ using Microsoft.EntityFrameworkCore;
 namespace FamilyCoordinationApp.Services;
 
 /// <summary>
-/// The feedback surface, both halves. Reads/mutations are the strangler lift of <c>FeedbackAdmin.razor</c>'s
-/// direct-EF logic into a testable, dual-mode service; <see cref="SubmitAsync"/> is the write side, rebuilt after
-/// the WP-12 flip deleted <c>FeedbackDialog.razor</c> — the app's only writer — and left the admin inbox with no
-/// way to receive anything. Short-lived contexts via the factory. Every read and mutation is household-scoped for
-/// a non-admin (R-C1, the IDOR fix): the scope is part of the query, so a non-admin posting another household's id
-/// finds nothing → the endpoint 404s with no existence leak. A site admin is unscoped (sees/acts on any item).
+/// The feedback surface: <see cref="SubmitAsync"/> writes; the reads/mutations are the strangler lift of
+/// <c>FeedbackAdmin.razor</c>'s direct-EF logic into a testable, dual-mode service. Short-lived contexts via the
+/// factory. Every read and mutation is household-scoped for a non-admin (R-C1, the IDOR fix): the scope is part of
+/// the query, so a non-admin posting another household's id finds nothing → the endpoint 404s with no existence
+/// leak. A site admin is unscoped (sees/acts on any item).
 /// </summary>
 public sealed class FeedbackService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
@@ -36,14 +35,10 @@ public sealed class FeedbackService(
 
         var feedback = new Feedback
         {
-            // Attribution is the CALLER's resolved context, never a request field (M1) — the submit body carries
-            // no ids, so there is nothing for a caller to point at another household.
             UserId = userId,
             HouseholdId = householdId,
             Type = type,
             Message = message.Trim(),
-            // Diagnostics: truncate rather than reject. A 501-char User-Agent must not cost the user their
-            // message, and neither value is content the user authored.
             CurrentPage = Truncate(currentPage),
             UserAgent = Truncate(userAgent),
             CreatedAt = DateTime.UtcNow,
@@ -60,15 +55,11 @@ public sealed class FeedbackService(
     }
 
     /// <summary>
-    /// Trim + cap a diagnostic field to its column limit; whitespace-only becomes null.
-    /// <para><b>Never cuts between a surrogate pair.</b> <c>CurrentPage</c> is a request-body field, so a caller
-    /// fully controls it: a 700-char value whose astral character straddles index 500 made <c>value[..500]</c>
-    /// leave a LONE high surrogate, which is not valid UTF-16 — Npgsql's UTF-8 encoder then threw
-    /// <c>EncoderFallbackException</c> and the request became a 500 (measured on a running stack before this
-    /// guard; "Unable to translate Unicode character \\uD83D at index 499"). Dropping the orphan is safe: its low
-    /// half is beyond the cut anyway.</para>
-    /// <para>The length check is deliberately conservative — the columns are <c>varchar(500)</c>, which counts
-    /// CODE POINTS, and a UTF-16 length is always ≥ the code-point count, so this can never overflow the column.</para>
+    /// Trim + cap a caller-controlled diagnostic to its column limit; whitespace-only ⇒ null.
+    /// <para><b>Never cuts between a surrogate pair</b> — a lone high surrogate is invalid UTF-16 and Npgsql's
+    /// encoder rejects it with <c>EncoderFallbackException</c> (⇒ 500). Dropping the orphan is safe: its low half
+    /// is past the cut anyway. Capping by UTF-16 length is conservative for a <c>varchar(500)</c>, which counts
+    /// code points.</para>
     /// </summary>
     private static string? Truncate(string? value)
     {

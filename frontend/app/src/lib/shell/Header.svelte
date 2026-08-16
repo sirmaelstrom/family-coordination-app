@@ -2,8 +2,7 @@
   // Top app bar. Mirrors MainLayout.razor's MudAppBar: brand title, right-aligned
   // presence roster (wired in WP-02), send-feedback, dark-mode toggle, site-admin
   // chip, user name + avatar, logout. Identity comes from the canonical session
-  // store; dark mode from the theme store; the feedback dialog is the single
-  // shared instance mounted in +layout.svelte.
+  // store; dark mode from the theme store.
   import { onMount } from 'svelte';
   import { session } from '$lib/session.svelte';
   import { theme } from '$lib/theme.svelte';
@@ -59,10 +58,8 @@
       ></span>
     </div>
 
-    <!-- The feedback entry point. Lives in the always-present header rather than
-         the old Blazor desktop-only FAB, so mobile — which never had a writer at
-         all — can reach it too, and so it can't collide with the chores /
-         shopping-list FABs that already own the bottom-right corner. -->
+    <!-- In the header, not a FAB: reachable on mobile, and the bottom-right corner
+         is already owned by the chores / shopping-list FABs. -->
     <button
       type="button"
       class="sh-icon-btn"

@@ -1,12 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Canonical send-feedback store for the SvelteKit shell — the ONE copy every
-// launcher imports. Module-level singleton, mirroring toast-store: one dialog
-// instance mounted in +layout.svelte, opened from anywhere via openFeedback().
-//
-// This is the WRITE half of the feedback surface. It was dead from the WP-12
-// de-Blazor flip (which deleted FeedbackDialog.razor, the app's only feedback
-// writer) until this rebuild — the admin inbox at /settings/feedback shipped
-// the whole time with nothing able to reach it.
+// Canonical send-feedback store — the ONE copy every launcher imports.
+// Module-level singleton mirroring toast-store: one dialog instance mounted in
+// +layout.svelte, opened from anywhere via openFeedback().
 //
 // ⚠ Svelte 5 rune rule: state lives inside a module-private $state object;
 // callers read it via the accessors and mutate only through the exported
@@ -46,9 +41,8 @@ export function feedbackError(): string | null {
 }
 
 /**
- * Count of successful submissions this page-load (reactive). A surface that RENDERS feedback — the
- * `/settings/feedback` inbox — reads this so it can refetch the moment something is submitted, instead of
- * showing a stale list until its next 15s liveness poll. Starts at 0, so an effect can guard its first run.
+ * Successful submissions this page-load (reactive). The inbox reads this to refetch on submit instead of
+ * waiting out its 15s poll. Starts at 0 so an effect can guard its first run.
  */
 export function feedbackSubmitCount(): number {
   return state.submitted;
@@ -60,10 +54,7 @@ export function openFeedback(): void {
   state.open = true;
 }
 
-/**
- * Close the dialog. Refused mid-submit so a slow POST can't be abandoned into an
- * ambiguous state (the dialog also disables its own controls while submitting).
- */
+/** Close the dialog. Refused mid-submit so a slow POST can't be abandoned into an ambiguous state. */
 export function closeFeedback(): void {
   if (state.submitting) return;
   state.open = false;
@@ -71,13 +62,9 @@ export function closeFeedback(): void {
 }
 
 /**
- * POST the feedback. Resolves true when it was stored (dialog closes, toast fires),
- * false when it was rejected — the dialog stays open with the message intact and
- * `feedbackError()` populated, because losing a bug report to a failed request is
- * exactly the outcome this whole path exists to prevent.
- *
- * `currentPage` is read here rather than passed in: it is the path the user was on
- * when they hit send, which is the same value presence.svelte.ts heartbeats.
+ * POST the feedback. True ⇒ stored (dialog closes, toast fires). False ⇒ rejected, and the dialog stays open
+ * with the message intact and `feedbackError()` set — losing a bug report to a failed request is the outcome
+ * this path exists to prevent.
  */
 export async function submitFeedback(kind: FeedbackKind, message: string): Promise<boolean> {
   const trimmed = message.trim();
@@ -114,11 +101,7 @@ export async function submitFeedback(kind: FeedbackKind, message: string): Promi
   }
 }
 
-/**
- * Every /api 4xx here carries a JSON `{ message }` body (the app re-executes an
- * empty-body non-GET 4xx through the GET-only /not-found page, which surfaces as a
- * 405) — surface it, and fall back to something actionable if the body is missing.
- */
+/** Every /api 4xx here carries a JSON `{ message }`; surface it, with an actionable fallback if it's missing. */
 async function describeFailure(res: Response): Promise<string> {
   const text = await res.text().catch(() => '');
   try {

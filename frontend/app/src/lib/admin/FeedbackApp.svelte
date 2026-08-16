@@ -3,9 +3,7 @@
   // (the server scopes the list — admin sees all, a regular user sees own household, R-C1),
   // an all/unread/open filter, type chip + New/Resolved chips + author line, and per-item
   // mark-read / resolve / reopen. Polls at 15s while visible (R-C9).
-  // Also launches the shared send-feedback dialog: this inbox is where people come
-  // looking, and until the WP-12 writer was rebuilt its empty state advertised a
-  // bottom-left button that had never existed (the deleted FAB was bottom-right).
+  // Also launches the shared send-feedback dialog — this inbox is where people come looking.
   import { onMount } from 'svelte';
   import type { ShellContext, FeedbackDto, FeedbackType } from './lib/types';
   import { feedbackStore } from './lib/feedbackStore.svelte';
@@ -43,10 +41,8 @@
     return () => handle.stop();
   });
 
-  // Refetch the moment a submission lands, rather than leaving this list stale until the next 15s poll —
-  // submitting FROM the inbox and not seeing the item is the most confusing place for that lag to show.
-  // Reads only the counter (never what load() writes), so it cannot loop; the 0 guard skips the mount run,
-  // where onMount's own load() is already in flight.
+  // Refetch on submit instead of waiting out the 15s poll. Reads only the counter (never what load() writes),
+  // so it cannot loop; the 0 guard skips the mount run, where onMount's load() is already in flight.
   $effect(() => {
     if (feedbackSubmitCount() > 0) void store.load();
   });

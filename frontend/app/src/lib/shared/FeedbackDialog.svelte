@@ -1,11 +1,8 @@
 <script lang="ts">
-  // Canonical send-feedback dialog — mounted ONCE in the shell +layout.svelte and
-  // opened from anywhere via openFeedback() (same shape as the shared Toasts region).
-  //
-  // Replaces the Blazor FeedbackDialog.razor deleted by the WP-12 flip: same three
-  // types, same type-driven label/placeholder, same 4000-char cap. Unlike the Blazor
-  // one it does NOT write the DB itself — it POSTs /api/settings/feedback, where the
-  // household/user attribution is derived server-side from the caller's cookie.
+  // Canonical send-feedback dialog — mounted ONCE in +layout.svelte and opened from
+  // anywhere via openFeedback() (same shape as the shared Toasts region). Ports the
+  // deleted Blazor dialog's three types and type-driven copy, but POSTs
+  // /api/settings/feedback rather than writing the DB itself.
   import {
     FEEDBACK_MAX_LENGTH,
     closeFeedback,
@@ -22,7 +19,6 @@
     { value: 'general', label: 'General', icon: '💬' },
   ];
 
-  // Labels ported from the deleted FeedbackDialog.razor's GetMessageLabel/Placeholder.
   const COPY: Record<FeedbackKind, { label: string; placeholder: string }> = {
     bug: {
       label: 'What went wrong?',
@@ -62,16 +58,10 @@
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
     if (!canSend) return;
-    // On failure the store keeps the dialog open and populates the inline error —
-    // the typed message survives so it can be retried rather than retyped.
     await submitFeedback(kind, message);
   }
 
-  /**
-   * `<dialog>` fires `cancel` for the Esc key (a modal dialog is NOT dismissed by
-   * backdrop clicks — there is no such native behaviour to intercept). Blocking it
-   * mid-submit is what stops Esc bypassing closeFeedback()'s own guard.
-   */
+  /** Esc fires `cancel`; blocking it mid-submit stops Esc bypassing closeFeedback()'s guard. */
   function handleCancel(e: Event) {
     if (submitting) e.preventDefault();
   }

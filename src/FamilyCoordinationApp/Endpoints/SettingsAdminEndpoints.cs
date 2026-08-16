@@ -19,8 +19,7 @@ namespace FamilyCoordinationApp.Endpoints;
 /// <item><c>/api/settings/feedback</c> — <b>DUAL-MODE</b>. A site admin sees/acts on all households' feedback; a
 /// regular user only their own household's (server-scoped, R-C1 — the circuit→REST lift would otherwise be an
 /// IDOR). The <c>isSiteAdmin</c> flag rides in the list payload for the island's affordances. <b>POST /</b> is the
-/// SUBMIT route — any authenticated caller, not just an admin — rebuilt after the WP-12 flip deleted the Blazor
-/// dialog that was the app's only feedback writer and left this inbox unreachable.</item>
+/// SUBMIT route — any authenticated caller, not just an admin.</item>
 /// </list>
 ///
 /// <para><b>Email plumbing (R-C5):</b> <see cref="UserContextResolver"/> intentionally drops the email (returns
@@ -182,16 +181,10 @@ public static class SettingsAdminEndpoints
     // ─── Feedback (dual-mode) ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// #3c POST / — SUBMIT feedback. The write side, dead from the WP-12 flip (which deleted the Blazor
-    /// <c>FeedbackDialog</c>, the app's only writer) until this rebuild; the admin inbox could not receive
-    /// anything in between.
+    /// #3c POST / — submit feedback. Any authenticated caller, not just an admin.
     /// <para><b>Attribution (M1):</b> the body carries NO ids — user + household come from the caller's resolved
-    /// context, so a caller cannot file into another household. In practice attribution is ALWAYS populated: see
-    /// <see cref="ResolveFeedbackScopeAsync"/> for why the unattributed branch is defensive, not a live case.</para>
-    /// <para><b>Type</b> is parsed leniently from the camelCase wire value (<c>bug</c> /
-    /// <c>featureRequest</c> / <c>general</c>, case-insensitive; absent ⇒ <c>General</c>) rather than model-bound,
-    /// so an unknown value is OUR 400-with-body instead of the binder's — the empty-4xx trap
-    /// (<c>UseStatusCodePagesWithReExecute</c> re-executes an empty non-GET 4xx as a 405).</para>
+    /// context, so a caller cannot file into another household. <b>Type</b> is parsed from the wire string rather
+    /// than model-bound, so an unknown value is OUR 400-with-body and not the binder's empty one (R-C5).</para>
     /// 401 (unresolvable caller) / 400 (blank or over-long message, unknown type) / else 204.
     /// </summary>
     private static async Task<IResult> SubmitFeedback(
@@ -211,8 +204,7 @@ public static class SettingsAdminEndpoints
         {
             return Results.BadRequest(new { message = "Feedback message is required." });
         }
-        // Guard the column's 4000-char limit server-side so an oversized direct-API message is a clean 400, not a
-        // varchar-overflow 500 (parity RejectRequest's 500-char guard).
+        // Clean 400 rather than a varchar-overflow 500 (parity: RejectRequest's 500-char guard).
         if (message.Length > FeedbackService.MessageMaxLength)
         {
             return Results.BadRequest(new { message = $"Feedback message must be {FeedbackService.MessageMaxLength} characters or fewer." });
@@ -226,7 +218,7 @@ public static class SettingsAdminEndpoints
             type,
             message,
             req?.CurrentPage,
-            // Server-read, not a request field: a client-supplied User-Agent is worth nothing as a diagnostic.
+            // Server-read: a client-supplied User-Agent is worthless as a diagnostic.
             http.Request.Headers.UserAgent.ToString(),
             scope.UserId,
             scope.HouseholdId,
@@ -236,14 +228,9 @@ public static class SettingsAdminEndpoints
     }
 
     /// <summary>
-    /// Parse the wire type value against an EXPLICIT three-value whitelist. Null/empty ⇒
-    /// <see cref="FeedbackType.General"/> (the dialog's default); otherwise exactly one of the camelCase wire
-    /// names (R-C10), case-insensitively.
-    /// <para><b>Why not <c>Enum.TryParse</c> + <c>Enum.IsDefined</c>:</b> that pair silently accepts values this
-    /// endpoint documents as invalid — numeric strings and comma/flags forms both round-trip to a defined member.
-    /// Measured on a running stack before this was tightened: <c>"0"</c>, <c>"1"</c>, <c>"2"</c>,
-    /// <c>"bug,general"</c> and <c>"Bug , General"</c> ALL returned 204 and stored a type the caller never named
-    /// (<c>"bug,general"</c> → <c>0|2</c> → <c>General</c>). A whitelist cannot drift that way.</para>
+    /// Wire value → enum against an EXPLICIT whitelist; null/empty ⇒ <see cref="FeedbackType.General"/> (R-C10).
+    /// Not <c>Enum.TryParse</c>+<c>IsDefined</c>: that also accepts numeric strings and comma/flags forms
+    /// (<c>"bug,general"</c> ⇒ <c>0|2</c> ⇒ <c>General</c>), which the wire contract rejects.
     /// </summary>
     private static bool TryParseFeedbackType(string? value, out FeedbackType type)
     {
@@ -339,14 +326,11 @@ public static class SettingsAdminEndpoints
     /// <summary>
     /// Resolve the feedback caller's scope (R-C5): isSiteAdmin from the claim email DIRECTLY + userId/householdId
     /// from the resolver (a non-admin's M1 read scope, and the submit attribution).
-    /// <para><b>The <c>Authorized == false</c> branch is DEFENSIVE, not a live path</b> (council round 1, three
-    /// lenses): reaching any handler here requires passing <c>.RequireAuthorization()</c>, whose DefaultPolicy
-    /// (Program.cs) carries <see cref="Authorization.WhitelistedEmailRequirement"/>, and its handler only succeeds
-    /// for an email with a <c>Users</c> row where <c>IsWhitelisted</c> — so a caller who gets this far has
-    /// necessarily been resolved. It survives only in the setup-incomplete window (that handler short-circuits
-    /// while no households exist) or a delete-mid-request race. It is deliberately NOT widened with a
-    /// feedback-specific policy: a site admin with no <c>Users</c> row cannot use any other part of this app
-    /// either, so "unattributed submission" is not a product case worth building an auth exception for.</para>
+    /// <para><c>Authorized == false</c> is DEFENSIVE, not a live path: <c>.RequireAuthorization()</c>'s
+    /// DefaultPolicy carries <see cref="Authorization.WhitelistedEmailRequirement"/>, which needs a whitelisted
+    /// <c>Users</c> row, so a caller reaching these handlers has already resolved (it survives only in the
+    /// setup-incomplete window or a delete-mid-request race). Don't widen it with a feedback-specific policy —
+    /// a principal without that row cannot use the rest of the app either.</para>
     /// </summary>
     private static async Task<(bool IsSiteAdmin, int? UserId, int? HouseholdId, bool Authorized)> ResolveFeedbackScopeAsync(
         ClaimsPrincipal principal,
@@ -364,14 +348,10 @@ public static class SettingsAdminEndpoints
     private static IResult NotFoundFeedback() => Results.NotFound(new { message = "Feedback not found." });
 
     /// <summary>
-    /// The unresolvable-caller 401 — WITH A BODY, unlike bare <see cref="Results.Unauthorized"/>.
-    /// <para>A zero-length 401 is re-executed by the global <c>UseStatusCodePagesWithReExecute("/not-found")</c>
-    /// (Program.cs) through a GET-only Razor Page, so on these POST routes the caller observes a status that is
-    /// not 401 at all and the SPA's own 401/403 "your session expired" branch never runs. Same defect class
-    /// <see cref="Authorization.ApiAwareAuthEvents"/> already writes a body to avoid.</para>
-    /// <para>Scoped deliberately to the feedback family: <c>Results.Unauthorized()</c> is the house pattern at
-    /// ~100 sites under Endpoints/, and sweeping it is the ApiResults/endpoint-filter quest's job, not this
-    /// route's. Fixing the five here keeps the file internally consistent and stops this PR adding a new instance.</para>
+    /// The unresolvable-caller 401, WITH A BODY. A bodiless one is re-executed by the global
+    /// <c>UseStatusCodePagesWithReExecute("/not-found")</c> through a GET-only page, changing the status the
+    /// caller sees and killing the SPA's own 401 branch — the defect class
+    /// <see cref="Authorization.ApiAwareAuthEvents"/> already writes a body to avoid.
     /// </summary>
     private static IResult UnauthorizedFeedback() =>
         Results.Json(new { message = "Your session could not be resolved — sign in again." },
@@ -426,12 +406,8 @@ public sealed record RejectReasonRequest(string? Reason);
 public sealed record CreateHouseholdRequest(string? HouseholdName, string? OwnerEmail, string? OwnerDisplayName);
 
 /// <summary>
-/// Submit-feedback body. Deliberately carries NO user/household/id fields — attribution comes from the caller's
-/// resolved context (M1), so there is nothing here for a caller to point at another household.
-/// <para><see cref="Type"/> is the camelCase wire value (<c>bug</c> / <c>featureRequest</c> / <c>general</c>) as a
-/// STRING, not the bound enum: parsing it ourselves keeps an unknown value a 400-with-body rather than the model
-/// binder's empty 400, which <c>UseStatusCodePagesWithReExecute</c> would re-execute into a 405.
-/// <see cref="CurrentPage"/> is the SPA path the user was on (diagnostic; truncated, never rejected). The
-/// User-Agent is read from the request headers, not from this body.</para>
+/// Submit body. Deliberately carries NO user/household/id fields — attribution comes from the caller's resolved
+/// context (M1), so there is nothing here to point at another household. <see cref="Type"/> is the camelCase wire
+/// value as a STRING (see <c>TryParseFeedbackType</c>); the User-Agent is read from headers, not from here.
 /// </summary>
 public sealed record SubmitFeedbackRequest(string? Type, string? Message, string? CurrentPage);
