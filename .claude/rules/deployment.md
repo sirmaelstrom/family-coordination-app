@@ -36,6 +36,14 @@ This push-to-master pipeline is the **normal** deploy path. `deploy.sh` (and its
 
 Production traffic flow: `Internet → Cloudflare → <server-hostname> (host nginx) → app container`
 
+**EF migrations run inside the deploy's health-check budget.** Since PR #93 the app applies migrations in an
+unconditional startup block (see `architecture.md` → EF Core Migrations) — it does not begin listening on :8080
+until they finish, and the container HEALTHCHECK is a bare TCP connect to that port. `deploy.sh` polls
+`.State.Health.Status` **30 times at 2s intervals and then dies** ("Health check timeout after 60s"), so a
+migration that needs longer than roughly a minute fails the deploy rather than merely being slow. Before shipping
+a migration that rewrites a large table, raise that loop or apply the migration out of band first. The old
+behaviour — migrating lazily on the first request — had no budget, but also gave no signal.
+
 (On the production host over SSH: the deploy user is in the `docker` group — added 2026-07-09 — so docker commands work **without sudo** on a fresh login; the host's agent-guidance doc was de-sudo'd 2026-08-05 with live receipts. If sudo is used anyway, the NOPASSWD whitelist covers `docker build/compose/ps/inspect/exec/logs/rm/image prune/network` but NOT `docker tag/images/rmi` — under sudo those prompt for a password, which is why the rollback below runs bare docker.)
 
 **Rollback (de-Blazor C-c):** every deployed image is also tagged `familyapp:<git-sha>` by the build (`deploy.sh`). To roll back (interactive):

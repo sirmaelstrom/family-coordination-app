@@ -25,6 +25,16 @@ public sealed class AuthorizationIsReadOnlyTests(PostgresContainerFixture postgr
         var db = new PostgresDbContextFactory(_factory.ConnectionString);
         var client = _factory.CreateClientAs(ChoresWebAppFactory.UserAEmail);
 
+        // Give the row a non-null PictureUrl first. The seed leaves it null, so asserting "still null" after the
+        // requests would hold whether or not anything wrote — the assertion has to be able to fail.
+        const string avatar = "https://pic.test/alice.jpg";
+        await using (var seed = await db.CreateDbContextAsync())
+        {
+            var row = await seed.Users.SingleAsync(u => u.Id == ChoresWebAppFactory.UserAId);
+            row.PictureUrl = avatar;
+            await seed.SaveChangesAsync();
+        }
+
         for (var i = 0; i < 3; i++)
             (await client.GetAsync("/api/me")).EnsureSuccessStatusCode();
 
@@ -32,11 +42,11 @@ public sealed class AuthorizationIsReadOnlyTests(PostgresContainerFixture postgr
         var user = await context.Users.AsNoTracking()
             .SingleAsync(u => u.Id == ChoresWebAppFactory.UserAId);
 
-        // The seeded values. Against the pre-fix handler the first of these requests rewrote all three: the test
-        // principal's name claim is the email, so "AA" became "A", the absent picture claim nulled PictureUrl,
-        // and LastLoginAt was stamped with "now".
+        // Against the pre-fix handler the first of these requests rewrote all three: the test principal's name
+        // claim is the email, so "AA" became "A"; the absent picture claim nulled PictureUrl; LastLoginAt was
+        // stamped with "now".
         user.Initials.Should().Be("AA");
-        user.PictureUrl.Should().BeNull();
+        user.PictureUrl.Should().Be(avatar);
         user.LastLoginAt.Should().BeNull();
     }
 }

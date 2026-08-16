@@ -49,7 +49,7 @@ public class WhitelistedEmailHandler(
         try
         {
             // Check database for whitelisted user. Untracked: this path must not write.
-            using var dbContext = dbFactory.CreateDbContext();
+            await using var dbContext = await dbFactory.CreateDbContextAsync();
             var whitelisted = await dbContext.Users
                 .AsNoTracking()
                 .AnyAsync(u => u.Email == email && u.IsWhitelisted);
@@ -57,7 +57,8 @@ public class WhitelistedEmailHandler(
             if (whitelisted)
             {
                 context.Succeed(requirement);
-                logger.LogInformation("User {Email} authorized successfully", email);
+                // Debug, not Information: this runs on every authorized request.
+                logger.LogDebug("User {Email} authorized successfully", email);
             }
             else
             {

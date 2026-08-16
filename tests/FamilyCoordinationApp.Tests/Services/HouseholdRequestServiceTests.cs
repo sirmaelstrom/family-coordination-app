@@ -71,8 +71,9 @@ public class HouseholdRequestServiceTests : IDisposable
         var owner = await db.Users.SingleAsync(u => u.Email == "bob@smith.test");
         owner.HouseholdId.Should().Be(result.Household.Id);
         owner.DisplayName.Should().Be("Bob Smith");
+        owner.Initials.Should().Be("BS", "a user must be born with Initials — nothing backfills them");
         owner.IsWhitelisted.Should().BeTrue();
-        owner.GoogleId.Should().BeNull(); // set on the owner's first Google login
+        owner.GoogleId.Should().BeNull(); // filled by LoginProfileService on the owner's first Google login
 
         // Default categories were seeded for the NEW household inside the same operation.
         var categories = await db.Categories.Where(c => c.HouseholdId == result.Household.Id).ToListAsync();
@@ -159,6 +160,9 @@ public class HouseholdRequestServiceTests : IDisposable
         (await db.Categories.Where(c => c.HouseholdId == hhId).ToListAsync()).Should().NotBeEmpty();
         (await db.Rooms.Where(r => r.HouseholdId == hhId).ToListAsync()).Should().NotBeEmpty();
         (await db.Chores.Where(c => c.HouseholdId == hhId).ToListAsync()).Should().NotBeEmpty();
+
+        var approved = await db.Users.SingleAsync(u => u.Email == "eve@new.test");
+        approved.Initials.Should().Be("E", "a user must be born with Initials — nothing backfills them");
     }
 
     private async Task<int> CountHouseholdsAsync()

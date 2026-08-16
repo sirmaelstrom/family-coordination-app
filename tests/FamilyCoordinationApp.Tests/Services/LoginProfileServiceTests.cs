@@ -17,12 +17,14 @@ public sealed class LoginProfileServiceTests
 {
     private static readonly DateTime Now = new(2026, 3, 4, 5, 6, 7, DateTimeKind.Utc);
 
-    private static ClaimsPrincipal Principal(string? email, string? name = null, string? picture = null)
+    private static ClaimsPrincipal Principal(
+        string? email, string? name = null, string? picture = null, string? subject = null)
     {
         var claims = new List<Claim>();
         if (email is not null) claims.Add(new Claim(ClaimTypes.Email, email));
         if (name is not null) claims.Add(new Claim(ClaimTypes.Name, name));
         if (picture is not null) claims.Add(new Claim("urn:google:picture", picture));
+        if (subject is not null) claims.Add(new Claim(ClaimTypes.NameIdentifier, subject));
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
     }
 
@@ -68,13 +70,51 @@ public sealed class LoginProfileServiceTests
     {
         var (service, options) = Build(Seeded());
 
-        await service.RefreshAsync(Principal("alice@a.test", "Alice Anderson", "https://pic.test/a.jpg"));
+        await service.RefreshAsync(Principal(
+            "alice@a.test", "Alice Anderson", "https://pic.test/a.jpg", subject: "google-sub-1"));
 
         await using var db = new ApplicationDbContext(options);
         var user = await db.Users.SingleAsync();
         user.LastLoginAt.Should().Be(Now);
         user.PictureUrl.Should().Be("https://pic.test/a.jpg");
         user.Initials.Should().Be("AA");
+        user.GoogleId.Should().Be("google-sub-1", "a first Google sign-in is the only thing that can fill it");
+    }
+
+    [Fact]
+    public async Task Refresh_KeepsWhatGoogleDidNotSend()
+    {
+        // An account with no Google photo sends no picture claim; an invited user's DisplayName is theirs, not
+        // Google's; and an existing GoogleId is that account's identity under a filtered unique index.
+        var seeded = Seeded();
+        seeded.DisplayName = "bob";
+        seeded.PictureUrl = "https://pic.test/existing.jpg";
+        seeded.GoogleId = "original-sub";
+        var (service, options) = Build(seeded);
+
+        await service.RefreshAsync(Principal(
+            "alice@a.test", "Robert Smith", picture: null, subject: "different-sub"));
+
+        await using var db = new ApplicationDbContext(options);
+        var user = await db.Users.SingleAsync();
+        user.PictureUrl.Should().Be("https://pic.test/existing.jpg");
+        user.GoogleId.Should().Be("original-sub");
+        user.DisplayName.Should().Be("bob");
+        user.Initials.Should().Be("B", "initials follow the stored DisplayName, not the Google name claim");
+    }
+
+    [Fact]
+    public async Task Refresh_SwallowsADatabaseFailure_SoTheSignInStillSucceeds()
+    {
+        var throwing = new Mock<IDbContextFactory<ApplicationDbContext>>();
+        throwing.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("database is down"));
+        var service = new LoginProfileService(
+            throwing.Object, new FixedTimeProvider(Now), NullLogger<LoginProfileService>.Instance);
+
+        var act = async () => await service.RefreshAsync(Principal("alice@a.test", "Alice Anderson"));
+
+        await act.Should().NotThrowAsync("a profile refresh must never fail the sign-in it hangs off");
     }
 
     [Fact]
