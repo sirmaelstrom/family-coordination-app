@@ -18,9 +18,11 @@ namespace FamilyCoordinationApp.Endpoints;
 /// the board read + per-entry projection delegate to <see cref="IMealPlanBoardService"/> (ONE projection — no
 /// card/response drift, M9).
 ///
-/// <para>Parity-first: the ops are add + remove only ⇒ versionless / last-write-wins (no xmin token on the
-/// wire). A remove of a missing entry → 404 (may surface as an empty 400 via the app-global
-/// <c>UseStatusCodePagesWithReExecute</c> quirk — the island treats any 4xx as a non-retryable refetch).</para>
+/// <para>Entry mutations carry the row's xmin token and answer <b>409</b> on a stale one (PR #95, the house
+/// pattern — see <see cref="FamilyCoordinationApp.Services.MealPlanConflictException"/>): move, set-servings
+/// and remove all take a <c>version</c>, remove carrying it in the DELETE body as the chores DELETE does.
+/// <b>Add is the exception</b>, and only because it creates the row — there is no prior version to be stale.
+/// A remove of a missing entry → 404 (the island treats any 4xx as a non-retryable refetch).</para>
 /// </summary>
 public static class MealPlanEndpoints
 {
@@ -72,7 +74,7 @@ public static class MealPlanEndpoints
         return Results.Ok(board);
     }
 
-    // ─── Entries (add / remove — versionless) ────────────────────────────────────
+    // ─── Entries (add is versionless; move / servings / remove carry the xmin token) ──────────────
 
     private static async Task<IResult> AddEntry(
         AddEntryRequest req,
@@ -296,7 +298,8 @@ public static class MealPlanEndpoints
     /// <summary>
     /// Add a meal to a slot. <see cref="Date"/> is the slot's calendar position ("YYYY-MM-DD"); the server
     /// derives the week from it. Supply EXACTLY one of <see cref="RecipeId"/> / <see cref="CustomMealName"/>.
-    /// Versionless — no concurrency token.
+    /// No concurrency token: this CREATES the entry, so there is no prior version to be stale. Every
+    /// other entry mutation carries one.
     /// </summary>
     public sealed record AddEntryRequest(
         DateOnly Date,

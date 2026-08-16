@@ -15,8 +15,9 @@ namespace FamilyCoordinationApp.Services.Dtos;
 //   This deliberately avoids the chores recurrenceMode/effortTier PascalCase
 //   plain-string trap. DateOnly serializes as "YYYY-MM-DD".
 //
-// Parity-first (no drag-drop) ⇒ versionless / last-write-wins: NO xmin token on
-// the wire. MealPlanEntry.Version exists on the entity but is unused here.
+// MealPlanEntryDto carries the row's xmin token as Version (PR #95). Send it back
+// on every entry mutation except add, which creates the row and so has no prior
+// version; a stale token is a 409 rather than a silent overwrite.
 // ─────────────────────────────────────────────────────────────────────────
 
 /// <summary>The week board: the Monday it covers, the plan id (null when none yet), and its entries.</summary>

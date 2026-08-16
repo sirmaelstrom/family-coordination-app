@@ -19,7 +19,8 @@
   // data-attrs, fetches the current week's board into the shared store, and
   // renders WeekNav + (CalendarGrid on md+ / DayList on sm-). Every slot is a
   // client-side grouping of the one board payload (the store's per-slot zones).
-  // Versionless — add + move + remove; on any 4xx the store reconciles.
+  // Move / servings / remove send the entry's xmin token and 409 on a stale one; add creates the row
+  // so it has none. On any 4xx the store reconciles.
   // No `new Date('YYYY-MM-DD')` anywhere — week stepping goes through dates.ts.
   // ───────────────────────────────────────────────────────────────────────
 
@@ -126,7 +127,7 @@
     const entry = confirmEntry;
     confirmOpen = false;
     confirmEntry = null;
-    if (entry) await store.removeEntry(entry.mealPlanId, entry.entryId);
+    if (entry) await store.removeEntry(entry.mealPlanId, entry.entryId, entry.version);
   }
 
   function handleSetServings(entry: MealPlanEntryDto): void {
@@ -151,7 +152,7 @@
 
     servingsOpen = false;
     servingsEntry = null;
-    await store.setEntryServings(entry.mealPlanId, entry.entryId, parsed.servings);
+    await store.setEntryServings(entry.mealPlanId, entry.entryId, parsed.servings, entry.version);
   }
 
   // Rebuild the per-slot dnd zones whenever the board data or week changes —

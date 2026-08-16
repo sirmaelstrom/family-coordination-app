@@ -101,8 +101,16 @@ public class MealPlanService(
 
                 if (duplicateEntry != null)
                 {
-                    // Update existing entry with same recipe/custom meal (e.g., to update notes)
-                    duplicateEntry.Notes = notes;
+                    // Adding a meal that is ALREADY in this slot folds into the existing entry. This is the
+                    // one entry write with no concurrency token — an add has no prior version to be stale —
+                    // so it must not be able to destroy anything. Notes are therefore only written when the
+                    // request actually carries them: an add that omits notes previously blanked whatever
+                    // another member had typed here, with no conflict and no way to notice.
+                    if (!string.IsNullOrWhiteSpace(notes))
+                    {
+                        duplicateEntry.Notes = notes;
+                    }
+
                     duplicateEntry.UpdatedAt = DateTime.UtcNow;
                     duplicateEntry.UpdatedByUserId = userId;
 

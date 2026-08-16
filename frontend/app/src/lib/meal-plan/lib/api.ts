@@ -14,9 +14,10 @@ const BASE = '/api/meal-plan';
  * Thrown on any non-2xx response. `status` lets callers react to a rejection.
  *
  * Since PR #90 an /api 4xx keeps its real status and always carries a JSON
- * `{ message }`. The meal-plan island is VERSIONLESS (no 409 concurrency
- * dance), so the rule is simple: treat ANY 4xx as a non-retryable client
- * rejection → refetch the week + calm toast. There is no retry branch.
+ * `{ message }`. Entry mutations carry the xmin token and a stale one comes back
+ * as 409 (PR #95). The rule stays simple: treat ANY 4xx as a non-retryable client
+ * rejection → refetch the week + calm toast. There is no automatic retry branch;
+ * the 409 only changes what the toast says.
  */
 export class ApiError extends Error {
   constructor(
@@ -66,7 +67,7 @@ export async function getBoard(weekStart: string): Promise<MealPlanBoardDto> {
   return request<MealPlanBoardDto>(`${BASE}/board?weekStart=${encodeURIComponent(weekStart)}`);
 }
 
-// ─── Entries (add / move / remove — versionless) ─────────────────────────────
+// ─── Entries (add is versionless; move / servings / remove carry the xmin token) ──
 
 /** Body for POST /entries — supply EXACTLY one of recipeId / customMealName. */
 export interface AddEntryBody {

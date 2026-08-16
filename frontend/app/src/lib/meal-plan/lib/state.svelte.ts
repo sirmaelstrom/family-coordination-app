@@ -11,9 +11,11 @@
 // instance and export the instance — the runes live as `$state`/`$derived`
 // fields on the object, which is the supported pattern.
 //
-// Parity-first ⇒ VERSIONLESS / last-write-wins. The ops are add + remove +
-// move (drag-to-assign, same week); there is no xmin token, no 409 branch. On
-// any 4xx error we reconcile (re-GET the current week) + surface a calm toast.
+// The ops are add + move (drag-to-assign, same week) + servings + remove. All but
+// ADD send the entry's xmin token and get a 409 on a stale one (PR #95); add
+// creates the row, so it has no prior version. On any 4xx we reconcile (re-GET the
+// current week) + surface a calm toast. The token for a dialog-driven mutation is
+// supplied BY THE CALLER, not re-read here — see setEntryServings for why.
 // NO `new Date('YYYY-MM-DD')` anywhere — week stepping goes through
 // lib/dates.ts (MN4).
 // ─────────────────────────────────────────────────────────────────────────
@@ -303,15 +305,16 @@ class MealPlanStore {
     mealPlanId: number,
     entryId: number,
     servings: number | null,
+    version: number,
   ): Promise<void> {
     if (!this.board) return;
-    const current = this.board.entries.find(
-      (e) => e.mealPlanId === mealPlanId && e.entryId === entryId,
-    );
-    if (!current) return;
     const targetWeek = this.weekStart;
     try {
-      const updated = await setEntryServings(mealPlanId, entryId, servings, current.version);
+      // The token comes from the CALLER — the entry as it was when the dialog opened — not from a fresh
+      // lookup here. A ~20s liveness poll can replace the board entry while the dialog sits open, and
+      // re-sampling would submit a version the user never saw, quietly overwriting whatever the other
+      // member just changed. That is exactly the write this feature exists to refuse.
+      const updated = await setEntryServings(mealPlanId, entryId, servings, version);
       if (!this.board || this.weekStart !== targetWeek) return;
       this.board.entries = replaceEntry(this.board.entries, updated);
     } catch (e) {
@@ -336,20 +339,26 @@ class MealPlanStore {
    * calm toast. A missing entry (already removed by someone else) → 404/empty-400
    * → the refetch shows the true state.
    */
-  async removeEntry(mealPlanId: number, entryId: number): Promise<void> {
+  async removeEntry(mealPlanId: number, entryId: number, version: number): Promise<void> {
     if (!this.board) return;
     const idx = this.board.entries.findIndex(
       (e) => e.mealPlanId === mealPlanId && e.entryId === entryId,
     );
     if (idx < 0) return;
     const removed = this.board.entries[idx];
+    const targetWeek = this.weekStart;
     // Optimistic splice.
     this.board.entries = this.board.entries.filter(
       (e) => !(e.mealPlanId === mealPlanId && e.entryId === entryId),
     );
     try {
-      await removeEntry(mealPlanId, entryId, removed.version);
+      // Caller-supplied token, for the same reason as setEntryServings — the confirm dialog can sit open
+      // across a liveness poll.
+      await removeEntry(mealPlanId, entryId, version);
     } catch (e) {
+      // The user stepped to another week while the DELETE was in flight; this board is no longer the one
+      // we deleted from, and restoring into it would splice a foreign entry into the visible week.
+      if (this.weekStart !== targetWeek) return;
       if (e instanceof ApiError) {
         // Any 4xx (incl. the empty-400-from-404 quirk) — resync to truth. A 409 specifically means
         // someone else changed this entry after we read it, so say so rather than the generic line.

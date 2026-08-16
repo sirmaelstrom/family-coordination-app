@@ -22,7 +22,8 @@ public class MealPlanServiceMoveTests : IDisposable
     /// The version these InMemory tests pass. The InMemory provider has no xmin, so every entity's
     /// <c>Version</c> stays 0 and setting 0 as the OriginalValue matches — the concurrency check is
     /// structurally inert here. The REAL stale-token behaviour is proved against Postgres in
-    /// <c>Integration/MealPlanConcurrencyTests</c>; these tests still cover move's own rules.
+    /// <c>MealPlanEndpointTests.EntryMutations_WithAStaleVersion_Are409_AndChangeNothing</c>; these tests
+    /// still cover move's own rules.
     /// </summary>
     private const uint NoConcurrencyCheck = 0;
 

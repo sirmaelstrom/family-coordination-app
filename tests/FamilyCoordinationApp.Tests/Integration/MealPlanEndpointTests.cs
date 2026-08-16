@@ -10,8 +10,8 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// (reuses <see cref="ChoresWebAppFactory"/>'s two-household seed). Proves: the read-only board (empty + populated),
 /// add recipe / add custom round-trips + the add→board reflection, the XOR validation (400), remove (204) then
 /// gone, a missing remove rejected (4xx), recipe search + quick-create, recipe detail, the 401 gate, and the M1
-/// cross-household isolation invariant (a household-B caller never sees or mutates household-A's plan). Parity is
-/// versionless — no xmin token anywhere on the wire.
+/// cross-household isolation invariant (a household-B caller never sees or mutates household-A's plan), and the
+/// xmin concurrency contract — move / servings / remove refuse a stale token with a 409.
 /// </summary>
 [Collection(IntegrationCollection.Name)]
 [Trait("kind", "integration")]
@@ -375,6 +375,81 @@ public sealed class MealPlanEndpointTests(PostgresContainerFixture postgres) : I
         // And the fresh token still works — the row is not wedged, only the stale writer is refused.
         var withFresh = await ClientA.PatchAsJsonAsync(servingsPath, new { servings = 6, version = freshVersion }, Json);
         withFresh.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task ASuccessfulMove_EchoesAReusableToken()
+    {
+        // The stale-token test proves refusal. This proves the other half of the contract: a mutation
+        // hands back a token that WORKS for the next one. Without it, a client could only ever mutate an
+        // entry once per board fetch and every second action would 409 — the check passing for the wrong
+        // reason would look identical in the refusal test.
+        var entry = await AddEntryAsync(ClientA, new
+        {
+            date = "2026-07-27",
+            mealType = "dinner",
+            recipeId = (int?)null,
+            customMealName = "Chained mutations",
+            notes = (string?)null
+        });
+
+        var moved = await ClientA.PatchAsJsonAsync(
+            $"/api/meal-plan/entries/{entry.mealPlanId}/{entry.entryId}",
+            new { date = "2026-07-29", mealType = "lunch", version = entry.version }, Json);
+        moved.StatusCode.Should().Be(HttpStatusCode.OK);
+        var afterMove = (await moved.Content.ReadFromJsonAsync<Entry>(Json))!;
+        afterMove.version.Should().NotBe(entry.version, "the move moved the row's xmin");
+
+        // Second mutation, straight off the echoed token — no refetch in between.
+        var servings = await ClientA.PatchAsJsonAsync(
+            $"/api/meal-plan/entries/{entry.mealPlanId}/{entry.entryId}/servings",
+            new { servings = 3, version = afterMove.version }, Json);
+        servings.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Third, chaining again — and this one is the DELETE body path.
+        var afterServings = (await servings.Content.ReadFromJsonAsync<Entry>(Json))!;
+        var removed = await DeleteEntryAsync(
+            ClientA, entry.mealPlanId, entry.entryId, afterServings.version);
+        removed.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task AddingAMealAlreadyInTheSlot_DoesNotEraseItsNotes()
+    {
+        // Add folds into an existing entry when the same meal is already in that slot, and it is the ONE
+        // entry write with no concurrency token. So it must not be able to destroy anything: an add that
+        // omits notes previously blanked whatever another member had typed, with no conflict to notice.
+        var first = await AddEntryAsync(ClientA, new
+        {
+            date = "2026-08-03",
+            mealType = "dinner",
+            recipeId = (int?)null,
+            customMealName = "Shared dinner",
+            notes = "Ask about the allergy"
+        });
+        first.notes.Should().Be("Ask about the allergy");
+
+        var second = await AddEntryAsync(ClientA, new
+        {
+            date = "2026-08-03",
+            mealType = "dinner",
+            recipeId = (int?)null,
+            customMealName = "Shared dinner",
+            notes = (string?)null
+        });
+        second.entryId.Should().Be(first.entryId, "the duplicate folds into the existing entry");
+        second.notes.Should().Be("Ask about the allergy", "an add that says nothing must not say 'blank'");
+
+        // Supplying notes still updates them — the guard must not have frozen the field.
+        var third = await AddEntryAsync(ClientA, new
+        {
+            date = "2026-08-03",
+            mealType = "dinner",
+            recipeId = (int?)null,
+            customMealName = "Shared dinner",
+            notes = "Bring the good knives"
+        });
+        third.notes.Should().Be("Bring the good knives");
     }
 
     [Fact]

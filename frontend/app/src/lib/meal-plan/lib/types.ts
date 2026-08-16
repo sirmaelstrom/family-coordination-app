@@ -12,8 +12,8 @@
 //   backward in US timezones (global CORRECTION / MN4). Use lib/dates.ts, which
 //   parses by splitting on '-' and steps weeks via Date.UTC(...,12).
 //
-// Versionless / last-write-wins: parity ops are add + remove only, so there is
-// NO version/xmin token anywhere on this contract.
+// Each entry carries its xmin token as `version` (PR #95); send it back on every
+// mutation except add, which creates the row.
 // ─────────────────────────────────────────────────────────────────────────
 
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
