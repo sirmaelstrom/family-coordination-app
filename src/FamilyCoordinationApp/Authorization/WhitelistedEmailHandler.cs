@@ -12,6 +12,10 @@ namespace FamilyCoordinationApp.Authorization;
 /// During initial setup (no households exist), authenticated users are allowed through
 /// to complete the setup process.
 /// </summary>
+/// <remarks>
+/// This runs on every authorization evaluation, so it must READ ONLY. The profile refresh that used to happen
+/// here now runs once per sign-in in <see cref="LoginProfileService"/>.
+/// </remarks>
 public class WhitelistedEmailHandler(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     ILogger<WhitelistedEmailHandler> logger,
@@ -44,25 +48,17 @@ public class WhitelistedEmailHandler(
 
         try
         {
-            // Check database for whitelisted user
-            using var dbContext = dbFactory.CreateDbContext();
-            var user = await dbContext.Users
-                .FirstOrDefaultAsync(u => u.Email == email && u.IsWhitelisted);
+            // Check database for whitelisted user. Untracked: this path must not write.
+            await using var dbContext = await dbFactory.CreateDbContextAsync();
+            var whitelisted = await dbContext.Users
+                .AsNoTracking()
+                .AnyAsync(u => u.Email == email && u.IsWhitelisted);
 
-            if (user is not null)
+            if (whitelisted)
             {
-                // Extract profile data from claims
-                var pictureClaim = context.User.FindFirst("urn:google:picture")?.Value;
-                var displayName = context.User.FindFirst(ClaimTypes.Name)?.Value ?? user.DisplayName;
-
-                // Update user profile on every login (Google profile may have changed)
-                user.LastLoginAt = DateTime.UtcNow;
-                user.PictureUrl = pictureClaim;
-                user.Initials = ComputeInitials(displayName);
-                await dbContext.SaveChangesAsync();
-
                 context.Succeed(requirement);
-                logger.LogInformation("User {Email} authorized successfully", email);
+                // Debug, not Information: this runs on every authorized request.
+                logger.LogDebug("User {Email} authorized successfully", email);
             }
             else
             {
@@ -74,20 +70,5 @@ public class WhitelistedEmailHandler(
             logger.LogError(ex, "Error checking whitelist for {Email}", email);
             // Fail authorization on error (safe default)
         }
-    }
-
-    private static string ComputeInitials(string displayName)
-    {
-        if (string.IsNullOrWhiteSpace(displayName))
-            return "?";
-
-        var parts = displayName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 0)
-            return "?";
-        if (parts.Length == 1)
-            return parts[0][0].ToString().ToUpperInvariant();
-
-        // First and last name initials
-        return $"{parts[0][0]}{parts[^1][0]}".ToUpperInvariant();
     }
 }

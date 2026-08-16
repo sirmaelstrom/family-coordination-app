@@ -78,6 +78,11 @@ builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
 
 // Services
 builder.Services.AddScoped<SetupService>();
+// Singleton because SetupService is scoped: the "a household exists" answer is latched process-wide (see
+// SetupCompletionLatch) so the two per-request IsSetupCompleteAsync calls stop querying after the first one.
+builder.Services.AddSingleton<SetupCompletionLatch>();
+// Login-time profile refresh (OnCreatingTicket below) — replaces the per-request write in WhitelistedEmailHandler.
+builder.Services.AddScoped<LoginProfileService>();
 builder.Services.AddScoped<IIngredientParser, IngredientParser>();
 builder.Services.AddScoped<ICategoryInferenceService, CategoryInferenceService>();
 builder.Services.AddScoped<IImageService, ImageService>();
@@ -260,6 +265,15 @@ builder.Services.AddAuthentication(options =>
     options.Scope.Add("email");
     options.Scope.Add("profile");
     
+    // Copy the Google profile claims onto the User row HERE — once per sign-in. Doing it in
+    // WhitelistedEmailHandler meant a DB write before every authorized request. Claim actions have already run,
+    // so ClaimTypes.Email/Name and urn:google:picture are on the principal.
+    options.Events.OnCreatingTicket = async context =>
+    {
+        var profiles = context.HttpContext.RequestServices.GetRequiredService<LoginProfileService>();
+        await profiles.RefreshAsync(context.Principal!, context.HttpContext.RequestAborted);
+    };
+
     // Handle OAuth failures gracefully (e.g., invalid state from key rotation)
     // Instead of showing an error page, redirect to login to start fresh
     options.Events.OnRemoteFailure = context =>
@@ -316,15 +330,24 @@ DevAuthStartupGuard.ThrowIfEnabledOutsideDevelopment(builder.Configuration, buil
 
 var app = builder.Build();
 
+// Apply migrations once, at startup, in EVERY environment. This block used to be Development-only, which left
+// SetupService.IsSetupCompleteAsync's per-call Database.MigrateAsync as the ONLY thing that migrated production:
+// the schema landed on whichever request arrived first after a deploy, and every subsequent request re-took the
+// migrator's ACCESS EXCLUSIVE lock on __EFMigrationsHistory. Nothing else migrates — there is no `dotnet ef` step
+// in the Dockerfile, compose or CI. Failing here is the intended behaviour: compose gates `app` on a healthy
+// `postgres` and restarts it, so a DB that is not ready yields a retry rather than a half-migrated app serving.
+{
+    using var scope = app.Services.CreateScope();
+    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
+    await using var context = await dbFactory.CreateDbContextAsync();
+    await context.Database.MigrateAsync();
+}
+
 // Seed development data
 if (app.Environment.IsDevelopment())
 {
     using var scope = app.Services.CreateScope();
     var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
-
-    // Ensure database is created/migrated
-    using var context = dbFactory.CreateDbContext();
-    await context.Database.MigrateAsync();
 
     await SeedData.SeedDevelopmentDataAsync(dbFactory);
 }
@@ -418,12 +441,11 @@ app.Use(async (context, next) =>
         path.StartsWith("/account") ||
         path.StartsWith("/household") ||
         path.StartsWith("/_") ||   // /_app SPA assets (Blazor's /_framework and /_blazor died in WP-12)
-        // Household user content. REQUIRED, not an optimization: these paths used to be short-circuited by
-        // UseStaticFiles above, and branching them past it (so they can be authorization-gated) also walks
-        // them into this middleware. The suffix list below covers .png but NOT .jpg/.jpeg/.gif/.webp, which
-        // ImageService equally accepts — so without this line a recipe grid of .jpg thumbnails runs one
-        // SetupService.IsSetupCompleteAsync (and therefore one Database.MigrateAsync) PER IMAGE, before
-        // authorization. MapUploadsEndpoints gates these paths itself.
+        // Household user content. Branching these paths past UseStaticFiles (so they can be authorization-gated)
+        // also walks them into this middleware, and the suffix list below covers .png but NOT .jpg/.jpeg/.gif/
+        // .webp, which ImageService equally accepts. Kept as defence in depth on an unauthenticated-reachable
+        // path: what a miss here costs is now bounded by the latch, not by a migration. MapUploadsEndpoints
+        // gates these paths itself.
         path.StartsWith("/uploads") ||
         path.StartsWith("/health") ||
         path.StartsWith("/lib") ||

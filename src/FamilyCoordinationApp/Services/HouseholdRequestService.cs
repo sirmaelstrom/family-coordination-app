@@ -79,6 +79,7 @@ public sealed class HouseholdRequestService(
             GoogleId = request.GoogleId,
             IsWhitelisted = true,
             CreatedAt = now,
+            Initials = UserProfile.ComputeInitials(request.DisplayName),
         });
 
         request.Status = HouseholdRequestStatus.Approved;
@@ -191,15 +192,18 @@ public sealed class HouseholdRequestService(
         context.Households.Add(household);
         await context.SaveChangesAsync(cancellationToken); // assign household.Id for the user FK below
 
+        // Fall back to the email local-part when no display name is given (parity AddMemberAsync).
+        var ownerName = string.IsNullOrWhiteSpace(ownerDisplayName) ? email.Split('@')[0] : ownerDisplayName!.Trim();
+
         context.Users.Add(new User
         {
             HouseholdId = household.Id,
             Email = email,
-            // Fall back to the email local-part when no display name is given (parity AddMemberAsync).
-            DisplayName = string.IsNullOrWhiteSpace(ownerDisplayName) ? email.Split('@')[0] : ownerDisplayName!.Trim(),
+            DisplayName = ownerName,
             GoogleId = null, // set when the owner first logs in with Google (parity AddMemberAsync)
             IsWhitelisted = true,
             CreatedAt = now,
+            Initials = UserProfile.ComputeInitials(ownerName),
         });
 
         SeedData.AddDefaultCategories(context, household.Id);
