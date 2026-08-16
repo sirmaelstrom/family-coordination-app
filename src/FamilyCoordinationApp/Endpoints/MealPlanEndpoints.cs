@@ -36,6 +36,7 @@ public static class MealPlanEndpoints
         group.MapGet("/board", GetBoard);
         group.MapPost("/entries", AddEntry);
         group.MapPatch("/entries/{mealPlanId:int}/{entryId:int}", MoveEntry);
+        group.MapPatch("/entries/{mealPlanId:int}/{entryId:int}/servings", SetEntryServings);
         group.MapDelete("/entries/{mealPlanId:int}/{entryId:int}", RemoveEntry);
 
         group.MapGet("/recipes", SearchRecipes);
@@ -155,6 +156,36 @@ public static class MealPlanEndpoints
         }
     }
 
+    private static async Task<IResult> SetEntryServings(
+        int mealPlanId,
+        int entryId,
+        SetEntryServingsRequest req,
+        ClaimsPrincipal principal,
+        IMealPlanService mealPlanService,
+        IMealPlanBoardService boardService,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
+        if (user is null) return Results.Unauthorized();
+
+        try
+        {
+            // The service loads the Recipe nav, so the response reuses the ONE board projection (M9).
+            var entry = await mealPlanService.SetMealServingsAsync(
+                user.HouseholdId, mealPlanId, entryId, req.Servings, user.UserId, ct);
+            return Results.Ok(boardService.ProjectEntry(entry, entry.Recipe));
+        }
+        catch (InvalidOperationException)
+        {
+            return Results.NotFound(new { message = "Meal entry not found." });
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { message = ex.Message });
+        }
+    }
+
     private static async Task<IResult> RemoveEntry(
         int mealPlanId,
         int entryId,
@@ -265,6 +296,14 @@ public static class MealPlanEndpoints
     /// the entry's plan week — a cross-week target is a 400 (a plan owns exactly one week).
     /// </summary>
     public sealed record MoveEntryRequest(DateOnly Date, MealType MealType);
+
+    /// <summary>
+    /// How many people this meal is being cooked for. <c>null</c> clears the override, putting the meal back to
+    /// the recipe as written; a non-positive number is a 400. Shopping-list generation scales this entry's
+    /// ingredients by <c>Servings / Recipe.Servings</c>, and by nothing when either side is missing.
+    /// Versionless — the meal-plan 409 treatment is quest f5/076a2678, which covers every entry mutation.
+    /// </summary>
+    public sealed record SetEntryServingsRequest(int? Servings);
 
     /// <summary>Quick-create a bare recipe from the picker's "New Recipe" tab (details added later).</summary>
     public sealed record QuickCreateRecipeRequest(string Name, RecipeType RecipeType);

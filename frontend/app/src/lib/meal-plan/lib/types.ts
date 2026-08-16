@@ -35,6 +35,8 @@ export interface MealRecipeSummaryDto {
   name: string;
   imagePath: string | null;
   recipeType: RecipeType;
+  /** The recipe's own yield — the denominator an entry's `servings` override is relative to. */
+  servings: number | null;
 }
 
 /** One planned meal. Exactly one of `recipe` / `customMealName` is set. */
@@ -47,6 +49,12 @@ export interface MealPlanEntryDto {
   recipe: MealRecipeSummaryDto | null;
   customMealName: string | null;
   notes: string | null;
+  /**
+   * How many people this meal is being cooked for. `null` means "as the recipe is written" — shopping-list
+   * generation then scales this entry's ingredients by `servings / recipe.servings`, and by nothing while
+   * either side is null. Never 0.
+   */
+  servings: number | null;
 }
 
 /** The week board: the Monday it covers, the plan id (null when none yet), and its entries. */

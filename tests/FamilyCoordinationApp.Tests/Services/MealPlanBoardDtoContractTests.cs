@@ -40,27 +40,31 @@ public class MealPlanBoardDtoContractTests
     {
         var entries = new List<MealPlanEntryDto>
         {
-            // Recipe entry WITH image, no notes — breakfast, day 1.
+            // Recipe entry WITH image, no notes — breakfast, day 1. No servings override: the recipe
+            // declares its own yield and the meal is cooked as written (factor 1).
             new(
                 MealPlanId: 5,
                 EntryId: 1,
                 Date: new DateOnly(2026, 6, 1),
                 MealType: MealType.Breakfast,
-                Recipe: new MealRecipeSummaryDto(10, "Overnight Oats", "/uploads/1/oats.jpg", RecipeType.Breakfast),
+                Recipe: new MealRecipeSummaryDto(10, "Overnight Oats", "/uploads/1/oats.jpg", RecipeType.Breakfast, Servings: 2),
                 CustomMealName: null,
-                Notes: null),
+                Notes: null,
+                Servings: null),
 
-            // Recipe entry WITHOUT image, with notes — dinner, day 1, a Main dish.
+            // Recipe entry WITHOUT image, with notes — dinner, day 1, a Main dish. The override case: cooked
+            // for 8 against a recipe that yields 4, so generation scales this entry's ingredients by 2.
             new(
                 MealPlanId: 5,
                 EntryId: 2,
                 Date: new DateOnly(2026, 6, 1),
                 MealType: MealType.Dinner,
-                Recipe: new MealRecipeSummaryDto(11, "Spaghetti Bolognese", null, RecipeType.Main),
+                Recipe: new MealRecipeSummaryDto(11, "Spaghetti Bolognese", null, RecipeType.Main, Servings: 4),
                 CustomMealName: null,
-                Notes: "Double batch for leftovers"),
+                Notes: "Double batch for leftovers",
+                Servings: 8),
 
-            // Custom meal entry — lunch, day 2.
+            // Custom meal entry — lunch, day 2. No recipe, so nothing to scale against.
             new(
                 MealPlanId: 5,
                 EntryId: 3,
@@ -68,7 +72,8 @@ public class MealPlanBoardDtoContractTests
                 MealType: MealType.Lunch,
                 Recipe: null,
                 CustomMealName: "Leftovers",
-                Notes: "Sunday's roast"),
+                Notes: "Sunday's roast",
+                Servings: null),
         };
 
         return new MealPlanBoardDto(
@@ -111,26 +116,32 @@ public class MealPlanBoardDtoContractTests
 
         var firstEntry = root["entries"]!.AsArray()[0]!.AsObject();
         firstEntry.Select(kvp => kvp.Key).Should().BeEquivalentTo(
-            "mealPlanId", "entryId", "date", "mealType", "recipe", "customMealName", "notes");
+            "mealPlanId", "entryId", "date", "mealType", "recipe", "customMealName", "notes", "servings");
 
         // MealType serializes as a camelCase enum string (NOT an integer, NOT PascalCase).
         firstEntry["mealType"]!.GetValue<string>().Should().Be("breakfast");
         firstEntry["date"]!.GetValue<string>().Should().Be("2026-06-01");
         firstEntry["customMealName"].Should().BeNull();
         firstEntry["notes"].Should().BeNull();
+        // No override: null must survive as null, not collapse to 0 — 0 would mean "cook none of it".
+        firstEntry["servings"].Should().BeNull();
 
         var firstRecipe = firstEntry["recipe"]!.AsObject();
         firstRecipe.Select(kvp => kvp.Key).Should().BeEquivalentTo(
-            "recipeId", "name", "imagePath", "recipeType");
+            "recipeId", "name", "imagePath", "recipeType", "servings");
         // RecipeType is also a camelCase enum string.
         firstRecipe["recipeType"]!.GetValue<string>().Should().Be("breakfast");
+        firstRecipe["servings"]!.GetValue<int>().Should().Be(2);
 
-        // Second entry: a recipe with a null image + a Main dish + notes.
+        // Second entry: a recipe with a null image + a Main dish + notes, and the servings override — the
+        // pair the client needs to render "serves 4, cooking for 8".
         var secondEntry = root["entries"]!.AsArray()[1]!.AsObject();
         secondEntry["mealType"]!.GetValue<string>().Should().Be("dinner");
         secondEntry["recipe"]!.AsObject()["imagePath"].Should().BeNull();
         secondEntry["recipe"]!.AsObject()["recipeType"]!.GetValue<string>().Should().Be("main");
+        secondEntry["recipe"]!.AsObject()["servings"]!.GetValue<int>().Should().Be(4);
         secondEntry["notes"]!.GetValue<string>().Should().Be("Double batch for leftovers");
+        secondEntry["servings"]!.GetValue<int>().Should().Be(8);
 
         // Third entry: a custom meal (recipe null, customMealName set).
         var thirdEntry = root["entries"]!.AsArray()[2]!.AsObject();

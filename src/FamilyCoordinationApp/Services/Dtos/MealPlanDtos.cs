@@ -25,7 +25,11 @@ public sealed record MealPlanBoardDto(
     int? MealPlanId,
     IReadOnlyList<MealPlanEntryDto> Entries);
 
-/// <summary>One planned meal. Exactly one of <see cref="Recipe"/> / <see cref="CustomMealName"/> is set.</summary>
+/// <summary>
+/// One planned meal. Exactly one of <see cref="Recipe"/> / <see cref="CustomMealName"/> is set.
+/// <see cref="Servings"/> is how many this meal is being cooked for; null means "as the recipe is written",
+/// which is what shopping-list generation scales against.
+/// </summary>
 public sealed record MealPlanEntryDto(
     int MealPlanId,
     int EntryId,
@@ -33,14 +37,20 @@ public sealed record MealPlanEntryDto(
     MealType MealType,
     MealRecipeSummaryDto? Recipe,
     string? CustomMealName,
-    string? Notes);
+    string? Notes,
+    int? Servings);
 
-/// <summary>The lightweight recipe shape a slot card renders (board payload stays lean).</summary>
+/// <summary>
+/// The lightweight recipe shape a slot card renders (board payload stays lean). <see cref="Servings"/> is the
+/// recipe's own yield — the denominator the entry's override is relative to, so the client can show what a
+/// change actually means rather than a bare number.
+/// </summary>
 public sealed record MealRecipeSummaryDto(
     int RecipeId,
     string Name,
     string? ImagePath,
-    RecipeType RecipeType);
+    RecipeType RecipeType,
+    int? Servings);
 
 /// <summary>
 /// Read-only recipe detail for the in-island view modal. <see cref="InstructionsHtml"/> is server-sanitized

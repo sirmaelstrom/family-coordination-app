@@ -11,10 +11,12 @@
         "recipeId": 10,
         "name": "Overnight Oats",
         "imagePath": "/uploads/1/oats.jpg",
-        "recipeType": "breakfast"
+        "recipeType": "breakfast",
+        "servings": 2
       },
       "customMealName": null,
-      "notes": null
+      "notes": null,
+      "servings": null
     },
     {
       "mealPlanId": 5,
@@ -25,10 +27,12 @@
         "recipeId": 11,
         "name": "Spaghetti Bolognese",
         "imagePath": null,
-        "recipeType": "main"
+        "recipeType": "main",
+        "servings": 4
       },
       "customMealName": null,
-      "notes": "Double batch for leftovers"
+      "notes": "Double batch for leftovers",
+      "servings": 8
     },
     {
       "mealPlanId": 5,
@@ -37,7 +41,8 @@
       "mealType": "lunch",
       "recipe": null,
       "customMealName": "Leftovers",
-      "notes": "Sunday's roast"
+      "notes": "Sunday's roast",
+      "servings": null
     }
   ]
 }

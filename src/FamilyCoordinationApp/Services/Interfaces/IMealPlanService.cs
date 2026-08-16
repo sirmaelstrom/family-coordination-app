@@ -16,6 +16,13 @@ public interface IMealPlanService
     /// </summary>
     Task<MealPlanEntry> MoveMealAsync(int householdId, int mealPlanId, int entryId, DateOnly newDate, MealType newMealType, int? userId = null, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Set how many people this meal is being cooked for; null clears the override back to "as the recipe is
+    /// written". Shopping-list generation scales that entry's ingredients by <c>servings / Recipe.Servings</c>.
+    /// Household-scoped: a cross-household id finds nothing and throws.
+    /// </summary>
+    Task<MealPlanEntry> SetMealServingsAsync(int householdId, int mealPlanId, int entryId, int? servings, int? userId = null, CancellationToken cancellationToken = default);
+
     Task RemoveMealAsync(int householdId, int mealPlanId, int entryId, CancellationToken cancellationToken = default);
     DateOnly GetWeekStartDate(DateOnly date);
 }
