@@ -1,5 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Capacity-fit — the pure logic behind the up-for-grabs "Fits me" affordance
+// Capacity-fit — the pure logic behind the up-for-grabs "Fits me" affordance.
+// This module is the pinned MIRROR of the server's ChoreCapacity (quest e7f8be86):
+// capacity-ladder.json is byte-compared to that module and list-equality-checked
+// against these functions in capacity-fit.test.ts — change the doctrine there first.
 // (Phase 15 R4′ WP-03). Deliberately RUNE-FREE and dependency-free (only type
 // imports) so it is trivially unit-testable in isolation (V1.6) and so the store
 // + components share ONE source of truth for the whitelist gate + the fit sets.

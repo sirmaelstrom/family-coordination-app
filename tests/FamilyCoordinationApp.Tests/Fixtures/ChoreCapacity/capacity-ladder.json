@@ -1,0 +1,20 @@
+{
+  "showsFitsMe": {
+    "Full": false,
+    "Reduced": true,
+    "Minimal": true,
+    "unset": false
+  },
+  "fitSets": {
+    "Full": ["Quick", "Standard", "BigJob"],
+    "Reduced": ["Quick", "Standard"],
+    "Minimal": ["Quick"],
+    "unset": ["Quick", "Standard", "BigJob"]
+  },
+  "weights": {
+    "Full": 1,
+    "Reduced": 0.5,
+    "Minimal": 0.15,
+    "unset": 1
+  }
+}

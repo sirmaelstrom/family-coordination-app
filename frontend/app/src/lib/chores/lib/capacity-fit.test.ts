@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { showsFitsMe, fitSetFor, fitsCapacity } from './capacity-fit';
+import ladder from '../../../../../../tests/FamilyCoordinationApp.Tests/Fixtures/ChoreCapacity/capacity-ladder.json';
+import type { CapacityTier } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────
 // V1.6 — the ONE automatable proof of the R4′ founding-case guarantee. The
@@ -48,5 +50,29 @@ describe('fitsCapacity — membership against the fit set', () => {
   it('a Full/unset viewer fits everything (filter is a no-op)', () => {
     expect(fitsCapacity('BigJob', 'Full')).toBe(true);
     expect(fitsCapacity('BigJob', null)).toBe(true);
+  });
+});
+
+describe('the capacity-ladder pin (quest e7f8be86)', () => {
+  // This module is the MIRROR of the server's ChoreCapacity; the fixture is byte-compared to that
+  // module's own output on the C# side (ChoreCapacityTests), so these list-equality checks close
+  // the loop: a doctrine change on either side fails CI until both move together.
+  it('showsFitsMe matches the pinned ladder for every tier row', () => {
+    const rows: [string, CapacityTier | null][] = [
+      ['Full', 'Full'],
+      ['Reduced', 'Reduced'],
+      ['Minimal', 'Minimal'],
+      ['unset', null],
+    ];
+    for (const [key, tier] of rows) {
+      expect(showsFitsMe(tier), key).toBe(ladder.showsFitsMe[key as keyof typeof ladder.showsFitsMe]);
+    }
+  });
+
+  it('fit sets match the pinned ladder exactly', () => {
+    expect([...fitSetFor('Full')]).toEqual(ladder.fitSets.Full);
+    expect([...fitSetFor('Reduced')]).toEqual(ladder.fitSets.Reduced);
+    expect([...fitSetFor('Minimal')]).toEqual(ladder.fitSets.Minimal);
+    expect([...fitSetFor(null)]).toEqual(ladder.fitSets.unset);
   });
 });

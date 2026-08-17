@@ -62,19 +62,13 @@ public class ChoreEquityCalculator
         new Dictionary<int, string?>();
 
     /// <summary>
-    /// Physical-capacity tier → expected-share weight (Phase 15 D3). <c>Full</c>=1.0, <c>Reduced</c>=0.5,
-    /// <c>Minimal</c>=0.15 (NOT zero — keeps a Minimal member's reference humane and Σweight&gt;0). A
-    /// null/absent/unrecognized tier is treated as <c>Full</c>. Tier strings mirror <c>CapacityTier.All</c>.
+    /// Physical-capacity tier → expected-share weight. The numbers live in <see cref="ChoreCapacity"/> —
+    /// the one owner of the capacity doctrine (quest e7f8be86); this is only the per-user lookup.
     /// </summary>
     private static double WeightFor(IReadOnlyDictionary<int, string?> tiers, int userId)
     {
         tiers.TryGetValue(userId, out var tier);
-        return tier switch
-        {
-            "Reduced" => 0.5,
-            "Minimal" => 0.15,
-            _ => 1.0, // Full, null, or any unrecognized value
-        };
+        return ChoreCapacity.WeightFor(tier);
     }
 
     /// <summary>
