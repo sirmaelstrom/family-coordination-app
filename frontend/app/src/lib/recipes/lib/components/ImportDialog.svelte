@@ -10,8 +10,12 @@
   import { base } from '$app/paths';
   import { goto } from '$app/navigation';
   import { previewImport, createRecipe, ApiError } from '../api';
-  import type { PartialRecipeDataDto, RecipePreviewDto, RecipeWriteRequest } from '../types';
-  import { formatExactQuantity } from '../quantity';
+  import {
+    decodePreview,
+    previewViewModel,
+    toWriteRequest,
+    type ImportOutcome,
+  } from '../importFlow';
 
   interface Props {
     open: boolean;
@@ -24,56 +28,30 @@
   let dialogEl: HTMLDialogElement | null = $state(null);
   let url = $state('');
   let importing = $state(false);
-  let error = $state<string | null>(null);
-  let existingId = $state<number | null>(null);
-  let showManual = $state(false);
-
-  // Preview phase state. `preview` = full parse; `partial` = degraded parse (still shown).
-  let phase = $state<'url' | 'preview'>('url');
-  let preview = $state<RecipePreviewDto | null>(null);
-  let partial = $state<PartialRecipeDataDto | null>(null);
-  let previewWarning = $state<string | null>(null);
   let confirming = $state(false);
   let confirmError = $state<string | null>(null);
 
+  // ONE outcome (the importFlow state machine — quest 1a8b49ea); every flag the template
+  // reads is a projection of it, so there are no hand-maintained clear-lists left to drift.
+  let outcome = $state<ImportOutcome | null>(null);
+
+  let phase = $derived(
+    outcome?.kind === 'preview' || outcome?.kind === 'partial' ? 'preview' : 'url',
+  );
+  let preview = $derived(outcome?.kind === 'preview' ? outcome.preview : null);
+  let partial = $derived(outcome?.kind === 'partial' ? outcome.partial : null);
+  let previewWarning = $derived(outcome?.kind === 'partial' ? outcome.warning : null);
+  let error = $derived(
+    outcome?.kind === 'duplicate' || outcome?.kind === 'error' ? outcome.message : null,
+  );
+  let existingId = $derived(outcome?.kind === 'duplicate' ? outcome.existingRecipeId : null);
+  let showManual = $derived(outcome?.kind === 'error' && outcome.offerManual);
+
   let isYouTube = $derived(/youtube\.com|youtu\.be/i.test(url));
 
-  // One render model for both full and partial previews.
-  let view = $derived.by(() => {
-    if (preview) {
-      return {
-        name: preview.name as string | null,
-        description: preview.description,
-        instructions: preview.instructions,
-        imageUrl: preview.imagePath,
-        sourceUrl: preview.sourceUrl ?? url.trim(),
-        servings: preview.servings,
-        prepTimeMinutes: preview.prepTimeMinutes,
-        cookTimeMinutes: preview.cookTimeMinutes,
-        ingredients: preview.ingredients.map((i) => {
-          const qty = i.quantity != null ? formatExactQuantity(i.quantity) : null;
-          const line = [qty, i.unit, i.name].filter(Boolean).join(' ');
-          return i.notes ? `${line} (${i.notes})` : line;
-        }),
-      };
-    }
-    if (partial) {
-      return {
-        name: partial.name,
-        description: partial.description,
-        instructions: partial.instructions,
-        imageUrl: partial.imageUrl,
-        sourceUrl: url.trim(),
-        servings: partial.servings,
-        prepTimeMinutes: partial.prepTimeMinutes,
-        cookTimeMinutes: partial.cookTimeMinutes,
-        ingredients: partial.ingredientStrings ?? [],
-      };
-    }
-    return null;
-  });
+  let view = $derived(previewViewModel(outcome, url));
 
-  let canConfirm = $derived(!confirming && (preview != null || !!partial?.name?.trim()));
+  let canConfirm = $derived(!confirming && toWriteRequest(outcome, url) != null);
 
   $effect(() => {
     if (!dialogEl) return;
@@ -87,15 +65,9 @@
   function reset(): void {
     url = '';
     importing = false;
-    error = null;
-    existingId = null;
-    showManual = false;
-    phase = 'url';
-    preview = null;
-    partial = null;
-    previewWarning = null;
     confirming = false;
     confirmError = null;
+    outcome = null;
   }
 
   function handleClose(): void {
@@ -105,51 +77,26 @@
 
   /** Back to the URL step — discards the preview (nothing was persisted). */
   function backToUrl(): void {
-    phase = 'url';
-    preview = null;
-    partial = null;
-    previewWarning = null;
+    outcome = null;
     confirmError = null;
-    error = null;
   }
 
   async function doPreview(force = false): Promise<void> {
     if (!url.trim() || importing) return;
     importing = true;
-    error = null;
-    showManual = false;
-    existingId = null;
+    outcome = null;
     try {
-      const res = await previewImport(url.trim(), force);
-      if (res.success && res.recipe != null) {
-        preview = res.recipe;
-        partial = null;
-        previewWarning = null;
-        phase = 'preview';
-        return;
-      }
-      if (res.existingRecipeId != null) {
-        existingId = res.existingRecipeId;
-        error = res.errorMessage ?? 'This recipe has already been imported.';
-        return;
-      }
-      if (res.partialData != null) {
-        // Failure honesty: show what DID come back before the user decides.
-        preview = null;
-        partial = res.partialData;
-        previewWarning = res.errorMessage ?? 'Only part of the recipe could be extracted.';
-        phase = 'preview';
-        return;
-      }
-      error = res.errorMessage ?? 'Import failed for unknown reason.';
-      // Offer manual entry unless the URL itself was invalid.
-      showManual = res.errorType !== 'InvalidUrl';
+      // The response→outcome decision ladder lives in importFlow.decodePreview.
+      outcome = decodePreview(await previewImport(url.trim(), force));
     } catch (e) {
-      error =
-        e instanceof ApiError
-          ? `Import failed (HTTP ${e.status}).`
-          : 'An error occurred during import.';
-      showManual = true;
+      outcome = {
+        kind: 'error',
+        message:
+          e instanceof ApiError
+            ? `Import failed (HTTP ${e.status}).`
+            : 'An error occurred during import.',
+        offerManual: true,
+      };
     } finally {
       importing = false;
     }
@@ -157,34 +104,8 @@
 
   /** Confirm: create the previewed recipe via the plain create endpoint, then navigate. */
   async function confirmImport(): Promise<void> {
-    if (!canConfirm) return;
-    // version: null — this is a CREATE; the xmin concurrency token only applies to edits (PUT).
-    const body: RecipeWriteRequest | null = preview
-      ? { ...preview, version: null }
-      : partial?.name?.trim()
-        ? {
-            version: null,
-            name: partial.name.trim(),
-            description: partial.description,
-            instructions: partial.instructions,
-            sourceUrl: url.trim(),
-            servings: partial.servings,
-            prepTimeMinutes: partial.prepTimeMinutes,
-            cookTimeMinutes: partial.cookTimeMinutes,
-            recipeType: 'main',
-            imagePath: partial.imageUrl,
-            ingredients: (partial.ingredientStrings ?? []).map((s, i) => ({
-              name: s,
-              quantity: null,
-              unit: null,
-              category: 'Pantry',
-              notes: null,
-              groupName: null,
-              sortOrder: i,
-            })),
-          }
-        : null;
-    if (!body) return;
+    const body = toWriteRequest(outcome, url);
+    if (confirming || body == null) return;
 
     confirming = true;
     confirmError = null;
