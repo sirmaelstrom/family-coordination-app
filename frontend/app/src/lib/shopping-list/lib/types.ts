@@ -28,6 +28,8 @@ export interface ShoppingListDto {
   name: string;
   isFavorite: boolean;
   isArchived: boolean;
+  /** Gates the Regenerate menu action — only meal-plan-generated lists can rebuild. */
+  hasMealPlan: boolean;
   items: ShoppingListItemDto[];
 }
 
@@ -37,4 +39,15 @@ export interface ShoppingListSummaryDto {
   isFavorite: boolean;
   itemCount: number;
   uncheckedCount: number;
+}
+
+/** Past-lists browse row (GET /archived). `createdAt` is a FULL ISO-8601 instant (UTC). */
+export interface ArchivedListSummaryDto {
+  id: number;
+  name: string;
+  isFavorite: boolean;
+  itemCount: number;
+  uncheckedCount: number;
+  createdAt: string;
+  hasMealPlan: boolean;
 }

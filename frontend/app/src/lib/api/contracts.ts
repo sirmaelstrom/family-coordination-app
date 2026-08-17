@@ -45,7 +45,11 @@ import type {
 } from '../settings/lib/types';
 import type { ConnectionsDto } from '../connections/lib/types';
 import type { FeedbackListDto, HouseholdRequestsDto } from '../admin/lib/types';
-import type { ShoppingListDto, ShoppingListSummaryDto } from '../shopping-list/lib/types';
+import type {
+  ArchivedListSummaryDto,
+  ShoppingListDto,
+  ShoppingListSummaryDto,
+} from '../shopping-list/lib/types';
 
 // ── Wire-enum vocabularies (Fixtures/Enums/wire-enums.json) ────────────────
 //
@@ -488,6 +492,7 @@ const shoppingList = objectOf({
   name: str,
   isFavorite: bool,
   isArchived: bool,
+  hasMealPlan: bool,
   items: arrayOf(
     objectOf({
       id: num,
@@ -508,6 +513,18 @@ const shoppingList = objectOf({
 
 const shoppingListSummaries = arrayOf(
   objectOf({ id: num, name: str, isFavorite: bool, itemCount: num, uncheckedCount: num })
+);
+
+const archivedListSummaries = arrayOf(
+  objectOf({
+    id: num,
+    name: str,
+    isFavorite: bool,
+    itemCount: num,
+    uncheckedCount: num,
+    createdAt: str,
+    hasMealPlan: bool,
+  })
 );
 
 // ── The manifest ────────────────────────────────────────────────────────────
@@ -539,6 +556,7 @@ interface PinnedTypes {
   MemberListDto: MemberListDto;
   ShoppingListDto: ShoppingListDto;
   'ShoppingListSummaryDto[]': ShoppingListSummaryDto[];
+  'ArchivedListSummaryDto[]': ArchivedListSummaryDto[];
 }
 
 const SHAPES: { readonly [K in keyof PinnedTypes]: Shape<PinnedTypes[K]> } = {
@@ -562,6 +580,7 @@ const SHAPES: { readonly [K in keyof PinnedTypes]: Shape<PinnedTypes[K]> } = {
   MemberListDto: memberList,
   ShoppingListDto: shoppingList,
   'ShoppingListSummaryDto[]': shoppingListSummaries,
+  'ArchivedListSummaryDto[]': archivedListSummaries,
 };
 
 const PIN_FIXTURES: { readonly [K in keyof PinnedTypes]: string } = {
@@ -585,6 +604,7 @@ const PIN_FIXTURES: { readonly [K in keyof PinnedTypes]: string } = {
   MemberListDto: 'Settings/members.json',
   ShoppingListDto: 'ShoppingList/list.json',
   'ShoppingListSummaryDto[]': 'ShoppingList/summaries.json',
+  'ArchivedListSummaryDto[]': 'ShoppingList/archived-summaries.json',
 };
 
 export interface ContractPin {

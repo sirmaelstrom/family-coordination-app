@@ -3,6 +3,7 @@
   "name": "Weekly Shop",
   "isFavorite": true,
   "isArchived": false,
+  "hasMealPlan": false,
   "items": [
     {
       "id": 1,

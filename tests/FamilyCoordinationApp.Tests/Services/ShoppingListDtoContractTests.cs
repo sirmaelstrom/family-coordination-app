@@ -40,6 +40,7 @@ public class ShoppingListDtoContractTests
         Name: "Weekly Shop",
         IsFavorite: true,
         IsArchived: false,
+        HasMealPlan: false,
         Items: new List<ShoppingListEndpoints.ShoppingListItemDto>
         {
             new(Id: 1, Name: "Bananas", Quantity: 2.5m, Unit: "lb", Category: "Produce",
@@ -74,7 +75,7 @@ public class ShoppingListDtoContractTests
     {
         var root = JsonNode.Parse(JsonSerializer.Serialize(BuildRepresentativeList(), ShoppingListJsonOptions))!.AsObject();
 
-        root.Select(kvp => kvp.Key).Should().BeEquivalentTo("id", "name", "isFavorite", "isArchived", "items");
+        root.Select(kvp => kvp.Key).Should().BeEquivalentTo("id", "name", "isFavorite", "isArchived", "hasMealPlan", "items");
 
         var items = root["items"]!.AsArray();
         items[0]!.AsObject().Select(kvp => kvp.Key).Should().BeEquivalentTo(
