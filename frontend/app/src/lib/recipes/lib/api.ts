@@ -32,7 +32,7 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 
-  /** A non-retryable client rejection (validation / not found, incl. the empty-400 quirk). Any 4xx. */
+  /** A non-retryable client rejection (validation / not found). Any 4xx. */
   get isClientRejection(): boolean {
     return this.status >= 400 && this.status < 500;
   }
@@ -83,7 +83,7 @@ export async function updateRecipe(recipeId: number, body: RecipeWriteRequest): 
   return request<RecipeFullDto>(`${BASE}/${recipeId}`, { method: 'PUT', ...jsonBody(body) });
 }
 
-/** #5 Soft-delete → 204. A missing recipe → 404/empty-400. */
+/** #5 Soft-delete → 204. A missing recipe → 404. */
 export async function deleteRecipe(recipeId: number): Promise<void> {
   await request<void>(`${BASE}/${recipeId}`, { method: 'DELETE' });
 }

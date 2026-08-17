@@ -793,7 +793,7 @@ class BoardStore {
   //      NOT silently retry — that could clobber the other user's claim (MN8
   //      spirit). A brief "someone got there first — refreshed" notice explains it.
   //   4. OTHER 4xx (ApiError.isClientRejection — non-retryable: validation, an
-  //      illegal transition, or the WP-08 empty-400-that-is-really-404): roll
+  //      illegal transition, or a 404 for a chore someone else deleted): roll
   //      back, refetch to resync, surface a non-alarming toast. Not a crash.
   //   5. NETWORK / 5xx: roll back + error toast; the action can be retried.
   // ─────────────────────────────────────────────────────────────────────────
@@ -941,7 +941,7 @@ class BoardStore {
         await this.reconcile();
         showToast({ message: conflictMessage, kind: 'info' });
       } else if (e instanceof ApiError && e.isClientRejection) {
-        // Other 4xx (incl. the empty-400-from-404 WP-08 quirk). Resync + notice.
+        // Other 4xx (e.g. a 404 for a chore already gone). Resync + notice.
         await this.reconcile();
         showToast({
           message: "That didn't go through — the board has been refreshed.",

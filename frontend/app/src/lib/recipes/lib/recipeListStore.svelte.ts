@@ -180,7 +180,7 @@ class RecipeListStore {
 
   /**
    * Delete a recipe (own household only). Optimistic removal from the grid, then
-   * DELETE; on a 4xx (incl. the empty-400-from-404 quirk) reconcile to truth, on
+   * DELETE; on a 4xx reconcile to truth, on
    * network/5xx restore the card.
    */
   async deleteRecipe(id: number): Promise<void> {

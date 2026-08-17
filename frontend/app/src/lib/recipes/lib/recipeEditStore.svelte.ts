@@ -445,7 +445,7 @@ class RecipeEditStore {
         // dirty, so the nav-lock still guards) and show the reload banner instead of navigating away.
         this.conflict = true;
       } else if (e instanceof ApiError) {
-        // Other 4xx incl. the empty-400-from-404 quirk → concurrent delete etc.
+        // Other 4xx (e.g. a 404 from a concurrent delete).
         this.error = 'This recipe changed since you opened it.';
         this.dirty = false;
         showToast({ message: 'This recipe changed — returning to the list.', kind: 'info' });

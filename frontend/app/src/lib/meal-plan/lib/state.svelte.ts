@@ -230,7 +230,7 @@ class MealPlanStore {
    * Move an entry to another slot in the SAME week (drag-to-assign). Optimistic
    * re-slot, then PATCH; the server echo is merged back (authoritative
    * UpdatedAt/UpdatedBy). Mirrors removeEntry's failure split: any 4xx (cross-
-   * week, duplicate-in-slot, entry gone — incl. the empty-400-from-404 quirk)
+   * week, duplicate-in-slot, entry gone — a clean 404 since PR #90)
    * → reconcile + calm toast; network/5xx → revert the optimistic move (the
    * same transform aimed back at the original slot) + error toast. Same
    * targetWeek stale-response guard as addEntry.
@@ -342,7 +342,7 @@ class MealPlanStore {
 
   /**
    * Remove an entry — optimistic splice, then DELETE. On any error reconcile +
-   * calm toast. A missing entry (already removed by someone else) → 404/empty-400
+   * calm toast. A missing entry (already removed by someone else) → 404
    * → the refetch shows the true state.
    */
   async removeEntry(mealPlanId: number, entryId: number, version: number): Promise<void> {
@@ -366,7 +366,7 @@ class MealPlanStore {
       // we deleted from, and restoring into it would splice a foreign entry into the visible week.
       if (this.weekStart !== targetWeek) return;
       if (e instanceof ApiError) {
-        // Any 4xx (incl. the empty-400-from-404 quirk) — resync to truth. A 409 specifically means
+        // Any 4xx (a missing entry is a clean 404 since PR #90) — resync to truth. A 409 specifically means
         // someone else changed this entry after we read it, so say so rather than the generic line.
         await this.reconcile();
         showToast({
