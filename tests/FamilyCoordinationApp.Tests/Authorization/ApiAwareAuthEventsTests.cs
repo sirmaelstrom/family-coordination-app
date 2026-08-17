@@ -37,7 +37,7 @@ public sealed class ApiAwareAuthEventsTests
         ctx.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
         ctx.Response.Headers.ContainsKey("Location").Should().BeFalse("an /api auth failure must not 302-redirect");
         ctx.Response.Body.Length.Should().BeGreaterThan(0,
-            "an empty-body 4xx gets re-executed through the GET-only /not-found page — a non-GET /api call would surface as 405");
+            "API auth failures write a specific JSON body rather than rely on the generic /api backfill");
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public sealed class ApiAwareAuthEventsTests
 
         ctx.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         ctx.Response.Body.Length.Should().BeGreaterThan(0,
-            "an empty-body 4xx gets re-executed through the GET-only /not-found page — a non-GET /api call would surface as 405");
+            "API auth failures write a specific JSON body rather than rely on the generic /api backfill");
     }
 
     [Theory]

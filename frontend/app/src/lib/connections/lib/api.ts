@@ -10,10 +10,9 @@ const BASE = '/api/settings/connections';
 /**
  * Thrown on any non-2xx response. `status` lets callers react to a rejection.
  *
- * ⚠ Carried from the other islands: the app re-executes empty-body API 4xx
- * through a Blazor `/not-found` page, so a server-side "not found" can arrive
- * as an empty 400 (a bare DELETE 404 even surfaces as 405). The connections
- * endpoints return outcome envelopes (200) for the expected validate/accept flow
+ * Since PR #90, /api preserves an error's real status and backfills a generic JSON
+ * `{ message }` only when no body was written. The connections endpoints return
+ * outcome envelopes (200) for the expected validate/accept flow
  * results, so a 4xx here is a genuine error (or 401) — treat ANY 4xx as a
  * non-retryable client rejection.
  */

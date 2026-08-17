@@ -15,8 +15,7 @@ namespace FamilyCoordinationApp.Endpoints;
 /// <see cref="IHouseholdMemberService"/> (the safety rules live there, server-enforced — review R-A2).
 ///
 /// <para>Parity-first ⇒ versionless / last-write-wins. Not-found / rejection responses carry a NON-EMPTY body so
-/// the app-global <c>UseStatusCodePagesWithReExecute</c> leaves them as clean 4xx (an empty 404 on a non-GET
-/// surfaces as a 405). Add-member returns 200 + an outcome envelope for the benign cases and 409 ONLY for the
+/// callers receive specific detail instead of the generic /api backfill. Add-member returns 200 + an outcome envelope for the benign cases and 409 ONLY for the
 /// cross-household collision (review R-A1). LITERAL routes (<c>/categories/sort-order</c>) are registered BEFORE the
 /// parameterized <c>/categories/{id}</c> routes so the matcher doesn't shadow them (the #53 route-order gotcha).</para>
 /// </summary>

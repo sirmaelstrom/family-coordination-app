@@ -25,8 +25,8 @@ namespace FamilyCoordinationApp.Endpoints;
 /// <para><b>Email plumbing (R-C5):</b> <see cref="UserContextResolver"/> intentionally drops the email (returns
 /// only HouseholdId/UserId), so the site-admin check reads <c>ClaimTypes.Email</c> from the principal DIRECTLY,
 /// and the resolver is called separately only for the household scope. <b>Non-empty 4xx (R-C5 / memory
-/// fca-empty-404-surfaces-as-405-on-delete):</b> the 403 and the IDOR 404 both carry a JSON body, else the global
-/// <c>UseStatusCodePagesWithReExecute</c> re-executes an empty non-GET 4xx as a 405.</para>
+/// fca-empty-404-surfaces-as-405-on-delete):</b> the 403 and the IDOR 404 both carry a JSON body so callers get
+/// specific detail instead of the generic /api backfill.</para>
 ///
 /// <para><b>Dates (X5):</b> RequestedAt/ReviewedAt/CreatedAt are full UTC instants → projected to explicit
 /// ISO-8601 <c>Z</c> strings (<see cref="ToIso"/>) so the wire format is unambiguous and the island renders local
@@ -348,10 +348,8 @@ public static class SettingsAdminEndpoints
     private static IResult NotFoundFeedback() => Results.NotFound(new { message = "Feedback not found." });
 
     /// <summary>
-    /// The unresolvable-caller 401, WITH A BODY. A bodiless one is re-executed by the global
-    /// <c>UseStatusCodePagesWithReExecute("/not-found")</c> through a GET-only page, changing the status the
-    /// caller sees and killing the SPA's own 401 branch — the defect class
-    /// <see cref="Authorization.ApiAwareAuthEvents"/> already writes a body to avoid.
+    /// The unresolvable-caller 401, WITH A BODY, gives the SPA specific detail instead of the generic /api
+    /// backfill. <see cref="Authorization.ApiAwareAuthEvents"/> likewise writes a body for auth failures.
     /// </summary>
     private static IResult UnauthorizedFeedback() =>
         Results.Json(new { message = "Your session could not be resolved — sign in again." },

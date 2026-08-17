@@ -23,7 +23,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Data Protection configuration
 // Keys are persisted to a volume-mounted directory and optionally protected with a certificate
 var keyDirectory = new DirectoryInfo(
-    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), 
+    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".aspnet", "DataProtection-Keys"));
 
 var dpBuilder = builder.Services.AddDataProtection()
@@ -221,7 +221,7 @@ builder.Services.AddAuthentication(options =>
     options.LoginPath = "/account/login";
     options.LogoutPath = "/account/logout";
     options.AccessDeniedPath = "/account/access-denied";
-    
+
     // Handle cookie decryption failures gracefully (e.g., after key rotation)
     // Instead of throwing, reject the cookie and force re-authentication
     options.Events.OnValidatePrincipal = context =>
@@ -264,7 +264,7 @@ builder.Services.AddAuthentication(options =>
     // Request email scope
     options.Scope.Add("email");
     options.Scope.Add("profile");
-    
+
     // Copy the Google profile claims onto the User row HERE — once per sign-in. Doing it in
     // WhitelistedEmailHandler meant a DB write before every authorized request. Claim actions have already run,
     // so ClaimTypes.Email/Name and urn:google:picture are on the principal.
@@ -279,13 +279,13 @@ builder.Services.AddAuthentication(options =>
     options.Events.OnRemoteFailure = context =>
     {
         var logger = context.HttpContext.RequestServices.GetService<ILogger<Program>>();
-        logger?.LogWarning("OAuth remote failure: {Message}. Redirecting to login.", 
+        logger?.LogWarning("OAuth remote failure: {Message}. Redirecting to login.",
             context.Failure?.Message ?? "Unknown error");
-        
+
         // Clear any stale cookies that might cause issues
         context.Response.Cookies.Delete("FamilyApp.Auth");
         context.Response.Cookies.Delete(".AspNetCore.Correlation.Google");
-        
+
         context.Response.Redirect("/account/login");
         context.HandleResponse();  // Prevent further processing
         return Task.CompletedTask;
@@ -421,11 +421,11 @@ app.Use(async (context, next) =>
         // Clear the corrupted auth cookie and redirect to login
         context.Response.Cookies.Delete("FamilyApp.Auth");
         context.Response.Cookies.Delete(".AspNetCore.Correlation.Google");
-        
+
         // Log the issue
         var logger = context.RequestServices.GetService<ILogger<Program>>();
         logger?.LogWarning("Cleared corrupted auth cookie due to key rotation. User will need to re-authenticate.");
-        
+
         // Redirect to login page
         context.Response.Redirect("/account/login");
     }
@@ -451,11 +451,11 @@ app.Use(async (context, next) =>
         path.StartsWith("/account") ||
         path.StartsWith("/household") ||
         path.StartsWith("/_") ||   // /_app SPA assets (Blazor's /_framework and /_blazor died in WP-12)
-        // Household user content. Branching these paths past UseStaticFiles (so they can be authorization-gated)
-        // also walks them into this middleware, and the suffix list below covers .png but NOT .jpg/.jpeg/.gif/
-        // .webp, which ImageService equally accepts. Kept as defence in depth on an unauthenticated-reachable
-        // path: what a miss here costs is now bounded by the latch, not by a migration. MapUploadsEndpoints
-        // gates these paths itself.
+                                   // Household user content. Branching these paths past UseStaticFiles (so they can be authorization-gated)
+                                   // also walks them into this middleware, and the suffix list below covers .png but NOT .jpg/.jpeg/.gif/
+                                   // .webp, which ImageService equally accepts. Kept as defence in depth on an unauthenticated-reachable
+                                   // path: what a miss here costs is now bounded by the latch, not by a migration. MapUploadsEndpoints
+                                   // gates these paths itself.
         path.StartsWith("/uploads") ||
         path.StartsWith("/health") ||
         path.StartsWith("/lib") ||

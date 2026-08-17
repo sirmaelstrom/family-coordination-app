@@ -203,8 +203,8 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
             WriteBody("Concurrency Target Dish (writer 1)"), Json);
         first.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // Writer 2 echoes the ORIGINAL (now stale) token → 409 with a NON-EMPTY body (a bare 4xx would
-        // re-execute through the GET-only /not-found page and surface as a 405 on PUT).
+        // Writer 2 echoes the ORIGINAL (now stale) token → 409 with a NON-EMPTY body whose specific detail beats
+        // the generic /api backfill.
         var second = await ClientA.PutAsJsonAsync($"/api/recipes/{created.recipeId}",
             WriteBody("Concurrency Target Dish (writer 2)", version: staleVersion), Json);
         second.StatusCode.Should().Be(HttpStatusCode.Conflict);

@@ -18,9 +18,9 @@ namespace FamilyCoordinationApp.Endpoints;
 /// code is an expected user-flow result, rendered inline as a warning today. This keeps the island's api.ts on
 /// the happy path and the error-mapping client-side (parity <c>MapValidationError</c>).</para>
 ///
-/// <para><b>Non-empty 4xx (review R-B4):</b> the only genuine 4xx here is <c>401</c> (unresolved caller). The
-/// app-global <c>UseStatusCodePagesWithReExecute</c> turns an empty-body non-GET 4xx into a 405, so any 4xx we
-/// add later must carry a body — see <see cref="SettingsEndpoints"/>.</para>
+/// <para><b>Non-empty 4xx (review R-B4):</b> the only genuine 4xx here is <c>401</c> (unresolved caller). Any
+/// 4xx we add later must carry a body so callers receive specific detail instead of the generic /api backfill —
+/// see <see cref="SettingsEndpoints"/>.</para>
 ///
 /// <para><b>Disconnect M1 + idempotency (review R-B2):</b> <c>DELETE /connected/{householdId}</c> →
 /// <c>DisconnectHouseholdsAsync(callerHh, householdId)</c>. M1 holds because one arg is ALWAYS the server-resolved

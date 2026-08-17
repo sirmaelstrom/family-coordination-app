@@ -13,7 +13,7 @@ public static class MarkdownHelper
     private static HtmlSanitizer CreateSanitizer()
     {
         var sanitizer = new HtmlSanitizer();
-        
+
         // Allow common formatting tags from Markdown
         sanitizer.AllowedTags.Add("h1");
         sanitizer.AllowedTags.Add("h2");
@@ -45,19 +45,19 @@ public static class MarkdownHelper
         sanitizer.AllowedTags.Add("tr");
         sanitizer.AllowedTags.Add("th");
         sanitizer.AllowedTags.Add("td");
-        
+
         // Allow safe attributes
         sanitizer.AllowedAttributes.Add("href");
         sanitizer.AllowedAttributes.Add("src");
         sanitizer.AllowedAttributes.Add("alt");
         sanitizer.AllowedAttributes.Add("title");
         sanitizer.AllowedAttributes.Add("class");
-        
+
         // Only allow safe URL schemes
         sanitizer.AllowedSchemes.Add("http");
         sanitizer.AllowedSchemes.Add("https");
         sanitizer.AllowedSchemes.Add("mailto");
-        
+
         return sanitizer;
     }
 

@@ -23,7 +23,7 @@ public class RecipeService(
         if (!string.IsNullOrWhiteSpace(searchTerm))
         {
             var term = searchTerm.Trim().ToLower();
-            query = query.Where(r => 
+            query = query.Where(r =>
                 r.Name.ToLower().Contains(term) ||
                 (r.Description != null && r.Description.ToLower().Contains(term)) ||
                 r.RecipeType.ToString().ToLower().Contains(term) ||
@@ -170,12 +170,6 @@ public class RecipeService(
         await context.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Soft deleted recipe {RecipeId} for household {HouseholdId}", recipeId, householdId);
-    }
-
-    public async Task<int> GetNextRecipeIdAsync(int householdId, CancellationToken cancellationToken = default)
-    {
-        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
-        return await GetNextRecipeIdInternalAsync(context, householdId, cancellationToken);
     }
 
     private static async Task<int> GetNextRecipeIdInternalAsync(ApplicationDbContext context, int householdId, CancellationToken cancellationToken)

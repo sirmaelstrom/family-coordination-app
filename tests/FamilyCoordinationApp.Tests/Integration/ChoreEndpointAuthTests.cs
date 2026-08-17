@@ -90,11 +90,9 @@ public sealed class ChoreEndpointAuthTests(PostgresContainerFixture postgres) : 
         bChoreId.Should().BeGreaterThan(1, "the new B chore gets the next per-household id");
 
         // Household A attempts to claim B's chore id. The resolver scopes to A's household → A has no such
-        // chore → the endpoint returns 404. NOTE: the app's global UseStatusCodePagesWithReExecute("/not-found")
-        // middleware (Program.cs, pre-existing — also applies to the shopping-list endpoints) re-executes empty
-        // 404 responses through the Blazor "/not-found" page, which surfaces on the wire as a 400. Either way the
-        // request is REJECTED with a client error — the load-bearing security property is that it is NOT a 200
-        // and NOT a leak of B's row (asserted below).
+        // chore → the endpoint returns 404; the /api branch preserves that status and backfills a generic JSON
+        // body only if the handler wrote none. The request is REJECTED with a client error — the load-bearing
+        // security property is that it is NOT a 200 and NOT a leak of B's row (asserted below).
         var claimResp = await clientA.PostAsync($"/api/chores/{bChoreId}/claim",
             JsonContent.Create(new VersionBody(0), options: Json));
         claimResp.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.BadRequest);

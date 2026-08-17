@@ -35,7 +35,7 @@ namespace FamilyCoordinationApp.Endpoints;
 /// copy to duplicate the FILE into the copying household's directory, not to widen this gate.</para>
 ///
 /// <para>A denied request gets <b>404, not 403</b> (never confirm which household ids or file names exist) with a
-/// non-empty body, per the house <c>/api</c> rule: an empty 4xx re-executes through the GET-only
+/// non-empty body: as a non-<c>/api</c> path, an empty 4xx re-executes through the GET-only
 /// <c>/not-found</c> page.</para>
 ///
 /// <para><b>Invariant this endpoint depends on:</b> nothing else may serve <c>wwwroot/uploads</c>.

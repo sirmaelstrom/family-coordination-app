@@ -44,7 +44,7 @@ public class HouseholdRequestConfiguration : IEntityTypeConfiguration<HouseholdR
 
         // Index for efficient lookups by email
         builder.HasIndex(r => r.Email);
-        
+
         // Index for finding pending requests
         builder.HasIndex(r => r.Status);
     }

@@ -14,7 +14,7 @@ namespace FamilyCoordinationApp.Endpoints;
 /// <see cref="IDashboardService"/> (ONE projection — no drift, M9).
 ///
 /// <para>Read-only: no writes ⇒ no concurrency token, no 4xx-on-missing path (an empty household yields a
-/// well-formed 200 with zero counts / empty meals), so the empty-body-4xx re-execute quirk does not apply.</para>
+/// well-formed 200 with zero counts / empty meals), so the /api generic-error-body backfill does not apply.</para>
 /// </summary>
 public static class DashboardEndpoints
 {

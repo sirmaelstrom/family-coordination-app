@@ -153,7 +153,7 @@ public static class MealPlanEndpoints
         }
         catch (InvalidOperationException)
         {
-            // Non-empty body — see RemoveEntry (an empty non-GET 4xx re-executes into a 405 on the wire).
+            // Non-empty body — see RemoveEntry (a specific message beats the generic /api backfill).
             return Results.NotFound(new { message = "Meal entry not found." });
         }
         catch (ArgumentException ex)
@@ -221,8 +221,7 @@ public static class MealPlanEndpoints
         }
         catch (InvalidOperationException)
         {
-            // Non-empty body so the app-global UseStatusCodePagesWithReExecute does NOT re-execute this
-            // through the Blazor /not-found page (an empty DELETE 404 would surface as a 405 on the wire).
+            // Non-empty body so callers receive a specific message instead of the generic /api backfill.
             return Results.NotFound(new { message = "Meal entry not found." });
         }
     }
@@ -287,7 +286,7 @@ public static class MealPlanEndpoints
         if (user is null) return Results.Unauthorized();
 
         var recipe = await recipeService.GetRecipeAsync(user.HouseholdId, recipeId, ct);
-        // Non-empty body so the status-code re-execute middleware leaves this as a clean 404 (see RemoveEntry).
+        // Non-empty body so callers receive a specific 404 message instead of the generic /api backfill.
         if (recipe is null) return Results.NotFound(new { message = "Recipe not found." });
 
         return Results.Ok(boardService.ToRecipeDetail(recipe));

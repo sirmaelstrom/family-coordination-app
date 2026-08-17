@@ -94,7 +94,8 @@ jobs:
           dotnet-version: '10.0.x'
           
       - name: Check formatting
-        run: dotnet format src/FamilyCoordinationApp/FamilyCoordinationApp.csproj --verify-no-changes --verbosity diagnostic || echo "::warning::Code formatting issues found"
+        # No || fallback: a swallowed failure here let 38 violations accumulate under a green check.
+        run: dotnet format src/FamilyCoordinationApp/FamilyCoordinationApp.csproj --verify-no-changes
         
   secrets-scan:
     name: Secrets Scan

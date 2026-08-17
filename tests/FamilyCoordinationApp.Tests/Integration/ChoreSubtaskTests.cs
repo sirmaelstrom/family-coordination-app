@@ -154,11 +154,10 @@ public sealed class ChoreSubtaskTests(PostgresContainerFixture postgres) : IAsyn
         var created = await createResp.Content.ReadFromJsonAsync<Subtask>(Json);
 
         // Household B must not be able to touch A's chore's subtask. The (householdId, choreId) filter finds
-        // nothing → ChoreNotFoundException → the handler returns an empty 404, which the app's global
-        // UseStatusCodePagesWithReExecute("/not-found") re-executes through the Blazor page — surfacing on the
-        // wire as 400 (empty 404 rewrite) or 405 (the re-executed GET page does not allow the original verb).
-        // The load-bearing assertion is that the write is REJECTED with a client error (never satisfied/2xx),
-        // not the exact code (same convention as ChoreRoundTripTests.Claim_NonexistentChore_IsRejected).
+        // nothing → ChoreNotFoundException → the handler returns 404; the /api branch preserves that status and
+        // backfills a generic JSON body only if the handler wrote none. The load-bearing assertion is that the
+        // write is REJECTED with a client error (never satisfied/2xx), not the exact code (same convention as
+        // ChoreRoundTripTests.Claim_NonexistentChore_IsRejected).
         var clientB = ClientB;
         var crossPut = await clientB.PutAsJsonAsync($"/api/chores/{chore.id}/subtasks/{created!.id}", new { isDone = true }, Json);
         crossPut.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.BadRequest, HttpStatusCode.MethodNotAllowed);
@@ -169,7 +168,7 @@ public sealed class ChoreSubtaskTests(PostgresContainerFixture postgres) : IAsyn
         crossPost.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.BadRequest, HttpStatusCode.MethodNotAllowed);
         ((int)crossPost.StatusCode).Should().BeGreaterThanOrEqualTo(400, "the cross-household create must be rejected, never satisfied");
 
-        // Stronger isolation check that does not depend on the status-code rewrite: A's subtask must be
+        // Stronger isolation check that does not depend on error-response details: A's subtask must be
         // unchanged after B's rejected PUT (B never mutated it).
         var stillThere = await clientA.PutAsJsonAsync($"/api/chores/{chore.id}/subtasks/{created.id}", new { isDone = false }, Json);
         stillThere.StatusCode.Should().Be(HttpStatusCode.OK, "A's own subtask is still reachable + unmodified by B");

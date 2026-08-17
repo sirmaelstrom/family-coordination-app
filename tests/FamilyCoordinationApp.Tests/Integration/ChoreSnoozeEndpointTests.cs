@@ -108,7 +108,7 @@ public sealed class ChoreSnoozeEndpointTests(PostgresContainerFixture postgres) 
         resp.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var text = await resp.Content.ReadAsStringAsync();
         text.Should().NotBeNullOrWhiteSpace(
-            "the 400 body must be non-empty (the UseStatusCodePagesWithReExecute quirk would otherwise swallow it)");
+            "the 400 body must be non-empty with specific validation detail");
     }
 
     [Fact]

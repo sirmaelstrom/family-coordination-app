@@ -15,7 +15,8 @@
     De-Blazor WP-12: copy the built SvelteKit SPA (frontend/app, adapter-static) into wwwroot/ so
     ASP.NET serves it at the site root. A full SvelteKit build (build/ not dist/): fingerprinted
     _app/ assets, the SPA fallback index.html, and static/ (manifest.json + service-worker.js).
-    These outputs are gitignored (see .gitignore wwwroot entries). Skipped silently if build/ is
+    These outputs are gitignored AND untracked (an ignore entry cannot take effect on a tracked
+    path — keep wwwroot build outputs out of the index). Skipped silently if build/ is
     absent (CI/Docker run `npm run build` first).
   -->
   <Target Name="CopyAppSpa"
