@@ -295,7 +295,7 @@ public class ShoppingListService(
 
         if (item == null)
         {
-            throw new InvalidOperationException($"Item {itemId} not found in ShoppingList {shoppingListId} for household {householdId}");
+            throw new KeyNotFoundException($"Item {itemId} not found in ShoppingList {shoppingListId} for household {householdId}");
         }
 
         context.ShoppingListItems.Remove(item);
@@ -316,7 +316,7 @@ public class ShoppingListService(
 
         if (shoppingList == null)
         {
-            throw new InvalidOperationException($"ShoppingList {shoppingListId} not found for household {householdId}");
+            throw new KeyNotFoundException($"ShoppingList {shoppingListId} not found for household {householdId}");
         }
 
         shoppingList.IsFavorite = !shoppingList.IsFavorite;
@@ -377,7 +377,7 @@ public class ShoppingListService(
 
         if (shoppingList == null)
         {
-            throw new InvalidOperationException($"ShoppingList {shoppingListId} not found for household {householdId}");
+            throw new KeyNotFoundException($"ShoppingList {shoppingListId} not found for household {householdId}");
         }
 
         shoppingList.IsArchived = true;

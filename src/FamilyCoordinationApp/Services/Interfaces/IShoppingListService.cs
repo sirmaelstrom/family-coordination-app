@@ -16,9 +16,9 @@ public interface IShoppingListService
     Task ArchiveShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default);
     Task<int> ClearCheckedItemsAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default);
 
-    // Unwired, not dead — held for the past-lists feature, which needs routes and UI rather than new
-    // logic. Archiving is reachable today but one-way: nothing lists, reopens or removes an archived
-    // list. Suggestions reads the household's whole item history, archived lists included.
+    // The past-lists trio, wired at GET /archived, POST /{id}/actions/restore and DELETE /{id}
+    // (delete is server-enforced archived-only). Suggestions reads the household's whole item
+    // history, archived lists included.
     Task<List<ShoppingList>> GetArchivedShoppingListsAsync(int householdId, bool? favoritesOnly = null, CancellationToken cancellationToken = default);
     Task RestoreShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default);
     Task DeleteShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default);
