@@ -20,9 +20,8 @@ namespace FamilyCoordinationApp.Endpoints;
 ///
 /// <para>Full-form edits are optimistic-concurrency guarded: GET carries the xmin token (<c>version</c>),
 /// PUT echoes it back, and a stale token → 409 with a non-empty body (<see cref="RecipeConflictException"/>).
-/// A null token skips the check (legacy last-write-wins). Not-found responses carry a
-/// NON-EMPTY body so the app-global <c>UseStatusCodePagesWithReExecute</c> leaves them as clean 404s (an empty
-/// 404 surfaces as an empty 400/405). <c>Recipe</c> has an EF global query filter on <c>IsDeleted</c>
+/// A null token skips the check (legacy last-write-wins). Not-found responses carry a NON-EMPTY body so callers
+/// receive specific detail instead of the generic /api backfill. <c>Recipe</c> has an EF global query filter on <c>IsDeleted</c>
 /// (<c>RecipeConfiguration</c>), so soft-deleted recipes are auto-excluded — no explicit filter here.</para>
 /// </summary>
 public static class RecipesEndpoints
@@ -37,7 +36,7 @@ public static class RecipesEndpoints
 
         // ⚠ Register all LITERAL-segment routes BEFORE the parameterized /{recipeId:int} routes. A non-GET
         // literal (PUT/DELETE /draft) that shares the root level with PUT/DELETE /{recipeId:int} was being
-        // shadowed by the parameterized route at match time (→ 404 → re-executed to 405); registering literals
+        // shadowed by the parameterized route at match time (→ generic JSON 404); registering literals
         // first makes the matcher prefer them deterministically. (GET literals happened to resolve regardless.)
 
         // List (root)
@@ -561,7 +560,7 @@ public static class RecipesEndpoints
 
     // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-    /// <summary>A 403 with a non-empty body (so the status-code re-execute leaves it as a clean 403).</summary>
+    /// <summary>A 403 with a non-empty body, giving callers specific detail instead of the generic /api backfill.</summary>
     private static IResult Forbidden() =>
         Results.Json(new { message = "Households are not connected." }, statusCode: StatusCodes.Status403Forbidden);
 

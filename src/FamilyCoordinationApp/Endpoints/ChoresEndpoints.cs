@@ -307,7 +307,7 @@ public static class ChoresEndpoints
     /// carries EXACTLY one of <c>days</c> / <c>until</c> (or NEITHER, to un-snooze) plus the xmin
     /// <c>version</c>. The floor date is resolved SERVER-side in the household timezone via
     /// <see cref="ResolveSnooze"/> (MN4 — never client date math). Invalid input → 400 with a non-empty body
-    /// (the <c>UseStatusCodePagesWithReExecute</c> quirk — never <c>Results.BadRequest()</c>).
+    /// (a specific message beats the generic /api backfill — never <c>Results.BadRequest()</c>).
     /// </summary>
     private static async Task<IResult> SnoozeChore(
         int choreId,
@@ -884,7 +884,7 @@ public static class ChoresEndpoints
     {
         var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         // Non-empty 401 body (M7/fca-empty-404) — a deliberate improvement over the sibling handlers' bare
-        // Results.Unauthorized(): an empty 4xx re-executes through the GET-only /not-found page.
+        // Results.Unauthorized(): a specific message beats the generic /api backfill.
         if (user is null) return Results.Json(new { message = "Unauthorized" }, statusCode: 401);
 
         // HouseholdId comes from the resolved caller, never the client (M1). weeks is clamped in the service.
@@ -972,9 +972,9 @@ public static class ChoresEndpoints
     /// POST /api/chores/digest/run — the cron-triggered digest run. NOT cookie-authed (it's mapped on the
     /// top-level app, not the auth group). Gated by a shared-secret token supplied ONLY via the
     /// <c>X-Digest-Trigger-Token</c> header (MN10 — query-string tokens rejected), fixed-time compared.
-    /// Unconfigured → 503; missing/mismatched token → 401. Both error bodies are NON-EMPTY JSON so the
-    /// app-global <c>UseStatusCodePagesWithReExecute</c> does not rewrite them into the Blazor page (v1.0
-    /// WP-08 quirk). On success → <see cref="IDigestService.RunDueAsync"/> → 200 { sent, skipped, failed }.
+    /// Unconfigured → 503; missing/mismatched token → 401. Both error bodies are NON-EMPTY JSON so callers get
+    /// specific details instead of the generic /api backfill (v1.0 WP-08). On success →
+    /// <see cref="IDigestService.RunDueAsync"/> → 200 { sent, skipped, failed }.
     /// </summary>
     private static async Task<IResult> RunDigests(
         HttpContext httpContext,

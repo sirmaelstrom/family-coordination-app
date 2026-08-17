@@ -13,10 +13,9 @@ const MEMBERS = '/api/settings/members';
 /**
  * Thrown on any non-2xx response. `status` lets callers react to a rejection.
  *
- * ⚠ Carried from the other islands: the app re-executes empty-body API 4xx
- * through a Blazor `/not-found` page, so a server-side "not found" can arrive
- * as an empty 400 (a bare DELETE 404 even surfaces as 405). Every settings
- * endpoint returns a NON-EMPTY body on 4xx, and the island treats ANY 4xx as a
+ * Since PR #90, /api preserves an error's real status and backfills a generic JSON
+ * `{ message }` only when no body was written. Every settings endpoint returns a
+ * NON-EMPTY, specific body on 4xx, and the island treats ANY 4xx as a
  * non-retryable client rejection → reconcile (refetch) + a calm toast.
  */
 export class ApiError extends Error {

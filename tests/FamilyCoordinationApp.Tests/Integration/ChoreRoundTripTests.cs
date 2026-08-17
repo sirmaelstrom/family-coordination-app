@@ -102,10 +102,9 @@ public sealed class ChoreRoundTripTests(PostgresContainerFixture postgres) : IAs
         var client = ClientA;
 
         // No chore with this id exists in household A → ChoreNotFoundException → the endpoint returns 404.
-        // NOTE: the app's global UseStatusCodePagesWithReExecute("/not-found") middleware (Program.cs,
-        // pre-existing — same behavior for the shopping-list endpoints) re-executes empty 404 responses through
-        // the Blazor "/not-found" page, surfacing on the wire as a 400. The load-bearing assertion is that the
-        // claim is REJECTED with a client error (not silently satisfied), not the exact 404-vs-400 code.
+        // Since PR #90, the /api branch backfills a generic JSON body if needed while preserving that status.
+        // The load-bearing assertion is that the claim is REJECTED with a client error (not silently satisfied),
+        // not its exact error-body shape.
         var claimResp = await client.PostAsync("/api/chores/999999/claim",
             JsonContent.Create(new VersionBody(0), options: Json));
 

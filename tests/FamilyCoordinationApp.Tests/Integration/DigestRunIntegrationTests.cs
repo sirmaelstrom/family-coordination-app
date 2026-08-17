@@ -74,13 +74,13 @@ public sealed class DigestRunIntegrationTests(PostgresContainerFixture postgres)
         return await client.SendAsync(req);
     }
 
-    /// <summary>Assert the response is the given status AND carries a non-empty body (the UseStatusCodePages
-    /// rewrite quirk would blank an empty 401/503 into the Blazor not-found page — WP-06 returns Results.Json).</summary>
+    /// <summary>Assert the response is the given status AND carries a non-empty body (WP-06 returns Results.Json
+    /// with specific detail rather than relying on the generic /api backfill).</summary>
     private static async Task AssertStatusWithJsonBodyAsync(HttpResponseMessage resp, HttpStatusCode expected)
     {
         resp.StatusCode.Should().Be(expected);
         var body = await resp.Content.ReadAsStringAsync();
-        body.Should().NotBeNullOrWhiteSpace("the error body must be non-empty JSON (UseStatusCodePages quirk)");
+        body.Should().NotBeNullOrWhiteSpace("the error body must be non-empty JSON with specific detail");
         body.Trim().Should().StartWith("{", "the endpoint returns a JSON object, not a rewritten HTML page");
         body.Should().Contain("error");
     }
@@ -279,7 +279,7 @@ public sealed class DigestRunIntegrationTests(PostgresContainerFixture postgres)
 
 /// <summary>
 /// The refuse-if-unconfigured (503) path for <c>POST /api/chores/digest/run</c>: a host whose trigger token is
-/// UNCONFIGURED must reject the run with 503 + a non-empty JSON body (never the empty-body→Blazor-page rewrite),
+/// UNCONFIGURED must reject the run with 503 + a non-empty JSON body with specific detail,
 /// even when a syntactically valid-looking token header is presented. Uses a dedicated factory subclass that
 /// clears the token. (Separate class so it can carry its own host variant under the shared container.)
 /// </summary>
@@ -305,7 +305,7 @@ public sealed class DigestRunUnconfiguredTokenTests(PostgresContainerFixture pos
 
         resp.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         var body = await resp.Content.ReadAsStringAsync();
-        body.Should().NotBeNullOrWhiteSpace("the 503 must carry a JSON body (UseStatusCodePages quirk)");
+        body.Should().NotBeNullOrWhiteSpace("the 503 must carry a JSON body with specific detail");
         body.Trim().Should().StartWith("{");
         body.Should().Contain("error");
 

@@ -8,8 +8,8 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// <summary>
 /// V3 — the equity distribution endpoint (<c>GET /api/chores/equity</c>) on real Postgres + the booted host.
 /// Proves household isolation (each caller sums only their OWN household's effort-weighted completions, M1),
-/// the window allowlist (bogus → 400), and that an anonymous caller is rejected with no data leak (the
-/// app-global <c>UseStatusCodePagesWithReExecute</c> quirk is accommodated — any 4xx, never a 200/leak).
+/// the window allowlist (bogus → 400), and that an anonymous caller is rejected with no data leak (the /api
+/// status-code branch preserves any 4xx — never a 200/leak).
 /// <para>Aggregation is evaluated against the factory's FIXED clock, at whose Mon–Sun week the seeded
 /// mid-week completions fall — so the totals are deterministic.</para>
 /// </summary>
@@ -158,8 +158,8 @@ public sealed class EquityEndpointIntegrationTests(PostgresContainerFixture post
 
         var resp = await client.GetAsync("/api/chores/equity?window=week");
 
-        // 4xx (401 challenge from RequireAuthorization; the UseStatusCodePages quirk could surface other 4xx) —
-        // the load-bearing property is it is NOT a 200 and leaks no equity data.
+        // 4xx (401 challenge from RequireAuthorization) — the load-bearing property is it is NOT a 200 and leaks
+        // no equity data.
         ((int)resp.StatusCode).Should().BeInRange(400, 499, "an anonymous caller must be rejected");
         resp.StatusCode.Should().NotBe(HttpStatusCode.OK);
 

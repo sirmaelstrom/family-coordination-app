@@ -150,12 +150,6 @@ public class CategoryService(
         await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<int> GetNextCategoryIdAsync(int householdId, CancellationToken cancellationToken = default)
-    {
-        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
-        return await GetNextCategoryIdInternalAsync(context, householdId, cancellationToken);
-    }
-
     private static async Task<int> GetNextCategoryIdInternalAsync(ApplicationDbContext context, int householdId, CancellationToken cancellationToken)
     {
         var maxId = await context.Categories

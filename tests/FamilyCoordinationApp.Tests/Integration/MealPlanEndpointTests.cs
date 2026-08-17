@@ -223,8 +223,8 @@ public sealed class MealPlanEndpointTests(PostgresContainerFixture postgres) : I
     [Fact]
     public async Task RemoveMissingEntry_IsRejected()
     {
-        // No such entry ⇒ RemoveMealAsync throws ⇒ a clean 404 (the non-empty body bypasses the app-global
-        // status-code re-execute, so this is a true 404 — not the empty-body 405 the rewrite would produce).
+        // No such entry ⇒ RemoveMealAsync throws ⇒ a clean 404 with a specific body rather than the generic
+        // /api backfill.
         var del = await DeleteEntryAsync(ClientA, 999999, 999999, 1);
 
         del.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -492,8 +492,8 @@ public sealed class MealPlanEndpointTests(PostgresContainerFixture postgres) : I
         bBoard!.entries.Should().NotContain(e =>
             e.entryId == aEntry.entryId && e.customMealName == "A's private meal");
 
-        // B cannot delete A's entry: RemoveMealAsync scopes to B's household ⇒ no match ⇒ a clean 404 (the
-        // non-empty body bypasses the status-code re-execute, so the contract is a deterministic 404).
+        // B cannot delete A's entry: RemoveMealAsync scopes to B's household ⇒ no match ⇒ a clean 404 with a
+        // specific body rather than the generic /api backfill.
         var del = await DeleteEntryAsync(ClientB, aEntry.mealPlanId, aEntry.entryId, aEntry.version);
         del.StatusCode.Should().Be(HttpStatusCode.NotFound);
 

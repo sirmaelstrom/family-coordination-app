@@ -197,7 +197,7 @@ public sealed class RecipeImportPreviewEndpointTests(PostgresContainerFixture po
 
         resp.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var body = await resp.Content.ReadAsStringAsync();
-        body.Should().NotBeNullOrWhiteSpace(); // /api 4xx must carry a body (re-execute quirk)
+        body.Should().NotBeNullOrWhiteSpace(); // Specific validation detail beats the generic /api backfill.
         body.Should().Contain("URL");
     }
 }

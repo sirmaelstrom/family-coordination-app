@@ -11,6 +11,5 @@ public interface ICategoryService
     Task DeleteCategoryAsync(int householdId, int categoryId, CancellationToken cancellationToken = default);
     Task RestoreCategoryAsync(int householdId, int categoryId, CancellationToken cancellationToken = default);
     Task UpdateSortOrderAsync(int householdId, List<(int CategoryId, int SortOrder)> sortOrders, CancellationToken cancellationToken = default);
-    Task<int> GetNextCategoryIdAsync(int householdId, CancellationToken cancellationToken = default);
     Task<bool> HasIngredientsAsync(int householdId, string categoryName, CancellationToken cancellationToken = default);
 }

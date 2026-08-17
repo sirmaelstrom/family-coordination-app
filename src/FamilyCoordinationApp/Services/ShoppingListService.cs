@@ -113,10 +113,10 @@ public class ShoppingListService(
 
         // Remove all items first
         context.ShoppingListItems.RemoveRange(shoppingList.Items);
-        
+
         // Then remove the list
         context.ShoppingLists.Remove(shoppingList);
-        
+
         await context.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Permanently deleted ShoppingList {ShoppingListId} for household {HouseholdId}",

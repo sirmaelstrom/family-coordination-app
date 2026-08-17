@@ -21,8 +21,7 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// dual-mode feedback visibility.
 /// <para>The <c>Feedback_Submit_*</c> block covers <c>POST /api/settings/feedback</c>. Its load-bearing assertions
 /// are server-derived attribution (a body-supplied householdId/userId is ignored) and a non-empty body on every 4xx
-/// (an empty one is re-executed through the GET-only <c>/not-found</c> page and reaches the caller as some other
-/// status).</para>
+/// so callers receive specific detail instead of the generic /api backfill.</para>
 /// </summary>
 [Collection(IntegrationCollection.Name)]
 [Trait("kind", "integration")]
@@ -109,7 +108,7 @@ public sealed class SettingsAdminEndpointTests(PostgresContainerFixture postgres
         var reject = await NonAdminClient.PostAsJsonAsync($"{RequestsUrl}/{requestId}/reject", new { reason = "no" }, Json);
         reject.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-        // 403 carries a non-empty body (so the global re-execute doesn't turn it into a 405 on the POSTs).
+        // 403 carries a non-empty body so the caller receives specific detail instead of the generic /api backfill.
         (await reject.Content.ReadAsStringAsync()).Should().Contain("Site admin");
 
         // The request was untouched by the rejected calls.
@@ -493,9 +492,9 @@ public sealed class SettingsAdminEndpointTests(PostgresContainerFixture postgres
     }
 
     /// <summary>
-    /// The body is as much the assertion as the status: an empty non-GET 4xx re-executes through the GET-only
-    /// /not-found page and reaches the caller as something else entirely. Both cases matter — dropping the
-    /// endpoint's <c>.Trim()</c> would break only the whitespace-only one.
+    /// The body is as much the assertion as the status: this endpoint supplies specific validation detail rather
+    /// than relying on the generic /api backfill. Both cases matter — dropping the endpoint's <c>.Trim()</c> would
+    /// break only the whitespace-only one.
     /// </summary>
     [Theory]
     [InlineData("", "blank message")]
@@ -505,7 +504,7 @@ public sealed class SettingsAdminEndpointTests(PostgresContainerFixture postgres
         var resp = await NonAdminClient.PostAsJsonAsync($"{FeedbackUrl}/", new { type = "bug", message }, Json);
 
         resp.StatusCode.Should().Be(HttpStatusCode.BadRequest, because);
-        (await ReadMessageAsync(resp)).Should().NotBeNullOrWhiteSpace("an empty 4xx body would surface as a 405");
+        (await ReadMessageAsync(resp)).Should().NotBeNullOrWhiteSpace("the 400 must carry specific validation detail");
 
         await using var ctx = await DbFactory.CreateDbContextAsync();
         (await ctx.Feedbacks.CountAsync()).Should().Be(0);

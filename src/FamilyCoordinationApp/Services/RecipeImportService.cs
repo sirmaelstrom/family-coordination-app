@@ -312,7 +312,7 @@ public class RecipeImportService(
                 var str = element.GetString();
                 return ParseServingsString(str);
             }
-            
+
             // Handle array format (some sites use ["4 servings"])
             if (element.ValueKind == JsonValueKind.Array)
             {

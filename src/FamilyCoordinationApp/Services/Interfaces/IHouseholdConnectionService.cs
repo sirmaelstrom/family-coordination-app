@@ -12,7 +12,6 @@ public interface IHouseholdConnectionService
     Task<List<ConnectedHouseholdInfo>> GetConnectedHouseholdsAsync(int householdId, CancellationToken cancellationToken = default);
     Task<bool> AreHouseholdsConnectedAsync(int id1, int id2, CancellationToken cancellationToken = default);
     Task DisconnectHouseholdsAsync(int id1, int id2, CancellationToken cancellationToken = default);
-    Task<int> CleanupExpiredInvitesAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>

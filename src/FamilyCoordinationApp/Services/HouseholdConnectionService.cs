@@ -274,26 +274,6 @@ public class HouseholdConnectionService(
         }
     }
 
-    public async Task<int> CleanupExpiredInvitesAsync(CancellationToken cancellationToken = default)
-    {
-        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
-
-        var cutoff = DateTime.UtcNow.AddDays(-7);
-        var expiredInvites = await context.HouseholdInvites
-            .Where(i => i.ExpiresAt < DateTime.UtcNow && i.CreatedAt < cutoff)
-            .ToListAsync(cancellationToken);
-
-        if (expiredInvites.Count > 0)
-        {
-            context.HouseholdInvites.RemoveRange(expiredInvites);
-            await context.SaveChangesAsync(cancellationToken);
-
-            logger.LogInformation("Cleaned up {Count} expired invite(s)", expiredInvites.Count);
-        }
-
-        return expiredInvites.Count;
-    }
-
     private static string GenerateInviteCode()
     {
         return string.Create(InviteCodeLength, InviteCharset, (span, charset) =>

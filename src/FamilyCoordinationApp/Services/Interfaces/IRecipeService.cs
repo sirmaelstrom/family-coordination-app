@@ -15,7 +15,6 @@ public interface IRecipeService
     /// <exception cref="RecipeConflictException">The client <paramref name="expectedVersion"/> is stale.</exception>
     Task<Recipe> UpdateRecipeAsync(Recipe recipe, uint? expectedVersion = null, CancellationToken cancellationToken = default);
     Task DeleteRecipeAsync(int householdId, int recipeId, CancellationToken cancellationToken = default);
-    Task<int> GetNextRecipeIdAsync(int householdId, CancellationToken cancellationToken = default);
     Task<List<string>> GetIngredientSuggestionsAsync(int householdId, string prefix, CancellationToken cancellationToken = default);
 
     // Favorites
