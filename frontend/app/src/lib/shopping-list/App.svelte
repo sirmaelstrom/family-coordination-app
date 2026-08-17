@@ -219,8 +219,7 @@
     item.checkedAt = target ? new Date().toISOString() : null;
     markPending(item.id, true);
     try {
-      const updated = await patchItem(currentListId, item.id, { isChecked: target });
-      Object.assign(item, updated);
+      const updated = await patchItem(currentListId, item.id, { isChecked: target });      Object.assign(item, updated);      retireInFlightLoads();
     } catch (e) {
       Object.assign(item, prev);
       if (e instanceof ApiError && (e.status === 404 || e.status === 409)) {
@@ -265,8 +264,7 @@
     item.quantity = next;
     markPending(item.id, true);
     try {
-      const updated = await patchItem(currentListId, item.id, { quantity: next });
-      Object.assign(item, updated);
+      const updated = await patchItem(currentListId, item.id, { quantity: next });      Object.assign(item, updated);      retireInFlightLoads();
     } catch (e) {
       item.quantity = prev;
       if (e instanceof ApiError && (e.status === 404 || e.status === 409)) {
@@ -309,6 +307,7 @@
         const idx = list.items.findIndex((i) => i.id === updated.id);
         if (idx >= 0) list.items[idx] = updated;
       }
+      retireInFlightLoads(); // a GET begun during the request still holds the pre-write list
       itemDialogOpen = false;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -329,8 +328,7 @@
     markPending(item.id, true);
     retireInFlightLoads();
     try {
-      await deleteItem(currentListId, item.id);
-      list.items = list.items.filter((i) => i.id !== item.id);
+      await deleteItem(currentListId, item.id);      list.items = list.items.filter((i) => i.id !== item.id);      retireInFlightLoads();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -345,8 +343,7 @@
     retireInFlightLoads();
     list.isFavorite = !prev;
     try {
-      const r = await toggleFavorite(currentListId);
-      list.isFavorite = r.isFavorite;
+      const r = await toggleFavorite(currentListId);      list.isFavorite = r.isFavorite;      retireInFlightLoads();
       await loadLists();
     } catch (e) {
       list.isFavorite = prev;
@@ -371,8 +368,7 @@
     if (currentListId == null) return;
     confirmRegenerateOpen = false;
     try {
-      const updated = await regenerateList(currentListId);
-      list = updated;
+      const updated = await regenerateList(currentListId);      list = updated;      retireInFlightLoads();
       await loadLists();
       showToast({ message: 'List regenerated from the meal plan', kind: 'success' });
     } catch (e) {
@@ -384,8 +380,7 @@
     if (currentListId == null || !list) return;
     renameSubmitting = true;
     try {
-      const r = await renameList(currentListId, newName);
-      list.name = r.name;
+      const r = await renameList(currentListId, newName);      list.name = r.name;      retireInFlightLoads();
       await loadLists();
       renameOpen = false;
     } catch (e) {
@@ -522,6 +517,7 @@
     }));
     try {
       await updateSortOrders(currentListId, updates);
+      retireInFlightLoads(); // a GET begun during the request still holds the pre-drag order
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
       await loadList(currentListId);

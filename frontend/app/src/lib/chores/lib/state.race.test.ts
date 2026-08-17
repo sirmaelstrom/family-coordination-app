@@ -7,11 +7,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   claimChore: vi.fn(),
+  deleteChore: vi.fn(),
 }));
 vi.mock('$lib/shared/toast-store.svelte', () => ({ showToast: vi.fn() }));
 
 import { boardStore } from './state.svelte';
-import { claimChore } from './api';
+import { claimChore, deleteChore } from './api';
 import type { ChoreBoardDto, ChoreDto } from './types';
 
 function minimalBoard(): ChoreBoardDto {
@@ -92,5 +93,38 @@ describe('board load token — mutations retire in-flight reads', () => {
     expect(boardStore.isCurrentLoad(inflight)).toBe(false);
     // The loader's own contract: a stale token means the response is discarded, so the
     // pre-mutation board it carries can no longer undo the claim.
+  });
+
+  it('a GET that starts DURING a pending mutation is retired when the response applies', async () => {
+    // The opposite ordering (slim-review on PR #103): the GET begins after the optimistic patch —
+    // so it survives the first retirement — but it read the server BEFORE the mutation was
+    // processed. The response-side retirement must invalidate it.
+    let resolveClaim!: (v: ChoreDto) => void;
+    vi.mocked(claimChore).mockReturnValueOnce(
+      new Promise<ChoreDto>((res) => (resolveClaim = res)),
+    );
+
+    const claiming = boardStore.claim(1);
+    const duringWrite = boardStore.beginLoad(); // liveness fires while the PATCH is on the wire
+    resolveClaim({
+      ...minimalBoard().chores[0],
+      assignmentKind: 'claimed',
+      assigneeUserId: 42,
+      version: 8,
+    });
+    await claiming;
+
+    expect(boardStore.isCurrentLoad(duringWrite)).toBe(false);
+  });
+
+  it('remove retires in-flight reads — the deleted-chore resurrection case', async () => {
+    // remove() bypasses runOptimistic (slim-review finding on PR #103) and must retire on its own.
+    vi.mocked(deleteChore).mockResolvedValueOnce(undefined);
+
+    const inflight = boardStore.beginLoad();
+    await boardStore.remove(1);
+
+    expect(boardStore.isCurrentLoad(inflight)).toBe(false);
+    expect(boardStore.board?.chores).toHaveLength(0);
   });
 });

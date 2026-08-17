@@ -908,6 +908,7 @@ class BoardStore {
     try {
       const updated = await call(snapshot);
       this.applyChore(updated);
+      this.retireInFlightLoads(); // a GET begun during the request still holds pre-mutation state
       // Authoritative co-sign progress comes only from the board GET (the
       // mutation response can't signal "X of N" — it returns completedCount=0).
       await this.reconcile();
@@ -962,6 +963,7 @@ class BoardStore {
     try {
       const updated = await call(snapshot);
       this.applyChore(updated);
+      this.retireInFlightLoads(); // a GET begun during the request still holds pre-mutation state
     } catch (e) {
       // Roll back the optimistic patch first, regardless of failure mode.
       const current = this.choreById(choreId);
@@ -1327,10 +1329,12 @@ class BoardStore {
     if (idx < 0) return;
     const removed = board.chores[idx];
 
+    this.retireInFlightLoads();
     board.chores = board.chores.filter((c) => c.id !== choreId);
     this.markPending(choreId, true);
     try {
       await deleteChore(choreId, removed.version);
+      this.retireInFlightLoads(); // a GET begun during the request could resurrect the chore
     } catch (e) {
       // Restore the removed chore, then reconcile / surface.
       await this.reconcile();
@@ -1372,10 +1376,7 @@ class BoardStore {
     const trimmed = title.trim();
     if (!trimmed) return;
     try {
-      const created = await createSubtask(choreId, { title: trimmed });
-      const current = this.choreById(choreId);
-      if (!current) return;
-      current.subtasks = sortSubtasks([...current.subtasks, created]);
+      const created = await createSubtask(choreId, { title: trimmed });      const current = this.choreById(choreId);      if (!current) return;      this.retireInFlightLoads();      current.subtasks = sortSubtasks([...current.subtasks, created]);
     } catch {
       await this.reconcile();
       showToast({ message: "Couldn't add that item — the list was refreshed.", kind: 'info' });
@@ -1398,12 +1399,13 @@ class BoardStore {
     const previousAt = item.completedAt;
     // Optimistic — must feel instant. Show ME as the actor immediately on a tick; clear on untick.
     // completedAt stays null until the authoritative DTO swaps in (the store builds NO Date — MN).
-    item.isDone = isDone;
-    item.completedByUserId = isDone ? this.currentUserId : null;
+    this.retireInFlightLoads();
+    item.isDone = isDone;    item.completedByUserId = isDone ? this.currentUserId : null;
     item.completedAt = null;
     try {
       const updated = await updateSubtask(choreId, subtaskId, { isDone });
       this.replaceSubtask(choreId, updated);
+      this.retireInFlightLoads();
     } catch {
       // Roll back the optimistic flip + actor, then resync to be safe.
       const cur = this.choreById(choreId)?.subtasks.find((s) => s.id === subtaskId);
@@ -1435,10 +1437,12 @@ class BoardStore {
       await this.reconcile();
       return;
     }
+    this.retireInFlightLoads();
     reordered.forEach((s, i) => (s.sortOrder = i)); // optimistic in-place
     chore.subtasks = reordered;
     try {
       await reorderSubtasks(choreId, orderedIds);
+      this.retireInFlightLoads();
     } catch {
       await this.reconcile();
       showToast({ message: "Couldn't save the new order — the list was refreshed.", kind: 'info' });
@@ -1460,10 +1464,12 @@ class BoardStore {
     if (!trimmed) return; // ignore blank rename
     if (trimmed === item.title) return; // no-op
     const previous = item.title;
+    this.retireInFlightLoads();
     item.title = trimmed; // optimistic
     try {
       const updated = await updateSubtask(choreId, subtaskId, { title: trimmed });
       this.replaceSubtask(choreId, updated);
+      this.retireInFlightLoads();
     } catch {
       const cur = this.choreById(choreId)?.subtasks.find((s) => s.id === subtaskId);
       if (cur) cur.title = previous;
@@ -1481,9 +1487,11 @@ class BoardStore {
     if (!chore) return;
     const item = chore.subtasks.find((s) => s.id === subtaskId);
     if (!item) return;
+    this.retireInFlightLoads();
     chore.subtasks = chore.subtasks.filter((s) => s.id !== subtaskId); // optimistic
     try {
       await deleteSubtask(choreId, subtaskId);
+      this.retireInFlightLoads();
     } catch {
       await this.reconcile();
       showToast({ message: "Couldn't remove that item — the list was refreshed.", kind: 'info' });
