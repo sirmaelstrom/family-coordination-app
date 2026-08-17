@@ -371,6 +371,16 @@ if (!app.Environment.IsDevelopment())
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
+// The /api EXCEPTION half (see ApiExceptionResponse): environment-independent, and it must wrap the
+// status-code branches below — an exception thrown anywhere deeper (model binding, a handler, auth) is
+// caught here first, before the page-shaped handlers above (/Error re-execute, dev page) can see it.
+app.UseWhen(
+    static context => context.Request.Path.StartsWithSegments(ApiAwareAuthEvents.ApiPrefix),
+    static branch => branch.UseExceptionHandler(new ExceptionHandlerOptions
+    {
+        ExceptionHandler = ApiExceptionResponse.Write,
+        AllowStatusCode404Response = true,
+    }));
 // /api answers in JSON and is never re-executed through a page. UseStatusCodePagesWithReExecute re-runs the
 // request through the GET-only /not-found Razor Page, which changes the status a non-GET caller observes — a
 // bodiless 4xx on /api does not arrive as itself. Branching /api to UseStatusCodePages instead BACKFILLS a JSON

@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace FamilyCoordinationApp.Tests.Integration;
 
@@ -118,5 +120,86 @@ public sealed class ApiErrorBodyTests(PostgresContainerFixture postgres) : IAsyn
 
         resp.StatusCode.Should().Be(HttpStatusCode.NotFound);
         resp.Content.Headers.ContentType!.MediaType.Should().Be("text/html");
+    }
+
+    /// <summary>
+    /// Failed <c>[FromBody]</c> binds on /api answer JSON in the NON-Development pipeline. MEASURED at
+    /// pickup (quest ea816df2): these passed before the exception branch existed, because outside
+    /// Development a bind failure does NOT throw (<c>ThrowOnBadRequest</c> is dev-only) — it produces a
+    /// bodiless 400 that the status-code backfill covers. Kept as regression guards for that composed
+    /// behavior; the Development half, where the same request THROWS, is the test below.
+    /// </summary>
+    public static TheoryData<string, string, string?, string> BindFailureRequests() => new()
+    {
+        { "DELETE", "/api/chores/999999", null, "required [FromBody] VersionRequest omitted entirely" },
+        { "DELETE", "/api/chores/999999", "{ not json", "malformed JSON in the request body" },
+    };
+
+    [Theory]
+    [MemberData(nameof(BindFailureRequests))]
+    public async Task ApiBindFailure_AnswersJson_WithoutLeakingDetail(string method, string url, string? body, string because)
+    {
+        var resp = await SendBindFailure(Client, method, url, body);
+
+        await AssertCleanJsonError(resp, because);
+    }
+
+    /// <summary>
+    /// The EXCEPTION path proper — the half <c>UseStatusCodePages</c> structurally cannot reach. In
+    /// Development a failed bind THROWS <c>BadHttpRequestException</c> before the handler runs, and used to
+    /// answer a text/plain stack trace (measured on a live dev stack, 2026-08-15). The /api exception
+    /// branch must convert it to the same JSON <c>{message}</c> the rest of the contract promises.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(BindFailureRequests))]
+    public async Task ApiExceptionPath_InDevelopment_AnswersJson_WithoutLeakingDetail(string method, string url, string? body, string because)
+    {
+        using var devFactory = _factory.WithWebHostBuilder(b => b.UseEnvironment("Development"));
+        using var client = devFactory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        client.DefaultRequestHeaders.Add(ChoresWebAppFactory.TestUserHeader, ChoresWebAppFactory.UserAEmail);
+
+        var resp = await SendBindFailure(client, method, url, body);
+
+        await AssertCleanJsonError(resp, because);
+    }
+
+    /// <summary>
+    /// The page half must keep its behavior: a non-/api error response stays page-shaped, never the /api
+    /// JSON writer's output.
+    /// </summary>
+    [Fact]
+    public async Task NonApiErrorHandling_IsUntouched()
+    {
+        // /household/request has an antiforgery-validated OnPost; posting without a token is the cheapest
+        // reliably-erroring non-/api POST the real pipeline offers.
+        var resp = await Client.PostAsync("/household/request", new FormUrlEncodedContent([]));
+
+        ((int)resp.StatusCode).Should().BeGreaterThanOrEqualTo(400);
+        resp.Content.Headers.ContentType?.MediaType.Should().NotBe("application/json",
+            "non-/api error handling must stay page-shaped");
+    }
+
+    private static async Task<HttpResponseMessage> SendBindFailure(HttpClient client, string method, string url, string? body)
+    {
+        var request = new HttpRequestMessage(new HttpMethod(method), url);
+        if (body is not null)
+        {
+            request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+        }
+        return await client.SendAsync(request);
+    }
+
+    private static async Task AssertCleanJsonError(HttpResponseMessage resp, string because)
+    {
+        resp.StatusCode.Should().Be(HttpStatusCode.BadRequest, because);
+        resp.Content.Headers.ContentType!.MediaType.Should().Be("application/json", because);
+
+        var received = await resp.Content.ReadAsStringAsync();
+        JsonDocument.Parse(received).RootElement.TryGetProperty("message", out var message).Should().BeTrue();
+        message.GetString().Should().NotBeNullOrWhiteSpace();
+
+        // The defect classes this guards: a stack trace (Development) or an HTML error page (elsewhere).
+        received.Should().NotContainAny(["Exception", "<html", "   at "],
+            "an /api error body must never leak exception detail or arrive as a page");
     }
 }
