@@ -98,10 +98,15 @@ export const WIRE_ENUMS = {
 
 export const WIRE_ENUM_FIXTURE = 'Enums/wire-enums.json';
 
+/** Pinned by capacity-fit.test.ts (the TS half) + ChoreCapacityTests (the C# half) — quest e7f8be86. */
+export const CAPACITY_LADDER_FIXTURE = 'ChoreCapacity/capacity-ladder.json';
+
 // ── Chores: board (Fixtures/ChoreBoard/board.json) ──────────────────────────
 
-// NOT an enum: User.PhysicalCapacityTier is a string column with this vocabulary, so
-// there is no Enum.GetValues to pin it to until the A9 ChoreCapacity module exists.
+// NOT an enum: User.PhysicalCapacityTier is a string column, so there is no Enum.GetValues
+// to pin this to. The DOCTRINE behind the vocabulary (weights/fit sets/gate) is owned by the
+// server's ChoreCapacity module and pinned via CAPACITY_LADDER_FIXTURE; making the column a
+// real enum is schema territory.
 const capacityTier = oneOf('Full', 'Reduced', 'Minimal');
 
 const choreBoard = objectOf({

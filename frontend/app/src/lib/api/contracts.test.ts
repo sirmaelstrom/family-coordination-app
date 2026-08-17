@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { CONTRACT_PINS, SERVER_ONLY_FIXTURES, WIRE_ENUMS, WIRE_ENUM_FIXTURE } from './contracts';
+import {
+  CAPACITY_LADDER_FIXTURE,
+  CONTRACT_PINS,
+  SERVER_ONLY_FIXTURES,
+  WIRE_ENUMS,
+  WIRE_ENUM_FIXTURE,
+} from './contracts';
 
 const FIXTURE_MODULES = import.meta.glob<unknown>(
   '../../../../../tests/FamilyCoordinationApp.Tests/Fixtures/**/*.json',
@@ -39,6 +45,7 @@ describe('M9 wire contract', () => {
       ...CONTRACT_PINS.map((p) => p.fixture),
       ...SERVER_ONLY_FIXTURES,
       WIRE_ENUM_FIXTURE,
+      CAPACITY_LADDER_FIXTURE, // checked by capacity-fit.test.ts + ChoreCapacityTests
     ];
 
     const unaccounted = [...fixtures.keys()].filter((f) => !declared.includes(f));
