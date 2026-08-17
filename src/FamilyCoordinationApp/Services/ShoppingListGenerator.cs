@@ -271,7 +271,12 @@ public class ShoppingListGenerator(
             var units = items.Select(si => si.Ingredient.Unit).ToList();
             var commonUnit = unitConverter.FindCommonUnit(units);
 
-            if (commonUnit != null && autoConsolidate)
+            // A group with no units at all ("2 eggs" planned twice) has nothing to convert but
+            // everything to sum — consolidate it under the empty unit rather than emitting one
+            // line per source.
+            var unitless = commonUnit == null && units.All(string.IsNullOrWhiteSpace);
+
+            if ((commonUnit != null || unitless) && autoConsolidate)
             {
                 // All items can be converted to common unit
                 decimal totalQuantity = 0;
@@ -316,7 +321,7 @@ public class ShoppingListGenerator(
                 {
                     Name = items.First().Ingredient.Name,
                     Quantity = Round(totalQuantity),
-                    Unit = commonUnit,
+                    Unit = commonUnit ?? string.Empty,
                     Category = items.First().Ingredient.Category,
                     SourceRecipes = sourceRecipes.Distinct().ToList(),
                     OriginalUnits = originalUnits.Count > 1 ? string.Join(" + ", originalUnits) : null,

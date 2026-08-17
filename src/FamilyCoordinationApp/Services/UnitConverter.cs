@@ -87,8 +87,10 @@ public class UnitConverter
     }
 
     /// <summary>
-    /// Finds a common unit for a list of units from the same family.
-    /// Returns null if units are from different families or list is empty.
+    /// Finds a common unit for a list of units. Every unit FindCommonUnit accepts is one Convert
+    /// can reach from every unit in the list: distinct units must all be table-known and share a
+    /// family; a list that agrees on a single unit is accepted even when the table does not know
+    /// it, because same-unit conversion is a no-op. Returns null otherwise, or for an empty list.
     /// Prefers the most frequently occurring unit.
     /// </summary>
     /// <param name="units">List of units to find common unit for</param>
@@ -104,9 +106,15 @@ public class UnitConverter
         if (normalized.Count == 0)
             return null;
 
-        // Check if all units are in same family
+        if (normalized.Count == 1)
+            return normalized[0];
+
+        // Distinct units only meet at a common unit if every one is convertible: table-known and
+        // in a single family. An unknown unit must fail the whole group — Convert throws on it.
+        if (normalized.Any(u => !ConversionTable.ContainsKey(u)))
+            return null;
+
         var families = normalized
-            .Where(u => ConversionTable.ContainsKey(u))
             .Select(u => ConversionTable[u].Family)
             .Distinct()
             .ToList();
