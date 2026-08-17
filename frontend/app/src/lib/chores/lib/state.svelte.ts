@@ -803,6 +803,31 @@ class BoardStore {
     this.refresh = refresh;
   }
 
+  // ── Board load token (moved here from App.svelte so MUTATIONS can retire in-flight reads —
+  //    quest fe715e73; the component-local counter could never be reached from the runners) ──
+
+  /** Monotonic load id — liveness poll, post-mutation reconcile and initial load can all be in flight. */
+  private loadSeq = 0;
+
+  /** Begin a load; the caller revalidates with isCurrentLoad before committing the response. */
+  beginLoad(): number {
+    return ++this.loadSeq;
+  }
+
+  /** True iff no newer load has started AND no optimistic mutation has landed since `seq`. */
+  isCurrentLoad(seq: number): boolean {
+    return seq === this.loadSeq;
+  }
+
+  /**
+   * Retire any in-flight board GET. Called before every optimistic write: a response already on the
+   * wire still holds the pre-mutation board and would resurrect a deleted chore or undo a claim
+   * when it lands — the optimistic state is newer truth than anything already in flight.
+   */
+  retireInFlightLoads(): void {
+    this.loadSeq++;
+  }
+
   /**
    * Public board refetch for the room-admin surface (RoomEditSheet + the inline
    * new-room photo). A room create/edit/photo change is not a chore mutation, so
@@ -877,6 +902,9 @@ class BoardStore {
 
     const snapshot: ChoreDto = { ...chore };
     this.markPending(choreId, true);
+    // No optimistic patch here, but the RESPONSE apply + reconcile below are newer truth than any
+    // GET already in flight — retire it or it commits the pre-mutation board over them.
+    this.retireInFlightLoads();
     try {
       const updated = await call(snapshot);
       this.applyChore(updated);
@@ -923,8 +951,11 @@ class BoardStore {
     const chore = this.choreById(choreId);
     if (!chore) return;
 
-    // Snapshot the fields we touch so we can roll back precisely.
+    // Snapshot the fields we touch so we can roll back precisely. Retire any in-flight board GET
+    // BEFORE the optimistic patch — it still holds the pre-mutation board and would overwrite this
+    // write when it lands (the recipeListStore pattern, PR #88).
     const snapshot: ChoreDto = { ...chore };
+    this.retireInFlightLoads();
     Object.assign(chore, patch);
     this.markPending(choreId, true);
 
