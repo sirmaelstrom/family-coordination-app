@@ -56,6 +56,7 @@ public class WireEnumContractTests
         ["HouseholdRequestStatus"] = CamelMembers<HouseholdRequestStatus>(),
         ["DigestCadence"] = CamelMembers<DigestCadence>(),
         ["DayOfWeek"] = CamelMembers<DayOfWeek>(),
+        ["PresenceStatus"] = CamelMembers<PresenceStatus>(),
         // String-typed wire fields carrying Enum.ToString() (ChoreBoardService), hence PascalCase.
         ["RecurrenceMode"] = ToStringMembers<RecurrenceMode>(),
         ["EffortTier"] = ToStringMembers<EffortTier>(),

@@ -11,6 +11,7 @@
   "HouseholdRequestStatus": ["pending", "approved", "rejected"],
   "DigestCadence": ["weekly"],
   "DayOfWeek": ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"],
+  "PresenceStatus": ["online", "away", "offline"],
   "RecurrenceMode": ["OneOff", "Fixed", "Flexible"],
   "EffortTier": ["Quick", "Standard", "BigJob"]
 }
