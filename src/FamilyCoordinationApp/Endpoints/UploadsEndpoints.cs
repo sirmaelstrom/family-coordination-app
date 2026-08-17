@@ -25,8 +25,9 @@ namespace FamilyCoordinationApp.Endpoints;
 ///     would also expose that household's chore and room photos.</item>
 /// </list>
 ///
-/// <para><b>No rule may key on a row the CALLER owns.</b> <c>Recipe.ImagePath</c> is unvalidated client input on
-/// create and stays mutable on update, so any such rule is an attacker-authored predicate — a caller could point
+/// <para><b>No rule may key on a row the CALLER owns.</b> <c>Recipe.ImagePath</c> reaches storage from the
+/// request body — ImagePathPolicy now refuses non-own-household paths at the write boundary (quest b0edfd94),
+/// but rows written before that policy are not retro-validated, so any such rule is an attacker-authored predicate — a caller could point
 /// one of their own rows at any path and self-grant a read. An earlier draft of this gate did exactly that (to
 /// keep images working on recipes copied from a household later disconnected) and silently reinstated the
 /// boundary this file exists to close. It was removed rather than patched: measured against production, it
@@ -158,8 +159,9 @@ public static class UploadsEndpoints
         // Note which row authorizes this: one owned by householdId, referencing householdId's OWN directory
         // (storedPath is built from the REQUESTED household). A household can therefore only ever "share" its
         // own files. Keying on a row owned by the CALLER instead would be an attacker-authored predicate,
-        // because Recipe.ImagePath is unvalidated client input on recipe write and stays mutable on update
-        // (RecipesEndpoints -> RecipeService.UpdateRecipeAsync assigns it verbatim).
+        // because Recipe.ImagePath comes from the request body — write-boundary validation (ImagePathPolicy,
+        // quest b0edfd94) constrains NEW writes to own-household paths, but legacy rows are not
+        // retro-validated and this gate must hold without trusting any of them.
         if (!await connectionService.AreHouseholdsConnectedAsync(user.HouseholdId, householdId, ct)) return false;
 
         var storedPath = $"/uploads/{householdId}/{fileName}";

@@ -115,6 +115,12 @@ public static class ChoresEndpoints
         var (floorOk, floorError) = ValidateFloor(req.SnoozedUntil, today);
         if (!floorOk) return Results.BadRequest(new { message = floorError });
 
+        if (!ImagePathPolicy.TryNormalize(req.PhotoPath, user.HouseholdId, out var photoPath))
+        {
+            return Results.BadRequest(new { message = "Photo path is not valid." });
+        }
+        req = req with { PhotoPath = photoPath };
+
         try
         {
             var chore = await svc.CreateChoreAsync(user.HouseholdId, user.UserId, req.ToCommand(), ct);
@@ -146,6 +152,12 @@ public static class ChoresEndpoints
             TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, timeZone));
         var (floorOk, floorError) = ValidateFloor(req.SnoozedUntil, today);
         if (!floorOk) return Results.BadRequest(new { message = floorError });
+
+        if (!ImagePathPolicy.TryNormalize(req.PhotoPath, user.HouseholdId, out var photoPath))
+        {
+            return Results.BadRequest(new { message = "Photo path is not valid." });
+        }
+        req = req with { PhotoPath = photoPath };
 
         try
         {
@@ -289,10 +301,15 @@ public static class ChoresEndpoints
         var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (user is null) return Results.Unauthorized();
 
+        if (!ImagePathPolicy.TryNormalize(req.PhotoPath, user.HouseholdId, out var photoPath))
+        {
+            return Results.BadRequest(new { message = "Photo path is not valid." });
+        }
+
         try
         {
             var chore = await svc.CompleteAsync(
-                user.HouseholdId, choreId, user.UserId, req.Note, req.PhotoPath, req.ParticipantUserIds, req.Version, ct);
+                user.HouseholdId, choreId, user.UserId, req.Note, photoPath, req.ParticipantUserIds, req.Version, ct);
             return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }

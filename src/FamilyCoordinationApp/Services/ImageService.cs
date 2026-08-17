@@ -10,6 +10,15 @@ public interface IImageService
     Task<string> SaveImageAsync(IFormFile file, int householdId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Duplicate a STORED upload (<c>/uploads/{sourceHouseholdId}/{file}</c>) into another household's
+    /// directory, returning the new <c>/uploads/{targetHouseholdId}/{guid}.{ext}</c> path — or null when the
+    /// source is not that household's stored upload or the file is missing. The recipe-copy path uses this so
+    /// a copied recipe owns its own file instead of permanently referencing the origin household's — the
+    /// uploads gate's forward fix (duplicate the FILE, never widen the gate).
+    /// </summary>
+    Task<string?> CopyImageAsync(string sourceImagePath, int sourceHouseholdId, int targetHouseholdId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Deletes a stored upload. <paramref name="householdId"/> is the tenant boundary, not a hint: the path is
     /// resolved and must land inside <c>wwwroot/uploads/{householdId}/</c> or the delete is refused. A path that
     /// is traversal-free but belongs to another household (<c>/uploads/{other}/x.jpg</c>) is a legitimate
@@ -123,10 +132,10 @@ public class ImageService(
 
         // Convert URL path to filesystem path
         // imagePath format: /uploads/{householdId}/{filename}
-        // Resolution itself can throw: this string is unvalidated client input (chore/room PhotoPath is
-        // stored verbatim from the request body and replayed here by delete-on-replace), and e.g. an
-        // embedded NUL makes Path.GetFullPath throw — which would surface as a 500 on an otherwise-valid
-        // update. A path the OS will not parse is a path we refuse, not one we propagate.
+        // Resolution itself can throw: PhotoPath rows written before the ImagePathPolicy write boundary
+        // (quest b0edfd94) were stored verbatim from the request body and are replayed here by
+        // delete-on-replace — e.g. an embedded NUL makes Path.GetFullPath throw, which would surface
+        // as a 500 on an otherwise-valid update. A path the OS will not parse is a path we refuse, not one we propagate.
         string fullPath;
         try
         {
@@ -167,6 +176,57 @@ public class ImageService(
         }
 
         return Task.CompletedTask;
+    }
+
+    public async Task<string?> CopyImageAsync(
+        string sourceImagePath, int sourceHouseholdId, int targetHouseholdId, CancellationToken cancellationToken = default)
+    {
+        var prefix = $"/uploads/{sourceHouseholdId}/";
+        if (string.IsNullOrWhiteSpace(sourceImagePath)
+            || !sourceImagePath.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var sourceRoot = UploadRootFor(environment.WebRootPath, sourceHouseholdId);
+        string sourceFull;
+        try
+        {
+            sourceFull = Path.GetFullPath(Path.Combine(sourceRoot, sourceImagePath[prefix.Length..]));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Refused image copy of unparseable path {ImagePath}", sourceImagePath);
+            return null;
+        }
+
+        // Same tenant boundary as delete: the resolved source must be inside the SOURCE household's directory.
+        if (!IsWithinDirectory(sourceRoot, sourceFull) || !File.Exists(sourceFull)) return null;
+
+        var targetRoot = UploadRootFor(environment.WebRootPath, targetHouseholdId);
+        Directory.CreateDirectory(targetRoot);
+        var newName = $"{Guid.NewGuid()}{Path.GetExtension(sourceFull).ToLowerInvariant()}";
+        var targetFull = Path.Combine(targetRoot, newName);
+
+        try
+        {
+            await using var source = File.OpenRead(sourceFull);
+            await using var target = File.Create(targetFull);
+            await source.CopyToAsync(target, cancellationToken);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            // File.Exists above is check-then-use: the source can vanish between the check and the open
+            // (delete-on-replace on a row referencing the same file). Missing-at-open is the same contract
+            // as missing-at-check — return null, never a throw the copy endpoint would surface as a 500.
+            try { File.Delete(targetFull); } catch { /* best-effort partial-file cleanup */ }
+            return null;
+        }
+
+        logger.LogInformation(
+            "Copied image {Source} to household {TargetHouseholdId} as {NewName}",
+            sourceImagePath, targetHouseholdId, newName);
+        return $"/uploads/{targetHouseholdId}/{newName}";
     }
 
     /// <summary>
