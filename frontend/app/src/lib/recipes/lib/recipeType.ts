@@ -1,35 +1,8 @@
-// Display labels for the RecipeType union (mirrors the Blazor GetRecipeTypeLabel
-// in RecipeEdit / RecipeCard) + the type-select option order (the C# enum order).
+// The shared vocabulary surface lives in $lib/api/recipeType (quest ca10904a); this module
+// re-exports it and keeps ONLY the presentation this island renders (short chip labels + colors).
 import type { RecipeType } from './types';
 
-export const RECIPE_TYPE_LABELS: Record<RecipeType, string> = {
-  main: 'Main Dish',
-  side: 'Side Dish',
-  appetizer: 'Appetizer',
-  dessert: 'Dessert',
-  beverage: 'Beverage',
-  sauce: 'Sauce/Condiment',
-  breakfast: 'Breakfast',
-  snack: 'Snack',
-  other: 'Other',
-};
-
-/** The select option order — matches the C# enum declaration order. */
-export const RECIPE_TYPES: RecipeType[] = [
-  'main',
-  'side',
-  'appetizer',
-  'dessert',
-  'beverage',
-  'sauce',
-  'breakfast',
-  'snack',
-  'other',
-];
-
-export function recipeTypeLabel(type: RecipeType): string {
-  return RECIPE_TYPE_LABELS[type] ?? type;
-}
+export { RECIPE_TYPE_LABELS, RECIPE_TYPES, recipeTypeLabel } from '$lib/api/recipeType';
 
 /** Short chip labels for the card (mirrors RecipeCard.razor GetTypeLabel; `main` chip is hidden). */
 const RECIPE_TYPE_SHORT: Record<RecipeType, string> = {

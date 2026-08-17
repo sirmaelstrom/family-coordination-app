@@ -23,7 +23,7 @@
   // ───────────────────────────────────────────────────────────────────────
   import type { MealPlanEntryDto } from '../types';
   import type { DragEntry } from '../board-ops';
-  import { recipeTypeLabel } from '../recipeType';
+  import { recipeTypeLabel } from '$lib/api/recipeType';
   import { dndzone, SHADOW_ITEM_MARKER_PROPERTY_NAME, type DndEvent } from 'svelte-dnd-action';
 
   interface Props {

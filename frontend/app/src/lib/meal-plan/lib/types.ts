@@ -16,18 +16,8 @@
 // mutation except add, which creates the row.
 // ─────────────────────────────────────────────────────────────────────────
 
-export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
-
-export type RecipeType =
-  | 'main'
-  | 'side'
-  | 'appetizer'
-  | 'dessert'
-  | 'beverage'
-  | 'sauce'
-  | 'breakfast'
-  | 'snack'
-  | 'other';
+import type { MealType, RecipeType } from '$lib/api/recipeType';
+export type { MealType, RecipeType };
 
 /** The lightweight recipe shape a slot card renders (the board payload stays lean). */
 export interface MealRecipeSummaryDto {
