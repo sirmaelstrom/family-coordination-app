@@ -127,15 +127,18 @@
 
   // Monotonic load ids. loadList is the initial load, the list switcher, the liveness poll AND the
   // post-mutation reconcile, so several can be in flight at once; without a token the slower/older
-  // response lands last and shows another list's items.
-  //
-  // SCOPE: load-vs-load only. It does NOT retire an in-flight read when a local mutation lands, so
-  // a GET already in flight can still replace `list` with its pre-mutation payload (un-checking an
-  // item that was just checked). Fixing that means advancing the token before each of the local
-  // write sites, the way recipeListStore does. Tracked separately — do not read this guard as
-  // covering that case.
+  // response lands last and shows another list's items. Both race classes are covered: a newer
+  // load supersedes an older one, and every local mutation site calls retireInFlightLoads() before
+  // its optimistic write (quest fe715e73, the recipeListStore pattern) — a GET already on the wire
+  // can no longer land afterwards and un-check an item that was just checked.
   let listLoadSeq = 0;
   let listsLoadSeq = 0;
+
+  /** Retire any in-flight reads — an optimistic write is newer truth than a response already on the wire. */
+  function retireInFlightLoads() {
+    listLoadSeq++;
+    listsLoadSeq++;
+  }
 
   async function loadLists() {
     const seq = ++listsLoadSeq;
@@ -211,12 +214,12 @@
   async function setChecked(item: ShoppingListItemDto, target: boolean) {
     if (!list || currentListId == null) return;
     const prev = { isChecked: item.isChecked, checkedAt: item.checkedAt };
+    retireInFlightLoads();
     item.isChecked = target;
     item.checkedAt = target ? new Date().toISOString() : null;
     markPending(item.id, true);
     try {
-      const updated = await patchItem(currentListId, item.id, { isChecked: target });
-      Object.assign(item, updated);
+      const updated = await patchItem(currentListId, item.id, { isChecked: target });      Object.assign(item, updated);      retireInFlightLoads();
     } catch (e) {
       Object.assign(item, prev);
       if (e instanceof ApiError && (e.status === 404 || e.status === 409)) {
@@ -257,11 +260,11 @@
     const next = item.quantity + delta;
     if (next < 1) return;
     const prev = item.quantity;
+    retireInFlightLoads();
     item.quantity = next;
     markPending(item.id, true);
     try {
-      const updated = await patchItem(currentListId, item.id, { quantity: next });
-      Object.assign(item, updated);
+      const updated = await patchItem(currentListId, item.id, { quantity: next });      Object.assign(item, updated);      retireInFlightLoads();
     } catch (e) {
       item.quantity = prev;
       if (e instanceof ApiError && (e.status === 404 || e.status === 409)) {
@@ -289,6 +292,7 @@
   async function handleItemDialogSubmit(value: ItemFormValue) {
     if (currentListId == null || !list) return;
     itemDialogSubmitting = true;
+    retireInFlightLoads();
     try {
       if (itemDialogMode === 'add') {
         const created = await addItem(currentListId, value);
@@ -303,6 +307,7 @@
         const idx = list.items.findIndex((i) => i.id === updated.id);
         if (idx >= 0) list.items[idx] = updated;
       }
+      retireInFlightLoads(); // a GET begun during the request still holds the pre-write list
       itemDialogOpen = false;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -321,9 +326,9 @@
     const item = pendingDelete;
     confirmDeleteOpen = false;
     markPending(item.id, true);
+    retireInFlightLoads();
     try {
-      await deleteItem(currentListId, item.id);
-      list.items = list.items.filter((i) => i.id !== item.id);
+      await deleteItem(currentListId, item.id);      list.items = list.items.filter((i) => i.id !== item.id);      retireInFlightLoads();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -335,10 +340,10 @@
   async function handleToggleFavorite() {
     if (currentListId == null || !list) return;
     const prev = list.isFavorite;
+    retireInFlightLoads();
     list.isFavorite = !prev;
     try {
-      const r = await toggleFavorite(currentListId);
-      list.isFavorite = r.isFavorite;
+      const r = await toggleFavorite(currentListId);      list.isFavorite = r.isFavorite;      retireInFlightLoads();
       await loadLists();
     } catch (e) {
       list.isFavorite = prev;
@@ -363,8 +368,7 @@
     if (currentListId == null) return;
     confirmRegenerateOpen = false;
     try {
-      const updated = await regenerateList(currentListId);
-      list = updated;
+      const updated = await regenerateList(currentListId);      list = updated;      retireInFlightLoads();
       await loadLists();
       showToast({ message: 'List regenerated from the meal plan', kind: 'success' });
     } catch (e) {
@@ -376,8 +380,7 @@
     if (currentListId == null || !list) return;
     renameSubmitting = true;
     try {
-      const r = await renameList(currentListId, newName);
-      list.name = r.name;
+      const r = await renameList(currentListId, newName);      list.name = r.name;      retireInFlightLoads();
       await loadLists();
       renameOpen = false;
     } catch (e) {
@@ -497,6 +500,7 @@
     // finalize (drop): commit. Stamp the dropped items with this zone's category
     // + their new order, resync list.items from every zone, THEN release the
     // drag guard so the rebuild effect reconciles once from the final state.
+    retireInFlightLoads();
     setZoneItems(category, reordered);
     reordered.forEach((item, index) => {
       item.category = category;
@@ -513,6 +517,7 @@
     }));
     try {
       await updateSortOrders(currentListId, updates);
+      retireInFlightLoads(); // a GET begun during the request still holds the pre-drag order
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
       await loadList(currentListId);
