@@ -48,7 +48,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
         var lists = await svc.GetActiveShoppingListsAsync(ctx.HouseholdId, ct);
@@ -73,7 +73,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
         if (string.IsNullOrWhiteSpace(req.Name))
         {
@@ -94,7 +94,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
         if (req.StartDate == default || req.EndDate == default || req.EndDate < req.StartDate)
@@ -130,7 +130,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
         var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
@@ -147,7 +147,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
         var lists = await svc.GetArchivedShoppingListsAsync(ctx.HouseholdId, favoritesOnly, ct);
@@ -176,7 +176,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
         var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
@@ -196,7 +196,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
         var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
@@ -220,7 +220,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
         var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
@@ -247,7 +247,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
         var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
@@ -277,7 +277,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
         try
@@ -298,7 +298,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
         try
@@ -320,7 +320,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
         if (string.IsNullOrWhiteSpace(req.Name))
         {
@@ -349,7 +349,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
         var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
@@ -390,7 +390,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
         var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
@@ -459,7 +459,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
         if (string.IsNullOrWhiteSpace(req.Name))
@@ -509,7 +509,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
         var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
@@ -535,7 +535,7 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
         if (req.Updates is null || req.Updates.Count == 0)
@@ -557,22 +557,6 @@ public static class ShoppingListEndpoints
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
-    private static async Task<UserContext?> ResolveUserAsync(
-        ClaimsPrincipal principal,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
-        CancellationToken ct)
-    {
-        var email = principal.FindFirst(ClaimTypes.Email)?.Value;
-        if (string.IsNullOrEmpty(email)) return null;
-
-        await using var context = await dbFactory.CreateDbContextAsync(ct);
-        var user = await context.Users
-            .Where(u => u.Email == email)
-            .Select(u => new { u.Id, u.HouseholdId })
-            .FirstOrDefaultAsync(ct);
-
-        return user is null ? null : new UserContext(user.HouseholdId, user.Id);
-    }
 
     /// <summary>
     /// The user's cumulative adjustment over the generator's baseline. The baseline is invariant under
@@ -608,7 +592,6 @@ public static class ShoppingListEndpoints
         i.AddedBy?.PictureUrl,
         i.Version);
 
-    private sealed record UserContext(int HouseholdId, int UserId);
 
     public sealed record PatchItemRequest(
         bool? IsChecked,

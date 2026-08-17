@@ -6,9 +6,8 @@ namespace FamilyCoordinationApp.Endpoints;
 
 /// <summary>
 /// Resolves the authenticated caller's household + user id from their cookie claims (M1: the HouseholdId
-/// the endpoints filter by comes ONLY from here, never from client input). <c>ShoppingListEndpoints</c>
-/// still carries its own private <c>ResolveUserAsync</c> copy of this logic — a fork that predates the
-/// de-Blazor flip and outlived the constraint that caused it. Folding it in is quest 9101a410.
+/// the endpoints filter by comes ONLY from here, never from client input). Every endpoint group
+/// resolves through here — the ShoppingListEndpoints fork was folded in by quest 9101a410.
 /// </summary>
 public static class UserContextResolver
 {
