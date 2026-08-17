@@ -257,8 +257,17 @@ public static class ShoppingListEndpoints
             return Results.Conflict(new { message = "This list is not linked to a meal plan." });
         }
 
-        var updated = await generator.RegenerateShoppingListAsync(ctx.HouseholdId, listId, ct);
-        return Results.Ok(ToListDto(updated));
+        try
+        {
+            var updated = await generator.RegenerateShoppingListAsync(ctx.HouseholdId, listId, ct);
+            return Results.Ok(ToListDto(updated));
+        }
+        catch (InvalidOperationException)
+        {
+            // The MealPlanId pre-check passed but the plan row itself is gone (deleted since) —
+            // a client-resolvable state, not a server fault.
+            return Results.Conflict(new { message = "The linked meal plan no longer exists." });
+        }
     }
 
     private static async Task<IResult> ToggleFavorite(
@@ -318,6 +327,10 @@ public static class ShoppingListEndpoints
             return Results.BadRequest(new { message = "Name is required" });
         }
 
+        var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
+        if (archived is null) return Results.NotFound();
+        if (archived == true) return ArchivedListConflict;
+
         try
         {
             var updated = await svc.RenameShoppingListAsync(ctx.HouseholdId, listId, req.Name.Trim(), ct);
@@ -339,11 +352,34 @@ public static class ShoppingListEndpoints
         var ctx = await ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
+        var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
+        if (archived is null) return Results.NotFound();
+        if (archived == true) return ArchivedListConflict;
+
         var removed = await svc.ClearCheckedItemsAsync(ctx.HouseholdId, listId, ct);
         return Results.Ok(new { removed });
     }
 
     // ─── Items ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// null = no such list; true = archived. Archived lists are READ-ONLY for ordinary mutations
+    /// (council round 1 on PR #101): the past surface renders them with pick checkboxes only, and the
+    /// server enforces what the UI implies. Reopen/delete/regenerate/toggle-favorite are the deliberate
+    /// exceptions — they are the past surface's own verbs.
+    /// </summary>
+    private static async Task<bool?> IsListArchivedAsync(
+        IDbContextFactory<ApplicationDbContext> dbFactory, int householdId, int listId, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.ShoppingLists
+            .Where(l => l.HouseholdId == householdId && l.ShoppingListId == listId)
+            .Select(l => (bool?)l.IsArchived)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    private static readonly IResult ArchivedListConflict =
+        Results.Conflict(new { message = "This list is archived — reopen it first." });
 
     private static async Task<IResult> PatchItem(
         int listId,
@@ -356,6 +392,10 @@ public static class ShoppingListEndpoints
     {
         var ctx = await ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
+
+        var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
+        if (archived is null) return Results.NotFound();
+        if (archived == true) return ArchivedListConflict;
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var item = await db.ShoppingListItems
@@ -383,6 +423,12 @@ public static class ShoppingListEndpoints
                 item.QuantityDelta = ComputeQuantityDelta(req.Quantity.Value, item.Quantity, item.QuantityDelta);
             }
             item.Quantity = req.Quantity;
+        }
+        // A unit change on a generated row invalidates the delta — it was measured in the OLD unit and
+        // re-applying it to a consolidated quantity in the new one would be a unit-mismatched number.
+        if (req.Unit is not null && !item.IsManuallyAdded && req.Unit != item.Unit)
+        {
+            item.QuantityDelta = null;
         }
         if (req.Unit is not null) item.Unit = req.Unit;
         if (req.Name is not null) item.Name = req.Name;
@@ -419,7 +465,8 @@ public static class ShoppingListEndpoints
         }
 
         var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
-        if (list is null || list.IsArchived) return Results.NotFound();
+        if (list is null) return Results.NotFound();
+        if (list.IsArchived) return ArchivedListConflict;
 
         var item = new ShoppingListItem
         {
@@ -462,6 +509,10 @@ public static class ShoppingListEndpoints
         var ctx = await ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
+        var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
+        if (archived is null) return Results.NotFound();
+        if (archived == true) return ArchivedListConflict;
+
         try
         {
             await svc.DeleteItemAsync(ctx.HouseholdId, listId, itemId, ct);
@@ -488,6 +539,10 @@ public static class ShoppingListEndpoints
         {
             return Results.NoContent();
         }
+
+        var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
+        if (archived is null) return Results.NotFound();
+        if (archived == true) return ArchivedListConflict;
 
         var updates = req.Updates
             .Select(u => (u.ItemId, u.SortOrder, (string?)u.Category))

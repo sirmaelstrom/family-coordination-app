@@ -212,5 +212,122 @@ public class ShoppingListRegenerateTests : IDisposable
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not found*");
     }
 
+    /// <summary>
+    /// The end-to-end council finding: a quantity edit must survive the SERVICE persistence hop
+    /// (UpdateItemWithConcurrencyAsync's field copy dropped QuantityDelta) and then be re-applied by
+    /// regenerate — the full PATCH → persist → regenerate path, not just the pure delta math.
+    /// </summary>
+    [Fact]
+    public async Task QuantityEdit_SurvivesPersistence_AndRegenerate()
+    {
+        var dbFactoryMock = new Mock<IDbContextFactory<ApplicationDbContext>>();
+        dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => new ApplicationDbContext(_options));
+        var service = new ShoppingListService(
+            dbFactoryMock.Object, new Mock<ILogger<ShoppingListService>>().Object);
+
+        // The eggs row (generated, no delta yet): the user edits 2 → 5, PatchItem-style.
+        var eggs = (await ItemsAsync()).Single(i => i.Name == "eggs");
+        eggs.Quantity = 5m;
+        eggs.QuantityDelta = 3m; // what ShoppingListEndpoints.ComputeQuantityDelta produces for 2 → 5
+
+        var (success, _, _) = await service.UpdateItemWithConcurrencyAsync(eggs);
+        success.Should().BeTrue();
+
+        (await ItemsAsync()).Single(i => i.Name == "eggs").QuantityDelta.Should().Be(3m,
+            "the persistence hop must not drop the delta — its field copy is a whitelist");
+
+        await _generator.RegenerateShoppingListAsync(1, 50);
+
+        var regenerated = (await ItemsAsync()).Single(i => i.Name == "eggs");
+        regenerated.Quantity.Should().Be(5m, "fresh consolidated 2 + carried delta 3");
+        regenerated.QuantityDelta.Should().Be(3m);
+    }
+
+    /// <summary>
+    /// Carry-over identity is the CONSOLIDATOR'S — (normalized name, category) — so two same-name rows
+    /// in different categories each keep their own state instead of collapsing onto one.
+    /// </summary>
+    [Fact]
+    public async Task Regenerate_CarriesStatePerCategory_WhenNamesCollide()
+    {
+        await using (var ctx = new ApplicationDbContext(_options))
+        {
+            ctx.RecipeIngredients.AddRange(
+                new RecipeIngredient
+                {
+                    HouseholdId = 1, RecipeId = 10, IngredientId = 3,
+                    Name = "ginger", Quantity = 1m, Unit = null, Category = "Produce"
+                },
+                new RecipeIngredient
+                {
+                    HouseholdId = 1, RecipeId = 10, IngredientId = 4,
+                    Name = "ginger", Quantity = 1m, Unit = null, Category = "Spices"
+                });
+            ctx.ShoppingListItems.AddRange(
+                new ShoppingListItem
+                {
+                    HouseholdId = 1, ShoppingListId = 50, ItemId = 5,
+                    Name = "ginger", Quantity = 1m, Unit = null, Category = "Produce",
+                    IsManuallyAdded = false, IsChecked = true, CheckedAt = CheckedInstant, SortOrder = 4
+                },
+                new ShoppingListItem
+                {
+                    HouseholdId = 1, ShoppingListId = 50, ItemId = 6,
+                    Name = "ginger", Quantity = 1m, Unit = null, Category = "Spices",
+                    IsManuallyAdded = false, QuantityDelta = 2m, SortOrder = 5
+                });
+            await ctx.SaveChangesAsync();
+        }
+
+        await _generator.RegenerateShoppingListAsync(1, 50);
+
+        var items = await ItemsAsync();
+        var produceGinger = items.Single(i => i.Name == "ginger" && i.Category == "Produce");
+        produceGinger.IsChecked.Should().BeTrue("Produce ginger was checked — its state must not leak to Spices");
+        produceGinger.QuantityDelta.Should().BeNull();
+
+        var spicesGinger = items.Single(i => i.Name == "ginger" && i.Category == "Spices");
+        spicesGinger.IsChecked.Should().BeFalse();
+        spicesGinger.QuantityDelta.Should().Be(2m);
+        spicesGinger.Quantity.Should().Be(3m, "fresh 1 + carried delta 2");
+    }
+
+    /// <summary>Regenerate honours entry servings the same way generation does, then re-applies the delta.</summary>
+    [Fact]
+    public async Task Regenerate_ScalesByEntryServings_ThenAppliesDelta()
+    {
+        await using (var ctx = new ApplicationDbContext(_options))
+        {
+            var recipe = await ctx.Recipes.SingleAsync(r => r.HouseholdId == 1 && r.RecipeId == 10);
+            recipe.Servings = 4;
+            var entry = await ctx.MealPlanEntries.SingleAsync(e => e.HouseholdId == 1 && e.MealPlanId == 900);
+            entry.Servings = 8; // ×2 against the recipe's own yield
+            await ctx.SaveChangesAsync();
+        }
+
+        await _generator.RegenerateShoppingListAsync(1, 50);
+
+        var flour = (await ItemsAsync()).Single(i => i.Name == "flour");
+        flour.Quantity.Should().Be(5m, "scaled 2 cup × 2 = 4, + carried delta 1");
+    }
+
+    /// <summary>A carried negative edit larger than the fresh quantity floors at zero, never negative.</summary>
+    [Fact]
+    public async Task Regenerate_FloorsQuantityAtZero()
+    {
+        await using (var ctx = new ApplicationDbContext(_options))
+        {
+            var flour = await ctx.ShoppingListItems
+                .SingleAsync(i => i.HouseholdId == 1 && i.ShoppingListId == 50 && i.Name == "flour");
+            flour.QuantityDelta = -10m;
+            await ctx.SaveChangesAsync();
+        }
+
+        await _generator.RegenerateShoppingListAsync(1, 50);
+
+        (await ItemsAsync()).Single(i => i.Name == "flour").Quantity.Should().Be(0m);
+    }
+
     public void Dispose() => _seedContext.Dispose();
 }

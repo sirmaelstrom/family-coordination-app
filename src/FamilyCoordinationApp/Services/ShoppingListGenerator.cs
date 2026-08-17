@@ -29,10 +29,11 @@ public interface IShoppingListGenerator
     Task<ShoppingList> GenerateFromMealPlanAsync(int householdId, int mealPlanId, string listName, DateOnly? startDate = null, DateOnly? endDate = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Unwired, not dead — held for the past-lists feature alongside the archive trio on
-    /// <see cref="Interfaces.IShoppingListService"/>. Refreshes a list from its linked meal plan while
-    /// preserving manually-added items and re-applying each edited item's QuantityDelta. Needs a route
-    /// and UI, not new logic.
+    /// Rebuild the generated rows from the list's linked meal plan — the WHOLE plan week, regardless of
+    /// the date range the list was originally generated with (the range is not persisted; see the
+    /// past-lists spec-lite). Atomic (one SaveChanges); manual items untouched; checked state, sort
+    /// position and each edited item's QuantityDelta carry onto the fresh rows by the consolidator's
+    /// (normalized name, category) identity. Wired at POST /{listId}/actions/regenerate.
     /// </summary>
     Task<ShoppingList> RegenerateShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default);
 
@@ -132,10 +133,21 @@ public class ShoppingListGenerator(
         return shoppingList;
     }
 
-    public async Task<ShoppingList> RegenerateShoppingListAsync(
+    public Task<ShoppingList> RegenerateShoppingListAsync(
         int householdId,
         int shoppingListId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        // Retry wrapper: item ids are assigned max+1 in memory, so a concurrent manual add can
+        // collide on the composite key — same hazard (and same remedy) as the sibling writes.
+        IdGenerationHelper.ExecuteWithRetryAsync(
+            _ => RegenerateOnceAsync(householdId, shoppingListId, cancellationToken),
+            logger,
+            "ShoppingListRegenerate");
+
+    private async Task<ShoppingList> RegenerateOnceAsync(
+        int householdId,
+        int shoppingListId,
+        CancellationToken cancellationToken)
     {
         // One context, one SaveChanges: the rebuild must be atomic. Going through the item-level
         // service calls would save once per item on separate contexts, and a failure mid-loop would
@@ -154,12 +166,14 @@ public class ShoppingListGenerator(
             throw new InvalidOperationException($"ShoppingList {shoppingListId} is not linked to a meal plan");
         }
 
-        // Outgoing generated rows keyed by normalized name — checked state, sort position and the
-        // user's quantity edit (QuantityDelta) carry across the rebuild onto the matching fresh row.
+        // Outgoing generated rows keyed by the CONSOLIDATOR'S identity — (normalized name, category),
+        // the same pair ConsolidateScaledIngredientsAsync groups by — so same-name rows in different
+        // categories each keep their own checked state / sort position / quantity edit. Genuine
+        // duplicates within one identity resolve to the lowest ItemId (deterministic, oldest row).
         var outgoing = existingList.Items
             .Where(i => !i.IsManuallyAdded)
-            .GroupBy(i => NormalizeIngredientName(i.Name))
-            .ToDictionary(g => g.Key, g => g.First());
+            .GroupBy(i => (Name: NormalizeIngredientName(i.Name), i.Category))
+            .ToDictionary(g => g.Key, g => g.OrderBy(i => i.ItemId).First());
 
         var mealPlan = await context.MealPlans
             .Where(mp => mp.HouseholdId == householdId && mp.MealPlanId == existingList.MealPlanId)
@@ -186,7 +200,7 @@ public class ShoppingListGenerator(
 
         foreach (var result in consolidationResults)
         {
-            outgoing.TryGetValue(NormalizeIngredientName(result.Name), out var previous);
+            outgoing.TryGetValue((NormalizeIngredientName(result.Name), result.Category), out var previous);
             var quantityDelta = previous?.QuantityDelta;
 
             context.ShoppingListItems.Add(new ShoppingListItem
@@ -195,7 +209,9 @@ public class ShoppingListGenerator(
                 ShoppingListId = shoppingListId,
                 ItemId = ++nextItemId,
                 Name = result.Name,
-                Quantity = result.Quantity + (quantityDelta ?? 0),
+                // Floor at zero: a carried negative edit larger than the fresh quantity must not
+                // produce a negative line.
+                Quantity = Math.Max(0, result.Quantity + (quantityDelta ?? 0)),
                 Unit = result.Unit,
                 Category = result.Category,
                 SourceRecipes = result.SourceRecipes.Count > 0

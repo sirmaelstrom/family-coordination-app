@@ -44,8 +44,9 @@
 
   let confirmDeleteId = $state<number | null>(null);
 
-  /** Stale-response guard (house pattern): only the latest load may commit. */
+  /** Stale-response guards (house pattern): only the latest load may commit. */
   let loadSeq = 0;
+  let detailSeq = 0;
 
   async function load(): Promise<void> {
     const seq = ++loadSeq;
@@ -69,6 +70,7 @@
   }
 
   async function toggleDetail(listId: number): Promise<void> {
+    const seq = ++detailSeq;
     if (detail?.id === listId) {
       detail = null;
       pickedIds = new Set();
@@ -76,12 +78,15 @@
     }
     detailLoading = true;
     try {
-      detail = await getArchivedList(listId);
+      const loaded = await getArchivedList(listId);
+      if (seq !== detailSeq) return; // a newer expand/collapse superseded this one
+      detail = loaded;
       pickedIds = new Set();
     } catch (e) {
+      if (seq !== detailSeq) return;
       error = e instanceof Error ? e.message : String(e);
     } finally {
-      detailLoading = false;
+      if (seq === detailSeq) detailLoading = false;
     }
   }
 
@@ -116,11 +121,16 @@
     }
   }
 
-  /** Copy picked rows into the target ACTIVE list via AddItem — they arrive manual + unchecked. */
+  /**
+   * Copy picked rows into the target ACTIVE list via AddItem — they arrive manual + unchecked.
+   * Each success is removed from the selection AS IT LANDS, so a retry after a partial failure
+   * only re-sends the items that never made it (council round 1: retry-safety).
+   */
   async function handleAddPicked(): Promise<void> {
     if (!detail || targetListId == null || pickedIds.size === 0) return;
     adding = true;
     const picked = detail.items.filter((i) => pickedIds.has(i.id));
+    let added = 0;
     try {
       for (const item of picked) {
         await addItem(targetListId, {
@@ -129,16 +139,25 @@
           unit: item.unit,
           category: item.category,
         });
+        added += 1;
+        const next = new Set(pickedIds);
+        next.delete(item.id);
+        pickedIds = next;
       }
       const target = activeLists.find((l) => l.id === targetListId);
       showToast({
-        message: `Added ${picked.length} item${picked.length === 1 ? '' : 's'} to ${target?.name ?? 'the list'}`,
+        message: `Added ${added} item${added === 1 ? '' : 's'} to ${target?.name ?? 'the list'}`,
         kind: 'success',
       });
-      pickedIds = new Set();
       await load();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
+      if (added > 0) {
+        showToast({
+          message: `Added ${added} of ${picked.length} — the rest stay selected; retry adds only those.`,
+          kind: 'info',
+        });
+      }
     } finally {
       adding = false;
     }
