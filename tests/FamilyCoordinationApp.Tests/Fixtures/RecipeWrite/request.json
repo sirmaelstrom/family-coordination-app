@@ -1,0 +1,32 @@
+{
+  "name": "Pancakes",
+  "description": "Fluffy breakfast pancakes",
+  "instructions": "Mix and fry.",
+  "sourceUrl": null,
+  "servings": 4,
+  "prepTimeMinutes": 10,
+  "cookTimeMinutes": null,
+  "recipeType": "breakfast",
+  "imagePath": null,
+  "ingredients": [
+    {
+      "name": "flour",
+      "quantity": 2.5,
+      "unit": "cup",
+      "category": "Baking",
+      "notes": null,
+      "groupName": null,
+      "sortOrder": 1
+    },
+    {
+      "name": "eggs",
+      "quantity": null,
+      "unit": null,
+      "category": "Dairy",
+      "notes": "room temperature",
+      "groupName": "Wet",
+      "sortOrder": 2
+    }
+  ],
+  "version": 7
+}

@@ -1,0 +1,16 @@
+[
+  {
+    "id": 4,
+    "name": "Weekly Shop",
+    "isFavorite": true,
+    "itemCount": 12,
+    "uncheckedCount": 5
+  },
+  {
+    "id": 9,
+    "name": "Hardware Store",
+    "isFavorite": false,
+    "itemCount": 3,
+    "uncheckedCount": 0
+  }
+]
