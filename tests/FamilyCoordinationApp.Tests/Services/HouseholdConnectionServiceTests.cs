@@ -19,6 +19,7 @@ public class HouseholdConnectionServiceTests : IDisposable
     private readonly Mock<IDbContextFactory<ApplicationDbContext>> _dbFactoryMock;
     private readonly Mock<ILogger<HouseholdConnectionService>> _connectionLoggerMock;
     private readonly Mock<ILogger<RecipeService>> _recipeLoggerMock;
+    private Mock<IImageService> _imageServiceMock = null!;
     private readonly HouseholdConnectionService _connectionService;
     private readonly RecipeService _recipeService;
 
@@ -38,7 +39,8 @@ public class HouseholdConnectionServiceTests : IDisposable
         _recipeLoggerMock = new Mock<ILogger<RecipeService>>();
 
         _connectionService = new HouseholdConnectionService(_dbFactoryMock.Object, _connectionLoggerMock.Object);
-        _recipeService = new RecipeService(_dbFactoryMock.Object, _recipeLoggerMock.Object);
+        _imageServiceMock = new Mock<IImageService>();
+        _recipeService = new RecipeService(_dbFactoryMock.Object, _imageServiceMock.Object, _recipeLoggerMock.Object);
 
         // Clear rate limit state between tests
         HouseholdConnectionService.ClearRateLimitState();
@@ -396,6 +398,62 @@ public class HouseholdConnectionServiceTests : IDisposable
     }
 
     // --- CopyRecipe Tests ---
+
+    [Fact]
+    public async Task CopyRecipe_DuplicatesAStoredImageIntoTheCopyingHousehold()
+    {
+        // The source recipe carries its own household's stored upload; the copy must own a NEW file
+        // in household 2's directory — never a permanent reference into household 1's (quest b0edfd94).
+        await using (var ctx = new ApplicationDbContext(_options))
+        {
+            var source = await ctx.Recipes.SingleAsync(r => r.HouseholdId == 1 && r.RecipeId == 1);
+            source.ImagePath = "/uploads/1/chili.jpg";
+            await ctx.SaveChangesAsync();
+        }
+        _imageServiceMock
+            .Setup(s => s.CopyImageAsync("/uploads/1/chili.jpg", 1, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync("/uploads/2/new-guid.jpg");
+
+        var copied = await _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2);
+
+        copied.ImagePath.Should().Be("/uploads/2/new-guid.jpg");
+    }
+
+    [Fact]
+    public async Task CopyRecipe_DropsTheImageWhenTheSourceFileIsGone()
+    {
+        await using (var ctx = new ApplicationDbContext(_options))
+        {
+            var source = await ctx.Recipes.SingleAsync(r => r.HouseholdId == 1 && r.RecipeId == 1);
+            source.ImagePath = "/uploads/1/vanished.jpg";
+            await ctx.SaveChangesAsync();
+        }
+        _imageServiceMock
+            .Setup(s => s.CopyImageAsync(It.IsAny<string>(), 1, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string?)null);
+
+        var copied = await _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2);
+
+        copied.ImagePath.Should().BeNull("a dangling cross-household reference is worse than no image");
+    }
+
+    [Fact]
+    public async Task CopyRecipe_KeepsAnExternalUrlVerbatim()
+    {
+        await using (var ctx = new ApplicationDbContext(_options))
+        {
+            var source = await ctx.Recipes.SingleAsync(r => r.HouseholdId == 1 && r.RecipeId == 1);
+            source.ImagePath = "https://example.test/chili.jpg";
+            await ctx.SaveChangesAsync();
+        }
+
+        var copied = await _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2);
+
+        copied.ImagePath.Should().Be("https://example.test/chili.jpg");
+        _imageServiceMock.Verify(
+            s => s.CopyImageAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never, "external URLs never touch the uploads directory");
+    }
 
     [Fact]
     public async Task CopyRecipe_SetsAttribution()

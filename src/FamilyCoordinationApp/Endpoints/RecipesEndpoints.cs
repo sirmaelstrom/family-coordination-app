@@ -131,7 +131,13 @@ public static class RecipesEndpoints
             return Results.BadRequest(new { message = "Recipe name is required." });
         }
 
-        var recipe = MapToRecipe(req, user.HouseholdId, recipeId: 0);
+
+        if (!ImagePathPolicy.TryNormalize(req.ImagePath, user.HouseholdId, out var imagePath))
+        {
+            return Results.BadRequest(new { message = "Image path is not valid." });
+        }
+
+        var recipe = MapToRecipe(req, user.HouseholdId, recipeId: 0, imagePath);
         recipe.CreatedByUserId = user.UserId;
         recipe.CreatedAt = DateTime.UtcNow;
 
@@ -159,7 +165,13 @@ public static class RecipesEndpoints
             return Results.BadRequest(new { message = "Recipe name is required." });
         }
 
-        var recipe = MapToRecipe(req, user.HouseholdId, recipeId);
+
+        if (!ImagePathPolicy.TryNormalize(req.ImagePath, user.HouseholdId, out var imagePath))
+        {
+            return Results.BadRequest(new { message = "Image path is not valid." });
+        }
+
+        var recipe = MapToRecipe(req, user.HouseholdId, recipeId, imagePath);
         recipe.UpdatedByUserId = user.UserId;
 
         try
@@ -531,9 +543,14 @@ public static class RecipesEndpoints
             return Results.BadRequest(new { message = "Draft name is required." });
         }
 
+        if (!ImagePathPolicy.TryNormalize(req.ImagePath, user.HouseholdId, out var imagePath))
+        {
+            return Results.BadRequest(new { message = "Image path is not valid." });
+        }
+
         // Map the flat request to DraftService's RecipeDraftData (which it serializes to the draft row).
         var draft = new RecipeDraftData(
-            req.Name, req.Description, req.Instructions, req.ImagePath, req.SourceUrl,
+            req.Name, req.Description, req.Instructions, imagePath, req.SourceUrl,
             req.Servings, req.PrepTimeMinutes, req.CookTimeMinutes,
             (req.Ingredients ?? new List<DraftIngredientBody>())
                 .Select(i => new IngredientDraftData(i.Name, i.Quantity, i.Unit, i.Category, i.Notes, i.GroupName, i.SortOrder))
@@ -565,7 +582,7 @@ public static class RecipesEndpoints
         Results.Json(new { message = "Households are not connected." }, statusCode: StatusCodes.Status403Forbidden);
 
     /// <summary>Map a write request to a <see cref="Recipe"/>. RecipeId 0 ⇒ create (service assigns the id).</summary>
-    private static Recipe MapToRecipe(RecipeWriteRequest req, int householdId, int recipeId) => new()
+    private static Recipe MapToRecipe(RecipeWriteRequest req, int householdId, int recipeId, string? imagePath) => new()
     {
         HouseholdId = householdId,
         RecipeId = recipeId,
@@ -577,7 +594,7 @@ public static class RecipesEndpoints
         PrepTimeMinutes = req.PrepTimeMinutes,
         CookTimeMinutes = req.CookTimeMinutes,
         RecipeType = req.RecipeType,
-        ImagePath = NullIfBlank(req.ImagePath),
+        ImagePath = imagePath, // validated by ImagePathPolicy in the handler
         Ingredients = (req.Ingredients ?? new List<RecipeIngredientWrite>())
             .Select((ing, i) => new RecipeIngredient
             {

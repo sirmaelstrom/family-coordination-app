@@ -445,6 +445,56 @@ public class SecurityTests
             .Should().NotThrowAsync();
     }
 
+    #endregion
+
+    #region Cross-household image COPY (ImageService.CopyImageAsync — quest b0edfd94)
+
+    [Fact]
+    public async Task CopyImage_DuplicatesTheFileIntoTheTargetHousehold()
+    {
+        using var root = new TempWebRoot();
+        var sourceDir = Directory.CreateDirectory(Path.Combine(root.Path, "uploads", "1"));
+        var sourceFile = Path.Combine(sourceDir.FullName, "photo.jpg");
+        await File.WriteAllBytesAsync(sourceFile, new byte[] { 1, 2, 3 });
+
+        var newPath = await NewImageService(root.Path).CopyImageAsync("/uploads/1/photo.jpg", 1, 2);
+
+        newPath.Should().StartWith("/uploads/2/").And.EndWith(".jpg");
+        var newFile = Path.Combine(root.Path, "uploads", "2", Path.GetFileName(newPath!));
+        File.Exists(newFile).Should().BeTrue();
+        (await File.ReadAllBytesAsync(newFile)).Should().Equal(1, 2, 3);
+        File.Exists(sourceFile).Should().BeTrue("copy, not move — the source household keeps its file");
+    }
+
+    [Theory]
+    [InlineData("/uploads/2/photo.jpg")] // not the claimed source household's path
+    [InlineData("/uploads/1/../2/photo.jpg")] // traversal out of the source directory
+    [InlineData("https://example.test/photo.jpg")] // external URL — not a stored upload
+    [InlineData("")]
+    public async Task CopyImage_RefusesNonOwnedSources(string sourcePath)
+    {
+        using var root = new TempWebRoot();
+        Directory.CreateDirectory(Path.Combine(root.Path, "uploads", "2"));
+        await File.WriteAllBytesAsync(Path.Combine(root.Path, "uploads", "2", "photo.jpg"), new byte[] { 9 });
+
+        var result = await NewImageService(root.Path).CopyImageAsync(sourcePath, sourceHouseholdId: 1, targetHouseholdId: 3);
+
+        result.Should().BeNull();
+        Directory.Exists(Path.Combine(root.Path, "uploads", "3")).Should().BeFalse("nothing may be created for a refused copy");
+    }
+
+    [Fact]
+    public async Task CopyImage_MissingSourceFile_ReturnsNull()
+    {
+        using var root = new TempWebRoot();
+
+        var result = await NewImageService(root.Path).CopyImageAsync("/uploads/1/gone.jpg", 1, 2);
+
+        result.Should().BeNull();
+    }
+
+    #endregion
+
     private static ImageService NewImageService(string webRootPath)
     {
         var mockEnv = new Mock<IWebHostEnvironment>();
@@ -477,6 +527,4 @@ public class SecurityTests
             try { Directory.Delete(Path, recursive: true); } catch { /* best-effort temp cleanup */ }
         }
     }
-
-    #endregion
 }

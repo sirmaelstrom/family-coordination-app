@@ -70,9 +70,13 @@ public static class RoomsEndpoints
         var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (user is null) return Results.Unauthorized();
         if (string.IsNullOrWhiteSpace(req.Name)) return Results.BadRequest(new { message = "Name is required" });
+        if (!ImagePathPolicy.TryNormalize(req.PhotoPath, user.HouseholdId, out var photoPath))
+        {
+            return Results.BadRequest(new { message = "Photo path is not valid." });
+        }
 
         var room = await svc.CreateRoomAsync(
-            user.HouseholdId, req.Name.Trim(), (req.Icon ?? string.Empty).Trim(), req.PhotoPath, ct);
+            user.HouseholdId, req.Name.Trim(), (req.Icon ?? string.Empty).Trim(), photoPath, ct);
         return Results.Created($"/api/rooms/{room.RoomId}", ToDto(room));
     }
 
@@ -87,11 +91,15 @@ public static class RoomsEndpoints
         var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
         if (user is null) return Results.Unauthorized();
         if (string.IsNullOrWhiteSpace(req.Name)) return Results.BadRequest(new { message = "Name is required" });
+        if (!ImagePathPolicy.TryNormalize(req.PhotoPath, user.HouseholdId, out var photoPath))
+        {
+            return Results.BadRequest(new { message = "Photo path is not valid." });
+        }
 
         try
         {
             var room = await svc.UpdateRoomAsync(
-                user.HouseholdId, roomId, req.Name.Trim(), (req.Icon ?? string.Empty).Trim(), req.PhotoPath, ct);
+                user.HouseholdId, roomId, req.Name.Trim(), (req.Icon ?? string.Empty).Trim(), photoPath, ct);
             return Results.Ok(ToDto(room));
         }
         catch (InvalidOperationException)

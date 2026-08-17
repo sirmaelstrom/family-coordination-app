@@ -7,6 +7,7 @@ namespace FamilyCoordinationApp.Services;
 
 public class RecipeService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
+    IImageService imageService,
     ILogger<RecipeService> logger) : IRecipeService
 {
 
@@ -295,6 +296,18 @@ public class RecipeService(
                 // Get next recipe ID for the target household
                 var newRecipeId = await GetNextRecipeIdInternalAsync(context, targetHouseholdId, cancellationToken);
 
+                // A copy must own its image. A stored upload is duplicated into the copying household's
+                // directory (the uploads gate's forward fix — never widen the gate); if the source file is
+                // gone the reference is DROPPED rather than kept pointing at another household's directory.
+                // External http(s) URLs copy verbatim — they never touch the gate.
+                var sourcePrefix = $"/uploads/{sourceHouseholdId}/";
+                var copiedImagePath = sourceRecipe.ImagePath;
+                if (copiedImagePath != null && copiedImagePath.StartsWith(sourcePrefix, StringComparison.Ordinal))
+                {
+                    copiedImagePath = await imageService.CopyImageAsync(
+                        copiedImagePath, sourceHouseholdId, targetHouseholdId, cancellationToken);
+                }
+
                 var copiedRecipe = new Recipe
                 {
                     HouseholdId = targetHouseholdId,
@@ -302,7 +315,7 @@ public class RecipeService(
                     Name = sourceRecipe.Name,
                     Description = sourceRecipe.Description,
                     Instructions = sourceRecipe.Instructions,
-                    ImagePath = sourceRecipe.ImagePath,
+                    ImagePath = copiedImagePath,
                     SourceUrl = sourceRecipe.SourceUrl,
                     Servings = sourceRecipe.Servings,
                     PrepTimeMinutes = sourceRecipe.PrepTimeMinutes,
