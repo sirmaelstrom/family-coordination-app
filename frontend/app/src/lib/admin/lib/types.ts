@@ -12,10 +12,10 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 /** The per-page context the Razor host hands the island via data- attributes. */
-export interface ShellContext {
-  householdId: number;
-  userId: number;
-  userName: string;
+import type { ShellContext as AppShellContext } from '$lib/session.svelte';
+
+// Canonical identity + this island's view discriminator (quest 76e6f169).
+export interface ShellContext extends AppShellContext {
   view: 'households' | 'feedback';
 }
 

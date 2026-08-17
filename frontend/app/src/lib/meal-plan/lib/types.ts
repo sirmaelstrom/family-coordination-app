@@ -87,8 +87,5 @@ export interface RecipeDetailDto {
 }
 
 /** The shell context the Razor host hands the island via root data-attrs. */
-export interface ShellContext {
-  householdId: number;
-  userId: number;
-  userName: string;
-}
+// The canonical app-wide ShellContext (quest 76e6f169 collapsed the per-island copies).
+export type { ShellContext } from '$lib/session.svelte';

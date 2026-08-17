@@ -24,6 +24,7 @@
     ApiError,
     type SortOrderUpdate,
   } from './lib/api';
+  import { startLiveness } from '$lib/liveness';
   import CategorySection from './lib/components/CategorySection.svelte';
   import HeaderBar, { type MenuAction } from './lib/components/HeaderBar.svelte';
   import ItemDialog, { type ItemFormValue } from './lib/components/ItemDialog.svelte';
@@ -524,12 +525,6 @@
     }
   }
 
-  function handleVisibility() {
-    if (document.visibilityState === 'visible' && currentListId != null) {
-      loadList(currentListId);
-    }
-  }
-
   $effect(() => {
     (async () => {
       await loadLists();
@@ -539,8 +534,14 @@
       }
       await loadList(currentListId);
     })();
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
+    // House liveness (quest 76e6f169 — this island previously refreshed only on
+    // visibilitychange): interval poll while visible + immediate refetch on re-show.
+    // The loadSeq guards make a stale poll response harmless.
+    const liveness = startLiveness(() => {
+      if (currentListId != null) void loadList(currentListId);
+      void loadLists();
+    });
+    return () => liveness.stop();
   });
 </script>
 

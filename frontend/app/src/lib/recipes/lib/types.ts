@@ -216,11 +216,10 @@ export interface SaveDraftRequest {
 
 export type IslandView = 'list' | 'edit';
 
-export interface ShellContext {
-  householdId: number;
-  userId: number;
-  userName: string;
+import type { ShellContext as AppShellContext } from '$lib/session.svelte';
+
+// Canonical identity + this island's view discriminator; recipeId rides the canonical
+// shape (set only when editing an existing recipe — null for /recipes/new). Quest 76e6f169.
+export interface ShellContext extends AppShellContext {
   view: IslandView;
-  /** Set only for editing an existing recipe (null for /recipes/new). */
-  recipeId: number | null;
 }
