@@ -403,4 +403,68 @@ public class UnitConverterTests
         // Assert
         Assert.Equal(16m, result);
     }
+
+    [Fact]
+    public void FindCommonUnit_KnownUnitPairedWithUnknown_ReturnsNull()
+    {
+        // Arrange — "pinch" is not in the conversion table, so no common unit can be converted to.
+        var units = new List<string?> { "cup", "pinch" };
+
+        // Act
+        var result = _converter.FindCommonUnit(units);
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void FindCommonUnit_IdenticalUnknownUnits_ReturnsThatUnit()
+    {
+        // Arrange — Convert(q, u, u) is a no-op for any unit, table-known or not, so a group that
+        // agrees on one unit is always consolidatable.
+        var units = new List<string?> { "each", "each" };
+
+        // Act
+        var result = _converter.FindCommonUnit(units);
+
+        // Assert
+        Assert.Equal("each", result);
+    }
+
+    [Fact]
+    public void FindCommonUnit_EveryAcceptedPair_ConvertsBothWays()
+    {
+        // Mirrors the conversion table's vocabulary plus units it does not know. The contract under
+        // test: any pair FindCommonUnit accepts must survive Convert in both directions — a common
+        // unit that Convert then throws on is a 500 on the shopping-list generate path.
+        var knownUnits = new[]
+        {
+            "cup", "cups", "c", "tbsp", "tablespoon", "tablespoons", "tsp", "teaspoon", "teaspoons",
+            "fl oz", "fluid ounce", "fluid ounces", "ml", "milliliter", "milliliters", "l", "liter", "liters",
+            "g", "gram", "grams", "kg", "kilogram", "kilograms", "oz", "ounce", "ounces",
+            "lb", "lbs", "pound", "pounds",
+            "piece", "pieces", "clove", "cloves", "can", "cans", "bunch",
+        };
+        // Canary: every unit this test believes is known must actually be in the table.
+        foreach (var u in knownUnits)
+            Assert.True(_converter.CanConvert(u, u), $"'{u}' is expected to be a table-known unit");
+
+        var unknownUnits = new[] { "pinch", "dash", "each", "slice", "" };
+        var universe = knownUnits.Concat(unknownUnits).ToArray();
+
+        foreach (var a in universe)
+        {
+            foreach (var b in universe)
+            {
+                var common = _converter.FindCommonUnit(new List<string?> { a, b });
+                if (common == null)
+                    continue;
+
+                var exA = Record.Exception(() => _converter.Convert(1m, a, common));
+                var exB = Record.Exception(() => _converter.Convert(1m, b, common));
+                Assert.True(exA == null && exB == null,
+                    $"FindCommonUnit accepted [{a}, {b}] -> '{common}' but Convert threw: {exA?.Message ?? exB?.Message}");
+            }
+        }
+    }
 }

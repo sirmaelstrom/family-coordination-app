@@ -708,6 +708,94 @@ public class ShoppingListGeneratorTests : IDisposable
     }
 
     [Fact]
+    public async Task ConsolidateScaledIngredients_KnownUnitPairedWithUnknown_KeepsSeparateInsteadOfThrowing()
+    {
+        // "pinch" is outside the conversion table. A household whose recipes mix it with a table
+        // unit for the same ingredient must get a two-line list, not a 500 from Convert.
+        var recipe = new Recipe { HouseholdId = 1, RecipeId = 203, Name = "Seasoned", Servings = 2 };
+        RecipeIngredient Ing(int id, string unit) => new()
+        {
+            HouseholdId = 1,
+            RecipeId = 203,
+            IngredientId = id,
+            Name = "salt",
+            Quantity = 1m,
+            Unit = unit,
+            Category = "Pantry",
+            Recipe = recipe
+        };
+
+        var results = await _generator.ConsolidateScaledIngredientsAsync(
+            [
+                new ScaledIngredient(Ing(1, "cup"), 1m),
+                new ScaledIngredient(Ing(2, "pinch"), 1m),
+            ],
+            autoConsolidate: true);
+
+        results.Should().HaveCount(2, "a unit Convert cannot handle must fall to the keep-separate branch");
+    }
+
+    [Fact]
+    public async Task ConsolidateScaledIngredients_UnitlessDuplicateLines_SumIntoOne()
+    {
+        // The same recipe planned twice in a week contributes its unitless ingredients twice.
+        // "2 eggs" + "2 eggs" is one line of 4, not two identical lines.
+        var recipe = new Recipe { HouseholdId = 1, RecipeId = 204, Name = "Omelette", Servings = 2 };
+        RecipeIngredient Eggs(int id) => new()
+        {
+            HouseholdId = 1,
+            RecipeId = 204,
+            IngredientId = id,
+            Name = "eggs",
+            Quantity = 2m,
+            Unit = null,
+            Category = "Dairy",
+            Recipe = recipe
+        };
+
+        var results = await _generator.ConsolidateScaledIngredientsAsync(
+            [
+                new ScaledIngredient(Eggs(1), 1m),
+                new ScaledIngredient(Eggs(1), 1m),
+            ],
+            autoConsolidate: true);
+
+        results.Should().HaveCount(1);
+        results[0].Quantity.Should().Be(4m);
+        results[0].Unit.Should().Be(string.Empty);
+    }
+
+    [Fact]
+    public async Task ConsolidateScaledIngredients_IdenticalUnknownUnits_SumIntoOne()
+    {
+        // A unit the table does not know ("each") still consolidates when every line agrees on it —
+        // no conversion is needed to add 2 each and 3 each.
+        var recipe = new Recipe { HouseholdId = 1, RecipeId = 205, Name = "Fruit Bowl", Servings = 2 };
+        RecipeIngredient Ing(int id, decimal qty) => new()
+        {
+            HouseholdId = 1,
+            RecipeId = 205,
+            IngredientId = id,
+            Name = "apples",
+            Quantity = qty,
+            Unit = "each",
+            Category = "Produce",
+            Recipe = recipe
+        };
+
+        var results = await _generator.ConsolidateScaledIngredientsAsync(
+            [
+                new ScaledIngredient(Ing(1, 2m), 1m),
+                new ScaledIngredient(Ing(2, 3m), 1m),
+            ],
+            autoConsolidate: true);
+
+        results.Should().HaveCount(1);
+        results[0].Quantity.Should().Be(5m);
+        results[0].Unit.Should().Be("each");
+    }
+
+    [Fact]
     public async Task GenerateFromMealPlan_ScalesOnlyTheEntriesThatAskForIt()
     {
         // End-to-end through the real entity graph: two entries in one plan, one overridden and one not.
