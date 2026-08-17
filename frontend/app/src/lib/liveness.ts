@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Liveness — lightweight collaboration refresh for the admin island (the one
-// settings cluster that polls, review R-C9). Per-view cadence: households 30s,
-// feedback 15s (parity with the old Blazor timers).
+// Liveness — lightweight collaboration refresh, shared by every island that polls
+// (quest 76e6f169 folded five code-identical copies onto this parameterized one;
+// per-view cadence: e.g. admin households 30s, feedback 15s, boards 20s default).
 //
 // A change made by another admin/household member should appear within the
 // interval while the tab is VISIBLE, and immediately when the tab regains focus.

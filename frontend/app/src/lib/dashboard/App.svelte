@@ -7,7 +7,7 @@
   import './styles/app.css';
   import type { ShellContext } from './lib/types';
   import { dashboardStore as store } from './lib/dashboardStore.svelte';
-  import { startLiveness, type LivenessHandle } from './lib/liveness';
+  import { startLiveness, type LivenessHandle } from '$lib/liveness';
   import { showToast } from '$lib/shared/toast-store.svelte';
   import { formatLongDate, formatShortDate } from './lib/dates';
   import ChoreCard from './lib/components/ChoreCard.svelte';

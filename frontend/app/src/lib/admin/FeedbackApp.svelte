@@ -8,7 +8,7 @@
   import type { ShellContext, FeedbackDto, FeedbackType } from './lib/types';
   import { feedbackStore } from './lib/feedbackStore.svelte';
   import { formatDateTime } from './lib/dates';
-  import { startLiveness } from './lib/liveness';
+  import { startLiveness } from '$lib/liveness';
   import { feedbackSubmitCount, openFeedback } from '$lib/shared/feedback-store.svelte';
 
   let { ctx }: { ctx: ShellContext } = $props();

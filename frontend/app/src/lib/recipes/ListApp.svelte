@@ -18,7 +18,7 @@
   import type { RecipeListItemDto, ShellContext } from './lib/types';
   import { recipeListStore } from './lib/recipeListStore.svelte';
   import { copyConnectedRecipe } from './lib/api';
-  import { startLiveness, type LivenessHandle } from './lib/liveness';
+  import { startLiveness, type LivenessHandle } from '$lib/liveness';
   import { showToast } from '$lib/shared/toast-store.svelte';
   import RecipeCard from './lib/components/RecipeCard.svelte';
   import ConnectedHouseholdSelector from './lib/components/ConnectedHouseholdSelector.svelte';

@@ -2,7 +2,7 @@
   import { untrack } from 'svelte';
   import type { MealPlanEntryDto, MealType, ShellContext } from './lib/types';
   import { mealPlanStore } from './lib/state.svelte';
-  import { startLiveness, type LivenessHandle } from './lib/liveness';
+  import { startLiveness, type LivenessHandle } from '$lib/liveness';
   import { weekdayShort, monthDay, todayMonday } from './lib/dates';
   import { parseServingsInput } from './lib/servings';
   import WeekNav from './lib/components/WeekNav.svelte';

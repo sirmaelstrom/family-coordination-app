@@ -182,13 +182,20 @@ export interface ShellContext {
  * Build a ShellContext from the canonical session + this route's params.
  * MUST be called only when `session.ready` (routes gate their body on it),
  * otherwise it throws — identity is never guessed client-side.
+ *
+ * The `view` overload types the island's view discriminator from the literal the route
+ * passes, so view-bearing islands (admin/settings/recipes) get `ShellContext & {view: V}`
+ * from the one helper instead of hand-building ctx literals (quest 76e6f169 — the hand-built
+ * literals were also where every `session.householdId!` assertion lived).
  */
-export function ctx(params: RouteParams = {}): ShellContext {
+export function ctx<V extends string>(params: RouteParams & { view: V }): ShellContext & { view: V };
+export function ctx(params?: RouteParams): ShellContext;
+export function ctx(params: RouteParams & { view?: string } = {}): ShellContext & { view?: string } {
   const u = session.user;
   if (!u) {
     throw new Error('ctx() called before session is ready — gate the route body on `session.ready`.');
   }
-  return {
+  const base: ShellContext = {
     householdId: u.householdId,
     userId: u.userId,
     userName: u.userName,
@@ -198,4 +205,5 @@ export function ctx(params: RouteParams = {}): ShellContext {
     listId: params.listId ?? null,
     recipeId: params.recipeId ?? null,
   };
+  return params.view === undefined ? base : { ...base, view: params.view };
 }
