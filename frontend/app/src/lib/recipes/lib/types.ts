@@ -11,16 +11,8 @@
 //   ("main", "side", …). `decimal?`/`int?` serialize as number-or-null.
 // ─────────────────────────────────────────────────────────────────────────
 
-export type RecipeType =
-  | 'main'
-  | 'side'
-  | 'appetizer'
-  | 'dessert'
-  | 'beverage'
-  | 'sauce'
-  | 'breakfast'
-  | 'snack'
-  | 'other';
+import type { RecipeType } from '$lib/api/recipeType';
+export type { RecipeType };
 
 // ── List (Fixtures/RecipeList/list.json) ───────────────────────────────────
 

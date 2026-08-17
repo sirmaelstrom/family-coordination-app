@@ -13,7 +13,7 @@
   // ───────────────────────────────────────────────────────────────────────
   import type { MealRecipeSummaryDto, RecipeType } from '../types';
   import { searchRecipes, quickCreateRecipe, ApiError } from '../api';
-  import { RECIPE_TYPES, recipeTypeLabel } from '../recipeType';
+  import { RECIPE_TYPES, recipeTypeLabel } from '$lib/api/recipeType';
 
   type Mode = 'search' | 'custom' | 'new';
 

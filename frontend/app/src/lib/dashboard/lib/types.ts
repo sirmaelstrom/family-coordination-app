@@ -11,7 +11,8 @@
 //   `new Date("YYYY-MM-DD")` (UTC-midnight parse = wrong day in US tz).
 // ─────────────────────────────────────────────────────────────────────────
 
-export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+import type { MealType } from '$lib/api/recipeType';
+export type { MealType };
 
 /** The four Home chore-card counts (mirrors ChoreHomeStats.Result). */
 export interface DashboardChoreSummaryDto {
