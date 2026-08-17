@@ -105,3 +105,6 @@ src/FamilyCoordinationApp/wwwroot/service-worker.js
 frontend/app/build/
 frontend/app/.svelte-kit/
 node_modules/
+
+# /chart planning maps (local working state, never committed)
+.scratch/
