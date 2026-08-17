@@ -95,7 +95,7 @@ export interface MoveEntryBody {
 
 /**
  * Move an entry to another same-week slot (drag-to-assign) → the updated entry.
- * Cross-week target / duplicate-in-slot → 400; a missing entry → 404/empty-400.
+ * Cross-week target / duplicate-in-slot → 400; a missing entry → 404.
  */
 export async function moveEntry(
   mealPlanId: number,
