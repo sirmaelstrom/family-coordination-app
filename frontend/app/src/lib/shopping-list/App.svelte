@@ -1,5 +1,6 @@
 <script lang="ts">
   import { base } from '$app/paths';
+  import { goto } from '$app/navigation';
   import type { ShellContext } from '$lib/session.svelte';
   import type {
     ShoppingListDto,
@@ -18,6 +19,7 @@
     clearChecked,
     createList,
     generateFromMealPlan,
+    regenerateList,
     updateSortOrders,
     ApiError,
     type SortOrderUpdate,
@@ -53,6 +55,7 @@
   let pendingDelete = $state<ShoppingListItemDto | null>(null);
   let confirmClearOpen = $state(false);
   let confirmArchiveOpen = $state(false);
+  let confirmRegenerateOpen = $state(false);
 
   let renameOpen = $state(false);
   let renameSubmitting = $state(false);
@@ -348,8 +351,24 @@
       case 'new': newListOpen = true; break;
       case 'rename': renameOpen = true; break;
       case 'generate': generateOpen = true; break;
+      case 'regenerate': confirmRegenerateOpen = true; break;
       case 'clear-checked': confirmClearOpen = true; break;
       case 'archive': confirmArchiveOpen = true; break;
+      // A real navigation (goto), not shallow URL sync — /past is its own route with its own island.
+      case 'past-lists': void goto(`${base}/shopping-list/past`); break;
+    }
+  }
+
+  async function handleConfirmRegenerate() {
+    if (currentListId == null) return;
+    confirmRegenerateOpen = false;
+    try {
+      const updated = await regenerateList(currentListId);
+      list = updated;
+      await loadLists();
+      showToast({ message: 'List regenerated from the meal plan', kind: 'success' });
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
     }
   }
 
@@ -526,6 +545,7 @@
     {currentListId}
     currentListName={list?.name ?? null}
     isFavorite={list?.isFavorite ?? false}
+    canRegenerate={list?.hasMealPlan ?? false}
     onSelect={handleSelectList}
     onToggleFavorite={handleToggleFavorite}
     onMenuAction={handleMenuAction}
@@ -624,6 +644,15 @@
   confirmLabel="Archive"
   onCancel={() => (confirmArchiveOpen = false)}
   onConfirm={handleConfirmArchive}
+/>
+
+<ConfirmDialog
+  open={confirmRegenerateOpen}
+  title="Regenerate List"
+  message="Rebuild this list from its full linked meal-plan week? Your manual items, checked-off state and quantity edits are kept; generated quantities refresh from the whole week's plan."
+  confirmLabel="Regenerate"
+  onCancel={() => (confirmRegenerateOpen = false)}
+  onConfirm={handleConfirmRegenerate}
 />
 
 <PromptDialog

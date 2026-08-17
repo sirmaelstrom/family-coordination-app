@@ -19,7 +19,11 @@ public static class ShoppingListEndpoints
         group.MapGet("/", GetActiveLists);
         group.MapPost("/", CreateList);
         group.MapPost("/actions/generate-from-meal-plan", GenerateFromMealPlan);
+        // Literal segments win over the {listId:int} template, so /archived never collides with it.
+        group.MapGet("/archived", GetArchivedLists);
+        group.MapGet("/archived/{listId:int}", GetArchivedList);
         group.MapGet("/{listId:int}", GetList);
+        group.MapDelete("/{listId:int}", DeleteList);
 
         group.MapPatch("/{listId:int}/items/{itemId:int}", PatchItem);
         group.MapPost("/{listId:int}/items", AddItem);
@@ -28,6 +32,8 @@ public static class ShoppingListEndpoints
 
         group.MapPost("/{listId:int}/actions/toggle-favorite", ToggleFavorite);
         group.MapPost("/{listId:int}/actions/archive", ArchiveList);
+        group.MapPost("/{listId:int}/actions/restore", RestoreList);
+        group.MapPost("/{listId:int}/actions/regenerate", RegenerateList);
         group.MapPost("/{listId:int}/actions/rename", RenameList);
         group.MapPost("/{listId:int}/actions/clear-checked", ClearChecked);
 
@@ -133,6 +139,137 @@ public static class ShoppingListEndpoints
         return Results.Ok(ToListDto(list));
     }
 
+    /// <summary>The past-lists browse read. Favorites-first then CreatedAt desc (service-side sort).</summary>
+    private static async Task<IResult> GetArchivedLists(
+        bool? favoritesOnly,
+        ClaimsPrincipal principal,
+        IShoppingListService svc,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        if (ctx is null) return Results.Unauthorized();
+
+        var lists = await svc.GetArchivedShoppingListsAsync(ctx.HouseholdId, favoritesOnly, ct);
+        var summaries = lists
+            .Select(l => new ArchivedListSummaryDto(
+                l.ShoppingListId,
+                l.Name,
+                l.IsFavorite,
+                l.Items.Count,
+                l.Items.Count(i => !i.IsChecked),
+                l.CreatedAt,
+                l.MealPlanId != null))
+            .ToList();
+
+        return Results.Ok(summaries);
+    }
+
+    /// <summary>
+    /// Read-only detail for an ARCHIVED list (the pick-items-off surface). <see cref="GetList"/> stays
+    /// active-only — its archived→404 is an invariant of the active surface, not an accident.
+    /// </summary>
+    private static async Task<IResult> GetArchivedList(
+        int listId,
+        ClaimsPrincipal principal,
+        IShoppingListService svc,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        if (ctx is null) return Results.Unauthorized();
+
+        var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
+        if (list is null || !list.IsArchived)
+        {
+            return Results.NotFound(new { message = "No archived list with that id." });
+        }
+
+        return Results.Ok(ToListDto(list));
+    }
+
+    /// <summary>Reopen. Restore only flips IsArchived — deliberately no auto-regenerate; the link is kept.</summary>
+    private static async Task<IResult> RestoreList(
+        int listId,
+        ClaimsPrincipal principal,
+        IShoppingListService svc,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        if (ctx is null) return Results.Unauthorized();
+
+        var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
+        if (list is null || !list.IsArchived)
+        {
+            return Results.NotFound(new { message = "No archived list with that id." });
+        }
+
+        await svc.RestoreShoppingListAsync(ctx.HouseholdId, listId, ct);
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Permanent delete, server-enforced past-only: deleting is a two-step act (archive first), so a
+    /// mis-tapped delete on the active surface cannot destroy a live list.
+    /// </summary>
+    private static async Task<IResult> DeleteList(
+        int listId,
+        ClaimsPrincipal principal,
+        IShoppingListService svc,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        if (ctx is null) return Results.Unauthorized();
+
+        var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
+        if (list is null) return Results.NotFound(new { message = "No list with that id." });
+        if (!list.IsArchived)
+        {
+            return Results.Conflict(new { message = "Archive a list before deleting it." });
+        }
+
+        await svc.DeleteShoppingListAsync(ctx.HouseholdId, listId, ct);
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Rebuild the generated rows from the linked meal plan (atomic; checked-state, sort position and
+    /// quantity edits carry by normalized name — see ShoppingListGenerator). Does NOT change IsArchived:
+    /// regenerate and reopen are orthogonal verbs, mirroring restore's no-auto-regenerate ruling.
+    /// </summary>
+    private static async Task<IResult> RegenerateList(
+        int listId,
+        ClaimsPrincipal principal,
+        IShoppingListService svc,
+        IShoppingListGenerator generator,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var ctx = await ResolveUserAsync(principal, dbFactory, ct);
+        if (ctx is null) return Results.Unauthorized();
+
+        var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
+        if (list is null) return Results.NotFound(new { message = "No list with that id." });
+        if (list.MealPlanId is null)
+        {
+            return Results.Conflict(new { message = "This list is not linked to a meal plan." });
+        }
+
+        try
+        {
+            var updated = await generator.RegenerateShoppingListAsync(ctx.HouseholdId, listId, ct);
+            return Results.Ok(ToListDto(updated));
+        }
+        catch (InvalidOperationException)
+        {
+            // The MealPlanId pre-check passed but the plan row itself is gone (deleted since) —
+            // a client-resolvable state, not a server fault.
+            return Results.Conflict(new { message = "The linked meal plan no longer exists." });
+        }
+    }
+
     private static async Task<IResult> ToggleFavorite(
         int listId,
         ClaimsPrincipal principal,
@@ -190,6 +327,10 @@ public static class ShoppingListEndpoints
             return Results.BadRequest(new { message = "Name is required" });
         }
 
+        var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
+        if (archived is null) return Results.NotFound();
+        if (archived == true) return ArchivedListConflict;
+
         try
         {
             var updated = await svc.RenameShoppingListAsync(ctx.HouseholdId, listId, req.Name.Trim(), ct);
@@ -211,11 +352,34 @@ public static class ShoppingListEndpoints
         var ctx = await ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
+        var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
+        if (archived is null) return Results.NotFound();
+        if (archived == true) return ArchivedListConflict;
+
         var removed = await svc.ClearCheckedItemsAsync(ctx.HouseholdId, listId, ct);
         return Results.Ok(new { removed });
     }
 
     // ─── Items ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// null = no such list; true = archived. Archived lists are READ-ONLY for ordinary mutations
+    /// (council round 1 on PR #101): the past surface renders them with pick checkboxes only, and the
+    /// server enforces what the UI implies. Reopen/delete/regenerate/toggle-favorite are the deliberate
+    /// exceptions — they are the past surface's own verbs.
+    /// </summary>
+    private static async Task<bool?> IsListArchivedAsync(
+        IDbContextFactory<ApplicationDbContext> dbFactory, int householdId, int listId, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.ShoppingLists
+            .Where(l => l.HouseholdId == householdId && l.ShoppingListId == listId)
+            .Select(l => (bool?)l.IsArchived)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    private static readonly IResult ArchivedListConflict =
+        Results.Conflict(new { message = "This list is archived — reopen it first." });
 
     private static async Task<IResult> PatchItem(
         int listId,
@@ -228,6 +392,10 @@ public static class ShoppingListEndpoints
     {
         var ctx = await ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
+
+        var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
+        if (archived is null) return Results.NotFound();
+        if (archived == true) return ArchivedListConflict;
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var item = await db.ShoppingListItems
@@ -245,7 +413,26 @@ public static class ShoppingListEndpoints
             item.IsChecked = req.IsChecked.Value;
             item.CheckedAt = req.IsChecked.Value ? DateTime.UtcNow : null;
         }
-        if (req.Quantity is not null) item.Quantity = req.Quantity;
+        if (req.Quantity is not null)
+        {
+            // Generated rows record the user's edit as a delta over the generator's own number, so a
+            // regenerate can re-apply it to the fresh consolidated quantity. Manual rows have no
+            // generator baseline — their quantity IS the truth, no delta.
+            if (!item.IsManuallyAdded)
+            {
+                item.QuantityDelta = ComputeQuantityDelta(req.Quantity.Value, item.Quantity, item.QuantityDelta);
+            }
+            item.Quantity = req.Quantity;
+        }
+        // A unit or category change on a generated row invalidates the delta — the unit changes what
+        // the number MEANS, and category is half the consolidator's carry identity, so the edited row
+        // no longer corresponds to the baseline the delta was measured against.
+        if (!item.IsManuallyAdded
+            && ((req.Unit is not null && req.Unit != item.Unit)
+                || (req.Category is not null && req.Category != item.Category)))
+        {
+            item.QuantityDelta = null;
+        }
         if (req.Unit is not null) item.Unit = req.Unit;
         if (req.Name is not null) item.Name = req.Name;
         if (req.Category is not null) item.Category = req.Category;
@@ -281,7 +468,8 @@ public static class ShoppingListEndpoints
         }
 
         var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
-        if (list is null || list.IsArchived) return Results.NotFound();
+        if (list is null) return Results.NotFound();
+        if (list.IsArchived) return ArchivedListConflict;
 
         var item = new ShoppingListItem
         {
@@ -324,6 +512,10 @@ public static class ShoppingListEndpoints
         var ctx = await ResolveUserAsync(principal, dbFactory, ct);
         if (ctx is null) return Results.Unauthorized();
 
+        var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
+        if (archived is null) return Results.NotFound();
+        if (archived == true) return ArchivedListConflict;
+
         try
         {
             await svc.DeleteItemAsync(ctx.HouseholdId, listId, itemId, ct);
@@ -350,6 +542,10 @@ public static class ShoppingListEndpoints
         {
             return Results.NoContent();
         }
+
+        var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
+        if (archived is null) return Results.NotFound();
+        if (archived == true) return ArchivedListConflict;
 
         var updates = req.Updates
             .Select(u => (u.ItemId, u.SortOrder, (string?)u.Category))
@@ -378,11 +574,24 @@ public static class ShoppingListEndpoints
         return user is null ? null : new UserContext(user.HouseholdId, user.Id);
     }
 
+    /// <summary>
+    /// The user's cumulative adjustment over the generator's baseline. The baseline is invariant under
+    /// repeated edits: baseline = currentQuantity − (currentDelta ?? 0), so edit → re-edit → revert all
+    /// compute against the generator's own number. A delta of zero stores null (no edit to carry).
+    /// </summary>
+    public static decimal? ComputeQuantityDelta(decimal newQuantity, decimal? currentQuantity, decimal? currentDelta)
+    {
+        var baseline = (currentQuantity ?? 0) - (currentDelta ?? 0);
+        var delta = newQuantity - baseline;
+        return delta == 0 ? null : delta;
+    }
+
     private static ShoppingListDto ToListDto(ShoppingList list) => new(
         list.ShoppingListId,
         list.Name,
         list.IsFavorite,
         list.IsArchived,
+        list.MealPlanId != null,
         list.Items.Select(ToItemDto).ToList());
 
     private static ShoppingListItemDto ToItemDto(ShoppingListItem i) => new(
@@ -430,6 +639,7 @@ public static class ShoppingListEndpoints
         string Name,
         bool IsFavorite,
         bool IsArchived,
+        bool HasMealPlan,
         IReadOnlyList<ShoppingListItemDto> Items);
 
     public sealed record ShoppingListItemDto(
@@ -452,4 +662,14 @@ public static class ShoppingListEndpoints
         bool IsFavorite,
         int ItemCount,
         int UncheckedCount);
+
+    /// <summary>Past-lists browse row. CreatedAt is a full UTC instant; HasMealPlan gates regenerate.</summary>
+    public sealed record ArchivedListSummaryDto(
+        int Id,
+        string Name,
+        bool IsFavorite,
+        int ItemCount,
+        int UncheckedCount,
+        DateTime CreatedAt,
+        bool HasMealPlan);
 }

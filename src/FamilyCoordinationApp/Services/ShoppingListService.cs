@@ -199,11 +199,14 @@ public class ShoppingListService(
                     return (false, false, "Item not found");
                 }
 
-                // Apply changes from the passed-in item
+                // Apply changes from the passed-in item. This copy is a whitelist — a field left off
+                // it is silently dropped on the floor (QuantityDelta was, which made regenerate lose
+                // every quantity edit; council round 1 on PR #101).
                 existing.IsChecked = item.IsChecked;
                 existing.CheckedAt = item.CheckedAt;
                 existing.Name = item.Name;
                 existing.Quantity = item.Quantity;
+                existing.QuantityDelta = item.QuantityDelta;
                 existing.Unit = item.Unit;
                 existing.Category = item.Category;
                 existing.UpdatedByUserId = item.UpdatedByUserId;
@@ -292,7 +295,7 @@ public class ShoppingListService(
 
         if (item == null)
         {
-            throw new InvalidOperationException($"Item {itemId} not found in ShoppingList {shoppingListId} for household {householdId}");
+            throw new KeyNotFoundException($"Item {itemId} not found in ShoppingList {shoppingListId} for household {householdId}");
         }
 
         context.ShoppingListItems.Remove(item);
@@ -313,7 +316,7 @@ public class ShoppingListService(
 
         if (shoppingList == null)
         {
-            throw new InvalidOperationException($"ShoppingList {shoppingListId} not found for household {householdId}");
+            throw new KeyNotFoundException($"ShoppingList {shoppingListId} not found for household {householdId}");
         }
 
         shoppingList.IsFavorite = !shoppingList.IsFavorite;
@@ -374,7 +377,7 @@ public class ShoppingListService(
 
         if (shoppingList == null)
         {
-            throw new InvalidOperationException($"ShoppingList {shoppingListId} not found for household {householdId}");
+            throw new KeyNotFoundException($"ShoppingList {shoppingListId} not found for household {householdId}");
         }
 
         shoppingList.IsArchived = true;

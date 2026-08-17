@@ -1,4 +1,5 @@
 import type {
+  ArchivedListSummaryDto,
   ShoppingListDto,
   ShoppingListItemDto,
   ShoppingListSummaryDto,
@@ -130,6 +131,31 @@ export async function toggleFavorite(
 
 export async function archiveList(listId: number): Promise<void> {
   await request<void>(`${BASE}/${listId}/actions/archive`, { method: 'POST' });
+}
+
+export async function listArchived(favoritesOnly = false): Promise<ArchivedListSummaryDto[]> {
+  const query = favoritesOnly ? '?favoritesOnly=true' : '';
+  return request<ArchivedListSummaryDto[]>(`${BASE}/archived${query}`);
+}
+
+/** Read-only detail for an ARCHIVED list — the pick-items-off surface. Active lists 404 here. */
+export async function getArchivedList(listId: number): Promise<ShoppingListDto> {
+  return request<ShoppingListDto>(`${BASE}/archived/${listId}`);
+}
+
+/** Reopen an archived list. Flips IsArchived only — no auto-regenerate; the meal-plan link is kept. */
+export async function restoreList(listId: number): Promise<void> {
+  await request<void>(`${BASE}/${listId}/actions/restore`, { method: 'POST' });
+}
+
+/** Permanent. Server rejects non-archived lists with 409 — archive first. */
+export async function deleteList(listId: number): Promise<void> {
+  await request<void>(`${BASE}/${listId}`, { method: 'DELETE' });
+}
+
+/** Rebuild generated rows from the linked meal plan (checked-state + quantity edits carry). */
+export async function regenerateList(listId: number): Promise<ShoppingListDto> {
+  return request<ShoppingListDto>(`${BASE}/${listId}/actions/regenerate`, { method: 'POST' });
 }
 
 export async function renameList(

@@ -1,0 +1,20 @@
+[
+  {
+    "id": 3,
+    "name": "Holiday Prep",
+    "isFavorite": true,
+    "itemCount": 20,
+    "uncheckedCount": 0,
+    "createdAt": "2026-05-30T18:00:00Z",
+    "hasMealPlan": true
+  },
+  {
+    "id": 2,
+    "name": "One-off Hardware Run",
+    "isFavorite": false,
+    "itemCount": 4,
+    "uncheckedCount": 1,
+    "createdAt": "2026-06-10T09:15:00Z",
+    "hasMealPlan": false
+  }
+]

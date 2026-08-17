@@ -6,6 +6,8 @@
     currentListId: number | null;
     currentListName: string | null;
     isFavorite: boolean;
+    /** True when the current list is meal-plan linked — gates the Regenerate action. */
+    canRegenerate: boolean;
     onSelect: (listId: number) => void;
     onToggleFavorite: () => void;
     onMenuAction: (action: MenuAction) => void;
@@ -15,14 +17,17 @@
     | 'new'
     | 'rename'
     | 'generate'
+    | 'regenerate'
     | 'clear-checked'
-    | 'archive';
+    | 'archive'
+    | 'past-lists';
 
   let {
     lists,
     currentListId,
     currentListName,
     isFavorite,
+    canRegenerate,
     onSelect,
     onToggleFavorite,
     onMenuAction,
@@ -131,6 +136,16 @@
           <button type="button" role="menuitem" onclick={() => handleMenuClick('generate')}>
             Generate from Meal Plan
           </button>
+          {#if canRegenerate}
+            <button
+              type="button"
+              role="menuitem"
+              disabled={currentListId == null}
+              onclick={() => handleMenuClick('regenerate')}
+            >
+              Regenerate from Meal Plan
+            </button>
+          {/if}
           <button
             type="button"
             role="menuitem"
@@ -146,6 +161,9 @@
             onclick={() => handleMenuClick('archive')}
           >
             Archive List
+          </button>
+          <button type="button" role="menuitem" onclick={() => handleMenuClick('past-lists')}>
+            Past Lists
           </button>
         </div>
       {/if}

@@ -29,10 +29,11 @@ public interface IShoppingListGenerator
     Task<ShoppingList> GenerateFromMealPlanAsync(int householdId, int mealPlanId, string listName, DateOnly? startDate = null, DateOnly? endDate = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Unwired, not dead — held for the past-lists feature alongside the archive trio on
-    /// <see cref="Interfaces.IShoppingListService"/>. Refreshes a list from its linked meal plan while
-    /// preserving manually-added items and re-applying each edited item's QuantityDelta. Needs a route
-    /// and UI, not new logic.
+    /// Rebuild the generated rows from the list's linked meal plan — the WHOLE plan week, regardless of
+    /// the date range the list was originally generated with (the range is not persisted; see the
+    /// past-lists spec-lite). Atomic (one SaveChanges); manual items untouched; checked state, sort
+    /// position and each edited item's QuantityDelta carry onto the fresh rows by the consolidator's
+    /// (normalized name, category) identity. Wired at POST /{listId}/actions/regenerate.
     /// </summary>
     Task<ShoppingList> RegenerateShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default);
 
@@ -132,43 +133,56 @@ public class ShoppingListGenerator(
         return shoppingList;
     }
 
-    public async Task<ShoppingList> RegenerateShoppingListAsync(
+    public Task<ShoppingList> RegenerateShoppingListAsync(
         int householdId,
         int shoppingListId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        // Retry wrapper: item ids are assigned max+1 in memory, so a concurrent manual add can
+        // collide on the composite key — same hazard (and same remedy) as the sibling writes.
+        IdGenerationHelper.ExecuteWithRetryAsync(
+            _ => RegenerateOnceAsync(householdId, shoppingListId, cancellationToken),
+            logger,
+            "ShoppingListRegenerate");
+
+    private async Task<ShoppingList> RegenerateOnceAsync(
+        int householdId,
+        int shoppingListId,
+        CancellationToken cancellationToken)
     {
+        // One context, one SaveChanges: the rebuild must be atomic. Going through the item-level
+        // service calls would save once per item on separate contexts, and a failure mid-loop would
+        // leave the list half-rebuilt.
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        // Load existing list with items
-        var existingList = await shoppingListService.GetShoppingListAsync(householdId, shoppingListId, cancellationToken);
-        if (existingList == null)
-        {
-            throw new InvalidOperationException($"ShoppingList {shoppingListId} not found for household {householdId}");
-        }
+        var existingList = await context.ShoppingLists
+            .Where(sl => sl.HouseholdId == householdId && sl.ShoppingListId == shoppingListId)
+            .Include(sl => sl.Items)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new InvalidOperationException(
+                $"ShoppingList {shoppingListId} not found for household {householdId}");
 
         if (existingList.MealPlanId == null)
         {
             throw new InvalidOperationException($"ShoppingList {shoppingListId} is not linked to a meal plan");
         }
 
-        // Separate manual items and edited items
-        var manualItems = existingList.Items.Where(i => i.IsManuallyAdded).ToList();
-        var editedItems = existingList.Items
-            .Where(i => i.QuantityDelta.HasValue)
-            .ToDictionary(i => NormalizeIngredientName(i.Name));
+        // Outgoing generated rows keyed by the CONSOLIDATOR'S identity — (normalized name, category),
+        // the same pair ConsolidateScaledIngredientsAsync groups by — so same-name rows in different
+        // categories each keep their own checked state / sort position / quantity edit. Genuine
+        // duplicates within one identity resolve to the lowest ItemId (deterministic, oldest row).
+        var outgoing = existingList.Items
+            .Where(i => !i.IsManuallyAdded)
+            .GroupBy(i => (Name: NormalizeIngredientName(i.Name), i.Category))
+            .ToDictionary(g => g.Key, g => g.OrderBy(i => i.ItemId).First());
 
-        // Load linked meal plan
         var mealPlan = await context.MealPlans
             .Where(mp => mp.HouseholdId == householdId && mp.MealPlanId == existingList.MealPlanId)
             .Include(mp => mp.Entries)
                 .ThenInclude(e => e.Recipe)
                     .ThenInclude(r => r!.Ingredients)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (mealPlan == null)
-        {
-            throw new InvalidOperationException($"MealPlan {existingList.MealPlanId} not found for household {householdId}");
-        }
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new InvalidOperationException(
+                $"MealPlan {existingList.MealPlanId} not found for household {householdId}");
 
         // Generate fresh consolidation from meal plan, honouring each entry's servings the same way generation
         // does — so a regenerate after changing an entry's servings reflects the change.
@@ -180,26 +194,24 @@ public class ShoppingListGenerator(
 
         var consolidationResults = await ConsolidateScaledIngredientsAsync(allIngredients, autoConsolidate: true);
 
-        // Clear existing non-manual items
-        foreach (var item in existingList.Items.Where(i => !i.IsManuallyAdded).ToList())
-        {
-            await shoppingListService.DeleteItemAsync(householdId, shoppingListId, item.ItemId, cancellationToken);
-        }
+        var nextItemId = existingList.Items.Count > 0 ? existingList.Items.Max(i => i.ItemId) : 0;
 
-        // Add new items from consolidation, applying quantity deltas
+        context.ShoppingListItems.RemoveRange(existingList.Items.Where(i => !i.IsManuallyAdded));
+
         foreach (var result in consolidationResults)
         {
-            var normalizedName = NormalizeIngredientName(result.Name);
-            var quantityDelta = editedItems.ContainsKey(normalizedName)
-                ? editedItems[normalizedName].QuantityDelta
-                : null;
+            outgoing.TryGetValue((NormalizeIngredientName(result.Name), result.Category), out var previous);
+            var quantityDelta = previous?.QuantityDelta;
 
-            var item = new ShoppingListItem
+            context.ShoppingListItems.Add(new ShoppingListItem
             {
                 HouseholdId = householdId,
                 ShoppingListId = shoppingListId,
+                ItemId = ++nextItemId,
                 Name = result.Name,
-                Quantity = result.Quantity + (quantityDelta ?? 0),
+                // Floor at zero: a carried negative edit larger than the fresh quantity must not
+                // produce a negative line.
+                Quantity = Math.Max(0, result.Quantity + (quantityDelta ?? 0)),
                 Unit = result.Unit,
                 Category = result.Category,
                 SourceRecipes = result.SourceRecipes.Count > 0
@@ -211,13 +223,17 @@ public class ShoppingListGenerator(
                     : null,
                 IsManuallyAdded = false,
                 QuantityDelta = quantityDelta,
-                SortOrder = 0
-            };
-
-            await shoppingListService.AddManualItemAsync(item, cancellationToken);
+                IsChecked = previous?.IsChecked ?? false,
+                CheckedAt = previous?.CheckedAt,
+                SortOrder = previous?.SortOrder ?? 0,
+                AddedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
         }
 
-        // Manual items are already in the list (they weren't deleted)
+        // Manual items were never removed and are untouched.
+
+        await context.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation(
             "Regenerated shopping list {ShoppingListId} from meal plan {MealPlanId} with {ItemCount} items",
