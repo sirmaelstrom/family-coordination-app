@@ -4,50 +4,96 @@
 // The C# side is pinned: each DTO that HAS a fixture under
 // tests/FamilyCoordinationApp.Tests/Fixtures/ is serialized and byte-compared to it.
 // Every island's types.ts claims in a comment to mirror one of those fixtures; this
-// file makes the claim checkable. Each entry below states a fixture, the interface it
-// mirrors, and a Shape; `Expect<Equals<…>>` holds the Shape to the interface at compile
-// time and contracts.test.ts holds it to the fixture at run time.
+// file makes the claim checkable. `PinnedTypes` lists the island type each pin holds
+// its Shape to; `SHAPES` is a mapped record over it, and Shape's invariance makes each
+// entry a compile-time exactness assertion — a pin cannot exist without its assertion,
+// because the assertion IS the manifest entry. contracts.test.ts holds each Shape to
+// its fixture at run time.
 //
-// Adding a JSON fixture: add its pin here, or name it in SERVER_ONLY_FIXTURES. The
+// Adding a JSON fixture: add its type to PinnedTypes — the compiler then requires a
+// SHAPES entry and a PIN_FIXTURES entry — or name it in SERVER_ONLY_FIXTURES. The
 // test fails on any JSON fixture that is in neither, so the pin cannot silently fall
 // behind the fixture tree.
 //
 // Scope — this is a fixture-driven guard, not complete SPA-response coverage:
 //   - only .json is walked; the .txt/.srv1 fixtures are parser inputs, not payloads
-//   - only response DTOs that HAVE a fixture. Request/write bodies and fixture-less
-//     responses (ShoppingListSummaryDto, RecipeWriteRequest, DigestSettingsView, …)
-//     are unpinned — they need a C# fixture before they can be pinned here.
+//   - request/write bodies ARE pinned where a fixture exists (RecipeWriteRequest,
+//     SaveDraftRequest, CategoryWriteRequest); a payload without a C# fixture is
+//     still unpinned until one is checked in.
 // ─────────────────────────────────────────────────────────────────────────
-import {
-  arrayOf,
-  bool,
-  nullable,
-  num,
-  objectOf,
-  oneOf,
-  str,
-  type Equals,
-  type Expect,
-  type Infer,
-  type Shape,
-} from './shape';
+import { arrayOf, bool, nullable, num, objectOf, oneOf, str, type Shape } from './shape';
 import type {
   ChoreBoardDto,
   ChoreEquityDto,
   ChoreLedgerDto,
   ChoreRecapDto,
+  DigestSettingsView,
   RecapWeekDto,
 } from '../chores/lib/types';
 import type { DashboardDto } from '../dashboard/lib/types';
 import type { MealPlanBoardDto } from '../meal-plan/lib/types';
-import type { RecipeFullDto, RecipeListDto } from '../recipes/lib/types';
-import type { CategoryListDto, MemberListDto } from '../settings/lib/types';
+import type {
+  RecipeFullDto,
+  RecipeListDto,
+  RecipeWriteRequest,
+  SaveDraftRequest,
+} from '../recipes/lib/types';
+import type {
+  CategoryListDto,
+  CategoryWriteRequest,
+  MemberListDto,
+} from '../settings/lib/types';
 import type { ConnectionsDto } from '../connections/lib/types';
 import type { FeedbackListDto, HouseholdRequestsDto } from '../admin/lib/types';
-import type { ShoppingListDto } from '../shopping-list/lib/types';
+import type { ShoppingListDto, ShoppingListSummaryDto } from '../shopping-list/lib/types';
+
+// ── Wire-enum vocabularies (Fixtures/Enums/wire-enums.json) ────────────────
+//
+// Every C# enum that reaches the wire, with its serialized member list. The C# side
+// pins this to Enum.GetValues (WireEnumContractTests → the wire-enums fixture) and
+// contracts.test.ts asserts list-equality here — so a NEW C# enum member fails the C#
+// suite until the fixture grows, and the grown fixture fails npm test until the list
+// here (and the island union it feeds) grows too. Membership-only oneOf checks cannot
+// see a new member; this list-equals pin is what closes that hole.
+//
+// Two serialization groups, matching how each field actually reaches the wire:
+//   - enum-typed DTO fields → JsonStringEnumConverter(CamelCase) → camelCase strings
+//   - string-typed DTO fields carrying Enum.ToString() (ChoreBoardService's
+//     recurrenceMode/effortTier) → PascalCase strings
+// Member order mirrors the C# declaration order.
+export const WIRE_ENUMS = {
+  RecipeType: [
+    'main',
+    'side',
+    'appetizer',
+    'dessert',
+    'beverage',
+    'sauce',
+    'breakfast',
+    'snack',
+    'other',
+  ],
+  MealType: ['breakfast', 'lunch', 'dinner', 'snack'],
+  DueState: ['notDue', 'dueToday', 'overdue', 'scheduled'],
+  ColorTier: ['fresh', 'mid', 'due', 'overdue'],
+  AssignmentKind: ['none', 'assigned', 'claimed'],
+  RosterState: ['assigned', 'in', 'done'],
+  RoomRollupStatus: ['clean', 'attention', 'needsWork'],
+  EquityWindow: ['week', 'all'],
+  FeedbackType: ['bug', 'featureRequest', 'general'],
+  HouseholdRequestStatus: ['pending', 'approved', 'rejected'],
+  DigestCadence: ['weekly'],
+  DayOfWeek: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+  RecurrenceMode: ['OneOff', 'Fixed', 'Flexible'],
+  EffortTier: ['Quick', 'Standard', 'BigJob'],
+} as const;
+
+export const WIRE_ENUM_FIXTURE = 'Enums/wire-enums.json';
 
 // ── Chores: board (Fixtures/ChoreBoard/board.json) ──────────────────────────
 
+// NOT an enum: User.PhysicalCapacityTier is a string column with this vocabulary, so
+// there is no Enum.GetValues to pin it to until the A9 ChoreCapacity module exists.
 const capacityTier = oneOf('Full', 'Reduced', 'Minimal');
 
 const choreBoard = objectOf({
@@ -58,28 +104,28 @@ const choreBoard = objectOf({
       icon: str,
       description: nullable(str),
       roomIds: arrayOf(num),
-      recurrenceMode: oneOf('OneOff', 'Fixed', 'Flexible'),
+      recurrenceMode: oneOf(...WIRE_ENUMS.RecurrenceMode),
       intervalDays: nullable(num),
       daysOfWeek: nullable(str),
       anchorDate: nullable(str),
-      dueState: oneOf('notDue', 'dueToday', 'overdue', 'scheduled'),
-      colorTier: oneOf('fresh', 'mid', 'due', 'overdue'),
+      dueState: oneOf(...WIRE_ENUMS.DueState),
+      colorTier: oneOf(...WIRE_ENUMS.ColorTier),
       nextDueAt: nullable(str),
       snoozedUntil: nullable(str),
       isSnoozed: bool,
       isClaimStale: bool,
-      effortTier: oneOf('Quick', 'Standard', 'BigJob'),
+      effortTier: oneOf(...WIRE_ENUMS.EffortTier),
       effortPoints: num,
       ownerUserId: nullable(num),
       assigneeUserId: nullable(num),
-      assignmentKind: oneOf('none', 'assigned', 'claimed'),
+      assignmentKind: oneOf(...WIRE_ENUMS.AssignmentKind),
       claimedAt: nullable(str),
       lastCompletedAt: nullable(str),
       photoPath: nullable(str),
       version: num,
       requiredCount: num,
       completedCount: num,
-      roster: arrayOf(objectOf({ userId: num, state: oneOf('assigned', 'in', 'done') })),
+      roster: arrayOf(objectOf({ userId: num, state: oneOf(...WIRE_ENUMS.RosterState) })),
       subtasks: arrayOf(
         objectOf({
           id: num,
@@ -101,7 +147,7 @@ const choreBoard = objectOf({
       sortOrder: num,
       choreCount: num,
       dueCount: num,
-      status: oneOf('clean', 'attention', 'needsWork'),
+      status: oneOf(...WIRE_ENUMS.RoomRollupStatus),
     })
   ),
   members: arrayOf(
@@ -111,12 +157,11 @@ const choreBoard = objectOf({
   userDefaultView: nullable(str),
   callerCapacityTier: nullable(capacityTier),
 });
-export type _ChoreBoard = Expect<Equals<Infer<typeof choreBoard>, ChoreBoardDto>>;
 
 // ── Chores: equity (Fixtures/ChoreEquity/equity.json) ───────────────────────
 
 const choreEquity = objectOf({
-  window: oneOf('week', 'all'),
+  window: oneOf(...WIRE_ENUMS.EquityWindow),
   totalPoints: num,
   totalCompletions: num,
   equalSharePct: num,
@@ -146,7 +191,6 @@ const choreEquity = objectOf({
   ),
   callerCapacityTier: nullable(capacityTier),
 });
-export type _ChoreEquity = Expect<Equals<Infer<typeof choreEquity>, ChoreEquityDto>>;
 
 // ── Chores: recap (Fixtures/ChoreRecap/{recap,recap-current}.json) ──────────
 
@@ -161,13 +205,13 @@ const recapWeek = objectOf({
   fallingBehind: arrayOf(str),
   upForGrabsCount: num,
 });
-export type _RecapWeek = Expect<Equals<Infer<typeof recapWeek>, RecapWeekDto>>;
 
 /** Shared by the recap and ledger payloads — one C# record, one Shape. */
 const goneQuiet = objectOf({
   choreName: str,
   cadenceLabel: str,
   lastCompletedLocalDate: nullable(str),
+  // NOT an enum: GoneQuietDto.Reason is a string field documented as this vocabulary.
   reason: oneOf('snoozed', 'slipped'),
 });
 
@@ -197,7 +241,6 @@ const choreRecap = objectOf({
   whatGotTended: arrayOf(objectOf({ roomName: str, completions: num })),
   goneQuiet: arrayOf(goneQuiet),
 });
-export type _ChoreRecap = Expect<Equals<Infer<typeof choreRecap>, ChoreRecapDto>>;
 
 // ── Chores: ledger (Fixtures/ChoreHistory/ledger.json) ──────────────────────
 
@@ -216,15 +259,27 @@ const choreLedger = objectOf({
   ),
   weeks: arrayOf(objectOf({ weekStartLocal: str, completions: num })),
   ghosts: arrayOf(
+    // Reason: string field, not an enum — same vocabulary as goneQuiet above.
     objectOf({ choreName: str, expectedLocalDate: str, reason: oneOf('snoozed', 'slipped') })
   ),
   goneQuiet: arrayOf(goneQuiet),
 });
-export type _ChoreLedger = Expect<Equals<Infer<typeof choreLedger>, ChoreLedgerDto>>;
+
+// ── Chores: digest settings (Fixtures/Settings/digest-settings.json) ────────
+
+const digestSettingsView = objectOf({
+  enabled: bool,
+  cadence: oneOf(...WIRE_ENUMS.DigestCadence),
+  sendDayOfWeek: oneOf(...WIRE_ENUMS.DayOfWeek),
+  sendHourLocal: num,
+  hasWebhook: bool,
+  webhookHint: nullable(str),
+  lastSentAt: nullable(str),
+});
 
 // ── Dashboard (Fixtures/Dashboard/dashboard.json) ───────────────────────────
 
-const mealType = oneOf('breakfast', 'lunch', 'dinner', 'snack');
+const mealType = oneOf(...WIRE_ENUMS.MealType);
 
 const dashboard = objectOf({
   greetingName: str,
@@ -234,21 +289,10 @@ const dashboard = objectOf({
   shopping: objectOf({ remaining: num, checked: num, total: num }),
   todaysMeals: arrayOf(objectOf({ mealType, displayName: str })),
 });
-export type _Dashboard = Expect<Equals<Infer<typeof dashboard>, DashboardDto>>;
 
 // ── Meal plan (Fixtures/MealPlanBoard/board.json) ───────────────────────────
 
-const recipeType = oneOf(
-  'main',
-  'side',
-  'appetizer',
-  'dessert',
-  'beverage',
-  'sauce',
-  'breakfast',
-  'snack',
-  'other'
-);
+const recipeType = oneOf(...WIRE_ENUMS.RecipeType);
 
 const mealPlanBoard = objectOf({
   weekStartDate: str,
@@ -275,7 +319,6 @@ const mealPlanBoard = objectOf({
     })
   ),
 });
-export type _MealPlanBoard = Expect<Equals<Infer<typeof mealPlanBoard>, MealPlanBoardDto>>;
 
 // ── Recipes (Fixtures/RecipeList/list.json, Fixtures/RecipeFull/recipe.json) ─
 
@@ -295,7 +338,6 @@ const recipeList = objectOf({
   ),
   favoriteRecipeIds: arrayOf(num),
 });
-export type _RecipeList = Expect<Equals<Infer<typeof recipeList>, RecipeListDto>>;
 
 const recipeFull = objectOf({
   recipeId: num,
@@ -326,9 +368,48 @@ const recipeFull = objectOf({
     })
   ),
 });
-export type _RecipeFull = Expect<Equals<Infer<typeof recipeFull>, RecipeFullDto>>;
 
-// ── Settings (Fixtures/Settings/{categories,members}.json) ──────────────────
+// ── Recipes: write bodies (Fixtures/RecipeWrite/request.json, RecipeDraft/save-request.json)
+
+/** One shape for the C# twins RecipeIngredientWrite and DraftIngredientBody (same 7 fields). */
+const writeIngredient = objectOf({
+  name: str,
+  quantity: nullable(num),
+  unit: nullable(str),
+  category: str,
+  notes: nullable(str),
+  groupName: nullable(str),
+  sortOrder: num,
+});
+
+const recipeWriteRequest = objectOf({
+  name: str,
+  description: nullable(str),
+  instructions: nullable(str),
+  sourceUrl: nullable(str),
+  servings: nullable(num),
+  prepTimeMinutes: nullable(num),
+  cookTimeMinutes: nullable(num),
+  recipeType,
+  imagePath: nullable(str),
+  ingredients: arrayOf(writeIngredient),
+  version: nullable(num),
+});
+
+const saveDraftRequest = objectOf({
+  recipeId: nullable(num),
+  name: str,
+  description: nullable(str),
+  instructions: nullable(str),
+  imagePath: nullable(str),
+  sourceUrl: nullable(str),
+  servings: nullable(num),
+  prepTimeMinutes: nullable(num),
+  cookTimeMinutes: nullable(num),
+  ingredients: arrayOf(writeIngredient),
+});
+
+// ── Settings (Fixtures/Settings/{categories,members,category-write}.json) ───
 
 const category = objectOf({
   categoryId: num,
@@ -341,7 +422,8 @@ const category = objectOf({
 });
 
 const categoryList = objectOf({ active: arrayOf(category), deleted: arrayOf(category) });
-export type _CategoryList = Expect<Equals<Infer<typeof categoryList>, CategoryListDto>>;
+
+const categoryWriteRequest = objectOf({ name: str, iconEmoji: nullable(str), color: str });
 
 const memberList = objectOf({
   currentUserId: num,
@@ -349,7 +431,6 @@ const memberList = objectOf({
     objectOf({ userId: num, email: str, displayName: nullable(str), isWhitelisted: bool })
   ),
 });
-export type _MemberList = Expect<Equals<Infer<typeof memberList>, MemberListDto>>;
 
 // ── Connections (Fixtures/Settings/connections.json) ────────────────────────
 
@@ -357,7 +438,6 @@ const connections = objectOf({
   activeInvite: nullable(objectOf({ code: str, expiresAt: str })),
   connected: arrayOf(objectOf({ householdId: num, householdName: str, connectedAt: str })),
 });
-export type _Connections = Expect<Equals<Infer<typeof connections>, ConnectionsDto>>;
 
 // ── Admin (Fixtures/Settings/{household-requests,feedback}.json) ────────────
 
@@ -368,7 +448,7 @@ const householdRequests = objectOf({
       householdName: str,
       displayName: str,
       email: str,
-      status: oneOf('pending', 'approved', 'rejected'),
+      status: oneOf(...WIRE_ENUMS.HouseholdRequestStatus),
       requestedAt: str,
       reviewedAt: nullable(str),
       reviewedBy: nullable(str),
@@ -379,16 +459,13 @@ const householdRequests = objectOf({
     objectOf({ householdId: num, name: str, memberCount: num, createdAt: str })
   ),
 });
-export type _HouseholdRequests = Expect<
-  Equals<Infer<typeof householdRequests>, HouseholdRequestsDto>
->;
 
 const feedbackList = objectOf({
   isSiteAdmin: bool,
   items: arrayOf(
     objectOf({
       id: num,
-      type: oneOf('bug', 'featureRequest', 'general'),
+      type: oneOf(...WIRE_ENUMS.FeedbackType),
       message: str,
       currentPage: nullable(str),
       isRead: bool,
@@ -399,9 +476,8 @@ const feedbackList = objectOf({
     })
   ),
 });
-export type _FeedbackList = Expect<Equals<Infer<typeof feedbackList>, FeedbackListDto>>;
 
-// ── Shopping list (Fixtures/ShoppingList/list.json) ─────────────────────────
+// ── Shopping list (Fixtures/ShoppingList/{list,summaries}.json) ─────────────
 
 const shoppingList = objectOf({
   id: num,
@@ -425,39 +501,101 @@ const shoppingList = objectOf({
     })
   ),
 });
-export type _ShoppingList = Expect<Equals<Infer<typeof shoppingList>, ShoppingListDto>>;
+
+const shoppingListSummaries = arrayOf(
+  objectOf({ id: num, name: str, isFavorite: bool, itemCount: num, uncheckedCount: num })
+);
 
 // ── The manifest ────────────────────────────────────────────────────────────
+
+/**
+ * The island type each pin holds its Shape to. This is the structural link: SHAPES is a
+ * mapped record over these keys, and Shape's invariance rejects any entry whose inferred
+ * type is not exactly the declared one — so a pin cannot be added without its compile-time
+ * assertion, and a Shape cannot drift from the interface it claims to mirror.
+ */
+interface PinnedTypes {
+  ChoreBoardDto: ChoreBoardDto;
+  ChoreEquityDto: ChoreEquityDto;
+  ChoreLedgerDto: ChoreLedgerDto;
+  ChoreRecapDto: ChoreRecapDto;
+  RecapWeekDto: RecapWeekDto;
+  DigestSettingsView: DigestSettingsView;
+  DashboardDto: DashboardDto;
+  MealPlanBoardDto: MealPlanBoardDto;
+  RecipeFullDto: RecipeFullDto;
+  RecipeListDto: RecipeListDto;
+  RecipeWriteRequest: RecipeWriteRequest;
+  SaveDraftRequest: SaveDraftRequest;
+  CategoryListDto: CategoryListDto;
+  CategoryWriteRequest: CategoryWriteRequest;
+  ConnectionsDto: ConnectionsDto;
+  FeedbackListDto: FeedbackListDto;
+  HouseholdRequestsDto: HouseholdRequestsDto;
+  MemberListDto: MemberListDto;
+  ShoppingListDto: ShoppingListDto;
+  'ShoppingListSummaryDto[]': ShoppingListSummaryDto[];
+}
+
+const SHAPES: { readonly [K in keyof PinnedTypes]: Shape<PinnedTypes[K]> } = {
+  ChoreBoardDto: choreBoard,
+  ChoreEquityDto: choreEquity,
+  ChoreLedgerDto: choreLedger,
+  ChoreRecapDto: choreRecap,
+  RecapWeekDto: recapWeek,
+  DigestSettingsView: digestSettingsView,
+  DashboardDto: dashboard,
+  MealPlanBoardDto: mealPlanBoard,
+  RecipeFullDto: recipeFull,
+  RecipeListDto: recipeList,
+  RecipeWriteRequest: recipeWriteRequest,
+  SaveDraftRequest: saveDraftRequest,
+  CategoryListDto: categoryList,
+  CategoryWriteRequest: categoryWriteRequest,
+  ConnectionsDto: connections,
+  FeedbackListDto: feedbackList,
+  HouseholdRequestsDto: householdRequests,
+  MemberListDto: memberList,
+  ShoppingListDto: shoppingList,
+  'ShoppingListSummaryDto[]': shoppingListSummaries,
+};
+
+const PIN_FIXTURES: { readonly [K in keyof PinnedTypes]: string } = {
+  ChoreBoardDto: 'ChoreBoard/board.json',
+  ChoreEquityDto: 'ChoreEquity/equity.json',
+  ChoreLedgerDto: 'ChoreHistory/ledger.json',
+  ChoreRecapDto: 'ChoreRecap/recap.json',
+  RecapWeekDto: 'ChoreRecap/recap-current.json',
+  DigestSettingsView: 'Settings/digest-settings.json',
+  DashboardDto: 'Dashboard/dashboard.json',
+  MealPlanBoardDto: 'MealPlanBoard/board.json',
+  RecipeFullDto: 'RecipeFull/recipe.json',
+  RecipeListDto: 'RecipeList/list.json',
+  RecipeWriteRequest: 'RecipeWrite/request.json',
+  SaveDraftRequest: 'RecipeDraft/save-request.json',
+  CategoryListDto: 'Settings/categories.json',
+  CategoryWriteRequest: 'Settings/category-write.json',
+  ConnectionsDto: 'Settings/connections.json',
+  FeedbackListDto: 'Settings/feedback.json',
+  HouseholdRequestsDto: 'Settings/household-requests.json',
+  MemberListDto: 'Settings/members.json',
+  ShoppingListDto: 'ShoppingList/list.json',
+  'ShoppingListSummaryDto[]': 'ShoppingList/summaries.json',
+};
 
 export interface ContractPin {
   /** Path under tests/FamilyCoordinationApp.Tests/Fixtures/. */
   readonly fixture: string;
   /** The interface the fixture is pinned to, for the failure message. */
   readonly type: string;
-  readonly shape: Shape<unknown>;
+  // Shape<any>: the compile-time typing lives in SHAPES; this heterogeneous list erases it.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly shape: Shape<any>;
 }
 
-export const CONTRACT_PINS: readonly ContractPin[] = [
-  { fixture: 'ChoreBoard/board.json', type: 'ChoreBoardDto', shape: choreBoard },
-  { fixture: 'ChoreEquity/equity.json', type: 'ChoreEquityDto', shape: choreEquity },
-  { fixture: 'ChoreHistory/ledger.json', type: 'ChoreLedgerDto', shape: choreLedger },
-  { fixture: 'ChoreRecap/recap.json', type: 'ChoreRecapDto', shape: choreRecap },
-  { fixture: 'ChoreRecap/recap-current.json', type: 'RecapWeekDto', shape: recapWeek },
-  { fixture: 'Dashboard/dashboard.json', type: 'DashboardDto', shape: dashboard },
-  { fixture: 'MealPlanBoard/board.json', type: 'MealPlanBoardDto', shape: mealPlanBoard },
-  { fixture: 'RecipeFull/recipe.json', type: 'RecipeFullDto', shape: recipeFull },
-  { fixture: 'RecipeList/list.json', type: 'RecipeListDto', shape: recipeList },
-  { fixture: 'Settings/categories.json', type: 'CategoryListDto', shape: categoryList },
-  { fixture: 'Settings/connections.json', type: 'ConnectionsDto', shape: connections },
-  { fixture: 'Settings/feedback.json', type: 'FeedbackListDto', shape: feedbackList },
-  {
-    fixture: 'Settings/household-requests.json',
-    type: 'HouseholdRequestsDto',
-    shape: householdRequests,
-  },
-  { fixture: 'Settings/members.json', type: 'MemberListDto', shape: memberList },
-  { fixture: 'ShoppingList/list.json', type: 'ShoppingListDto', shape: shoppingList },
-];
+export const CONTRACT_PINS: readonly ContractPin[] = (
+  Object.keys(SHAPES) as (keyof PinnedTypes)[]
+).map((type) => ({ fixture: PIN_FIXTURES[type], type, shape: SHAPES[type] }));
 
 /** Fixtures with no SPA consumer: they pin a payload the server sends or receives elsewhere. */
 export const SERVER_ONLY_FIXTURES: readonly string[] = [

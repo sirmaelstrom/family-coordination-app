@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "cadence": "weekly",
+  "sendDayOfWeek": "sunday",
+  "sendHourLocal": 17,
+  "hasWebhook": true,
+  "webhookHint": "…hooks/abcd",
+  "lastSentAt": "2026-06-15T22:00:00Z"
+}

@@ -1,0 +1,16 @@
+{
+  "RecipeType": ["main", "side", "appetizer", "dessert", "beverage", "sauce", "breakfast", "snack", "other"],
+  "MealType": ["breakfast", "lunch", "dinner", "snack"],
+  "DueState": ["notDue", "dueToday", "overdue", "scheduled"],
+  "ColorTier": ["fresh", "mid", "due", "overdue"],
+  "AssignmentKind": ["none", "assigned", "claimed"],
+  "RosterState": ["assigned", "in", "done"],
+  "RoomRollupStatus": ["clean", "attention", "needsWork"],
+  "EquityWindow": ["week", "all"],
+  "FeedbackType": ["bug", "featureRequest", "general"],
+  "HouseholdRequestStatus": ["pending", "approved", "rejected"],
+  "DigestCadence": ["weekly"],
+  "DayOfWeek": ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"],
+  "RecurrenceMode": ["OneOff", "Fixed", "Flexible"],
+  "EffortTier": ["Quick", "Standard", "BigJob"]
+}

@@ -14,8 +14,14 @@
 
 export interface Shape<T> {
   readonly check: (value: unknown, path: string) => string[];
-  /** Phantom carrier for `Infer`. Never read at runtime. */
-  readonly __t: T;
+  /**
+   * Phantom carrier for `Infer`. Never read at runtime. The function slot puts T in both a
+   * covariant and a contravariant position, making Shape invariant: `Shape<A>` is assignable to
+   * `Shape<B>` only when A and B are mutually assignable. The contracts.ts SHAPES manifest
+   * relies on this — with a merely covariant phantom, a Shape whose inferred type is a
+   * SUBTYPE of the declared DTO (e.g. an extra declared field) would silently pass.
+   */
+  readonly __t: (t: T) => T;
 }
 
 export type Infer<S> = S extends Shape<infer T> ? T : never;
@@ -28,7 +34,7 @@ export type Equals<A, B> =
 export type Expect<T extends true> = T;
 
 function shape<T>(check: (value: unknown, path: string) => string[]): Shape<T> {
-  return { check, __t: undefined as unknown as T };
+  return { check, __t: undefined as unknown as (t: T) => T };
 }
 
 function describe(value: unknown): string {
@@ -65,7 +71,10 @@ export function oneOf<const L extends readonly string[]>(...literals: L): Shape<
       : [`${p}: expected one of ${literals.join(' | ')}, got ${JSON.stringify(v)}`]);
 }
 
-export function objectOf<F extends Record<string, Shape<unknown>>>(
+// Shape<any>, not Shape<unknown>: Shape is invariant, so Shape<string> is not assignable to
+// Shape<unknown> — `any` is the one type parameter assignable in both directions.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function objectOf<F extends Record<string, Shape<any>>>(
   fields: F
 ): Shape<{ [K in keyof F]: Infer<F[K]> }> {
   return shape((v, p) => {
