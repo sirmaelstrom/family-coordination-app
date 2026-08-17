@@ -275,6 +275,60 @@ public class RecipeService(
     public async Task<Recipe> CopyRecipeFromConnectedHouseholdAsync(
         int sourceHouseholdId, int sourceRecipeId, int targetHouseholdId, int userId, CancellationToken cancellationToken = default)
     {
+        // A copy must own its image. The file copy happens ONCE, OUTSIDE the id-retry loop — inside it,
+        // every id-collision retry would duplicate the file again and orphan the earlier copies. The
+        // normalization is exhaustive, not prefix-only: the source household's own stored upload is
+        // duplicated into the copying household's directory (the uploads gate's forward fix — never widen
+        // the gate), an absolute http(s) URL copies verbatim, and ANY other value — including pre-policy
+        // legacy rows pointing at some third household's directory — is dropped: a dangling or
+        // cross-household reference is worse than no image.
+        string? copiedImagePath = null;
+        var sourceImagePath = await GetSourceImagePathAsync(sourceHouseholdId, sourceRecipeId, cancellationToken);
+        if (sourceImagePath != null)
+        {
+            if (sourceImagePath.StartsWith($"/uploads/{sourceHouseholdId}/", StringComparison.Ordinal))
+            {
+                copiedImagePath = await imageService.CopyImageAsync(
+                    sourceImagePath, sourceHouseholdId, targetHouseholdId, cancellationToken);
+            }
+            else if (Uri.TryCreate(sourceImagePath, UriKind.Absolute, out var uri)
+                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+            {
+                copiedImagePath = sourceImagePath;
+            }
+        }
+
+        try
+        {
+            return await CopyRecipeRowAsync(
+                sourceHouseholdId, sourceRecipeId, targetHouseholdId, userId, copiedImagePath, cancellationToken);
+        }
+        catch
+        {
+            // Compensation: the copied file must not outlive a persistence failure — it would sit
+            // orphaned in the target household's directory and surface in its image list.
+            if (copiedImagePath != null && copiedImagePath.StartsWith($"/uploads/{targetHouseholdId}/", StringComparison.Ordinal))
+            {
+                await imageService.DeleteImageAsync(copiedImagePath, targetHouseholdId, cancellationToken);
+            }
+            throw;
+        }
+    }
+
+    private async Task<string?> GetSourceImagePathAsync(
+        int sourceHouseholdId, int sourceRecipeId, CancellationToken cancellationToken)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        return await context.Recipes
+            .Where(r => r.HouseholdId == sourceHouseholdId && r.RecipeId == sourceRecipeId)
+            .Select(r => r.ImagePath)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task<Recipe> CopyRecipeRowAsync(
+        int sourceHouseholdId, int sourceRecipeId, int targetHouseholdId, int userId,
+        string? copiedImagePath, CancellationToken cancellationToken)
+    {
         return await IdGenerationHelper.ExecuteWithRetryAsync(
             async (attempt) =>
             {
@@ -295,18 +349,6 @@ public class RecipeService(
 
                 // Get next recipe ID for the target household
                 var newRecipeId = await GetNextRecipeIdInternalAsync(context, targetHouseholdId, cancellationToken);
-
-                // A copy must own its image. A stored upload is duplicated into the copying household's
-                // directory (the uploads gate's forward fix — never widen the gate); if the source file is
-                // gone the reference is DROPPED rather than kept pointing at another household's directory.
-                // External http(s) URLs copy verbatim — they never touch the gate.
-                var sourcePrefix = $"/uploads/{sourceHouseholdId}/";
-                var copiedImagePath = sourceRecipe.ImagePath;
-                if (copiedImagePath != null && copiedImagePath.StartsWith(sourcePrefix, StringComparison.Ordinal))
-                {
-                    copiedImagePath = await imageService.CopyImageAsync(
-                        copiedImagePath, sourceHouseholdId, targetHouseholdId, cancellationToken);
-                }
 
                 var copiedRecipe = new Recipe
                 {

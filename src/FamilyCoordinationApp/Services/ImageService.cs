@@ -208,10 +208,19 @@ public class ImageService(
         var newName = $"{Guid.NewGuid()}{Path.GetExtension(sourceFull).ToLowerInvariant()}";
         var targetFull = Path.Combine(targetRoot, newName);
 
-        await using (var source = File.OpenRead(sourceFull))
-        await using (var target = File.Create(targetFull))
+        try
         {
+            await using var source = File.OpenRead(sourceFull);
+            await using var target = File.Create(targetFull);
             await source.CopyToAsync(target, cancellationToken);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            // File.Exists above is check-then-use: the source can vanish between the check and the open
+            // (delete-on-replace on a row referencing the same file). Missing-at-open is the same contract
+            // as missing-at-check — return null, never a throw the copy endpoint would surface as a 500.
+            try { File.Delete(targetFull); } catch { /* best-effort partial-file cleanup */ }
+            return null;
         }
 
         logger.LogInformation(

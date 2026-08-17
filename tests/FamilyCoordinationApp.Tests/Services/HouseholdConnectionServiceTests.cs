@@ -438,6 +438,27 @@ public class HouseholdConnectionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CopyRecipe_DropsALegacyPathThatIsNeitherASourceUploadNorHttp()
+    {
+        // A pre-policy row can point anywhere — a THIRD household's directory, a file: URL. Copying such a
+        // value verbatim would recreate the cross-household reference this quest exists to end (slim-review
+        // finding on PR #105).
+        await using (var ctx = new ApplicationDbContext(_options))
+        {
+            var source = await ctx.Recipes.SingleAsync(r => r.HouseholdId == 1 && r.RecipeId == 1);
+            source.ImagePath = "/uploads/999/not-ours.jpg";
+            await ctx.SaveChangesAsync();
+        }
+
+        var copied = await _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2);
+
+        copied.ImagePath.Should().BeNull();
+        _imageServiceMock.Verify(
+            s => s.CopyImageAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never, "a path outside the source household's own directory must never be offered to the copier");
+    }
+
+    [Fact]
     public async Task CopyRecipe_KeepsAnExternalUrlVerbatim()
     {
         await using (var ctx = new ApplicationDbContext(_options))
