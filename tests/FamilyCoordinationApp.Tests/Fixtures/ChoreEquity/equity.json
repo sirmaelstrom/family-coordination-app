@@ -44,7 +44,8 @@
       "choresSetUp": 19,
       "recipesAdded": 6,
       "listItemsCurated": 28,
-      "handOffs": 4
+      "handOffs": 4,
+      "mealsPlanned": 7
     },
     {
       "userId": 2,
@@ -52,7 +53,8 @@
       "choresSetUp": 3,
       "recipesAdded": 2,
       "listItemsCurated": 5,
-      "handOffs": 1
+      "handOffs": 1,
+      "mealsPlanned": 1
     },
     {
       "userId": 3,
@@ -60,7 +62,8 @@
       "choresSetUp": 0,
       "recipesAdded": 0,
       "listItemsCurated": 0,
-      "handOffs": 0
+      "handOffs": 0,
+      "mealsPlanned": 0
     }
   ],
   "callerCapacityTier": "Full"

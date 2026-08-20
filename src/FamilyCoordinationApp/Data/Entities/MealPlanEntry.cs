@@ -23,6 +23,14 @@ public class MealPlanEntry
     /// </summary>
     public int? Servings { get; set; }
 
+    /// <summary>
+    /// Who added this entry (the mealsPlanned planning lane + planned-by attribution). Nullable: rows
+    /// created before the migration have no author and earn no planning credit (the calculator skips
+    /// null authors). Set once at create — the AddMealAsync duplicate-fold path touches only
+    /// <see cref="UpdatedByUserId"/>, never this.
+    /// </summary>
+    public int? CreatedByUserId { get; set; }
+
     // Change tracking fields
     public DateTime? UpdatedAt { get; set; }
     public int? UpdatedByUserId { get; set; }
@@ -34,5 +42,6 @@ public class MealPlanEntry
     // Navigation
     public MealPlan MealPlan { get; set; } = default!;
     public Recipe? Recipe { get; set; }
+    public User? CreatedBy { get; set; }
     public User? UpdatedBy { get; set; }
 }
