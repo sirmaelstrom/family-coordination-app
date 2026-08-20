@@ -13,65 +13,16 @@ import type {
   DigestSettingsView,
   DigestSettingsUpdate,
 } from './types';
-import { messageFrom } from '$lib/shared/api-message';
+import { ApiError, apiGet, apiSend, apiUpload } from '$lib/api/client';
 
 const CHORES_BASE = '/api/chores';
 const ROOMS_BASE = '/api/rooms';
 
-/**
- * Thrown on any non-2xx response. `status` lets callers distinguish the
- * retryable concurrency conflict (409) from every other rejection.
- *
- * Since PR #90 an /api 4xx keeps its real status and always carries a JSON
- * `{ message }` (previously a bodiless one was re-executed through a GET-only
- * page and could arrive as an empty 400). Treat ANY 4xx as a non-retryable
- * rejection EXCEPT 409, the genuine xmin concurrency conflict (WP-11 refetches
- * the board and retries the mutation on 409 only).
- */
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
-
-  /** The retryable optimistic-concurrency conflict (refetch board + retry). */
-  get isConflict(): boolean {
-    return this.status === 409;
-  }
-
-  /**
-   * A non-retryable client rejection: validation / illegal transition / not
-   * found. Everything 4xx that is NOT 409.
-   */
-  get isClientRejection(): boolean {
-    return this.status >= 400 && this.status < 500 && this.status !== 409;
-  }
-}
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    // Same-origin cookie auth — the host page is already authenticated.
-    credentials: 'include',
-    headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
-    ...init,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new ApiError(res.status, messageFrom(text) ?? res.statusText);
-  }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
-}
-
-function jsonBody(body: unknown): RequestInit {
-  return {
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  };
-}
+// Transport + error contract live in $lib/api/client (the one HTTP boundary,
+// quest 79aa83e7). Re-exported so island-internal imports keep working.
+// Chores semantics: any 4xx is a non-retryable rejection EXCEPT 409, the
+// genuine xmin conflict (WP-11 refetches the board and retries on 409 only).
+export { ApiError };
 
 // ─── Mutation request/response shapes (typed now for WP-11) ─────────────────
 
@@ -190,7 +141,7 @@ export interface RoomUpsertRequest {
 // ─── Board read (the ONE payload all lenses group client-side, M11) ─────────
 
 export async function getBoard(): Promise<ChoreBoardDto> {
-  return request<ChoreBoardDto>(`${CHORES_BASE}/board`);
+  return apiGet<ChoreBoardDto>(`${CHORES_BASE}/board`);
 }
 
 // ─── Equity read (separate cached payload — the ONLY non-board fetcher, M11) ──
@@ -200,7 +151,7 @@ export async function getBoard(): Promise<ChoreBoardDto> {
 export async function getEquity(
   window: EquityWindow = 'week',
 ): Promise<ChoreEquityDto> {
-  return request<ChoreEquityDto>(`${CHORES_BASE}/equity?window=${window}`);
+  return apiGet<ChoreEquityDto>(`${CHORES_BASE}/equity?window=${window}`);
 }
 
 // ─── Recap read (separate cached payload — like equity, its own endpoint) ─────
@@ -208,7 +159,7 @@ export async function getEquity(
 // Read-only; `weeks` is the trend length (server clamps 1..26).
 
 export async function getRecap(weeks = 8): Promise<ChoreRecapDto> {
-  return request<ChoreRecapDto>(`${CHORES_BASE}/recap?weeks=${weeks}`);
+  return apiGet<ChoreRecapDto>(`${CHORES_BASE}/recap?weeks=${weeks}`);
 }
 
 // ─── Ledger read (chore-history C surface — its own cached payload, like recap) ─
@@ -217,69 +168,51 @@ export async function getRecap(weeks = 8): Promise<ChoreRecapDto> {
 // Server is authoritative on clamping — no client date math (MN9).
 
 export async function getLedger(weeks = 12): Promise<ChoreLedgerDto> {
-  return request<ChoreLedgerDto>(`${CHORES_BASE}/ledger?weeks=${weeks}`);
+  return apiGet<ChoreLedgerDto>(`${CHORES_BASE}/ledger?weeks=${weeks}`);
 }
 
 // ─── Chore mutations (WP-11 wires these to optimistic UI + 409 retry) ───────
 
 export async function createChore(body: CreateChoreRequest): Promise<ChoreDto> {
-  return request<ChoreDto>(`${CHORES_BASE}/`, { method: 'POST', ...jsonBody(body) });
+  return apiSend<ChoreDto>(`${CHORES_BASE}/`, 'POST', body);
 }
 
 export async function updateChore(
   choreId: number,
   body: UpdateChoreRequest,
 ): Promise<ChoreDto> {
-  return request<ChoreDto>(`${CHORES_BASE}/${choreId}`, { method: 'PUT', ...jsonBody(body) });
+  return apiSend<ChoreDto>(`${CHORES_BASE}/${choreId}`, 'PUT', body);
 }
 
 export async function deleteChore(choreId: number, version: number): Promise<void> {
-  await request<void>(`${CHORES_BASE}/${choreId}`, {
-    method: 'DELETE',
-    ...jsonBody({ version } satisfies VersionRequest),
-  });
+  await apiSend<void>(`${CHORES_BASE}/${choreId}`, 'DELETE', { version } satisfies VersionRequest);
 }
 
 export async function claimChore(choreId: number, version: number): Promise<ChoreDto> {
-  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/claim`, {
-    method: 'POST',
-    ...jsonBody({ version } satisfies VersionRequest),
-  });
+  return apiSend<ChoreDto>(`${CHORES_BASE}/${choreId}/claim`, 'POST', { version } satisfies VersionRequest);
 }
 
 /** Take a chore held by someone else — assign it to the caller as a self-claim (displaces the holder). */
 export async function takeChore(choreId: number, version: number): Promise<ChoreDto> {
-  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/take`, {
-    method: 'POST',
-    ...jsonBody({ version } satisfies VersionRequest),
-  });
+  return apiSend<ChoreDto>(`${CHORES_BASE}/${choreId}/take`, 'POST', { version } satisfies VersionRequest);
 }
 
 export async function dropChore(choreId: number, version: number): Promise<ChoreDto> {
-  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/drop`, {
-    method: 'POST',
-    ...jsonBody({ version } satisfies VersionRequest),
-  });
+  return apiSend<ChoreDto>(`${CHORES_BASE}/${choreId}/drop`, 'POST', { version } satisfies VersionRequest);
 }
 
 export async function handOffChore(
   choreId: number,
   body: HandOffRequest,
 ): Promise<ChoreDto> {
-  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/handoff`, {
-    method: 'POST',
-    ...jsonBody(body),
-  });
+  return apiSend<ChoreDto>(`${CHORES_BASE}/${choreId}/handoff`, 'POST', body);
 }
 
 export async function completeChore(
   choreId: number,
   body: CompleteRequest,
 ): Promise<ChoreDto> {
-  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/complete`, {
-    method: 'POST',
-    ...jsonBody(body),
-  });
+  return apiSend<ChoreDto>(`${CHORES_BASE}/${choreId}/complete`, 'POST', body);
 }
 
 /**
@@ -289,10 +222,7 @@ export async function completeChore(
  * handling as the sibling mutations.
  */
 export async function snoozeChore(choreId: number, body: SnoozeRequestBody): Promise<ChoreDto> {
-  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/snooze`, {
-    method: 'PATCH',
-    ...jsonBody(body),
-  });
+  return apiSend<ChoreDto>(`${CHORES_BASE}/${choreId}/snooze`, 'PATCH', body);
 }
 
 // ─── Roster mutations (multi-person named soft roster, rework) ──────────────
@@ -305,18 +235,12 @@ export async function assignRoster(
   subjectUserId: number,
   version: number,
 ): Promise<ChoreDto> {
-  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/roster/assign`, {
-    method: 'POST',
-    ...jsonBody({ subjectUserId, version } satisfies AssignRosterRequest),
-  });
+  return apiSend<ChoreDto>(`${CHORES_BASE}/${choreId}/roster/assign`, 'POST', { subjectUserId, version } satisfies AssignRosterRequest);
 }
 
 /** Commit the caller to a multi-person chore's roster ("I'm in" — self-opt-in or confirm). */
 export async function commitRoster(choreId: number, version: number): Promise<ChoreDto> {
-  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/roster/commit`, {
-    method: 'POST',
-    ...jsonBody({ version } satisfies VersionRequest),
-  });
+  return apiSend<ChoreDto>(`${CHORES_BASE}/${choreId}/roster/commit`, 'POST', { version } satisfies VersionRequest);
 }
 
 /** Leave/remove from a roster. `subjectUserId` null ⇒ the caller leaves. */
@@ -325,10 +249,7 @@ export async function leaveRoster(
   subjectUserId: number | null,
   version: number,
 ): Promise<ChoreDto> {
-  return request<ChoreDto>(`${CHORES_BASE}/${choreId}/roster/leave`, {
-    method: 'POST',
-    ...jsonBody({ subjectUserId, version } satisfies LeaveRosterRequest),
-  });
+  return apiSend<ChoreDto>(`${CHORES_BASE}/${choreId}/roster/leave`, 'POST', { subjectUserId, version } satisfies LeaveRosterRequest);
 }
 
 // ─── Checklist / subtasks (Phase 14 — versionless / last-write-wins) ────────
@@ -350,10 +271,7 @@ export async function createSubtask(
   choreId: number,
   body: CreateSubtaskRequest,
 ): Promise<ChoreSubtaskDto> {
-  return request<ChoreSubtaskDto>(`${CHORES_BASE}/${choreId}/subtasks`, {
-    method: 'POST',
-    ...jsonBody(body),
-  });
+  return apiSend<ChoreSubtaskDto>(`${CHORES_BASE}/${choreId}/subtasks`, 'POST', body);
 }
 
 /** Patch a checklist item (any subset of title/isDone/sortOrder). PUT → the updated ChoreSubtaskDto. */
@@ -362,15 +280,12 @@ export async function updateSubtask(
   subtaskId: number,
   body: UpdateSubtaskRequest,
 ): Promise<ChoreSubtaskDto> {
-  return request<ChoreSubtaskDto>(`${CHORES_BASE}/${choreId}/subtasks/${subtaskId}`, {
-    method: 'PUT',
-    ...jsonBody(body),
-  });
+  return apiSend<ChoreSubtaskDto>(`${CHORES_BASE}/${choreId}/subtasks/${subtaskId}`, 'PUT', body);
 }
 
 /** Remove a checklist item. DELETE → 204 (no body). */
 export async function deleteSubtask(choreId: number, subtaskId: number): Promise<void> {
-  await request<void>(`${CHORES_BASE}/${choreId}/subtasks/${subtaskId}`, { method: 'DELETE' });
+  await apiSend<void>(`${CHORES_BASE}/${choreId}/subtasks/${subtaskId}`, 'DELETE');
 }
 
 /**
@@ -378,10 +293,7 @@ export async function deleteSubtask(choreId: number, subtaskId: number): Promise
  * Versionless / atomic on the server (mirrors reorderRooms); SortOrder is set by list position.
  */
 export async function reorderSubtasks(choreId: number, orderedSubtaskIds: number[]): Promise<void> {
-  await request<void>(`${CHORES_BASE}/${choreId}/subtasks/reorder`, {
-    method: 'PUT',
-    ...jsonBody({ orderedSubtaskIds }),
-  });
+  await apiSend<void>(`${CHORES_BASE}/${choreId}/subtasks/reorder`, 'PUT', { orderedSubtaskIds });
 }
 
 /** Upload a chore photo (multipart field name `file`) → { photoPath } to pass in create/complete. */
@@ -392,10 +304,7 @@ export async function uploadChorePhoto(
   const form = new FormData();
   form.append('file', file);
   // No Content-Type header — the browser sets the multipart boundary.
-  return request<PhotoUploadResponse>(`${CHORES_BASE}/${choreId}/photo`, {
-    method: 'POST',
-    body: form,
-  });
+  return apiUpload<PhotoUploadResponse>(`${CHORES_BASE}/${choreId}/photo`, form);
 }
 
 /**
@@ -403,15 +312,12 @@ export async function uploadChorePhoto(
  * Idempotent — a second call returns `{ seeded: false }` (no-op).
  */
 export async function seedStarter(): Promise<SeedStarterResponse> {
-  return request<SeedStarterResponse>(`${CHORES_BASE}/seed-starter`, { method: 'POST' });
+  return apiSend<SeedStarterResponse>(`${CHORES_BASE}/seed-starter`, 'POST');
 }
 
 /** Persist the caller's roaming default lens (WP-12). null/blank clears to default. */
 export async function setDefaultView(view: string | null): Promise<DefaultViewResponse> {
-  return request<DefaultViewResponse>(`${CHORES_BASE}/me/default-view`, {
-    method: 'PATCH',
-    ...jsonBody({ view }),
-  });
+  return apiSend<DefaultViewResponse>(`${CHORES_BASE}/me/default-view`, 'PATCH', { view });
 }
 
 /**
@@ -421,10 +327,7 @@ export async function setDefaultView(view: string | null): Promise<DefaultViewRe
  * the next equity payload as `callerCapacityTier`, so the store invalidates equity after a successful PATCH.
  */
 export async function setCapacity(tier: CapacityTier): Promise<{ tier: CapacityTier | null }> {
-  return request<{ tier: CapacityTier | null }>(`${CHORES_BASE}/me/capacity`, {
-    method: 'PATCH',
-    ...jsonBody({ tier }),
-  });
+  return apiSend<{ tier: CapacityTier | null }>(`${CHORES_BASE}/me/capacity`, 'PATCH', { tier });
 }
 
 // ─── Digest settings (WP-11) ─────────────────────────────────────────────────
@@ -438,7 +341,7 @@ export async function setCapacity(tier: CapacityTier): Promise<{ tier: CapacityT
  * Returns enabled state, cadence, day, hour, hasWebhook + hint, lastSentAt.
  */
 export async function getDigestSettings(): Promise<DigestSettingsView> {
-  return request<DigestSettingsView>(`${CHORES_BASE}/digest-settings`);
+  return apiGet<DigestSettingsView>(`${CHORES_BASE}/digest-settings`);
 }
 
 /**
@@ -452,42 +355,36 @@ export async function getDigestSettings(): Promise<DigestSettingsView> {
 export async function updateDigestSettings(
   body: DigestSettingsUpdate,
 ): Promise<DigestSettingsView> {
-  return request<DigestSettingsView>(`${CHORES_BASE}/digest-settings`, {
-    method: 'PUT',
-    ...jsonBody(body),
-  });
+  return apiSend<DigestSettingsView>(`${CHORES_BASE}/digest-settings`, 'PUT', body);
 }
 
 // ─── Room admin (/api/rooms) ────────────────────────────────────────────────
 
 export async function listRooms(): Promise<RoomDto[]> {
-  return request<RoomDto[]>(`${ROOMS_BASE}/`);
+  return apiGet<RoomDto[]>(`${ROOMS_BASE}/`);
 }
 
 export async function getRoom(roomId: number): Promise<RoomDto> {
-  return request<RoomDto>(`${ROOMS_BASE}/${roomId}`);
+  return apiGet<RoomDto>(`${ROOMS_BASE}/${roomId}`);
 }
 
 export async function createRoom(body: RoomUpsertRequest): Promise<RoomDto> {
-  return request<RoomDto>(`${ROOMS_BASE}/`, { method: 'POST', ...jsonBody(body) });
+  return apiSend<RoomDto>(`${ROOMS_BASE}/`, 'POST', body);
 }
 
 export async function updateRoom(
   roomId: number,
   body: RoomUpsertRequest,
 ): Promise<RoomDto> {
-  return request<RoomDto>(`${ROOMS_BASE}/${roomId}`, { method: 'PUT', ...jsonBody(body) });
+  return apiSend<RoomDto>(`${ROOMS_BASE}/${roomId}`, 'PUT', body);
 }
 
 export async function deleteRoom(roomId: number): Promise<void> {
-  await request<void>(`${ROOMS_BASE}/${roomId}`, { method: 'DELETE' });
+  await apiSend<void>(`${ROOMS_BASE}/${roomId}`, 'DELETE');
 }
 
 export async function reorderRooms(orderedRoomIds: number[]): Promise<void> {
-  await request<void>(`${ROOMS_BASE}/reorder`, {
-    method: 'POST',
-    ...jsonBody({ orderedRoomIds } satisfies ReorderRoomsRequest),
-  });
+  await apiSend<void>(`${ROOMS_BASE}/reorder`, 'POST', { orderedRoomIds } satisfies ReorderRoomsRequest);
 }
 
 export async function uploadRoomPhoto(
@@ -496,8 +393,5 @@ export async function uploadRoomPhoto(
 ): Promise<PhotoUploadResponse> {
   const form = new FormData();
   form.append('file', file);
-  return request<PhotoUploadResponse>(`${ROOMS_BASE}/${roomId}/photo`, {
-    method: 'POST',
-    body: form,
-  });
+  return apiUpload<PhotoUploadResponse>(`${ROOMS_BASE}/${roomId}/photo`, form);
 }

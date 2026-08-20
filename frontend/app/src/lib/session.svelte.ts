@@ -29,6 +29,8 @@ export interface SessionUser {
 /** Lifecycle of the one-shot /api/me load. */
 export type SessionStatus = 'idle' | 'loading' | 'ready' | 'error';
 
+import { ApiError, apiFetch, loginRedirectUrl } from '$lib/api/client';
+
 /** Raw JSON shape of GET /api/me (camelCased MeDto). */
 interface MeResponse {
   householdId: number;
@@ -39,7 +41,6 @@ interface MeResponse {
   isSiteAdmin: boolean;
 }
 
-const LOGIN_URL = '/account/login';
 const ACCESS_DENIED_URL = '/account/access-denied';
 
 class SessionStore {
@@ -105,33 +106,13 @@ class SessionStore {
     this.#status = 'loading';
     this.#error = null;
     try {
-      const res = await fetch('/api/me', {
-        credentials: 'include',
-        headers: { Accept: 'application/json' },
-      });
-
-      if (res.status === 401) {
-        // No session on this origin → bounce to the server-side login.
-        // Full-page redirect (NOT goto()); NOT base-prefixed (root server route).
-        if (typeof window !== 'undefined') {
-          window.location.href = LOGIN_URL;
-        }
-        return;
-      }
-
-      if (res.status === 403) {
-        // Authenticated but not authorized (e.g. removed from the whitelist) —
-        // an error screen would dead-end them; the server access-denied page
-        // routes them to request access / sign in as someone else.
-        if (typeof window !== 'undefined') {
-          window.location.href = ACCESS_DENIED_URL;
-        }
-        return;
-      }
-
-      if (!res.ok) throw new Error(`/api/me returned ${res.status}`);
-
-      const dto = (await res.json()) as MeResponse;
+      // `on401: 'throw'` — the session boot owns its OWN auth policy (the one
+      // place 403 has an auth meaning): 401 = no session on this origin →
+      // server-side login; 403 = authenticated but not authorized (e.g.
+      // removed from the whitelist) → the access-denied page, which routes
+      // them onward instead of dead-ending. Full-page redirects (NOT goto());
+      // NOT base-prefixed (root server routes).
+      const dto = await apiFetch<MeResponse>('/api/me', undefined, { on401: 'throw' });
       this.#user = {
         householdId: dto.householdId,
         userId: dto.userId,
@@ -142,6 +123,12 @@ class SessionStore {
       };
       this.#status = 'ready';
     } catch (e) {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        if (typeof window !== 'undefined') {
+          window.location.href = e.status === 403 ? ACCESS_DENIED_URL : loginRedirectUrl();
+        }
+        return;
+      }
       this.#error = e instanceof Error ? e.message : String(e);
       this.#status = 'error';
     }
