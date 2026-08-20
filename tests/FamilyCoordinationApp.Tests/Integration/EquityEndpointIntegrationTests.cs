@@ -1,7 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using FamilyCoordinationApp.Data;
+using FamilyCoordinationApp.Data.Entities;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace FamilyCoordinationApp.Tests.Integration;
 
@@ -26,7 +30,8 @@ public sealed class EquityEndpointIntegrationTests(PostgresContainerFixture post
 
     private sealed record MemberShare(int userId, string displayName, int points, int completions, double sharePct);
     private sealed record MemberPlanning(
-        int userId, string displayName, int choresSetUp, int recipesAdded, int listItemsCurated, int handOffs);
+        int userId, string displayName, int choresSetUp, int recipesAdded, int listItemsCurated, int handOffs,
+        int mealsPlanned);
     private sealed record Equity(
         string window, int totalPoints, int totalCompletions, double equalSharePct,
         int fallingBehindCount, int upForGrabsCount, List<MemberShare> members, List<MemberPlanning> planning);
@@ -137,6 +142,68 @@ public sealed class EquityEndpointIntegrationTests(PostgresContainerFixture post
         // Sanity: the planning array carries one row per household-A member (Alice, Amy).
         var planning = await client.GetFromJsonAsync<Equity>("/api/chores/equity?window=week", Json);
         planning!.planning.Should().HaveCount(2, "one planning row per household-A member");
+    }
+
+    [Fact]
+    public async Task Equity_MealsPlannedLane_CountsAttributedEntries_HouseholdScoped()
+    {
+        // F1: the fifth planning lane, proven through the real HTTP pipeline. Entries created via the
+        // endpoint are stamped with the caller (mealsPlanned credit); a directly-inserted null-author row
+        // (the pre-migration shape) credits nobody; household B's entries never reach A's planning rows.
+        var alice = _factory.CreateClientAs(ChoresWebAppFactory.UserAEmail);
+        var amy = _factory.CreateClientAs(ChoresWebAppFactory.UserA2Email);
+        var bob = _factory.CreateClientAs(ChoresWebAppFactory.UserBEmail);
+
+        var monday = new DateOnly(2026, 1, 5);
+
+        (await alice.PostAsJsonAsync("/api/meal-plan/entries",
+            new { date = monday, mealType = "dinner", customMealName = "Tacos" }, Json)).EnsureSuccessStatusCode();
+        (await alice.PostAsJsonAsync("/api/meal-plan/entries",
+            new { date = monday.AddDays(1), mealType = "dinner", customMealName = "Curry" }, Json)).EnsureSuccessStatusCode();
+        (await amy.PostAsJsonAsync("/api/meal-plan/entries",
+            new { date = monday, mealType = "lunch", customMealName = "Soup" }, Json)).EnsureSuccessStatusCode();
+        (await bob.PostAsJsonAsync("/api/meal-plan/entries",
+            new { date = monday, mealType = "dinner", customMealName = "Pizza" }, Json)).EnsureSuccessStatusCode();
+
+        // A pre-migration-shaped row: same household + plan, no author. Must credit nobody.
+        var dbFactory = _factory.Services.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
+        await using (var db = await dbFactory.CreateDbContextAsync())
+        {
+            var planId = await db.MealPlanEntries
+                .Where(e => e.HouseholdId == ChoresWebAppFactory.HouseholdAId)
+                .Select(e => e.MealPlanId)
+                .FirstAsync();
+            var nextEntryId = await db.MealPlanEntries
+                .Where(e => e.HouseholdId == ChoresWebAppFactory.HouseholdAId && e.MealPlanId == planId)
+                .MaxAsync(e => e.EntryId) + 1;
+            db.MealPlanEntries.Add(new MealPlanEntry
+            {
+                HouseholdId = ChoresWebAppFactory.HouseholdAId,
+                MealPlanId = planId,
+                EntryId = nextEntryId,
+                Date = monday.AddDays(2),
+                MealType = MealType.Dinner,
+                CustomMealName = "Mystery leftovers",
+                CreatedByUserId = null,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        // The lane is all-time, so week and all must agree on the same counts.
+        foreach (var window in new[] { "week", "all" })
+        {
+            var equity = await alice.GetFromJsonAsync<Equity>($"/api/chores/equity?window={window}", Json);
+            equity!.planning.Single(p => p.displayName == "Alice A").mealsPlanned
+                .Should().Be(2, $"Alice created two entries via the endpoint (window={window})");
+            equity.planning.Single(p => p.displayName == "Amy A").mealsPlanned
+                .Should().Be(1, $"Amy created one, and the null-author row credits nobody (window={window})");
+            equity.planning.Should().NotContain(p => p.displayName == "Bob B",
+                "household B never appears in A's planning rows");
+        }
+
+        var equityB = await bob.GetFromJsonAsync<Equity>("/api/chores/equity?window=week", Json);
+        equityB!.planning.Should().ContainSingle().Which.mealsPlanned
+            .Should().Be(1, "Bob's own entry counts in his household only — no bleed from A's entries");
     }
 
     [Fact]
