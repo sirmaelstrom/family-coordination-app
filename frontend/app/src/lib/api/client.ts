@@ -105,8 +105,10 @@ export function setNavigateForTesting(fn: Navigate): () => void {
  * Where a dead-cookie 401 sends the browser: the server login page, carrying
  * the current SPA location as ReturnUrl so a re-login lands back here
  * (Login.cshtml validates it as a LOCAL url and falls back otherwise).
+ * Exported so the on401:'throw' policy owners (session, presence) send the
+ * SAME destination — which 401 path fires must not change where re-login lands.
  */
-function loginRedirectUrl(): string {
+export function loginRedirectUrl(): string {
   if (typeof window === 'undefined') return LOGIN_URL;
   const here = window.location.pathname + window.location.search;
   return `${LOGIN_URL}?ReturnUrl=${encodeURIComponent(here)}`;

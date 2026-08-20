@@ -29,7 +29,7 @@ export interface SessionUser {
 /** Lifecycle of the one-shot /api/me load. */
 export type SessionStatus = 'idle' | 'loading' | 'ready' | 'error';
 
-import { ApiError, apiFetch, LOGIN_URL } from '$lib/api/client';
+import { ApiError, apiFetch, loginRedirectUrl } from '$lib/api/client';
 
 /** Raw JSON shape of GET /api/me (camelCased MeDto). */
 interface MeResponse {
@@ -125,7 +125,7 @@ class SessionStore {
     } catch (e) {
       if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
         if (typeof window !== 'undefined') {
-          window.location.href = e.status === 403 ? ACCESS_DENIED_URL : LOGIN_URL;
+          window.location.href = e.status === 403 ? ACCESS_DENIED_URL : loginRedirectUrl();
         }
         return;
       }

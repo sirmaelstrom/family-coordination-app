@@ -102,7 +102,7 @@ export async function submitFeedback(kind: FeedbackKind, message: string): Promi
  */
 function describeFailure(e: unknown): string {
   if (e instanceof ApiError) {
-    if (e.status === 403) return 'Your session expired — reload the page and try again.';
+    if (e.status === 403) return "You don't have access right now — the page will redirect shortly.";
     return e.message || `Couldn't send your feedback (HTTP ${e.status}).`;
   }
   return "Couldn't send your feedback — check your connection and try again.";

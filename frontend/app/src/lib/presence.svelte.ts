@@ -16,7 +16,7 @@
 // $state). Reading `presence.users` / `presence.online` in markup tracks them.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { ApiError, apiFetch, LOGIN_URL } from '$lib/api/client';
+import { ApiError, apiFetch, loginRedirectUrl } from '$lib/api/client';
 
 /** One active user in the header roster (caller excluded server-side). */
 export interface PresenceUser {
@@ -88,7 +88,7 @@ class PresenceStore {
   #authDied(status: number): void {
     this.stop();
     if (typeof window !== 'undefined') {
-      window.location.href = status === 403 ? '/account/access-denied' : LOGIN_URL;
+      window.location.href = status === 403 ? '/account/access-denied' : loginRedirectUrl();
     }
   }
 
