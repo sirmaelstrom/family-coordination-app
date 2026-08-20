@@ -34,15 +34,22 @@ function json(status: number, body: unknown): Response {
   });
 }
 
+let restoreNavigate: () => void;
+
 beforeEach(() => {
   fetchArgs = [];
   navigations = [];
-  setNavigateForTesting((url) => navigations.push(url));
+  restoreNavigate = setNavigateForTesting((url) => navigations.push(url));
 });
 
 afterEach(() => {
+  restoreNavigate();
   vi.unstubAllGlobals();
 });
+
+function headersOf(index = 0): Headers {
+  return new Headers(fetchArgs[index].init?.headers);
+}
 
 describe('parsing', () => {
   it('returns parsed JSON on 200', async () => {
@@ -115,6 +122,18 @@ describe('401 policy', () => {
     expect(navigations).toEqual([LOGIN_URL]);
   });
 
+  it('carries the current location as ReturnUrl when a window exists', async () => {
+    vi.stubGlobal('window', {
+      location: { pathname: '/meal-plan', search: '?week=2026-08-17' },
+    });
+    mockFetch(json(401, { message: 'unauthorized' }));
+    void apiGet('/api/x').catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(navigations).toEqual([
+      `${LOGIN_URL}?ReturnUrl=${encodeURIComponent('/meal-plan?week=2026-08-17')}`,
+    ]);
+  });
+
   it("on401: 'throw' throws ApiError 401 and does not redirect", async () => {
     mockFetch(json(401, { message: 'unauthorized' }));
     await expect(apiFetch('/api/me', undefined, { on401: 'throw' })).rejects.toMatchObject({
@@ -138,19 +157,30 @@ describe('request shaping', () => {
     const { init } = fetchArgs[0];
     expect(init?.credentials).toBe('include');
     expect(init?.method).toBe('PUT');
-    expect(init?.headers).toMatchObject({
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    });
+    expect(headersOf().get('Accept')).toBe('application/json');
+    expect(headersOf().get('Content-Type')).toBe('application/json');
     expect(init?.body).toBe(JSON.stringify({ name: 'x' }));
   });
 
   it('omits the body entirely when apiSend has none', async () => {
     mockFetch(new Response(null, { status: 204 }));
     await apiSend('/api/x', 'POST');
-    const { init } = fetchArgs[0];
-    expect(init?.body).toBeUndefined();
-    expect((init?.headers as Record<string, string>)['Content-Type']).toBeUndefined();
+    expect(fetchArgs[0].init?.body).toBeUndefined();
+    expect(headersOf().get('Content-Type')).toBeNull();
+  });
+
+  it('preserves caller headers passed as a Headers instance', async () => {
+    mockFetch(json(200, {}));
+    await apiFetch('/api/x', { headers: new Headers({ 'X-Custom': '1' }) });
+    expect(headersOf().get('X-Custom')).toBe('1');
+    expect(headersOf().get('Accept')).toBe('application/json');
+  });
+
+  it('preserves caller headers passed as a tuple array', async () => {
+    mockFetch(json(200, {}));
+    await apiFetch('/api/x', { headers: [['X-Custom', '1']] });
+    expect(headersOf().get('X-Custom')).toBe('1');
+    expect(headersOf().get('Accept')).toBe('application/json');
   });
 
   it('serializes a body on DELETE (the version-in-body house pattern)', async () => {
@@ -167,6 +197,6 @@ describe('request shaping', () => {
     const { init } = fetchArgs[0];
     expect(init?.method).toBe('POST');
     expect(init?.body).toBe(form);
-    expect((init?.headers as Record<string, string>)['Content-Type']).toBeUndefined();
+    expect(headersOf().get('Content-Type')).toBeNull();
   });
 });

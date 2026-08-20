@@ -88,9 +88,28 @@ let navigate: Navigate = (url) => {
   if (typeof window !== 'undefined') window.location.href = url;
 };
 
-/** Test seam — node-env boundary tests have no window to observe a redirect on. */
-export function setNavigateForTesting(fn: Navigate): void {
+/**
+ * Test seam — node-env boundary tests have no window to observe a redirect on.
+ * Returns a restore function; call it in afterEach so the override never leaks
+ * across tests.
+ */
+export function setNavigateForTesting(fn: Navigate): () => void {
+  const prev = navigate;
   navigate = fn;
+  return () => {
+    navigate = prev;
+  };
+}
+
+/**
+ * Where a dead-cookie 401 sends the browser: the server login page, carrying
+ * the current SPA location as ReturnUrl so a re-login lands back here
+ * (Login.cshtml validates it as a LOCAL url and falls back otherwise).
+ */
+function loginRedirectUrl(): string {
+  if (typeof window === 'undefined') return LOGIN_URL;
+  const here = window.location.pathname + window.location.search;
+  return `${LOGIN_URL}?ReturnUrl=${encodeURIComponent(here)}`;
 }
 
 /**
@@ -102,16 +121,20 @@ export async function apiFetch<T>(
   init?: RequestInit,
   opts?: ApiFetchOptions,
 ): Promise<T> {
+  // Normalize through Headers so every HeadersInit form (plain object, Headers
+  // instance, tuple array) survives; object spread silently drops the latter two.
+  const headers = new Headers(init?.headers);
+  if (!headers.has('Accept')) headers.set('Accept', 'application/json');
   const res = await fetch(url, {
     // Same-origin cookie auth — the host page is already authenticated.
     ...init,
     credentials: 'include',
-    headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
+    headers,
   });
   if (res.status === 401 && (opts?.on401 ?? 'redirect') === 'redirect') {
     // The cookie died. Full-page redirect (NOT goto(); /account/login is a
     // root server route) — and never settle: the page is navigating away.
-    navigate(LOGIN_URL);
+    navigate(loginRedirectUrl());
     return new Promise<T>(() => {});
   }
   if (!res.ok) {

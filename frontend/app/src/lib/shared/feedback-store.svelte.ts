@@ -8,6 +8,7 @@
 // functions (never a re-exported reassigned $state).
 // ─────────────────────────────────────────────────────────────────────────
 
+import { ApiError, apiSend } from '$lib/api/client';
 import { showToast } from './toast-store.svelte';
 
 /** Wire values for Feedback.Type (camelCase — the backend enum converter's form). */
@@ -73,43 +74,36 @@ export async function submitFeedback(kind: FeedbackKind, message: string): Promi
   state.submitting = true;
   state.error = null;
   try {
-    const res = await fetch(SUBMIT_URL, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        type: kind,
-        message: trimmed,
-        currentPage: typeof window !== 'undefined' ? window.location.pathname : null,
-      }),
+    // Rides the one HTTP boundary (council round-1, PR #110): a 401 takes the
+    // shared login redirect — the typed message can't be sent on a dead cookie
+    // anyway, and "reload and try again" was a lie that retried forever.
+    await apiSend<void>(SUBMIT_URL, 'POST', {
+      type: kind,
+      message: trimmed,
+      currentPage: typeof window !== 'undefined' ? window.location.pathname : null,
     });
-
-    if (!res.ok) {
-      state.error = await describeFailure(res);
-      return false;
-    }
 
     state.open = false;
     state.submitted += 1;
     showToast({ message: 'Thanks — your feedback was sent.', kind: 'success' });
     return true;
-  } catch {
-    state.error = "Couldn't send your feedback — check your connection and try again.";
+  } catch (e) {
+    state.error = describeFailure(e);
     return false;
   } finally {
     state.submitting = false;
   }
 }
 
-/** Every /api 4xx here carries a JSON `{ message }`; surface it, with an actionable fallback if it's missing. */
-async function describeFailure(res: Response): Promise<string> {
-  const text = await res.text().catch(() => '');
-  try {
-    const parsed = JSON.parse(text);
-    if (parsed && typeof parsed.message === 'string' && parsed.message) return parsed.message;
-  } catch {
-    /* not JSON — fall through */
+/**
+ * Every /api 4xx carries a JSON `{ message }` (surfaced by ApiError); fall back to something
+ * actionable when it's missing. 401 never reaches here (the boundary redirects to login); a 403
+ * (revoked mid-session) keeps the typed text on screen — presence redirects within its poll anyway.
+ */
+function describeFailure(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.status === 403) return 'Your session expired — reload the page and try again.';
+    return e.message || `Couldn't send your feedback (HTTP ${e.status}).`;
   }
-  if (res.status === 401 || res.status === 403) return 'Your session expired — reload the page and try again.';
-  return `Couldn't send your feedback (HTTP ${res.status}).`;
+  return "Couldn't send your feedback — check your connection and try again.";
 }
