@@ -10,91 +10,49 @@ import type {
 const CATEGORIES = '/api/settings/categories';
 const MEMBERS = '/api/settings/members';
 
-/**
- * Thrown on any non-2xx response. `status` lets callers react to a rejection.
- *
- * Since PR #90, /api preserves an error's real status and backfills a generic JSON
- * `{ message }` only when no body was written. Every settings endpoint returns a
- * NON-EMPTY, specific body on 4xx, and the island treats ANY 4xx as a
- * non-retryable client rejection → reconcile (refetch) + a calm toast.
- */
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
+// Transport + error contract live in $lib/api/client (the one HTTP boundary,
+// quest 79aa83e7). Settings semantics: every endpoint writes a specific 4xx
+// body; the island treats ANY 4xx as a non-retryable rejection → reconcile
+// (refetch) + a calm toast.
+import { ApiError, apiGet, apiSend } from '$lib/api/client';
 
-  /** A non-retryable client rejection (validation / not found / conflict). Any 4xx. */
-  get isClientRejection(): boolean {
-    return this.status >= 400 && this.status < 500;
-  }
-}
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    credentials: 'include',
-    headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
-    ...init,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    let message = text || res.statusText;
-    // The endpoints return { message } on 4xx — surface it for the toast.
-    try {
-      const parsed = JSON.parse(text);
-      if (parsed && typeof parsed.message === 'string') message = parsed.message;
-    } catch { /* not JSON — use the raw text */ }
-    throw new ApiError(res.status, message);
-  }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
-}
-
-function jsonBody(body: unknown): RequestInit {
-  return {
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  };
-}
+export { ApiError };
 
 // ─── Categories ─────────────────────────────────────────────────────────────
 
 /** #1 Active + deleted categories for the household. */
 export async function getCategories(): Promise<CategoryListDto> {
-  return request<CategoryListDto>(`${CATEGORIES}/`);
+  return apiGet<CategoryListDto>(`${CATEGORIES}/`);
 }
 
 /** #2 Create → the saved category (201). Empty name → 400. */
 export async function createCategory(body: CategoryWriteRequest): Promise<CategoryDto> {
-  return request<CategoryDto>(`${CATEGORIES}/`, { method: 'POST', ...jsonBody(body) });
+  return apiSend<CategoryDto>(`${CATEGORIES}/`, 'POST', body);
 }
 
 /** #3 Update name/emoji/color (sort order preserved) → the updated category. 404 if missing. */
 export async function updateCategory(categoryId: number, body: CategoryWriteRequest): Promise<CategoryDto> {
-  return request<CategoryDto>(`${CATEGORIES}/${categoryId}`, { method: 'PUT', ...jsonBody(body) });
+  return apiSend<CategoryDto>(`${CATEGORIES}/${categoryId}`, 'PUT', body);
 }
 
 /** #4 Soft-delete → 204 (idempotent). 404 if missing. */
 export async function deleteCategory(categoryId: number): Promise<void> {
-  await request<void>(`${CATEGORIES}/${categoryId}`, { method: 'DELETE' });
+  await apiSend<void>(`${CATEGORIES}/${categoryId}`, 'DELETE');
 }
 
 /** #5 Restore a soft-deleted category → 204 (idempotent). */
 export async function restoreCategory(categoryId: number): Promise<void> {
-  await request<void>(`${CATEGORIES}/${categoryId}/restore`, { method: 'POST' });
+  await apiSend<void>(`${CATEGORIES}/${categoryId}/restore`, 'POST');
 }
 
 /** #6 Persist a new order (index ⇒ sortOrder) → 204. */
 export async function updateSortOrder(orderedIds: number[]): Promise<void> {
-  await request<void>(`${CATEGORIES}/sort-order`, { method: 'PUT', ...jsonBody({ orderedIds }) });
+  await apiSend<void>(`${CATEGORIES}/sort-order`, 'PUT', { orderedIds });
 }
 
 /** #7 Whether the category's name is used by any ingredient (for the delete confirm). */
 export async function categoryInUse(categoryId: number): Promise<boolean> {
-  const res = await request<{ inUse: boolean }>(`${CATEGORIES}/${categoryId}/in-use`);
+  const res = await apiGet<{ inUse: boolean }>(`${CATEGORIES}/${categoryId}/in-use`);
   return res.inUse;
 }
 
@@ -102,20 +60,20 @@ export async function categoryInUse(categoryId: number): Promise<boolean> {
 
 /** #8 Household members + the caller's id (for "You" + self-gating). */
 export async function getMembers(): Promise<MemberListDto> {
-  return request<MemberListDto>(`${MEMBERS}/`);
+  return apiGet<MemberListDto>(`${MEMBERS}/`);
 }
 
 /** #9 Add/re-enable by email → outcome envelope (200). Another household ⇒ 409 (ApiError). */
 export async function addMember(email: string): Promise<MemberActionDto> {
-  return request<MemberActionDto>(`${MEMBERS}/`, { method: 'POST', ...jsonBody({ email }) });
+  return apiSend<MemberActionDto>(`${MEMBERS}/`, 'POST', { email });
 }
 
 /** #10 Enable/disable → the updated member. Self ⇒ 400; last-active ⇒ 409 (ApiError). */
 export async function setWhitelist(userId: number, isWhitelisted: boolean): Promise<MemberDto> {
-  return request<MemberDto>(`${MEMBERS}/${userId}`, { method: 'PUT', ...jsonBody({ isWhitelisted }) });
+  return apiSend<MemberDto>(`${MEMBERS}/${userId}`, 'PUT', { isWhitelisted });
 }
 
 /** #11 Delete a member → 204. Self ⇒ 400; last-user / has-activity ⇒ 409 (ApiError). */
 export async function deleteMember(userId: number): Promise<void> {
-  await request<void>(`${MEMBERS}/${userId}`, { method: 'DELETE' });
+  await apiSend<void>(`${MEMBERS}/${userId}`, 'DELETE');
 }

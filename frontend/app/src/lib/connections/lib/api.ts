@@ -7,83 +7,40 @@ import type {
 
 const BASE = '/api/settings/connections';
 
-/**
- * Thrown on any non-2xx response. `status` lets callers react to a rejection.
- *
- * Since PR #90, /api preserves an error's real status and backfills a generic JSON
- * `{ message }` only when no body was written. The connections endpoints return
- * outcome envelopes (200) for the expected validate/accept flow
- * results, so a 4xx here is a genuine error (or 401) — treat ANY 4xx as a
- * non-retryable client rejection.
- */
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
+// Transport + error contract live in $lib/api/client (the one HTTP boundary,
+// quest 79aa83e7). Connections semantics: the endpoints return outcome
+// envelopes (200) for the expected validate/accept flow results, so a 4xx
+// here is a genuine error — treat ANY 4xx as a non-retryable rejection.
+import { ApiError, apiGet, apiSend } from '$lib/api/client';
 
-  /** A non-retryable client rejection (validation / not found / conflict). Any 4xx. */
-  get isClientRejection(): boolean {
-    return this.status >= 400 && this.status < 500;
-  }
-}
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    credentials: 'include',
-    headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
-    ...init,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    let message = text || res.statusText;
-    // The endpoints return { message } on 4xx — surface it for the toast.
-    try {
-      const parsed = JSON.parse(text);
-      if (parsed && typeof parsed.message === 'string') message = parsed.message;
-    } catch { /* not JSON — use the raw text */ }
-    throw new ApiError(res.status, message);
-  }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
-}
-
-function jsonBody(body: unknown): RequestInit {
-  return {
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  };
-}
+export { ApiError };
 
 /** #1 The active invite (or null) + connected households, in one payload. */
 export async function getConnections(): Promise<ConnectionsDto> {
-  return request<ConnectionsDto>(`${BASE}/`);
+  return apiGet<ConnectionsDto>(`${BASE}/`);
 }
 
 /** #2 Generate a new invite (replaces any prior active one) → the code (201). */
 export async function generateInvite(): Promise<InviteDto> {
-  return request<InviteDto>(`${BASE}/invite`, { method: 'POST' });
+  return apiSend<InviteDto>(`${BASE}/invite`, 'POST');
 }
 
 /** #3 Cancel the active invite → 204 (idempotent). */
 export async function cancelInvite(): Promise<void> {
-  await request<void>(`${BASE}/invite`, { method: 'DELETE' });
+  await apiSend<void>(`${BASE}/invite`, 'DELETE');
 }
 
 /** #4 Validate a code WITHOUT connecting → 200 outcome envelope. */
 export async function validateCode(code: string): Promise<ValidateResultDto> {
-  return request<ValidateResultDto>(`${BASE}/validate`, { method: 'POST', ...jsonBody({ code }) });
+  return apiSend<ValidateResultDto>(`${BASE}/validate`, 'POST', { code });
 }
 
 /** #5 Accept a code (establish the connection) → 200 outcome envelope. */
 export async function acceptCode(code: string): Promise<AcceptResultDto> {
-  return request<AcceptResultDto>(`${BASE}/accept`, { method: 'POST', ...jsonBody({ code }) });
+  return apiSend<AcceptResultDto>(`${BASE}/accept`, 'POST', { code });
 }
 
 /** #6 Disconnect a connected household → 204 (idempotent; M1 enforced server-side). */
 export async function disconnect(householdId: number): Promise<void> {
-  await request<void>(`${BASE}/connected/${householdId}`, { method: 'DELETE' });
+  await apiSend<void>(`${BASE}/connected/${householdId}`, 'DELETE');
 }

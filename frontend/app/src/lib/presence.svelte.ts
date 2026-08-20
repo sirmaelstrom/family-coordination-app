@@ -16,6 +16,8 @@
 // $state). Reading `presence.users` / `presence.online` in markup tracks them.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { ApiError, apiFetch, LOGIN_URL } from '$lib/api/client';
+
 /** One active user in the header roster (caller excluded server-side). */
 export interface PresenceUser {
   userId: number;
@@ -86,47 +88,50 @@ class PresenceStore {
   #authDied(status: number): void {
     this.stop();
     if (typeof window !== 'undefined') {
-      window.location.href = status === 403 ? '/account/access-denied' : '/account/login';
+      window.location.href = status === 403 ? '/account/access-denied' : LOGIN_URL;
     }
   }
 
+  // Both calls ride the one HTTP boundary with `on401: 'throw'` — presence
+  // owns its own auth policy (stop polling FIRST, then redirect), so the
+  // client's default redirect must not fire underneath it.
+
   async #heartbeat(): Promise<void> {
     try {
-      const res = await fetch('/api/presence/heartbeat', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          page: typeof window !== 'undefined' ? window.location.pathname : null,
-        }),
-      });
-      if (res.status === 401 || res.status === 403) {
-        this.#authDied(res.status);
+      // 204 No-Content on success.
+      await apiFetch<void>(
+        '/api/presence/heartbeat',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            page: typeof window !== 'undefined' ? window.location.pathname : null,
+          }),
+        },
+        { on401: 'throw' },
+      );
+      this.#online = true;
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        this.#authDied(e.status);
         return;
       }
-      this.#online = res.ok;
-    } catch {
       this.#online = false;
     }
   }
 
   async #loadUsers(): Promise<void> {
     try {
-      const res = await fetch('/api/presence/users', {
-        credentials: 'include',
-        headers: { Accept: 'application/json' },
+      const users = await apiFetch<PresenceUser[]>('/api/presence/users', undefined, {
+        on401: 'throw',
       });
-      if (res.status === 401 || res.status === 403) {
-        this.#authDied(res.status);
-        return;
-      }
-      if (!res.ok) {
-        this.#online = false;
-        return;
-      }
       this.#online = true;
-      this.#users = (await res.json()) as PresenceUser[];
-    } catch {
+      this.#users = users;
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        this.#authDied(e.status);
+        return;
+      }
       this.#online = false;
     }
   }

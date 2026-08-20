@@ -4,33 +4,15 @@ import type {
   ShoppingListItemDto,
   ShoppingListSummaryDto,
 } from './types';
-import { messageFrom } from '$lib/shared/api-message';
+import { ApiError, apiGet, apiSend } from '$lib/api/client';
 
 const BASE = '/api/shopping-lists';
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    credentials: 'include',
-    headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
-    ...init,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new ApiError(res.status, messageFrom(text) ?? res.statusText);
-  }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
-}
-
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
-}
+// Transport + error contract live in $lib/api/client (the one HTTP boundary,
+// quest 79aa83e7). This island's local ApiError copy had no isConflict /
+// isClientRejection getters — its callers hand-rolled status checks; the
+// canonical class restores them.
+export { ApiError };
 
 export interface PatchItemBody {
   isChecked?: boolean;
@@ -60,29 +42,21 @@ export interface GenerateBody {
 }
 
 export async function listLists(): Promise<ShoppingListSummaryDto[]> {
-  return request<ShoppingListSummaryDto[]>(`${BASE}/`);
+  return apiGet<ShoppingListSummaryDto[]>(`${BASE}/`);
 }
 
 export async function createList(name: string): Promise<ShoppingListSummaryDto> {
-  return request<ShoppingListSummaryDto>(`${BASE}/`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
-  });
+  return apiSend<ShoppingListSummaryDto>(`${BASE}/`, 'POST', { name });
 }
 
 export async function generateFromMealPlan(
   body: GenerateBody,
 ): Promise<ShoppingListSummaryDto> {
-  return request<ShoppingListSummaryDto>(`${BASE}/actions/generate-from-meal-plan`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  return apiSend<ShoppingListSummaryDto>(`${BASE}/actions/generate-from-meal-plan`, 'POST', body);
 }
 
 export async function getList(listId: number): Promise<ShoppingListDto> {
-  return request<ShoppingListDto>(`${BASE}/${listId}`);
+  return apiGet<ShoppingListDto>(`${BASE}/${listId}`);
 }
 
 export async function patchItem(
@@ -90,87 +64,71 @@ export async function patchItem(
   itemId: number,
   body: PatchItemBody,
 ): Promise<ShoppingListItemDto> {
-  return request<ShoppingListItemDto>(`${BASE}/${listId}/items/${itemId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  return apiSend<ShoppingListItemDto>(`${BASE}/${listId}/items/${itemId}`, 'PATCH', body);
 }
 
 export async function addItem(
   listId: number,
   body: AddItemBody,
 ): Promise<ShoppingListItemDto> {
-  return request<ShoppingListItemDto>(`${BASE}/${listId}/items`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  return apiSend<ShoppingListItemDto>(`${BASE}/${listId}/items`, 'POST', body);
 }
 
 export async function deleteItem(listId: number, itemId: number): Promise<void> {
-  await request<void>(`${BASE}/${listId}/items/${itemId}`, { method: 'DELETE' });
+  await apiSend<void>(`${BASE}/${listId}/items/${itemId}`, 'DELETE');
 }
 
 export async function updateSortOrders(
   listId: number,
   updates: SortOrderUpdate[],
 ): Promise<void> {
-  await request<void>(`${BASE}/${listId}/items/sort-orders`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ updates }),
-  });
+  await apiSend<void>(`${BASE}/${listId}/items/sort-orders`, 'POST', { updates });
 }
 
 export async function toggleFavorite(
   listId: number,
 ): Promise<{ id: number; isFavorite: boolean }> {
-  return request(`${BASE}/${listId}/actions/toggle-favorite`, { method: 'POST' });
+  return apiSend(`${BASE}/${listId}/actions/toggle-favorite`, 'POST');
 }
 
 export async function archiveList(listId: number): Promise<void> {
-  await request<void>(`${BASE}/${listId}/actions/archive`, { method: 'POST' });
+  await apiSend<void>(`${BASE}/${listId}/actions/archive`, 'POST');
 }
 
 export async function listArchived(favoritesOnly = false): Promise<ArchivedListSummaryDto[]> {
   const query = favoritesOnly ? '?favoritesOnly=true' : '';
-  return request<ArchivedListSummaryDto[]>(`${BASE}/archived${query}`);
+  return apiGet<ArchivedListSummaryDto[]>(`${BASE}/archived${query}`);
 }
 
 /** Read-only detail for an ARCHIVED list — the pick-items-off surface. Active lists 404 here. */
 export async function getArchivedList(listId: number): Promise<ShoppingListDto> {
-  return request<ShoppingListDto>(`${BASE}/archived/${listId}`);
+  return apiGet<ShoppingListDto>(`${BASE}/archived/${listId}`);
 }
 
 /** Reopen an archived list. Flips IsArchived only — no auto-regenerate; the meal-plan link is kept. */
 export async function restoreList(listId: number): Promise<void> {
-  await request<void>(`${BASE}/${listId}/actions/restore`, { method: 'POST' });
+  await apiSend<void>(`${BASE}/${listId}/actions/restore`, 'POST');
 }
 
 /** Permanent. Server rejects non-archived lists with 409 — archive first. */
 export async function deleteList(listId: number): Promise<void> {
-  await request<void>(`${BASE}/${listId}`, { method: 'DELETE' });
+  await apiSend<void>(`${BASE}/${listId}`, 'DELETE');
 }
 
 /** Rebuild generated rows from the linked meal plan (checked-state + quantity edits carry). */
 export async function regenerateList(listId: number): Promise<ShoppingListDto> {
-  return request<ShoppingListDto>(`${BASE}/${listId}/actions/regenerate`, { method: 'POST' });
+  return apiSend<ShoppingListDto>(`${BASE}/${listId}/actions/regenerate`, 'POST');
 }
 
 export async function renameList(
   listId: number,
   name: string,
 ): Promise<{ id: number; name: string }> {
-  return request(`${BASE}/${listId}/actions/rename`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
-  });
+  return apiSend(`${BASE}/${listId}/actions/rename`, 'POST', { name });
 }
 
 export async function clearChecked(listId: number): Promise<{ removed: number }> {
-  return request(`${BASE}/${listId}/actions/clear-checked`, { method: 'POST' });
+  return apiSend(`${BASE}/${listId}/actions/clear-checked`, 'POST');
 }
 
 export const STANDARD_CATEGORIES = [
