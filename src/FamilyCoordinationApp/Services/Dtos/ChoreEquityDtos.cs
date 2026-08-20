@@ -87,4 +87,5 @@ public sealed record MemberPlanningDto(
     int ChoresSetUp,
     int RecipesAdded,
     int ListItemsCurated,
-    int HandOffs);
+    int HandOffs,
+    int MealsPlanned);

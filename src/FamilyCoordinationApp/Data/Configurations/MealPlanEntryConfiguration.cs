@@ -41,6 +41,13 @@ public class MealPlanEntryConfiguration : IEntityTypeConfiguration<MealPlanEntry
             .IsRequired(false);
 
         // Optional FK to User (simple, nullable)
+        builder.HasOne(e => e.CreatedBy)
+            .WithMany()
+            .HasForeignKey(e => e.CreatedByUserId)
+            .OnDelete(DeleteBehavior.SetNull)
+            .IsRequired(false);
+
+        // Optional FK to User (simple, nullable)
         builder.HasOne(e => e.UpdatedBy)
             .WithMany()
             .HasForeignKey(e => e.UpdatedByUserId)

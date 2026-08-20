@@ -12,7 +12,7 @@ namespace FamilyCoordinationApp.Services;
 /// <para>
 /// There is NO window math and NO <see cref="DateTime.UtcNow"/>/<see cref="DateTime.Now"/> reached inside
 /// — planning is a STOCK (durable footprint), counted all-time regardless of the equity <c>window</c> param
-/// (D5). Four lanes, each a plain source-noun count, NEVER summed and NEVER blended with physical points
+/// (D5). Five lanes, each a plain source-noun count, NEVER summed and NEVER blended with physical points
 /// (MN4):
 /// </para>
 /// <list type="bullet">
@@ -23,6 +23,9 @@ namespace FamilyCoordinationApp.Services;
 ///   credited to <see cref="ShoppingListItem.AddedByUserId"/>.</item>
 ///   <item><c>handOffs</c> — <see cref="ChoreEvent"/> hand-offs to ANOTHER member, credited to the actor
 ///   (see the invariant on the loop below, D6).</item>
+///   <item><c>mealsPlanned</c> — <see cref="MealPlanEntry"/> with a non-null author, credited to
+///   <see cref="MealPlanEntry.CreatedByUserId"/> (F1 — the highest-load planning act; pre-migration rows
+///   have a null author and earn no credit).</item>
 /// </list>
 /// <para>
 /// Rows with a null author id are SKIPPED (no credit for unattributed rows); only members in the supplied
@@ -42,13 +45,15 @@ public class ChorePlanningCalculator
         IEnumerable<Chore> chores,
         IEnumerable<Recipe> recipes,
         IEnumerable<ShoppingListItem> items,
-        IEnumerable<ChoreEvent> events)
+        IEnumerable<ChoreEvent> events,
+        IEnumerable<MealPlanEntry> mealEntries)
     {
         // Pre-seed a zero row for every supplied member so members with no activity still appear.
         var choresSetUp = new Dictionary<int, int>();
         var recipesAdded = new Dictionary<int, int>();
         var listItems = new Dictionary<int, int>();
         var handOffs = new Dictionary<int, int>();
+        var mealsPlanned = new Dictionary<int, int>();
 
         var memberIds = new HashSet<int>(members.Count);
         foreach (var m in members)
@@ -98,6 +103,17 @@ public class ChorePlanningCalculator
             }
         }
 
+        // meals planned — entries with a non-null author (pre-migration rows are unattributed and skipped).
+        foreach (var entry in mealEntries)
+        {
+            if (entry.CreatedByUserId is not { } authorId)
+            {
+                continue;
+            }
+
+            Credit(mealsPlanned, memberIds, authorId);
+        }
+
         var result = new List<MemberPlanningDto>(members.Count);
         foreach (var m in members)
         {
@@ -107,7 +123,8 @@ public class ChorePlanningCalculator
                 ChoresSetUp: choresSetUp.GetValueOrDefault(m.UserId),
                 RecipesAdded: recipesAdded.GetValueOrDefault(m.UserId),
                 ListItemsCurated: listItems.GetValueOrDefault(m.UserId),
-                HandOffs: handOffs.GetValueOrDefault(m.UserId)));
+                HandOffs: handOffs.GetValueOrDefault(m.UserId),
+                MealsPlanned: mealsPlanned.GetValueOrDefault(m.UserId)));
         }
 
         return result;

@@ -200,6 +200,7 @@ const choreEquity = objectOf({
       recipesAdded: num,
       listItemsCurated: num,
       handOffs: num,
+      mealsPlanned: num,
     })
   ),
   callerCapacityTier: nullable(capacityTier),

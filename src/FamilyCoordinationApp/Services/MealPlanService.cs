@@ -136,7 +136,8 @@ public class MealPlanService(
                     MealType = mealType,
                     RecipeId = recipeId,
                     CustomMealName = customMealName,
-                    Notes = notes
+                    Notes = notes,
+                    CreatedByUserId = userId
                 };
 
                 context.MealPlanEntries.Add(entry);

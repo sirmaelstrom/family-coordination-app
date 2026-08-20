@@ -73,7 +73,7 @@
   );
 
   // ── Planning footprint (Phase 15) ────────────────────────────────────────
-  // The four planning lanes (chores set up / recipes / list items / hand-offs)
+  // The five planning lanes (chores set up / recipes / list items / hand-offs / meals planned)
   // are ALL-TIME, un-blended labeled tallies riding `equity.planning` (no new
   // fetch — M7). They show INDEPENDENTLY of the physical distribution gate above:
   // a low-physical, high-planning member (the founding case) must still surface,
@@ -86,7 +86,7 @@
   let hasPlanningSignal = $derived(
     planning.some(
       (m) =>
-        m.choresSetUp + m.recipesAdded + m.listItemsCurated + m.handOffs > 0,
+        m.choresSetUp + m.recipesAdded + m.listItemsCurated + m.handOffs + m.mealsPlanned > 0,
     ),
   );
 
@@ -259,6 +259,11 @@
               <span class="ch-plan-tally">
                 {member.handOffs}
                 {member.handOffs === 1 ? 'hand-off' : 'hand-offs'}
+              </span>
+              <span class="ch-plan-dot" aria-hidden="true">·</span>
+              <span class="ch-plan-tally">
+                {member.mealsPlanned}
+                {member.mealsPlanned === 1 ? 'meal planned' : 'meals planned'}
               </span>
             </span>
           </li>

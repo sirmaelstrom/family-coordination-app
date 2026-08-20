@@ -29,6 +29,9 @@ public class ChorePlanningCalculatorTests
     private static ChoreEvent Event(ChoreEventType type, int actorUserId, int? targetUserId) =>
         new() { HouseholdId = 1, Type = type, ActorUserId = actorUserId, TargetUserId = targetUserId };
 
+    private static MealPlanEntry Entry(int? createdByUserId) =>
+        new() { HouseholdId = 1, CreatedByUserId = createdByUserId };
+
     private static MemberPlanningDto For(IReadOnlyList<MemberPlanningDto> rows, int userId) =>
         rows.Single(r => r.UserId == userId);
 
@@ -52,7 +55,7 @@ public class ChorePlanningCalculatorTests
             Event(ChoreEventType.AutoReleased, actorUserId: 2, targetUserId: 1),
         };
 
-        var result = _calc.Compute(members, Array.Empty<Chore>(), Array.Empty<Recipe>(), Array.Empty<ShoppingListItem>(), events);
+        var result = _calc.Compute(members, Array.Empty<Chore>(), Array.Empty<Recipe>(), Array.Empty<ShoppingListItem>(), events, Array.Empty<MealPlanEntry>());
 
         For(result, 1).HandOffs.Should().Be(1, "only the genuine hand-off-to-another counts, credited to the actor");
         For(result, 2).HandOffs.Should().Be(0, "the null-target and non-hand-off events contribute nothing");
@@ -66,11 +69,13 @@ public class ChorePlanningCalculatorTests
         var members = new[] { Member(1, "Alice") };
         var recipes = new[] { Recipe(createdByUserId: null), Recipe(createdByUserId: 1) };
         var items = new[] { Item(addedByUserId: null), Item(addedByUserId: 1) };
+        var entries = new[] { Entry(createdByUserId: null), Entry(createdByUserId: 1) };
 
-        var result = _calc.Compute(members, Array.Empty<Chore>(), recipes, items, Array.Empty<ChoreEvent>());
+        var result = _calc.Compute(members, Array.Empty<Chore>(), recipes, items, Array.Empty<ChoreEvent>(), entries);
 
         For(result, 1).RecipesAdded.Should().Be(1, "the null-author recipe is skipped");
         For(result, 1).ListItemsCurated.Should().Be(1, "the null-author list item is skipped");
+        For(result, 1).MealsPlanned.Should().Be(1, "the unattributed (pre-migration) meal entry is skipped");
     }
 
     // ---- Deleted recipes + auto-generated (non-manual) list items are excluded -----------------------
@@ -90,7 +95,7 @@ public class ChorePlanningCalculatorTests
             Item(addedByUserId: 1, isManuallyAdded: false), // excluded (from meal plan, not curated)
         };
 
-        var result = _calc.Compute(members, Array.Empty<Chore>(), recipes, items, Array.Empty<ChoreEvent>());
+        var result = _calc.Compute(members, Array.Empty<Chore>(), recipes, items, Array.Empty<ChoreEvent>(), Array.Empty<MealPlanEntry>());
 
         For(result, 1).RecipesAdded.Should().Be(1, "the deleted recipe is excluded");
         For(result, 1).ListItemsCurated.Should().Be(1, "the non-manually-added item is excluded");
@@ -104,11 +109,13 @@ public class ChorePlanningCalculatorTests
         var members = new[] { Member(1, "Alice") };
         // User 99 is not in the supplied member list — their rows are silently ignored.
         var chores = new[] { Chore(enteredByUserId: 1), Chore(enteredByUserId: 99) };
+        var entries = new[] { Entry(createdByUserId: 1), Entry(createdByUserId: 99) };
 
-        var result = _calc.Compute(members, chores, Array.Empty<Recipe>(), Array.Empty<ShoppingListItem>(), Array.Empty<ChoreEvent>());
+        var result = _calc.Compute(members, chores, Array.Empty<Recipe>(), Array.Empty<ShoppingListItem>(), Array.Empty<ChoreEvent>(), entries);
 
         result.Should().ContainSingle();
         For(result, 1).ChoresSetUp.Should().Be(1, "only the supplied member's chore is credited");
+        For(result, 1).MealsPlanned.Should().Be(1, "only the supplied member's meal entry is credited");
     }
 
     // ---- Per-member zero rows appear (mirror the equity calculator's "all members appear" rule) ------
@@ -119,7 +126,7 @@ public class ChorePlanningCalculatorTests
         var members = new[] { Member(1, "Alice"), Member(2, "Bob") };
         var chores = new[] { Chore(enteredByUserId: 1) };
 
-        var result = _calc.Compute(members, chores, Array.Empty<Recipe>(), Array.Empty<ShoppingListItem>(), Array.Empty<ChoreEvent>());
+        var result = _calc.Compute(members, chores, Array.Empty<Recipe>(), Array.Empty<ShoppingListItem>(), Array.Empty<ChoreEvent>(), Array.Empty<MealPlanEntry>());
 
         result.Should().HaveCount(2);
         var bob = For(result, 2);
@@ -127,12 +134,13 @@ public class ChorePlanningCalculatorTests
         bob.RecipesAdded.Should().Be(0);
         bob.ListItemsCurated.Should().Be(0);
         bob.HandOffs.Should().Be(0);
+        bob.MealsPlanned.Should().Be(0);
     }
 
-    // ---- Multi-member distribution across all four lanes ---------------------------------------------
+    // ---- Multi-member distribution across all five lanes ---------------------------------------------
 
     [Fact]
-    public void Compute_DistributesAllFourLanes_AcrossMembers()
+    public void Compute_DistributesAllFiveLanes_AcrossMembers()
     {
         var members = new[] { Member(1, "Alice"), Member(2, "Bob") };
 
@@ -154,20 +162,27 @@ public class ChorePlanningCalculatorTests
             Event(ChoreEventType.HandedOff, actorUserId: 2, targetUserId: 1),
             Event(ChoreEventType.HandedOff, actorUserId: 2, targetUserId: 1),
         };
+        var entries = new[]
+        {
+            Entry(createdByUserId: 1), Entry(createdByUserId: 1), Entry(createdByUserId: 2),
+            Entry(createdByUserId: 1),
+        };
 
-        var result = _calc.Compute(members, chores, recipes, items, events);
+        var result = _calc.Compute(members, chores, recipes, items, events, entries);
 
         var alice = For(result, 1);
         alice.ChoresSetUp.Should().Be(2);
         alice.RecipesAdded.Should().Be(1);
         alice.ListItemsCurated.Should().Be(3);
         alice.HandOffs.Should().Be(1);
+        alice.MealsPlanned.Should().Be(3);
 
         var bob = For(result, 2);
         bob.ChoresSetUp.Should().Be(1);
         bob.RecipesAdded.Should().Be(2);
         bob.ListItemsCurated.Should().Be(1);
         bob.HandOffs.Should().Be(2);
+        bob.MealsPlanned.Should().Be(1);
     }
 
     // ---- All-time invariance: no window, identical inputs → identical counts (V5 unit half) ----------
@@ -180,9 +195,10 @@ public class ChorePlanningCalculatorTests
         var recipes = new[] { Recipe(createdByUserId: 1) };
         var items = new[] { Item(addedByUserId: 1) };
         var events = new[] { Event(ChoreEventType.HandedOff, actorUserId: 1, targetUserId: 2) };
+        var entries = new[] { Entry(createdByUserId: 1) };
 
-        var r1 = _calc.Compute(members, chores, recipes, items, events);
-        var r2 = _calc.Compute(members, chores, recipes, items, events);
+        var r1 = _calc.Compute(members, chores, recipes, items, events, entries);
+        var r2 = _calc.Compute(members, chores, recipes, items, events, entries);
 
         r1.Should().BeEquivalentTo(r2, "the calculator is pure, all-time, and takes no window or clock");
     }

@@ -754,7 +754,7 @@ public static class ChoresEndpoints
             .Where(c => c.HouseholdId == user.HouseholdId && c.Status == ChoreStatus.Active)
             .ToListAsync(ct);
 
-        // Planning footprint (Phase 15): ALL-TIME, household-scoped authorship across four lanes — these are
+        // Planning footprint (Phase 15): ALL-TIME, household-scoped authorship across five lanes — these are
         // independent of the equity `window` (which governs only the physical lane). All HouseholdId-scoped (M1).
         var allChores = await context.Chores
             .Where(c => c.HouseholdId == user.HouseholdId)
@@ -772,6 +772,10 @@ public static class ChoresEndpoints
             .Where(e => e.HouseholdId == user.HouseholdId)
             .ToListAsync(ct);
 
+        var mealEntries = await context.MealPlanEntries
+            .Where(m => m.HouseholdId == user.HouseholdId && m.CreatedByUserId != null)
+            .ToListAsync(ct);
+
         // Per-member physical-capacity tiers (Phase 15 WP-05, D3). A lightweight household-scoped projection
         // separate from the MemberDto projection (so the board DTO / ChoreDtos.cs stay untouched — MN1) and
         // filtered to the caller's household (no cross-tenant leakage — M1). null tier ⇒ Full.
@@ -783,7 +787,7 @@ public static class ChoresEndpoints
 
         var equity = equityCalculator.Compute(completions, members, equityWindow, now, timeZone, tiersByUserId);
 
-        var planning = planningCalculator.Compute(members, allChores, recipes, manualListItems, choreEvents);
+        var planning = planningCalculator.Compute(members, allChores, recipes, manualListItems, choreEvents, mealEntries);
 
         var fallingBehindCount = 0;
         var upForGrabsCount = 0;

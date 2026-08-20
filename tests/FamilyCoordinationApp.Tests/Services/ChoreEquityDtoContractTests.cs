@@ -100,21 +100,24 @@ public class ChoreEquityDtoContractTests
                 ChoresSetUp: 19,
                 RecipesAdded: 6,
                 ListItemsCurated: 28,
-                HandOffs: 4),
+                HandOffs: 4,
+                MealsPlanned: 7),
             new(
                 UserId: 2,
                 DisplayName: "Bob",
                 ChoresSetUp: 3,
                 RecipesAdded: 2,
                 ListItemsCurated: 5,
-                HandOffs: 1),
+                HandOffs: 1,
+                MealsPlanned: 1),
             new(
                 UserId: 3,
                 DisplayName: "Carol",
                 ChoresSetUp: 0,
                 RecipesAdded: 0,
                 ListItemsCurated: 0,
-                HandOffs: 0),
+                HandOffs: 0,
+                MealsPlanned: 0),
         };
 
         return new ChoreEquityDto(
@@ -170,7 +173,8 @@ public class ChoreEquityDtoContractTests
         // Per-member planning object key set is frozen too (Phase 15 — mirrored by island types.ts).
         var firstPlanning = root["planning"]!.AsArray()[0]!.AsObject();
         firstPlanning.Select(kvp => kvp.Key).Should().BeEquivalentTo(
-            "userId", "displayName", "choresSetUp", "recipesAdded", "listItemsCurated", "handOffs");
+            "userId", "displayName", "choresSetUp", "recipesAdded", "listItemsCurated", "handOffs",
+            "mealsPlanned");
 
         // sharePct and equalSharePct are PERCENT 0–100, not fractions 0–1.
         root["equalSharePct"]!.GetValue<double>().Should().BeGreaterThan(1.0,

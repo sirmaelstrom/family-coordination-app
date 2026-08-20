@@ -230,6 +230,7 @@ export interface MemberPlanningDto {
   recipesAdded: number;
   listItemsCurated: number;
   handOffs: number;
+  mealsPlanned: number;
 }
 
 export interface ChoreEquityDto {
