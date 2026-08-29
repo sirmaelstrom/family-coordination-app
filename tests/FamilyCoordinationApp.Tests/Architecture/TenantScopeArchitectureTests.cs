@@ -15,8 +15,8 @@ namespace FamilyCoordinationApp.Tests.Architecture;
 /// tenant entity — an entity carrying a HouseholdId — filters by HouseholdId.
 /// It is a security boundary, not a convention. This test makes the convention
 /// mechanical: it scans every app source file for DbSet accesses on tenant
-/// entities and fails when a QUERY statement neither mentions HouseholdId nor
-/// carries an explicit <c>// TENANT-SCOPE-OK: reason</c> pragma.
+/// entities and fails when a QUERY statement neither carries a HouseholdId
+/// COMPARISON nor an explicit <c>// TENANT-SCOPE-OK: reason</c> pragma.
 ///
 /// What counts, and what deliberately does not:
 ///  - The tenant-entity list is DERIVED from ApplicationDbContext by reflection
@@ -390,6 +390,18 @@ public class TenantScopeArchitectureTests
         var flags = Scan(leak, "nc.cs", NcSets);
         flags.Should().ContainSingle();
         flags[0].Line.Should().Be(4);
+    }
+
+    [Fact]
+    public void NC_a_qualified_factory_receiver_is_detected()
+    {
+        // `this.dbFactory` — the qualified form the first receiver regex missed
+        // (council r1 challenge residual: pin it so `[\w.]+` cannot regress).
+        const string qualified = """
+            await using var context = await this.dbFactory.CreateDbContextAsync();
+            var all = await context.Recipes.ToListAsync();
+            """;
+        Scan(qualified, "nc.cs", NcSets).Should().ContainSingle();
     }
 
     [Fact]
