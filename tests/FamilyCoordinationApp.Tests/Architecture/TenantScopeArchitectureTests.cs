@@ -185,6 +185,40 @@ public class TenantScopeArchitectureTests
         total.Should().BeGreaterThan(150);
     }
 
+    // ── The scanner's structural blind spots are banned patterns ────────────
+    // The occurrence scan anchors on DbSet PROPERTY names, so `context.Set<T>()`
+    // and raw SQL reach entities without ever naming a DbSet — invisible to the
+    // scan by construction. Neither appears in app source today (measured
+    // 2026-08-29); this fact keeps it that way. A future legitimate use carries
+    // a reasoned TENANT-SCOPE-OK pragma on the same line and a reviewer's eyes.
+
+    [Fact]
+    public void Scanner_blind_spot_patterns_do_not_appear_unreviewed()
+    {
+        var offenders = new List<string>();
+        var root = AppSourceRoot();
+        var banned = new Regex(@"\.Set<|FromSql|SqlQuery|ExecuteSql");
+
+        foreach (var file in AppSourceFiles())
+        {
+            var lines = File.ReadAllLines(file);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                if (banned.IsMatch(lines[i])
+                    && !Regex.IsMatch(lines[i], @"TENANT-SCOPE-OK:[^\S\n]*\S")
+                    && !(i > 0 && Regex.IsMatch(lines[i - 1], @"TENANT-SCOPE-OK:[^\S\n]*\S")))
+                {
+                    offenders.Add($"{Path.GetRelativePath(root, file).Replace('\\', '/')}:{i + 1}  {lines[i].Trim()}");
+                }
+            }
+        }
+
+        offenders.Should().BeEmpty(
+            "`Set<T>()` and raw SQL bypass the tenant-scope scan by construction — " +
+            "use the DbSet properties, or carry a reasoned // TENANT-SCOPE-OK: pragma. Offenders:\n" +
+            string.Join("\n", offenders));
+    }
+
     // ── Negative controls: the scanner fails on known-bad input ─────────────
 
     private static readonly string[] NcSets = ["Recipes"];
