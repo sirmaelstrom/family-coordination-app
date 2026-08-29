@@ -20,47 +20,108 @@ namespace FamilyCoordinationApp.Tests.Architecture;
 ///
 /// What counts, and what deliberately does not:
 ///  - The tenant-entity list is DERIVED from ApplicationDbContext by reflection
-///    (every DbSet whose entity type has a HouseholdId property) — a new tenant
-///    DbSet is guarded from birth, with no list to forget to update.
+///    (every DbSet whose entity type has a property whose NAME CONTAINS
+///    "HouseholdId" — HouseholdConnection scopes via HouseholdId1/2) — a new
+///    tenant DbSet is guarded from birth, with no list to forget to update,
+///    and the unguarded complement is pinned exactly by its own fact below.
+///  - Scope means a COMPARISON on a HouseholdId-family column (==/!=/Contains),
+///    never a mention — a projection like `.Select(r => r.HouseholdId)` is a
+///    cross-tenant read wearing the right word (council r1).
 ///  - Only QUERY verbs are checked. A mutation verb called directly on the set
-///    (Add/Remove/Update/Attach…) operates on an entity constructed with its
-///    HouseholdId or loaded by an already-scoped query — flagging those would
-///    bury the signal (measured at baseline: 53 raw flags → 14 real reads).
-///  - The scope window is ONE STATEMENT (to the terminating semicolon).
-///    A builder-pattern query that applies scope in a later statement takes the
-///    pragma, naming where the scope lands (see FeedbackService).
-///  - The pragma REQUIRES a reason. A bare pragma fails the scan.
+///    (Add/Remove/Update/Attach/Entry) operates on an entity constructed with
+///    its HouseholdId or loaded by an already-scoped query — flagging those
+///    would bury the signal (measured at baseline: 53 raw flags → real reads).
+///  - The scope window is ONE STATEMENT (to the terminating semicolon; a ';'
+///    inside a string literal truncates it early, which fails SAFE — a false
+///    flag, never a bypass). A builder-pattern query that applies scope in a
+///    later statement takes the pragma, naming where the scope lands (see
+///    FeedbackService).
+///  - The pragma REQUIRES a reason, a real `//` marker, and line adjacency:
+///    the occurrence's own line, or the contiguous comment/blank run directly
+///    above it. A bare pragma fails; a pragma cannot leak onto the next
+///    statement.
 ///
-/// Baseline adjudicated 2026-08-29: 13 pragmas (auth/identity resolution before
-/// a household exists, dev-only paths, invite redemption which is cross-household
-/// by design, dual-mode site-admin queries scoped conditionally) and one fix
+/// Baseline adjudicated 2026-08-29 (amended at council r1, which surfaced four
+/// projection-passing reads the first scan missed): 19 pragmas — auth/identity
+/// resolution before a household exists, identity resolution that IS the scope
+/// source (UserContextResolver/Me/Presence), dev-only paths, invite redemption
+/// which is cross-household by design, dual-mode site-admin queries scoped
+/// conditionally, and the digest cron's all-households sweep — and one fix
 /// (DashboardService.GetHouseholdNameAsync gained the household predicate).
 /// </summary>
 public class TenantScopeArchitectureTests
 {
     // ── The scanner (pure; exercised by the negative controls below) ─────────
 
+    // "Entry" stays: it takes an already-tracked entity, same class as Attach.
+    // "Local" is deliberately NOT here (council r1, opus): it is a READ over the
+    // change tracker and must justify itself like any other read.
     internal static readonly string[] MutationVerbs =
     [
         "Add", "AddAsync", "AddRange", "AddRangeAsync",
         "Remove", "RemoveRange", "Update", "UpdateRange",
-        "Attach", "AttachRange", "Entry", "Local",
+        "Attach", "AttachRange", "Entry",
     ];
 
     internal sealed record Violation(string File, int Line, string Snippet);
 
-    internal static List<Violation> Scan(string source, string fileLabel, IReadOnlyCollection<string> tenantSets)
+    /// <summary>
+    /// Context receivers bound in a file: factory-created contexts (async OR
+    /// sync — the sync `CreateDbContext()` used to blind the scanner for a
+    /// whole file, council r1 opus #3 — with a possibly-qualified factory
+    /// expression like `this.dbFactory`), plus directly-typed parameters and
+    /// fields. Shared by Scan and the coverage counter so the two cannot
+    /// diverge (council r1, opus #7).
+    /// </summary>
+    internal static HashSet<string> Receivers(string source)
     {
-        var violations = new List<Violation>();
-
-        // Context receivers bound in this file: factory-created contexts plus
-        // directly-typed parameters/fields (the house rule is the factory, but
-        // the guard should not depend on the house rule being followed).
         var receivers = new HashSet<string>();
-        foreach (Match m in Regex.Matches(source, @"(?:var|using\s+var)\s+(\w+)\s*=\s*await\s+\w+\.CreateDbContextAsync"))
+        foreach (Match m in Regex.Matches(source, @"(?:var|using\s+var)\s+(\w+)\s*=\s*(?:await\s+)?[\w.]+\.CreateDbContext(?:Async)?\b"))
             receivers.Add(m.Groups[1].Value);
         foreach (Match m in Regex.Matches(source, @"ApplicationDbContext\s+(\w+)\s*[,)=;{]"))
             receivers.Add(m.Groups[1].Value);
+        return receivers;
+    }
+
+    /// <summary>
+    /// Scope = a COMPARISON on a HouseholdId-family column, not a mention
+    /// (council r1, all three lenses): a projection like
+    /// `.Select(r => r.HouseholdId)` is a cross-tenant read wearing the right
+    /// word. `\w*` admits composite columns (HouseholdId1/HouseholdId2).
+    /// </summary>
+    internal static bool WindowIsScoped(string window) =>
+        Regex.IsMatch(window, @"HouseholdId\w*\s*(==|!=)")
+        || Regex.IsMatch(window, @"(==|!=)\s*[\w.?]*[Hh]ouseholdId\w*")
+        || Regex.IsMatch(window, @"Contains\([^)]*HouseholdId");
+
+    // Must be a real `//` comment, and the reason must sit on the pragma's own
+    // line — [^\S\n] is whitespace except newline, so a bare pragma cannot
+    // borrow the next line as its "reason".
+    private static readonly Regex PragmaRe = new(@"//\s*TENANT-SCOPE-OK:[^\S\n]*\S");
+
+    internal static bool PragmaCovers(string source, int occurrenceIndex)
+    {
+        var lineStart = source.LastIndexOf('\n', Math.Max(0, occurrenceIndex - 1)) + 1;
+        if (PragmaRe.IsMatch(source[lineStart..occurrenceIndex])) return true; // same line, before the occurrence
+
+        // Walk upward over contiguous comment-only / blank lines.
+        var end = lineStart; // exclusive end of the line above (points at its trailing '\n' + 1)
+        while (end > 0)
+        {
+            var prevStart = source.LastIndexOf('\n', Math.Max(0, end - 2)) + 1;
+            var prevLine = source[prevStart..(end - 1)].TrimEnd('\r');
+            if (!Regex.IsMatch(prevLine, @"^\s*(//|$)")) return false; // a CODE line breaks the run
+            if (PragmaRe.IsMatch(prevLine)) return true;
+            if (prevStart == 0) return false;
+            end = prevStart;
+        }
+        return false;
+    }
+
+    internal static List<Violation> Scan(string source, string fileLabel, IReadOnlyCollection<string> tenantSets)
+    {
+        var violations = new List<Violation>();
+        var receivers = Receivers(source);
         if (receivers.Count == 0) return violations;
 
         var recvAlt = string.Join("|", receivers.Select(Regex.Escape));
@@ -75,18 +136,24 @@ public class TenantScopeArchitectureTests
             if (firstMethod.Success && MutationVerbs.Contains(firstMethod.Groups[1].Value))
                 continue;
 
-            // Statement window: to the terminating semicolon.
+            // Statement window: to the terminating semicolon. (Lexically naive:
+            // a ';' inside a string literal truncates the window early — that
+            // fails in the SAFE direction, a false flag, never a bypass.)
             var semi = source.IndexOf(';', m.Index);
             var window = semi >= 0 ? source[m.Index..(semi + 1)] : source[m.Index..];
 
-            // Pragma: on the statement itself or within the preceding lines.
-            var before = source[Math.Max(0, m.Index - 240)..m.Index];
-            // The reason must sit on the pragma's own line — [^\S\n] is whitespace
-            // except newline, so a bare pragma cannot borrow the next statement
-            // as its "reason".
-            var pragma = Regex.IsMatch(before + window, @"TENANT-SCOPE-OK:[^\S\n]*\S");
+            // Pragma adjacency is LINE-based, never a character window: a fixed
+            // window let one legitimate pragma silently exempt the NEXT,
+            // unrelated statement (council r1, carto #1, reproduced), and a
+            // semicolon-bounded window truncated away pragmas whose own reason
+            // text contained ';'. Accepted positions: the occurrence's own line
+            // (before the occurrence), or the contiguous run of comment-only /
+            // blank lines directly above it — the first CODE line breaks the
+            // run. The pragma therefore sits immediately above (or on) the line
+            // that names the DbSet.
+            var pragma = PragmaCovers(source, m.Index);
 
-            if (!window.Contains("HouseholdId") && !pragma)
+            if (!WindowIsScoped(window) && !pragma)
             {
                 var line = source[..m.Index].Count(c => c == '\n') + 1;
                 var snippet = Regex.Replace(window, @"\s+", " ");
@@ -96,13 +163,27 @@ public class TenantScopeArchitectureTests
         return violations;
     }
 
-    internal static IReadOnlyCollection<string> TenantDbSets()
+    internal static IReadOnlyCollection<string> AllDbSets()
     {
         return typeof(ApplicationDbContext)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.PropertyType.IsGenericType
+                        && p.PropertyType.GetGenericTypeDefinition() == typeof(DbSet<>))
+            .Select(p => p.Name)
+            .ToList();
+    }
+
+    internal static IReadOnlyCollection<string> TenantDbSets()
+    {
+        // Name.Contains, not an exact match: HouseholdConnection scopes via
+        // HouseholdId1/HouseholdId2 and fell entirely outside an exact-name
+        // derivation (council r1, opus #2).
+        return typeof(ApplicationDbContext)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.PropertyType.IsGenericType
                         && p.PropertyType.GetGenericTypeDefinition() == typeof(DbSet<>)
-                        && p.PropertyType.GetGenericArguments()[0].GetProperty("HouseholdId") is not null)
+                        && p.PropertyType.GetGenericArguments()[0].GetProperties()
+                            .Any(q => q.Name.Contains("HouseholdId")))
             .Select(p => p.Name)
             .ToList();
     }
@@ -116,10 +197,13 @@ public class TenantScopeArchitectureTests
         return Path.Combine(dir!.FullName, "src", "FamilyCoordinationApp");
     }
 
+    private static readonly string[] ScannedExtensions = [".cs", ".razor", ".cshtml"];
+
     private static IEnumerable<string> AppSourceFiles()
     {
         var root = AppSourceRoot();
-        return Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+        return Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
+            .Where(f => ScannedExtensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}Migrations{Path.DirectorySeparatorChar}")
                         && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
                         && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"));
@@ -157,9 +241,38 @@ public class TenantScopeArchitectureTests
     {
         var sets = TenantDbSets();
         sets.Should().HaveCountGreaterThan(15);
-        sets.Should().Contain(["Recipes", "Chores", "ShoppingLists", "Users"]);
+        sets.Should().Contain(["Recipes", "Chores", "ShoppingLists", "Users", "HouseholdConnections"]);
         // Household itself is NOT a tenant entity — it IS the tenant.
         sets.Should().NotContain("Households");
+    }
+
+    // The complement is pinned EXACTLY (council r1, opus #2 — "a universal
+    // negative claim is an inventory in disguise"): a new DbSet cannot land on
+    // the unguarded side without a deliberate edit to this list and a reason.
+    [Fact]
+    public void The_unguarded_complement_is_exactly_the_reviewed_set()
+    {
+        var excluded = AllDbSets().Except(TenantDbSets()).OrderBy(n => n).ToList();
+        excluded.Should().BeEquivalentTo(new[]
+        {
+            "HouseholdRequests", // pre-membership onboarding — no household exists yet
+            "Households",        // IS the tenant, not scoped by one
+        });
+    }
+
+    // A file that creates a context MUST yield at least one receiver, or its
+    // queries are invisible to the scan — the sync-factory blindness class
+    // (council r1, opus #3: SeedData.cs was covered only by naming luck).
+    [Fact]
+    public void Every_context_creating_file_yields_receivers()
+    {
+        var root = AppSourceRoot();
+        var blind = AppSourceFiles()
+            .Select(f => new { File = f, Source = File.ReadAllText(f) })
+            .Where(x => x.Source.Contains("CreateDbContext") && Receivers(x.Source).Count == 0)
+            .Select(x => Path.GetRelativePath(root, x.File).Replace('\\', '/'))
+            .ToList();
+        blind.Should().BeEmpty("a file that creates a DbContext but yields no receiver is scanned as if it had no queries");
     }
 
     [Fact]
@@ -170,18 +283,14 @@ public class TenantScopeArchitectureTests
         foreach (var file in AppSourceFiles())
         {
             var source = File.ReadAllText(file);
-            var receivers = new HashSet<string>();
-            foreach (Match m in Regex.Matches(source, @"(?:var|using\s+var)\s+(\w+)\s*=\s*await\s+\w+\.CreateDbContextAsync"))
-                receivers.Add(m.Groups[1].Value);
-            foreach (Match m in Regex.Matches(source, @"ApplicationDbContext\s+(\w+)\s*[,)=;{]"))
-                receivers.Add(m.Groups[1].Value);
+            var receivers = Receivers(source); // the SAME detection Scan uses — the two cannot diverge
             if (receivers.Count == 0) continue;
             var re = new Regex($@"\b(?:{string.Join("|", receivers)})\s*\.\s*(?:{string.Join("|", tenantSets)})\b");
             total += re.Matches(source).Count;
         }
-        // 216 measured at adoption (2026-08-29). Shrinking dramatically below
-        // that means the scan stopped seeing the codebase, not that the
-        // codebase stopped querying.
+        // 216 measured at adoption (2026-08-29), before the derivation widened.
+        // Shrinking dramatically below that means the scan stopped seeing the
+        // codebase, not that the codebase stopped querying.
         total.Should().BeGreaterThan(150);
     }
 
@@ -190,16 +299,18 @@ public class TenantScopeArchitectureTests
     // and raw SQL reach entities without ever naming a DbSet — invisible to the
     // scan by construction. Neither appears in app source today (measured
     // 2026-08-29); this fact keeps it that way. A future legitimate use carries
-    // a reasoned TENANT-SCOPE-OK pragma on the same line and a reviewer's eyes.
+    // a reasoned TENANT-SCOPE-OK pragma on the same line or the line above, and
+    // a reviewer's eyes. ApplicationDbContext.cs is excluded: its DbSet property
+    // bodies are the one legitimate home of bare Set<T>() calls.
 
     [Fact]
     public void Scanner_blind_spot_patterns_do_not_appear_unreviewed()
     {
         var offenders = new List<string>();
         var root = AppSourceRoot();
-        var banned = new Regex(@"\.Set<|FromSql|SqlQuery|ExecuteSql");
+        var banned = new Regex(@"\.Set\s*<|FromSql|SqlQuery|ExecuteSql");
 
-        foreach (var file in AppSourceFiles())
+        foreach (var file in AppSourceFiles().Where(f => !f.EndsWith("ApplicationDbContext.cs", StringComparison.OrdinalIgnoreCase)))
         {
             var lines = File.ReadAllLines(file);
             for (var i = 0; i < lines.Length; i++)
@@ -251,6 +362,46 @@ public class TenantScopeArchitectureTests
             context.Recipes.Add(recipe);
             """;
         Scan(mutation, "nc.cs", NcSets).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void NC_a_projection_mention_of_HouseholdId_is_not_scope()
+    {
+        // The cross-tenant dump wearing the right word (council r1, all lenses):
+        // HouseholdId appears, but only as a projected column — no comparison.
+        const string projection = """
+            var context = await factory.CreateDbContextAsync();
+            var dump = await context.Recipes.Select(r => new { r.Id, r.HouseholdId }).ToListAsync();
+            """;
+        Scan(projection, "nc.cs", NcSets).Should().ContainSingle();
+    }
+
+    [Fact]
+    public void NC_a_pragma_does_not_leak_onto_the_following_statement()
+    {
+        // Reproduced by council r1 (carto #1) against the fixed-character
+        // lookback: one legitimate pragma must not exempt the NEXT statement.
+        const string leak = """
+            var context = await factory.CreateDbContextAsync();
+            // TENANT-SCOPE-OK: legit reason for the first read
+            var a = await context.Recipes.Where(r => r.HouseholdId == hid).ToListAsync();
+            var b = await context.Recipes.ToListAsync();
+            """;
+        var flags = Scan(leak, "nc.cs", NcSets);
+        flags.Should().ContainSingle();
+        flags[0].Line.Should().Be(4);
+    }
+
+    [Fact]
+    public void NC_a_sync_factory_context_is_still_scanned()
+    {
+        // The sync CreateDbContext() used to yield NO receivers, silently
+        // skipping the whole file (council r1, opus #3).
+        const string sync = """
+            using var context = factory.CreateDbContext();
+            var all = await context.Recipes.ToListAsync();
+            """;
+        Scan(sync, "nc.cs", NcSets).Should().ContainSingle();
     }
 
     [Fact]

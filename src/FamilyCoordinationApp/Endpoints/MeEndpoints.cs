@@ -34,6 +34,7 @@ public static class MeEndpoints
         if (string.IsNullOrEmpty(email)) return Results.Unauthorized();
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
+        // TENANT-SCOPE-OK: identity resolution by the caller's authenticated email — this query IS the scope source
         var user = await db.Users
             .Where(u => u.Email == email)
             .Select(u => new
