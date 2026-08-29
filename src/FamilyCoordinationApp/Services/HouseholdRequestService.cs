@@ -175,6 +175,7 @@ public sealed class HouseholdRequestService(
         // The owner email must be free across ALL households (cross-tenant read, like AddMemberAsync's guard): an
         // existing user already has a home, and the unique Users.Email constraint would reject the insert anyway.
         // Cheap pre-check for a clean 409 before opening the transaction.
+        // TENANT-SCOPE-OK: deliberate cross-tenant uniqueness check — Users.Email is globally unique (comment above)
         var emailTaken = await context.Users.AnyAsync(u => u.Email == email, cancellationToken);
         if (emailTaken)
         {

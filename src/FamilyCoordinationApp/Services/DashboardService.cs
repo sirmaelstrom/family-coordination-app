@@ -27,7 +27,7 @@ public class DashboardService(
         string greetingName,
         CancellationToken cancellationToken = default)
     {
-        var householdName = await GetHouseholdNameAsync(userId, cancellationToken);
+        var householdName = await GetHouseholdNameAsync(userId, householdId, cancellationToken);
 
         // Chores: the lean count read (GetHomeStatsAsync) instead of the FULL board build — the dashboard only
         // needs the four counts, not rooms/rollups/roster folds/subtasks. Counting semantics are locked to the
@@ -52,12 +52,15 @@ public class DashboardService(
         return new DashboardDto(greetingName, householdName, today, chores, shopping, todaysMeals);
     }
 
-    private async Task<string> GetHouseholdNameAsync(int userId, CancellationToken ct)
+    private async Task<string> GetHouseholdNameAsync(int userId, int householdId, CancellationToken ct)
     {
         await using var context = await dbFactory.CreateDbContextAsync(ct);
+        // Both predicates on purpose: userId comes from the resolver, but the tenant
+        // boundary is enforced per query, not inherited from the caller (A5 lesson —
+        // one copy-paste away from a cross-tenant read).
         var name = await context.Users
             .AsNoTracking()
-            .Where(u => u.Id == userId)
+            .Where(u => u.Id == userId && u.HouseholdId == householdId)
             .Select(u => u.Household != null ? u.Household.Name : null)
             .FirstOrDefaultAsync(ct);
         return string.IsNullOrWhiteSpace(name) ? "Your Household" : name;

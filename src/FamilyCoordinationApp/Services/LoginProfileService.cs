@@ -37,6 +37,7 @@ public sealed class LoginProfileService(
         try
         {
             await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+            // TENANT-SCOPE-OK: login-time identity lookup by the authenticated email — household not yet resolved
             var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
             if (user is null)
                 return;

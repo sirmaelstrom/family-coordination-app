@@ -47,6 +47,7 @@ public class RequestModel : PageModel
         UserEmail = User.FindFirst(ClaimTypes.Email)?.Value ?? "";
 
         await using var db = await _dbFactory.CreateDbContextAsync();
+        // TENANT-SCOPE-OK: identity lookup by the caller's own authenticated email — pre-household onboarding surface
         var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Email == UserEmail);
         if (existingUser != null)
         {
@@ -88,6 +89,7 @@ public class RequestModel : PageModel
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
 
+            // TENANT-SCOPE-OK: identity lookup by the caller's own authenticated email — pre-household onboarding surface
             var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Email == UserEmail);
             if (existingUser != null)
             {

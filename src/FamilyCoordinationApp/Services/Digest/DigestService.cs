@@ -45,6 +45,7 @@ public class DigestService(
         List<DigestCandidate> candidates;
         await using (var context = await dbFactory.CreateDbContextAsync(ct))
         {
+            // TENANT-SCOPE-OK: cron all-households sweep — M1: HouseholdId comes from these rows, never a client
             candidates = await context.ChoreDigestSettings
                 .Where(s => s.Enabled && s.WebhookUrlProtected != null)
                 .Select(s => new DigestCandidate(s.HouseholdId, s.SendDayOfWeek, s.SendHourLocal, s.LastSentAt))

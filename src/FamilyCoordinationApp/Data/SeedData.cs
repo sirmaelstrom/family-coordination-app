@@ -27,6 +27,7 @@ public static class SeedData
         await SeedDevEquityDataAsync(dbFactory, household.Id);
 
         // Only seed recipes if none exist yet (recipe seed is NOT idempotent row-by-row).
+        // TENANT-SCOPE-OK: dev seed guard over the whole database, pre-tenant
         if (await context.Recipes.AnyAsync())
             return;
 

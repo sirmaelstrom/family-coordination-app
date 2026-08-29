@@ -50,6 +50,7 @@ public class WhitelistedEmailHandler(
         {
             // Check database for whitelisted user. Untracked: this path must not write.
             await using var dbContext = await dbFactory.CreateDbContextAsync();
+            // TENANT-SCOPE-OK: global whitelist check at the auth boundary — no household is resolved yet
             var whitelisted = await dbContext.Users
                 .AsNoTracking()
                 .AnyAsync(u => u.Email == email && u.IsWhitelisted);

@@ -27,6 +27,7 @@ public static class UserContextResolver
         if (string.IsNullOrEmpty(email)) return null;
 
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        // TENANT-SCOPE-OK: identity resolution by the caller's authenticated email — this query IS the scope source
         var user = await context.Users
             .Where(u => u.Email == email)
             .Select(u => new { u.Id, u.HouseholdId })
