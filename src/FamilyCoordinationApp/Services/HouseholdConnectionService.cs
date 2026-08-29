@@ -119,6 +119,7 @@ public class HouseholdConnectionService(
 
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
+        // TENANT-SCOPE-OK: invite redemption resolves a code issued by ANOTHER household — cross-household by design
         var invite = await context.HouseholdInvites
             .Include(i => i.Household)
             .FirstOrDefaultAsync(i => i.InviteCode == normalizedCode, cancellationToken);
@@ -172,6 +173,7 @@ public class HouseholdConnectionService(
         try
         {
             // Validate the invite
+            // TENANT-SCOPE-OK: invite redemption resolves a code issued by ANOTHER household — cross-household by design
             var invite = await context.HouseholdInvites
                 .Include(i => i.Household)
                 .FirstOrDefaultAsync(i => i.InviteCode == normalizedCode, cancellationToken);

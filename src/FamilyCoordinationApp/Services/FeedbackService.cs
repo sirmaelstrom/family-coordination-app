@@ -77,6 +77,7 @@ public sealed class FeedbackService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         // Read-only projection ⇒ AsNoTracking (council R6).
+        // TENANT-SCOPE-OK: dual-mode (R-C1) — site admin sees all households; non-admin scope applied conditionally below
         IQueryable<Feedback> query = context.Feedbacks.AsNoTracking().Include(f => f.User);
 
         // Dual-mode: site admin → all households; regular user → own household only (R-C1, server-scoped). A
@@ -110,6 +111,7 @@ public sealed class FeedbackService(
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
+        // TENANT-SCOPE-OK: dual-mode (R-C1) — site admin reaches all households; non-admin scope applied conditionally below
         IQueryable<Feedback> query = context.Feedbacks.Where(f => f.Id == id);
         if (!isSiteAdmin)
         {

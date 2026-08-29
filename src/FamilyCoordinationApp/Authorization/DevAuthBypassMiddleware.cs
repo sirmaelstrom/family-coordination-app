@@ -62,6 +62,7 @@ public sealed class DevAuthBypassMiddleware(RequestDelegate next, ILogger<DevAut
         if (string.IsNullOrWhiteSpace(email))
         {
             await using var db = await dbFactory.CreateDbContextAsync(context.RequestAborted);
+            // TENANT-SCOPE-OK: dev-only auth bypass picks any seeded user — no caller identity exists yet
             var seedUser = await db.Users
                 .OrderBy(u => u.Id)
                 .Select(u => new { u.Email, u.DisplayName })

@@ -35,6 +35,7 @@ public class PendingModel : PageModel
         await using var db = await _dbFactory.CreateDbContextAsync();
 
         // Already provisioned into a household → into the app.
+        // TENANT-SCOPE-OK: identity lookup by the caller's own authenticated email — pre-household onboarding surface
         var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Email == email);
         if (existingUser != null)
         {

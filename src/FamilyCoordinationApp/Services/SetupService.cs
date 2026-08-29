@@ -50,6 +50,7 @@ public class SetupService(
         await using var context = await dbFactory.CreateDbContextAsync();
 
         // Check if user already exists
+        // TENANT-SCOPE-OK: first-run setup — the household is being created; identity is the authenticated email
         var existingUser = await context.Users.FirstOrDefaultAsync(u => u.Email == userEmail);
         if (existingUser != null)
         {
@@ -99,6 +100,7 @@ public class SetupService(
     public async Task<User?> GetUserByEmailAsync(string email)
     {
         await using var context = await dbFactory.CreateDbContextAsync();
+        // TENANT-SCOPE-OK: identity lookup by authenticated email for onboarding/setup flows — pre-household
         return await context.Users
             .Include(u => u.Household)
             .FirstOrDefaultAsync(u => u.Email == email);
