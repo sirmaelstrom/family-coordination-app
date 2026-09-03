@@ -50,7 +50,7 @@ The integrated workflow: recipes → meal plan → shopping list. Manual coordin
 - [SERVER]: Ubuntu 24.04 server (Intel i3-4170, 23GB RAM, 10Gbps NIC)
 - Domain: *.example.com (via Cloudflare, points to [SERVER])
 - Existing: Docker Compose services, nginx reverse proxy, ZFS storage pool
-- Development: flagg (Windows 11 WSL) with .NET 8 SDK
+- Development: Windows 11 (WSL) with .NET 8 SDK
 
 **Design approach:**
 - Single-tenant MVP (one household: the family)
