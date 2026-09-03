@@ -33,7 +33,7 @@
   {#if pictureUrl}
     <img src={pictureUrl} alt="" referrerpolicy="no-referrer" />
   {:else}
-    <span class="sh-avatar-initials">{shown}</span>
+    <span class="sh-avatar-initials" data-testid="shell-user-initials">{shown}</span>
   {/if}
 </span>
 
