@@ -31,7 +31,7 @@
       <Nav />
     </div>
 
-    <main class="sh-main">
+    <main class="sh-main" data-testid="shell-main">
       {#if session.status === 'error'}
         <div class="sh-load-error" role="alert">
           Couldn't load your session{session.error ? `: ${session.error}` : ''}.

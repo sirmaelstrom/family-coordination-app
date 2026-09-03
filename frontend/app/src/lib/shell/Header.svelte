@@ -95,7 +95,7 @@
           pictureUrl={session.user.pictureUrl}
           size={28}
         />
-        <span class="sh-user-name">{session.user.userName}</span>
+        <span class="sh-user-name" data-testid="shell-user-name">{session.user.userName}</span>
       </span>
     {/if}
 
