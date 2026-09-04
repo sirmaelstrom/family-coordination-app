@@ -114,6 +114,7 @@ build. If you hit it, use the workaround script (local `dotnet publish` +
 - **Recipe Management** — import from URLs (schema.org JSON-LD), manual entry,
   ingredient parsing
 - **Meal Planning** — weekly calendar with drag-and-drop scheduling
+- **Calendar subscriptions** — read-only meal-plan iCal feed protected by a rotatable household capability URL
 - **Shopping Lists** — auto-generated from meal plans with ingredient
   consolidation
 - **Chores** — assignment, rotation, and household equity tracking
