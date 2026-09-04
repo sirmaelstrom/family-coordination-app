@@ -15,21 +15,16 @@ public sealed class HouseholdCalendarTokenService(IDbContextFactory<ApplicationD
         await using var context = await dbFactory.CreateDbContextAsync(ct);
         await using var transaction = await context.Database.BeginTransactionAsync(ct);
 
-        var created = new HouseholdCalendarToken
+        await context.HouseholdCalendarTokens
+            .Where(calendarToken => calendarToken.HouseholdId == householdId && calendarToken.RevokedAt == null)
+            .ExecuteUpdateAsync(update => update.SetProperty(calendarToken => calendarToken.RevokedAt, now), ct);
+
+        context.HouseholdCalendarTokens.Add(new HouseholdCalendarToken
         {
             HouseholdId = householdId,
             TokenHash = Hash(token),
             CreatedAt = now,
-        };
-        context.HouseholdCalendarTokens.Add(created);
-
-        var active = await context.HouseholdCalendarTokens
-            .Where(calendarToken => calendarToken.HouseholdId == householdId && calendarToken.RevokedAt == null)
-            .ToListAsync(ct);
-        foreach (var oldToken in active)
-        {
-            oldToken.RevokedAt = now;
-        }
+        });
 
         await context.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
@@ -52,7 +47,7 @@ public sealed class HouseholdCalendarTokenService(IDbContextFactory<ApplicationD
 
     public async Task<HouseholdCalendarToken?> ResolveActiveAsync(string? token, CancellationToken ct = default)
     {
-        if (!TryHash(token, out var hash)) return null;
+        var hash = HashForLookup(token);
 
         await using var context = await dbFactory.CreateDbContextAsync(ct);
         // TENANT-SCOPE-OK: capability lookup by globally unique token hash is the scope source.
@@ -78,22 +73,25 @@ public sealed class HouseholdCalendarTokenService(IDbContextFactory<ApplicationD
         return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
 
-    private static bool TryHash(string? token, out string hash)
+    private static string HashForLookup(string? token)
     {
-        hash = string.Empty;
-        if (string.IsNullOrWhiteSpace(token) || token.Length != 43) return false;
+        if (string.IsNullOrWhiteSpace(token)) return ImpossibleHash;
         try
         {
             var bytes = Convert.FromBase64String(token.Replace('-', '+').Replace('_', '/') + "=");
-            if (bytes.Length != 32) return false;
-            hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
-            return true;
+            return token.Length == 43 && bytes.Length == 32 && token.All(IsBase64UrlCharacter)
+                ? Hash(token)
+                : ImpossibleHash;
         }
         catch (FormatException)
         {
-            return false;
+            return ImpossibleHash;
         }
     }
 
+    private static bool IsBase64UrlCharacter(char value) =>
+        char.IsAsciiLetterOrDigit(value) || value is '-' or '_';
+
     private static string Hash(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+    private const string ImpossibleHash = "0000000000000000000000000000000000000000000000000000000000000000";
 }

@@ -18,6 +18,9 @@ public class HouseholdCalendarTokenConfiguration : IEntityTypeConfiguration<Hous
 
         builder.HasIndex(token => token.TokenHash).IsUnique();
         builder.HasIndex(token => new { token.HouseholdId, token.RevokedAt });
+        builder.HasIndex(token => token.HouseholdId)
+            .IsUnique()
+            .HasFilter("\"RevokedAt\" IS NULL");
 
         builder.HasOne(token => token.Household)
             .WithMany()

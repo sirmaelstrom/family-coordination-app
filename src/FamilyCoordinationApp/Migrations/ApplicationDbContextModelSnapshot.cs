@@ -499,6 +499,10 @@ namespace FamilyCoordinationApp.Migrations
 
                     b.HasIndex("HouseholdId", "RevokedAt");
 
+                    b.HasIndex("HouseholdId")
+                        .IsUnique()
+                        .HasFilter("\"RevokedAt\" IS NULL");
+
                     b.ToTable("HouseholdCalendarTokens", (string)null);
                 });
 

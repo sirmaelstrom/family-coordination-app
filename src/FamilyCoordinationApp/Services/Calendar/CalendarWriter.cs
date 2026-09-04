@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using FamilyCoordinationApp.Services.Dtos;
 
@@ -9,7 +8,7 @@ public sealed class CalendarWriter : ICalendarWriter
 {
     private const string CrLf = "\r\n";
 
-    public string WriteMealPlan(int householdId, IEnumerable<MealPlanEntryDto> entries, DateTimeOffset nowUtc)
+    public string WriteMealPlan(int householdId, DateOnly windowStart, IEnumerable<MealPlanEntryDto> entries, DateTimeOffset nowUtc)
     {
         var builder = new StringBuilder();
         Append(builder, "BEGIN:VCALENDAR");
@@ -18,7 +17,13 @@ public sealed class CalendarWriter : ICalendarWriter
         Append(builder, "METHOD:PUBLISH");
         Append(builder, "X-WR-CALNAME:Meal Plan");
 
-        foreach (var entry in entries.OrderBy(entry => entry.Date).ThenBy(entry => entry.MealType))
+        var orderedEntries = entries.OrderBy(entry => entry.Date).ThenBy(entry => entry.MealType).ToList();
+        if (orderedEntries.Count == 0)
+        {
+            AppendPlaceholder(builder, householdId, windowStart, nowUtc);
+        }
+
+        foreach (var entry in orderedEntries)
         {
             var mealName = entry.Recipe?.Name ?? entry.CustomMealName ?? string.Empty;
             var servings = entry.Servings.HasValue ? $" (×{entry.Servings.Value})" : string.Empty;
@@ -27,7 +32,6 @@ public sealed class CalendarWriter : ICalendarWriter
             Append(builder, "BEGIN:VEVENT");
             Append(builder, $"UID:mealplan-{householdId}-{entry.MealPlanId}-{entry.EntryId}@family-coordination-app");
             Append(builder, $"DTSTAMP:{nowUtc.UtcDateTime:yyyyMMdd'T'HHmmss'Z'}");
-            Append(builder, $"SEQUENCE:{entry.Version.ToString(CultureInfo.InvariantCulture)}");
             Append(builder, $"DTSTART;VALUE=DATE:{entry.Date:yyyyMMdd}");
             Append(builder, $"DTEND;VALUE=DATE:{end:yyyyMMdd}");
             Append(builder, $"SUMMARY:{Escape($"{entry.MealType}: {mealName}{servings}")}");
@@ -40,6 +44,17 @@ public sealed class CalendarWriter : ICalendarWriter
 
         Append(builder, "END:VCALENDAR");
         return builder.ToString();
+    }
+
+    private static void AppendPlaceholder(StringBuilder builder, int householdId, DateOnly windowStart, DateTimeOffset nowUtc)
+    {
+        Append(builder, "BEGIN:VEVENT");
+        Append(builder, $"UID:mealplan-{householdId}-empty@family-coordination-app");
+        Append(builder, $"DTSTAMP:{nowUtc.UtcDateTime:yyyyMMdd'T'HHmmss'Z'}");
+        Append(builder, $"DTSTART;VALUE=DATE:{windowStart:yyyyMMdd}");
+        Append(builder, $"DTEND;VALUE=DATE:{windowStart.AddDays(1):yyyyMMdd}");
+        Append(builder, "SUMMARY:No meals planned");
+        Append(builder, "END:VEVENT");
     }
 
     private static string Escape(string value) => value

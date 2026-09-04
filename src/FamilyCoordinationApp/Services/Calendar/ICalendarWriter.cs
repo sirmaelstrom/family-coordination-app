@@ -4,5 +4,5 @@ namespace FamilyCoordinationApp.Services.Calendar;
 
 public interface ICalendarWriter
 {
-    string WriteMealPlan(int householdId, IEnumerable<MealPlanEntryDto> entries, DateTimeOffset nowUtc);
+    string WriteMealPlan(int householdId, DateOnly windowStart, IEnumerable<MealPlanEntryDto> entries, DateTimeOffset nowUtc);
 }

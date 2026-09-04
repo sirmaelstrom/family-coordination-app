@@ -88,7 +88,7 @@ public static class CalendarTokenEndpoints
         var weekStart = mealPlanService.GetWeekStartDate(localToday);
         var boards = await Task.WhenAll(Enumerable.Range(0, 4)
             .Select(offset => boardService.GetBoardAsync(calendarToken.HouseholdId, weekStart.AddDays(offset * 7), ct)));
-        var content = calendarWriter.WriteMealPlan(calendarToken.HouseholdId, boards.SelectMany(board => board.Entries), nowUtc);
+        var content = calendarWriter.WriteMealPlan(calendarToken.HouseholdId, weekStart, boards.SelectMany(board => board.Entries), nowUtc);
         return new CalendarResult(content);
     }
 

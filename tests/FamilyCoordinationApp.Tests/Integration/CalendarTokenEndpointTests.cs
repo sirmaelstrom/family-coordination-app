@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using FamilyCoordinationApp.Data;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Tests.Integration;
 
@@ -43,10 +45,19 @@ public sealed class CalendarTokenEndpointTests(PostgresContainerFixture postgres
         calendar.Should().Contain("A fourth-week meal");
         calendar.Split("BEGIN:VEVENT", StringSplitOptions.None).Length.Should().Be(3);
 
-        var status = await ClientA.GetFromJsonAsync<TokenStatus>("/api/meal-plan/calendar-token", Json);
+        var statusResponse = await ClientA.GetAsync("/api/meal-plan/calendar-token");
+        var statusJson = await statusResponse.Content.ReadAsStringAsync();
+        statusJson.Should().NotContain(created.token);
+        var status = JsonSerializer.Deserialize<TokenStatus>(statusJson, Json);
         status.Should().NotBeNull();
         status!.active.Should().BeTrue();
         status.createdAt.Should().NotBeNull();
+
+        await using var context = await new PostgresDbContextFactory(_factory.ConnectionString).CreateDbContextAsync();
+        var stored = await context.HouseholdCalendarTokens
+            .SingleAsync(calendarToken => calendarToken.HouseholdId == ChoresWebAppFactory.HouseholdAId && calendarToken.RevokedAt == null);
+        stored.TokenHash.Should().HaveLength(64);
+        stored.TokenHash.Should().NotBe(created.token);
     }
 
     [Fact]
@@ -62,6 +73,18 @@ public sealed class CalendarTokenEndpointTests(PostgresContainerFixture postgres
         var revoke = await ClientA.DeleteAsync("/api/meal-plan/calendar-token");
         revoke.StatusCode.Should().Be(HttpStatusCode.NoContent);
         (await anonymous.GetAsync(second.url)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task TwoRotations_LeaveExactlyOneActiveToken()
+    {
+        await CreateTokenAsync(ClientA);
+        await CreateTokenAsync(ClientA);
+
+        await using var context = await new PostgresDbContextFactory(_factory.ConnectionString).CreateDbContextAsync();
+        (await context.HouseholdCalendarTokens.CountAsync(calendarToken =>
+            calendarToken.HouseholdId == ChoresWebAppFactory.HouseholdAId && calendarToken.RevokedAt == null))
+            .Should().Be(1);
     }
 
     [Fact]

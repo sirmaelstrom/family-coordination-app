@@ -41,6 +41,13 @@ namespace FamilyCoordinationApp.Migrations
                 columns: new[] { "HouseholdId", "RevokedAt" });
 
             migrationBuilder.CreateIndex(
+                name: "IX_HouseholdCalendarTokens_HouseholdId",
+                table: "HouseholdCalendarTokens",
+                column: "HouseholdId",
+                unique: true,
+                filter: "\"RevokedAt\" IS NULL");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_HouseholdCalendarTokens_TokenHash",
                 table: "HouseholdCalendarTokens",
                 column: "TokenHash",

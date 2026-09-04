@@ -115,6 +115,8 @@ build. If you hit it, use the workaround script (local `dotnet publish` +
   ingredient parsing
 - **Meal Planning** — weekly calendar with drag-and-drop scheduling
 - **Calendar subscriptions** — read-only meal-plan iCal feed protected by a rotatable household capability URL
+
+Calendar capability URLs are logged by any proxy that logs the request line. The bundled nginx disables access logging for the feed path; any other reverse proxy in front of the app must do the same or redact the query string.
 - **Shopping Lists** — auto-generated from meal plans with ingredient
   consolidation
 - **Chores** — assignment, rotation, and household equity tracking

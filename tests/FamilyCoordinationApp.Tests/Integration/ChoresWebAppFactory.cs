@@ -109,6 +109,12 @@ public class ChoresWebAppFactory(PostgresContainerFixture postgres) : WebApplica
     public string ConnectionString =>
         _connectionString ?? throw new InvalidOperationException("Call EnsureSeededAsync() before reading ConnectionString.");
 
+    /// <summary>Provision an empty database so setup-middleware behavior can be exercised before onboarding.</summary>
+    public async Task EnsureUnseededAsync()
+    {
+        _connectionString ??= await postgres.CreateDatabaseConnectionStringAsync();
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
