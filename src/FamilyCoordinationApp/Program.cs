@@ -5,6 +5,7 @@ using FamilyCoordinationApp.Authorization;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Endpoints;
 using FamilyCoordinationApp.Services;
+using FamilyCoordinationApp.Services.Calendar;
 using FamilyCoordinationApp.Services.Digest;
 using FamilyCoordinationApp.Services.Interfaces;
 using Microsoft.AspNetCore.Antiforgery;
@@ -92,6 +93,8 @@ builder.Services.AddScoped<IDraftService, DraftService>();
 builder.Services.AddScoped<IMealPlanService, MealPlanService>();
 // Meal-plan island (strangler): read-only board + entry/recipe projection (mirrors IChoreBoardService).
 builder.Services.AddScoped<IMealPlanBoardService, MealPlanBoardService>();
+builder.Services.AddScoped<IHouseholdCalendarTokenService, HouseholdCalendarTokenService>();
+builder.Services.AddSingleton<ICalendarWriter, CalendarWriter>();
 // Recipes island (strangler): the single recipe→DTO projection (list card / full detail / parsed ingredient).
 builder.Services.AddScoped<IRecipeProjectionService, RecipeProjectionService>();
 // Dashboard island (strangler): the read-only aggregate (chore summary + shopping summary + today's meals).
@@ -448,6 +451,7 @@ app.Use(async (context, next) =>
 
     // Skip setup check for these paths (static assets, framework, auth, household request)
     if (path.StartsWith("/setup") ||
+        path.StartsWith("/api/calendar") ||
         path.StartsWith("/account") ||
         path.StartsWith("/household") ||
         path.StartsWith("/_") ||   // /_app SPA assets (Blazor's /_framework and /_blazor died in WP-12)
@@ -500,6 +504,7 @@ app.MapShoppingListEndpoints();
 app.MapChoresEndpoints();
 app.MapRoomsEndpoints();
 app.MapMealPlanEndpoints();
+app.MapCalendarTokenEndpoints();
 app.MapRecipesEndpoints();
 app.MapDashboardEndpoints();
 app.MapSettingsEndpoints();

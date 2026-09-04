@@ -22,6 +22,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<UserFavorite> UserFavorites => Set<UserFavorite>();
     public DbSet<HouseholdConnection> HouseholdConnections => Set<HouseholdConnection>();
     public DbSet<HouseholdInvite> HouseholdInvites => Set<HouseholdInvite>();
+    public DbSet<HouseholdCalendarToken> HouseholdCalendarTokens => Set<HouseholdCalendarToken>();
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<Chore> Chores => Set<Chore>();
     public DbSet<ChoreRoom> ChoreRooms => Set<ChoreRoom>();

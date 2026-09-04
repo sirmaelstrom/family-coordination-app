@@ -72,7 +72,10 @@ public class ApiKeySecurityTests
     private static string GetRepoRoot()
     {
         var dir = AppContext.BaseDirectory;
-        while (dir != null && !Directory.Exists(Path.Combine(dir, ".git")))
+        // A linked worktree records its git metadata in a .git FILE rather than a directory.
+        while (dir != null &&
+               !Directory.Exists(Path.Combine(dir, ".git")) &&
+               !File.Exists(Path.Combine(dir, ".git")))
             dir = Directory.GetParent(dir)?.FullName;
         return dir ?? throw new InvalidOperationException("Could not find repo root (.git directory)");
     }
