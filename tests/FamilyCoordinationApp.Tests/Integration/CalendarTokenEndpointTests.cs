@@ -1,7 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using FamilyCoordinationApp.Data;
+using FamilyCoordinationApp.Services.Calendar;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 
@@ -88,6 +91,22 @@ public sealed class CalendarTokenEndpointTests(PostgresContainerFixture postgres
     }
 
     [Fact]
+    public async Task FourConcurrentRotations_CompleteWithOneActiveToken()
+    {
+        const int rotations = 4;
+        var service = new HouseholdCalendarTokenService(new PostgresDbContextFactory(_factory.ConnectionString));
+
+        var created = await Task.WhenAll(Enumerable.Range(0, rotations)
+            .Select(_ => service.CreateOrRotateAsync(ChoresWebAppFactory.HouseholdAId)));
+
+        created.Should().HaveCount(rotations);
+        await using var context = await new PostgresDbContextFactory(_factory.ConnectionString).CreateDbContextAsync();
+        var active = await context.HouseholdCalendarTokens.SingleAsync(calendarToken =>
+            calendarToken.HouseholdId == ChoresWebAppFactory.HouseholdAId && calendarToken.RevokedAt == null);
+        active.TokenHash.Should().BeOneOf(created.Select(token => Hash(token.Token)).ToArray());
+    }
+
+    [Fact]
     public async Task MalformedUnknownAndRevokedCapabilities_AreIdenticalEmpty404s()
     {
         var created = await CreateTokenAsync(ClientA);
@@ -131,4 +150,6 @@ public sealed class CalendarTokenEndpointTests(PostgresContainerFixture postgres
         }, Json);
         mealResponse.StatusCode.Should().Be(HttpStatusCode.Created);
     }
+
+    private static string Hash(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
 }

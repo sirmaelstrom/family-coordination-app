@@ -3,32 +3,51 @@ using System.Text;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace FamilyCoordinationApp.Services.Calendar;
 
 public sealed class HouseholdCalendarTokenService(IDbContextFactory<ApplicationDbContext> dbFactory) : IHouseholdCalendarTokenService
 {
-    public async Task<CreatedCalendarToken> CreateOrRotateAsync(int householdId, CancellationToken ct = default)
+    public Task<CreatedCalendarToken> CreateOrRotateAsync(int householdId, CancellationToken ct = default) =>
+        CreateOrRotateAsync(householdId, retryOnUniqueViolation: true, ct);
+
+    private async Task<CreatedCalendarToken> CreateOrRotateAsync(
+        int householdId,
+        bool retryOnUniqueViolation,
+        CancellationToken ct)
     {
-        var token = CreateToken();
-        var now = DateTime.UtcNow;
-        await using var context = await dbFactory.CreateDbContextAsync(ct);
-        await using var transaction = await context.Database.BeginTransactionAsync(ct);
-
-        await context.HouseholdCalendarTokens
-            .Where(calendarToken => calendarToken.HouseholdId == householdId && calendarToken.RevokedAt == null)
-            .ExecuteUpdateAsync(update => update.SetProperty(calendarToken => calendarToken.RevokedAt, now), ct);
-
-        context.HouseholdCalendarTokens.Add(new HouseholdCalendarToken
+        try
         {
-            HouseholdId = householdId,
-            TokenHash = Hash(token),
-            CreatedAt = now,
-        });
+            var token = CreateToken();
+            var now = DateTime.UtcNow;
+            await using var context = await dbFactory.CreateDbContextAsync(ct);
+            await using var transaction = await context.Database.BeginTransactionAsync(ct);
 
-        await context.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        return new CreatedCalendarToken(token, now);
+            // Serialize same-household rotations so IX_HouseholdCalendarTokens_HouseholdId remains a last-resort guard.
+            // TENANT-SCOPE-OK: the advisory lock is keyed by the authenticated caller's household id.
+            await context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({householdId})", ct);
+
+            await context.HouseholdCalendarTokens
+                .Where(calendarToken => calendarToken.HouseholdId == householdId && calendarToken.RevokedAt == null)
+                .ExecuteUpdateAsync(update => update.SetProperty(calendarToken => calendarToken.RevokedAt, now), ct);
+
+            context.HouseholdCalendarTokens.Add(new HouseholdCalendarToken
+            {
+                HouseholdId = householdId,
+                TokenHash = Hash(token),
+                CreatedAt = now,
+            });
+
+            await context.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            return new CreatedCalendarToken(token, now);
+        }
+        catch (DbUpdateException ex) when (retryOnUniqueViolation && IsActiveTokenUniqueViolation(ex))
+        {
+            // IX_HouseholdCalendarTokens_HouseholdId can reject the losing READ COMMITTED rotation; retry once.
+            return await CreateOrRotateAsync(householdId, retryOnUniqueViolation: false, ct);
+        }
     }
 
     public async Task RevokeAsync(int householdId, CancellationToken ct = default)
@@ -91,6 +110,13 @@ public sealed class HouseholdCalendarTokenService(IDbContextFactory<ApplicationD
 
     private static bool IsBase64UrlCharacter(char value) =>
         char.IsAsciiLetterOrDigit(value) || value is '-' or '_';
+
+    private static bool IsActiveTokenUniqueViolation(DbUpdateException exception) =>
+        exception.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.UniqueViolation,
+            ConstraintName: "IX_HouseholdCalendarTokens_HouseholdId",
+        };
 
     private static string Hash(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
     private const string ImpossibleHash = "0000000000000000000000000000000000000000000000000000000000000000";
