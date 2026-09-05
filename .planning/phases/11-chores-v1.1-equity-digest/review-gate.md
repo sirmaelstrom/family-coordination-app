@@ -1,7 +1,7 @@
 # Spec Review Gate — Chores v1.1 — Household Equity View + Weekly Discord Digest
 
 Slug: `chores-v1.1-equity-digest` · 2026-05-31T08:35:52.7430585Z
-Spec dir: `D:/Development/data/outputs/workshops/chores-v1.1-equity-digest`
+Spec dir: `<workspace>/data/outputs/workshops/chores-v1.1-equity-digest`
 Review level: **full** — 11 WPs, new domain (Discord integration, digest engine, secret encryption), real integration seams (cron→endpoint→builder→sender), and the one deliberate reversal of a v1.0 must-not (MN1).
 
 ## Summary

@@ -1,7 +1,7 @@
 # Problem: Chores v1.1 — Household Equity View + Weekly Discord Digest
 
 **Status:** Ready for Spec (deep)
-**Project:** family-coordination-app (`D:\Development\projects\family-coordination-app`)
+**Project:** family-coordination-app (`<workspace>/projects/family-coordination-app`)
 **Builds on:** Phase 10 v1.0 spine (PR #11, merged, **live in prod but dark** behind `CHORES_USE_ISLAND`).
 
 ## The Problem
@@ -22,7 +22,7 @@ This bundle ships **dark and whole**: every piece (equity view, digest engine, p
 
 The **architecture seam** v1.1 introduces is a scheduler. v1.0 has none (Must-Not MN1: no `BackgroundService`/`IHostedService`). A weekly digest fires on a cadence, so v1.1 adds an **authenticated trigger endpoint driven by external cron** — *not* an in-process hosted service. This is the single place v1.1 deliberately reverses a v1.0 must-not, and it is called out as an explicit ratification gate.
 
-All v1.0 locked decisions and constraints live in the Phase 10 workshop (`D:/Development/data/outputs/workshops/phase10-chore-task-management/`); this spec extends that spine and must not relitigate it.
+All v1.0 locked decisions and constraints live in the Phase 10 workshop (`<workspace>/data/outputs/workshops/phase10-chore-task-management/`); this spec extends that spine and must not relitigate it.
 
 ## What "Solved" Looks Like
 

@@ -92,7 +92,7 @@ WP-1 backend (DTOs + endpoints) → WP-2 tests → WP-3 scaffold → WP-4 the fl
 
 ## 9. Review resolutions (plan-review session, 2026-06-24)
 
-*See the cross-plan memo `D:/Development/data/outputs/reviews/settings-strangler-plan-review/`.*
+*See the cross-plan memo `<workspace>/data/outputs/reviews/settings-strangler-plan-review/`.*
 
 **Cross-cutting (apply to B):**
 - **X5 — Dates:** `Invite.ExpiresAt` and `Connected.ConnectedAt` are **full instants** — emit ISO-8601 (UTC, `Z`) and render with `new Date(iso)` in local tz (relative for expiry via `GetExpiryText` port, absolute for connected-date). **Do NOT** noon-UTC these (§3's "noon-UTC, MN4" note is wrong for instants — noon-UTC is only for bare date-only values). Update §3/§4.
