@@ -178,7 +178,7 @@ Copy the recipes scaffold (it already has the two-root `data-view` branch + `sve
 
 ## 12. Review resolutions (plan-review session, 2026-06-24)
 
-*Decisions below are locked; fold into the build. Cross-cutting items (X*) are decided identically across A/B/C — see the cross-plan review memo `D:/Development/data/outputs/reviews/settings-strangler-plan-review/`.*
+*Decisions below are locked; fold into the build. Cross-cutting items (X*) are decided identically across A/B/C — see the cross-plan review memo `<workspace>/data/outputs/reviews/settings-strangler-plan-review/`.*
 
 **Cross-cutting (apply to A):**
 - **X1 — Flag = `SETTINGS_HOUSEHOLD_USE_ISLAND`** (per-cluster). Rename every `SETTINGS_USE_ISLAND` reference in this spec accordingly. Rationale: clusters ship in separate PRs and flip independently after their own verify; a single shared flag couldn't flip until all three islands exist.

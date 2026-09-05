@@ -52,7 +52,7 @@ Deployment + environment configuration detail auto-loads via `.claude/rules/depl
 `.planning/ROADMAP.md` is the authoritative phase list + status; forward work is also in the Spine campaign **"Family Coordination App"** (`spine_map` for the live frontier — trust it over any snapshot here). As of 2026-07-06: core app Phases 1–7 and chores Phases 10–14 + 16 (Snooze) are shipped (8–9 deprecated); **Phase 13 — multi-room chores (M:N)** shipped 2026-07-06 (`ChoreRoom` join is the sole source of membership; `Chore.RoomId` dropped); the **strangler/de-Blazor track is COMPLETE** (keystone `ae67f7dc` — 8 islands → SvelteKit shell → WP-12 flip). **No open phase** — Phase 15 closed with R4′ capacity-fit (PR #74 / merge `33350ac`, 2026-07-06); `grep -c '^- \[ \]' .planning/ROADMAP.md` returns **0** (re-verified 2026-08-15). Only the MealPlanEntry creator migration stays deferred (no meal-plan signal). *(corrected 2026-08-05 — trail in MEMORY-CHANGELOG-style daily note `data/memory/memory/2026-08-15.md`)* Forward work is not in this file — use `spine_map`.
 
 ## Corrections
-<!-- Also see global corrections: D:\Development\data\memory\CORRECTIONS.md -->
+<!-- Also see global corrections: <workspace>/data/memory/CORRECTIONS.md -->
 
 - **Do NOT prepend `sudo` to docker commands on the production host** — the deploy user has been in the `docker` group since 2026-07-09, so bare `docker`/`docker exec` work over a fresh SSH login. Prefer bare docker: the NOPASSWD whitelist does *not* cover `docker tag/images/rmi`, so `sudo` there prompts for a password and stalls a rollback. Detail: `.claude/rules/deployment.md`. *(corrected 2026-08-15 — trail in `data/memory/memory/2026-08-15.md`)*
 

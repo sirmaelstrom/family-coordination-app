@@ -122,7 +122,7 @@ Copy the recipes scaffold (two-route bundle); **KEEP `liveness.ts`** — this is
 
 ## 9. Review resolutions (plan-review session, 2026-06-24) — this cluster has the load-bearing findings
 
-*See the cross-plan memo `D:/Development/data/outputs/reviews/settings-strangler-plan-review/`. The review-council was run on the set but produced no usable signal (opus lens crashed; gemini hallucinated an unrelated spec; gpt rubric-refused) — findings below are source-grounded, not council-derived.*
+*See the cross-plan memo `<workspace>/data/outputs/reviews/settings-strangler-plan-review/`. The review-council was run on the set but produced no usable signal (opus lens crashed; gemini hallucinated an unrelated spec; gpt rubric-refused) — findings below are source-grounded, not council-derived.*
 
 **Cross-cutting (apply to C):** X1 flag `SETTINGS_ADMIN_USE_ISLAND`; X2 own file `SettingsAdminEndpoints.cs`; **X5 dates** — `RequestedAt`/`ReviewedAt`/`Feedback.CreatedAt` are **full instants** (today rendered with time-of-day), emit ISO-8601 (UTC, `Z`), render local with `new Date(iso).toLocaleString()`. The §4 "noon-UTC" note is wrong for these instants — fix it.
 

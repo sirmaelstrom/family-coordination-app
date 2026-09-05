@@ -2,7 +2,7 @@
 
 Extends the Phase 10 v1.0 constraint set (M1–M12 / MN1–MN8 / P1–P5 / E1–E6 there). Restated/renumbered here
 for self-containment; **v1.1-specific** items are marked ⊕. Cross-referenced against
-`D:\Development\data\memory\CORRECTIONS.md` (secrets-leak, date-parsing, Svelte-runes, deferred-MCP, spec-depth).
+`<workspace>/data/memory/CORRECTIONS.md` (secrets-leak, date-parsing, Svelte-runes, deferred-MCP, spec-depth).
 
 ## Musts
 

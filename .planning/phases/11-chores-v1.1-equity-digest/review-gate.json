@@ -5,7 +5,7 @@
   "spec": {
     "title": "Chores v1.1 — Household Equity View + Weekly Discord Digest",
     "slug": "chores-v1.1-equity-digest",
-    "dir": "D:/Development/data/outputs/workshops/chores-v1.1-equity-digest"
+    "dir": "<workspace>/data/outputs/workshops/chores-v1.1-equity-digest"
   },
   "review_level": "full",
   "review_level_reason": "11 WPs, new domain (Discord integration, digest engine, secret encryption), real integration seams (cron→endpoint→builder→sender), and the one deliberate reversal of a v1.0 must-not (MN1).",
