@@ -18,7 +18,7 @@ dotnet build src/FamilyCoordinationApp/FamilyCoordinationApp.csproj
 dotnet test tests/FamilyCoordinationApp.Tests/FamilyCoordinationApp.Tests.csproj
 
 # Run a single test
-dotnet test tests/FamilyCoordinationApp.Tests/FamilyCoordinationApp.Tests.csproj --filter "FullyQualifiedName~IngredientParserTests.Parse_SimpleIngredient"
+dotnet test tests/FamilyCoordinationApp.Tests/FamilyCoordinationApp.Tests.csproj --filter "FullyQualifiedName~IngredientParserTests.ParseIngredient_SimpleQuantityAndUnit"
 
 # Format check
 dotnet format src/FamilyCoordinationApp/FamilyCoordinationApp.csproj --verify-no-changes
