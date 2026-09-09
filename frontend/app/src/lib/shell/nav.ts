@@ -32,6 +32,7 @@ export const settingsNav: SettingsItem[] = [
   { href: '/settings/categories', label: 'Categories', icon: 'settings' },
   { href: '/settings/users', label: 'Family Members', icon: 'people' },
   { href: '/settings/connections', label: 'Connections', icon: 'connections' },
+  { href: '/settings/calendar', label: 'Calendar Feed', icon: 'meals' },
   { href: '/settings/feedback', label: 'Feedback', icon: 'feedback' },
   { href: '/settings/households', label: 'Household Requests', icon: 'admin', adminOnly: true },
 ];
