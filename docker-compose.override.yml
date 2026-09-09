@@ -1,15 +1,21 @@
 # Development overrides - loaded automatically with docker-compose up
+#
+# Every published port binds to loopback (quest 4c7c8da5, 2026-09-09). The dev
+# stack exists for local validation only — verify:fca targets localhost:8080 —
+# and nothing off-box consumes it, yet the bare "5432:5432" form listens on
+# 0.0.0.0 and [::]. The database in particular never needs off-box reach; keep
+# 5432 on loopback even if an app port ever needs a LAN exception.
 services:
   postgres:
     ports:
-      - "5432:5432"  # Expose for local tooling (pgAdmin, etc.)
+      - "127.0.0.1:5432:5432"  # Local tooling only (pgAdmin, etc.)
     # Uses bind mount from main compose file (./data/postgres)
 
   app:
     environment:
       ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
     ports:
-      - "8080:8080"  # Direct access for debugging
+      - "127.0.0.1:8080:8080"  # Direct access for debugging, from this box only
     # Uses bind mounts from main compose file
     # ASPNETCORE_ENVIRONMENT inherited from main compose (defaults to Production)
 
