@@ -1,38 +1,5 @@
-# Agent Instructions
+# AGENTS.md
 
-This project uses **GitHub Issues** for issue tracking.
+Read `CLAUDE.md` in this directory and follow it. It is the only source of this repo's agent instructions. This file just points to it, so the two cannot drift apart.
 
-## Quick Reference
-
-```bash
-gh issue list                           # List open issues
-gh issue view <number>                  # View issue details
-gh issue create --title "..." --body "..."  # Create issue
-gh issue close <number>                 # Close issue
-```
-
-## Landing the Plane (Session Completion)
-
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
-
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create GitHub Issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work via `gh issue close`
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-
+**Harness caveat.** CLAUDE.md is written for Claude Code. Skip any instruction that depends on a harness feature you do not have: hooks, path-scoped `.claude/rules/` files, the Read tool, slash commands or skills, and MCP tools that are not in your tool list. Follow everything else, including its git, branch and PR rules.
