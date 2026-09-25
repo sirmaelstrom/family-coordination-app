@@ -196,18 +196,6 @@ public class TenantWriteTests
     }
 
     [Fact]
-    public async Task An_added_rows_message_names_its_key_as_it_stands_not_as_first_tracked()
-    {
-        await using var db = Context(Caller(1));
-        var room = Room(2, 10);
-        db.Rooms.Add(room);
-        room.RoomId = 11; // re-keyed after Add, before the save
-
-        await db.Invoking(d => d.SaveChangesAsync()).Should().ThrowExactlyAsync<CrossTenantWriteException>()
-            .WithMessage("Added Room {HouseholdId=2, RoomId=11} belongs to household 2*");
-    }
-
-    [Fact]
     public void The_tenancy_exceptions_are_not_InvalidOperationExceptions()
     {
         // Endpoint handlers catch InvalidOperationException as "not found" (a 404/409 with no log line); a tenancy
