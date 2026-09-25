@@ -49,6 +49,9 @@ services:
       CHORES_DIGEST_TRIGGER_TOKEN: ${CHORES_DIGEST_TRIGGER_TOKEN:-}
       # Household timezone for digest send-time + equity week windows (IANA id; code defaults to America/Chicago).
       CHORES_TIMEZONE: ${CHORES_TIMEZONE:-}
+      # Tenancy kill switches, incident rollback only (fca-household-scope D14): set false in .env, then recreate app.
+      Tenancy__EnforceFilter: ${TENANCY_ENFORCE_FILTER:-true}
+      Tenancy__EnforceWrites: ${TENANCY_ENFORCE_WRITES:-true}
     volumes:
       # Direct bind mounts - avoids Docker Desktop WSL2 mount path issues
       - ${APP_DATAPROTECTION_PATH:-./data/dataprotection}:/root/.aspnet/DataProtection-Keys
