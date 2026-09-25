@@ -468,7 +468,7 @@ public static class SeedData
 
         // Check if categories already exist for this household
         var existingCount = await context.Categories
-            .IgnoreQueryFilters()  // Include soft-deleted
+            .IgnoreQueryFilters(["SoftDelete"])  // Include soft-deleted
             .CountAsync(c => c.HouseholdId == householdId);
 
         if (existingCount > 0) return;

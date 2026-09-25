@@ -19,7 +19,7 @@ public class CategoryService(
 
         if (includeDeleted)
         {
-            query = query.IgnoreQueryFilters();
+            query = query.IgnoreQueryFilters(["SoftDelete"]);
         }
 
         return await query
@@ -32,7 +32,7 @@ public class CategoryService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await context.Categories
-            .IgnoreQueryFilters()
+            .IgnoreQueryFilters(["SoftDelete"])
             .FirstOrDefaultAsync(c => c.HouseholdId == householdId && c.CategoryId == categoryId, cancellationToken);
     }
 
@@ -70,7 +70,7 @@ public class CategoryService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var existing = await context.Categories
-            .IgnoreQueryFilters()
+            .IgnoreQueryFilters(["SoftDelete"])
             .FirstOrDefaultAsync(c => c.HouseholdId == category.HouseholdId && c.CategoryId == category.CategoryId, cancellationToken);
 
         if (existing == null)
@@ -116,7 +116,7 @@ public class CategoryService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var category = await context.Categories
-            .IgnoreQueryFilters()
+            .IgnoreQueryFilters(["SoftDelete"])
             .FirstOrDefaultAsync(c => c.HouseholdId == householdId && c.CategoryId == categoryId && c.IsDeleted, cancellationToken);
 
         if (category == null)
@@ -153,7 +153,7 @@ public class CategoryService(
     private static async Task<int> GetNextCategoryIdInternalAsync(ApplicationDbContext context, int householdId, CancellationToken cancellationToken)
     {
         var maxId = await context.Categories
-            .IgnoreQueryFilters()
+            .IgnoreQueryFilters(["SoftDelete"])
             .Where(c => c.HouseholdId == householdId)
             .MaxAsync(c => (int?)c.CategoryId, cancellationToken) ?? 0;
 

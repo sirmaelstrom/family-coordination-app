@@ -176,7 +176,7 @@ public class RecipeService(
     private static async Task<int> GetNextRecipeIdInternalAsync(ApplicationDbContext context, int householdId, CancellationToken cancellationToken)
     {
         var maxId = await context.Recipes
-            .IgnoreQueryFilters() // Include soft-deleted
+            .IgnoreQueryFilters(["SoftDelete"]) // Include soft-deleted
             .Where(r => r.HouseholdId == householdId)
             .MaxAsync(r => (int?)r.RecipeId, cancellationToken) ?? 0;
 
