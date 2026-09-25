@@ -20,7 +20,7 @@ namespace FamilyCoordinationApp.Tests.Endpoints;
 /// </summary>
 public class UploadsAccessRulesTests
 {
-    private static readonly UserContextResolver.UserContext Caller = new(HouseholdId: 1, UserId: 10);
+    private static readonly FamilyCoordinationApp.Tenancy.CallerScope Caller = new(HouseholdId: 1, UserId: 10);
 
     [Fact]
     public async Task Rule1_OwnHousehold_IsAllowed()

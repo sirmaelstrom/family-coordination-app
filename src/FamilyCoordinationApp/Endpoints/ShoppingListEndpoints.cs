@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using FamilyCoordinationApp.Constants;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
@@ -45,15 +44,11 @@ public static class ShoppingListEndpoints
     // ─── Lists ────────────────────────────────────────────────────────────────
 
     private static async Task<IResult> GetActiveLists(
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListService svc,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
-
-        var lists = await svc.GetActiveShoppingListsAsync(ctx.HouseholdId, ct);
+        var lists = await svc.GetActiveShoppingListsAsync(caller.HouseholdId, ct);
         var summaries = lists
             .OrderByDescending(l => l.IsFavorite)
             .ThenByDescending(l => l.CreatedAt)
@@ -70,19 +65,16 @@ public static class ShoppingListEndpoints
 
     private static async Task<IResult> CreateList(
         CreateListRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListService svc,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
         if (string.IsNullOrWhiteSpace(req.Name))
         {
             return Results.BadRequest(new { message = "Name is required" });
         }
 
-        var list = await svc.CreateShoppingListAsync(ctx.HouseholdId, req.Name.Trim(), null, ct);
+        var list = await svc.CreateShoppingListAsync(caller.HouseholdId, req.Name.Trim(), null, ct);
         return Results.Created(
             $"/api/shopping-lists/{list.ShoppingListId}",
             new ShoppingListSummaryDto(list.ShoppingListId, list.Name, list.IsFavorite, 0, 0));
@@ -90,15 +82,11 @@ public static class ShoppingListEndpoints
 
     private static async Task<IResult> GenerateFromMealPlan(
         GenerateRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListGenerator generator,
         IMealPlanService mealPlanService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
-
         if (req.StartDate == default || req.EndDate == default || req.EndDate < req.StartDate)
         {
             return Results.BadRequest(new { message = "Valid start and end dates required" });
@@ -106,14 +94,14 @@ public static class ShoppingListEndpoints
 
         // Use the meal plan containing the start date (matches Blazor page behavior).
         var weekStart = mealPlanService.GetWeekStartDate(req.StartDate);
-        var mealPlan = await mealPlanService.GetOrCreateMealPlanAsync(ctx.HouseholdId, weekStart, ct);
+        var mealPlan = await mealPlanService.GetOrCreateMealPlanAsync(caller.HouseholdId, weekStart, ct);
 
         var listName = string.IsNullOrWhiteSpace(req.Name)
             ? $"Shopping List {req.StartDate:MMM d}"
             : req.Name.Trim();
 
         var created = await generator.GenerateFromMealPlanAsync(
-            ctx.HouseholdId, mealPlan.MealPlanId, listName, req.StartDate, req.EndDate, ct);
+            caller.HouseholdId, mealPlan.MealPlanId, listName, req.StartDate, req.EndDate, ct);
 
         return Results.Created(
             $"/api/shopping-lists/{created.ShoppingListId}",
@@ -127,15 +115,11 @@ public static class ShoppingListEndpoints
 
     private static async Task<IResult> GetList(
         int listId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListService svc,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
-
-        var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
+        var list = await svc.GetShoppingListAsync(caller.HouseholdId, listId, ct);
         if (list is null || list.IsArchived) return Results.NotFound();
 
         return Results.Ok(ToListDto(list));
@@ -144,15 +128,11 @@ public static class ShoppingListEndpoints
     /// <summary>The past-lists browse read. Favorites-first then CreatedAt desc (service-side sort).</summary>
     private static async Task<IResult> GetArchivedLists(
         bool? favoritesOnly,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListService svc,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
-
-        var lists = await svc.GetArchivedShoppingListsAsync(ctx.HouseholdId, favoritesOnly, ct);
+        var lists = await svc.GetArchivedShoppingListsAsync(caller.HouseholdId, favoritesOnly, ct);
         var summaries = lists
             .Select(l => new ArchivedListSummaryDto(
                 l.ShoppingListId,
@@ -173,15 +153,11 @@ public static class ShoppingListEndpoints
     /// </summary>
     private static async Task<IResult> GetArchivedList(
         int listId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListService svc,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
-
-        var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
+        var list = await svc.GetShoppingListAsync(caller.HouseholdId, listId, ct);
         if (list is null || !list.IsArchived)
         {
             return Results.NotFound(new { message = "No archived list with that id." });
@@ -193,21 +169,17 @@ public static class ShoppingListEndpoints
     /// <summary>Reopen. Restore only flips IsArchived — deliberately no auto-regenerate; the link is kept.</summary>
     private static async Task<IResult> RestoreList(
         int listId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListService svc,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
-
-        var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
+        var list = await svc.GetShoppingListAsync(caller.HouseholdId, listId, ct);
         if (list is null || !list.IsArchived)
         {
             return Results.NotFound(new { message = "No archived list with that id." });
         }
 
-        await svc.RestoreShoppingListAsync(ctx.HouseholdId, listId, ct);
+        await svc.RestoreShoppingListAsync(caller.HouseholdId, listId, ct);
         return Results.NoContent();
     }
 
@@ -217,22 +189,18 @@ public static class ShoppingListEndpoints
     /// </summary>
     private static async Task<IResult> DeleteList(
         int listId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListService svc,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
-
-        var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
+        var list = await svc.GetShoppingListAsync(caller.HouseholdId, listId, ct);
         if (list is null) return Results.NotFound(new { message = "No list with that id." });
         if (!list.IsArchived)
         {
             return Results.Conflict(new { message = "Archive a list before deleting it." });
         }
 
-        await svc.DeleteShoppingListAsync(ctx.HouseholdId, listId, ct);
+        await svc.DeleteShoppingListAsync(caller.HouseholdId, listId, ct);
         return Results.NoContent();
     }
 
@@ -243,16 +211,12 @@ public static class ShoppingListEndpoints
     /// </summary>
     private static async Task<IResult> RegenerateList(
         int listId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListService svc,
         IShoppingListGenerator generator,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
-
-        var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
+        var list = await svc.GetShoppingListAsync(caller.HouseholdId, listId, ct);
         if (list is null) return Results.NotFound(new { message = "No list with that id." });
         if (list.MealPlanId is null)
         {
@@ -261,7 +225,7 @@ public static class ShoppingListEndpoints
 
         try
         {
-            var updated = await generator.RegenerateShoppingListAsync(ctx.HouseholdId, listId, ct);
+            var updated = await generator.RegenerateShoppingListAsync(caller.HouseholdId, listId, ct);
             return Results.Ok(ToListDto(updated));
         }
         catch (InvalidOperationException)
@@ -274,17 +238,13 @@ public static class ShoppingListEndpoints
 
     private static async Task<IResult> ToggleFavorite(
         int listId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListService svc,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
-
         try
         {
-            var updated = await svc.ToggleFavoriteAsync(ctx.HouseholdId, listId, ct);
+            var updated = await svc.ToggleFavoriteAsync(caller.HouseholdId, listId, ct);
             return Results.Ok(new { id = updated.ShoppingListId, isFavorite = updated.IsFavorite });
         }
         catch (KeyNotFoundException)
@@ -295,17 +255,13 @@ public static class ShoppingListEndpoints
 
     private static async Task<IResult> ArchiveList(
         int listId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListService svc,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
-
         try
         {
-            await svc.ArchiveShoppingListAsync(ctx.HouseholdId, listId, ct);
+            await svc.ArchiveShoppingListAsync(caller.HouseholdId, listId, ct);
             return Results.NoContent();
         }
         catch (KeyNotFoundException)
@@ -317,25 +273,23 @@ public static class ShoppingListEndpoints
     private static async Task<IResult> RenameList(
         int listId,
         RenameListRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListService svc,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
         if (string.IsNullOrWhiteSpace(req.Name))
         {
             return Results.BadRequest(new { message = "Name is required" });
         }
 
-        var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
+        var archived = await IsListArchivedAsync(dbFactory, caller.HouseholdId, listId, ct);
         if (archived is null) return Results.NotFound();
         if (archived == true) return ArchivedListConflict;
 
         try
         {
-            var updated = await svc.RenameShoppingListAsync(ctx.HouseholdId, listId, req.Name.Trim(), ct);
+            var updated = await svc.RenameShoppingListAsync(caller.HouseholdId, listId, req.Name.Trim(), ct);
             return Results.Ok(new { id = updated.ShoppingListId, name = updated.Name });
         }
         catch (KeyNotFoundException)
@@ -346,19 +300,16 @@ public static class ShoppingListEndpoints
 
     private static async Task<IResult> ClearChecked(
         int listId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListService svc,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
-
-        var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
+        var archived = await IsListArchivedAsync(dbFactory, caller.HouseholdId, listId, ct);
         if (archived is null) return Results.NotFound();
         if (archived == true) return ArchivedListConflict;
 
-        var removed = await svc.ClearCheckedItemsAsync(ctx.HouseholdId, listId, ct);
+        var removed = await svc.ClearCheckedItemsAsync(caller.HouseholdId, listId, ct);
         return Results.Ok(new { removed });
     }
 
@@ -387,15 +338,12 @@ public static class ShoppingListEndpoints
         int listId,
         int itemId,
         PatchItemRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListService svc,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
-
-        var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
+        var archived = await IsListArchivedAsync(dbFactory, caller.HouseholdId, listId, ct);
         if (archived is null) return Results.NotFound();
         if (archived == true) return ArchivedListConflict;
 
@@ -403,7 +351,7 @@ public static class ShoppingListEndpoints
         var item = await db.ShoppingListItems
             .Include(i => i.AddedBy)
             .FirstOrDefaultAsync(
-                i => i.HouseholdId == ctx.HouseholdId
+                i => i.HouseholdId == caller.HouseholdId
                     && i.ShoppingListId == listId
                     && i.ItemId == itemId,
                 ct);
@@ -438,7 +386,7 @@ public static class ShoppingListEndpoints
         if (req.Unit is not null) item.Unit = req.Unit;
         if (req.Name is not null) item.Name = req.Name;
         if (req.Category is not null) item.Category = req.Category;
-        item.UpdatedByUserId = ctx.UserId;
+        item.UpdatedByUserId = caller.UserId;
 
         var (success, wasConflict, conflictMessage) =
             await svc.UpdateItemWithConcurrencyAsync(item, ct);
@@ -456,26 +404,23 @@ public static class ShoppingListEndpoints
     private static async Task<IResult> AddItem(
         int listId,
         AddItemRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListService svc,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
-
         if (string.IsNullOrWhiteSpace(req.Name))
         {
             return Results.BadRequest(new { message = "Name is required" });
         }
 
-        var list = await svc.GetShoppingListAsync(ctx.HouseholdId, listId, ct);
+        var list = await svc.GetShoppingListAsync(caller.HouseholdId, listId, ct);
         if (list is null) return Results.NotFound();
         if (list.IsArchived) return ArchivedListConflict;
 
         var item = new ShoppingListItem
         {
-            HouseholdId = ctx.HouseholdId,
+            HouseholdId = caller.HouseholdId,
             ShoppingListId = listId,
             Name = req.Name.Trim(),
             Quantity = req.Quantity,
@@ -484,7 +429,7 @@ public static class ShoppingListEndpoints
                 ? CategoryDefaults.DefaultCategory
                 : req.Category.Trim(),
             IsManuallyAdded = true,
-            AddedByUserId = ctx.UserId,
+            AddedByUserId = caller.UserId,
         };
 
         var saved = await svc.AddManualItemAsync(item, ct);
@@ -493,7 +438,7 @@ public static class ShoppingListEndpoints
         var withAuthor = await db.ShoppingListItems
             .Include(i => i.AddedBy)
             .FirstAsync(
-                i => i.HouseholdId == ctx.HouseholdId
+                i => i.HouseholdId == caller.HouseholdId
                     && i.ShoppingListId == listId
                     && i.ItemId == saved.ItemId,
                 ct);
@@ -506,21 +451,18 @@ public static class ShoppingListEndpoints
     private static async Task<IResult> DeleteItem(
         int listId,
         int itemId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListService svc,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
-
-        var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
+        var archived = await IsListArchivedAsync(dbFactory, caller.HouseholdId, listId, ct);
         if (archived is null) return Results.NotFound();
         if (archived == true) return ArchivedListConflict;
 
         try
         {
-            await svc.DeleteItemAsync(ctx.HouseholdId, listId, itemId, ct);
+            await svc.DeleteItemAsync(caller.HouseholdId, listId, itemId, ct);
             return Results.NoContent();
         }
         catch (KeyNotFoundException)
@@ -532,20 +474,17 @@ public static class ShoppingListEndpoints
     private static async Task<IResult> UpdateSortOrders(
         int listId,
         UpdateSortOrdersRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IShoppingListService svc,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var ctx = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (ctx is null) return Results.Unauthorized();
-
         if (req.Updates is null || req.Updates.Count == 0)
         {
             return Results.NoContent();
         }
 
-        var archived = await IsListArchivedAsync(dbFactory, ctx.HouseholdId, listId, ct);
+        var archived = await IsListArchivedAsync(dbFactory, caller.HouseholdId, listId, ct);
         if (archived is null) return Results.NotFound();
         if (archived == true) return ArchivedListConflict;
 
@@ -553,7 +492,7 @@ public static class ShoppingListEndpoints
             .Select(u => (u.ItemId, u.SortOrder, (string?)u.Category))
             .ToList();
 
-        await svc.UpdateItemSortOrdersAsync(ctx.HouseholdId, listId, updates, ct);
+        await svc.UpdateItemSortOrdersAsync(caller.HouseholdId, listId, updates, ct);
         return Results.NoContent();
     }
 

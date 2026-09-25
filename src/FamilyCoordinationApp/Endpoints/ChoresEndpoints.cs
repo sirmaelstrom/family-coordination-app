@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using FamilyCoordinationApp.Data;
@@ -16,8 +15,8 @@ namespace FamilyCoordinationApp.Endpoints;
 /// <summary>
 /// Minimal-API surface for chores + the board (WP-06). Mirrors <c>ShoppingListEndpoints</c>: a
 /// <c>/api/chores</c> group behind <c>.RequireAuthorization().DisableAntiforgery()</c>, every handler
-/// resolving the HouseholdId/UserId from the authenticated caller (M1, never client-supplied) via
-/// <see cref="UserContextResolver"/>. Writes delegate to <see cref="IChoreService"/>; the board read +
+/// taking the HouseholdId/UserId of the authenticated caller (M1, never client-supplied) as the
+/// <see cref="CallerScope"/> that <see cref="CallerTenantMiddleware"/> resolved. Writes delegate to <see cref="IChoreService"/>; the board read +
 /// the per-mutation response projection delegate to <see cref="IChoreBoardService"/> (ONE projection — no
 /// card/mutation-response drift, M9). The service's typed exceptions map to HTTP status:
 /// <see cref="ChoreConflictException"/> → 409 (xmin conflict, M7/M12),
@@ -60,7 +59,7 @@ public static class ChoresEndpoints
         group.MapPatch("/me/capacity", SetCapacity);
 
         // v1.1 (WP-06): equity distribution lens + digest settings + dev backfill — all cookie-authed,
-        // household-scoped via UserContextResolver (M1).
+        // household-scoped via CallerScope (M1).
         group.MapGet("/equity", GetEquity);
         // In-app weekly recap lens (digest content + week-over-week trend). Cookie-authed, household-scoped.
         group.MapGet("/recap", GetRecap);
@@ -83,15 +82,11 @@ public static class ChoresEndpoints
     // ─── Board ──────────────────────────────────────────────────────────────────
 
     private static async Task<IResult> GetBoard(
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreBoardService boardService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var board = await boardService.GetBoardAsync(user.HouseholdId, user.UserId, null, ct);
+        var board = await boardService.GetBoardAsync(caller.HouseholdId, caller.UserId, null, ct);
         return Results.Ok(board);
     }
 
@@ -99,7 +94,7 @@ public static class ChoresEndpoints
 
     private static async Task<IResult> CreateChore(
         CreateChoreRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreService svc,
         IChoreBoardService boardService,
         TimeProvider timeProvider,
@@ -107,9 +102,6 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         // A "first due" floor (Chore.SnoozedUntil) must be in the future — same rule as the quick-snooze
         // endpoint (ResolveSnooze). Resolve today in the household tz (MN4 — never client date math).
         var today = DateOnly.FromDateTime(
@@ -117,7 +109,7 @@ public static class ChoresEndpoints
         var (floorOk, floorError) = ValidateFloor(req.SnoozedUntil, today);
         if (!floorOk) return Results.BadRequest(new { message = floorError });
 
-        if (!ImagePathPolicy.TryNormalize(req.PhotoPath, user.HouseholdId, out var photoPath))
+        if (!ImagePathPolicy.TryNormalize(req.PhotoPath, caller.HouseholdId, out var photoPath))
         {
             return Results.BadRequest(new { message = "Photo path is not valid." });
         }
@@ -125,8 +117,8 @@ public static class ChoresEndpoints
 
         try
         {
-            var chore = await svc.CreateChoreAsync(user.HouseholdId, user.UserId, req.ToCommand(), ct);
-            return Results.Created($"/api/chores/{chore.ChoreId}", await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
+            var chore = await svc.CreateChoreAsync(caller.HouseholdId, caller.UserId, req.ToCommand(), ct);
+            return Results.Created($"/api/chores/{chore.ChoreId}", await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
         }
         catch (ChoreValidationException ex)
         {
@@ -137,7 +129,7 @@ public static class ChoresEndpoints
     private static async Task<IResult> UpdateChore(
         int choreId,
         UpdateChoreRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreService svc,
         IChoreBoardService boardService,
         TimeProvider timeProvider,
@@ -145,9 +137,6 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         // A "next due" floor (Chore.SnoozedUntil) must be in the future — same rule as the quick-snooze
         // endpoint (ResolveSnooze). Resolve today in the household tz (MN4 — never client date math).
         var today = DateOnly.FromDateTime(
@@ -155,7 +144,7 @@ public static class ChoresEndpoints
         var (floorOk, floorError) = ValidateFloor(req.SnoozedUntil, today);
         if (!floorOk) return Results.BadRequest(new { message = floorError });
 
-        if (!ImagePathPolicy.TryNormalize(req.PhotoPath, user.HouseholdId, out var photoPath))
+        if (!ImagePathPolicy.TryNormalize(req.PhotoPath, caller.HouseholdId, out var photoPath))
         {
             return Results.BadRequest(new { message = "Photo path is not valid." });
         }
@@ -163,8 +152,8 @@ public static class ChoresEndpoints
 
         try
         {
-            var chore = await svc.UpdateChoreAsync(user.HouseholdId, choreId, req.ToCommand(), req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
+            var chore = await svc.UpdateChoreAsync(caller.HouseholdId, choreId, req.ToCommand(), req.Version, ct);
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -174,17 +163,13 @@ public static class ChoresEndpoints
     private static async Task<IResult> DeleteChore(
         int choreId,
         [FromBody] VersionRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreService svc,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         try
         {
-            await svc.DeleteChoreAsync(user.HouseholdId, choreId, req.Version, ct);
+            await svc.DeleteChoreAsync(caller.HouseholdId, choreId, req.Version, ct);
             return Results.NoContent();
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
@@ -196,7 +181,7 @@ public static class ChoresEndpoints
     private static async Task<IResult> ClaimChore(
         int choreId,
         VersionRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreService svc,
         IChoreBoardService boardService,
         TimeProvider timeProvider,
@@ -204,13 +189,10 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         try
         {
-            var chore = await svc.ClaimAsync(user.HouseholdId, choreId, user.UserId, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
+            var chore = await svc.ClaimAsync(caller.HouseholdId, choreId, caller.UserId, req.Version, ct);
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -220,7 +202,7 @@ public static class ChoresEndpoints
     private static async Task<IResult> TakeChore(
         int choreId,
         VersionRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreService svc,
         IChoreBoardService boardService,
         TimeProvider timeProvider,
@@ -228,13 +210,10 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         try
         {
-            var chore = await svc.TakeAsync(user.HouseholdId, choreId, user.UserId, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
+            var chore = await svc.TakeAsync(caller.HouseholdId, choreId, caller.UserId, req.Version, ct);
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -244,7 +223,7 @@ public static class ChoresEndpoints
     private static async Task<IResult> DropChore(
         int choreId,
         VersionRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreService svc,
         IChoreBoardService boardService,
         TimeProvider timeProvider,
@@ -252,13 +231,10 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         try
         {
-            var chore = await svc.DropAsync(user.HouseholdId, choreId, user.UserId, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
+            var chore = await svc.DropAsync(caller.HouseholdId, choreId, caller.UserId, req.Version, ct);
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -268,7 +244,7 @@ public static class ChoresEndpoints
     private static async Task<IResult> HandOffChore(
         int choreId,
         HandOffRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreService svc,
         IChoreBoardService boardService,
         TimeProvider timeProvider,
@@ -276,13 +252,10 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         try
         {
-            var chore = await svc.HandOffAsync(user.HouseholdId, choreId, user.UserId, req.TargetUserId, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
+            var chore = await svc.HandOffAsync(caller.HouseholdId, choreId, caller.UserId, req.TargetUserId, req.Version, ct);
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -292,7 +265,7 @@ public static class ChoresEndpoints
     private static async Task<IResult> CompleteChore(
         int choreId,
         CompleteRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreService svc,
         IChoreBoardService boardService,
         TimeProvider timeProvider,
@@ -300,10 +273,7 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        if (!ImagePathPolicy.TryNormalize(req.PhotoPath, user.HouseholdId, out var photoPath))
+        if (!ImagePathPolicy.TryNormalize(req.PhotoPath, caller.HouseholdId, out var photoPath))
         {
             return Results.BadRequest(new { message = "Photo path is not valid." });
         }
@@ -311,8 +281,8 @@ public static class ChoresEndpoints
         try
         {
             var chore = await svc.CompleteAsync(
-                user.HouseholdId, choreId, user.UserId, req.Note, photoPath, req.ParticipantUserIds, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
+                caller.HouseholdId, choreId, caller.UserId, req.Note, photoPath, req.ParticipantUserIds, req.Version, ct);
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -331,7 +301,7 @@ public static class ChoresEndpoints
     private static async Task<IResult> SnoozeChore(
         int choreId,
         SnoozeRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreService svc,
         IChoreBoardService boardService,
         TimeProvider timeProvider,
@@ -339,9 +309,6 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         var today = DateOnly.FromDateTime(
             TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, timeZone));
 
@@ -353,8 +320,8 @@ public static class ChoresEndpoints
 
         try
         {
-            var chore = await svc.SnoozeAsync(user.HouseholdId, choreId, user.UserId, until, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
+            var chore = await svc.SnoozeAsync(caller.HouseholdId, choreId, caller.UserId, until, req.Version, ct);
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -419,7 +386,7 @@ public static class ChoresEndpoints
     private static async Task<IResult> AssignRoster(
         int choreId,
         AssignRosterRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreService svc,
         IChoreBoardService boardService,
         TimeProvider timeProvider,
@@ -427,13 +394,10 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         try
         {
-            var chore = await svc.AssignToRosterAsync(user.HouseholdId, choreId, user.UserId, req.SubjectUserId, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
+            var chore = await svc.AssignToRosterAsync(caller.HouseholdId, choreId, caller.UserId, req.SubjectUserId, req.Version, ct);
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -443,7 +407,7 @@ public static class ChoresEndpoints
     private static async Task<IResult> CommitRoster(
         int choreId,
         VersionRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreService svc,
         IChoreBoardService boardService,
         TimeProvider timeProvider,
@@ -451,13 +415,10 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         try
         {
-            var chore = await svc.CommitToRosterAsync(user.HouseholdId, choreId, user.UserId, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
+            var chore = await svc.CommitToRosterAsync(caller.HouseholdId, choreId, caller.UserId, req.Version, ct);
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -467,7 +428,7 @@ public static class ChoresEndpoints
     private static async Task<IResult> LeaveRoster(
         int choreId,
         LeaveRosterRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreService svc,
         IChoreBoardService boardService,
         TimeProvider timeProvider,
@@ -475,13 +436,10 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         try
         {
-            var chore = await svc.LeaveRosterAsync(user.HouseholdId, choreId, user.UserId, req.SubjectUserId, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, user.HouseholdId, ct));
+            var chore = await svc.LeaveRosterAsync(caller.HouseholdId, choreId, caller.UserId, req.SubjectUserId, req.Version, ct);
+            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
         catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
@@ -493,18 +451,15 @@ public static class ChoresEndpoints
     private static async Task<IResult> UploadChorePhoto(
         int choreId,
         [FromForm] IFormFile file,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IImageService imageService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
         if (file is null || file.Length == 0) return Results.BadRequest(new { message = "File is required" });
 
         try
         {
-            var path = await imageService.SaveImageAsync(file, user.HouseholdId, ct);
+            var path = await imageService.SaveImageAsync(file, caller.HouseholdId, ct);
             return Results.Ok(new { photoPath = path });
         }
         catch (InvalidOperationException ex)
@@ -518,17 +473,13 @@ public static class ChoresEndpoints
     private static async Task<IResult> CreateSubtask(
         int choreId,
         CreateSubtaskRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreSubtaskService svc,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         try
         {
-            var dto = await svc.CreateAsync(user.HouseholdId, choreId, req.Title, ct);
+            var dto = await svc.CreateAsync(caller.HouseholdId, choreId, req.Title, ct);
             return Results.Ok(dto);
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
@@ -539,18 +490,14 @@ public static class ChoresEndpoints
         int choreId,
         int subtaskId,
         UpdateSubtaskRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreSubtaskService svc,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         try
         {
-            // user.UserId is the "who ticked it" actor captured when this flips the item to done (M1).
-            var dto = await svc.UpdateAsync(user.HouseholdId, choreId, subtaskId, user.UserId, req.Title, req.IsDone, req.SortOrder, ct);
+            // caller.UserId is the "who ticked it" actor captured when this flips the item to done (M1).
+            var dto = await svc.UpdateAsync(caller.HouseholdId, choreId, subtaskId, caller.UserId, req.Title, req.IsDone, req.SortOrder, ct);
             return Results.Ok(dto);
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
@@ -560,41 +507,34 @@ public static class ChoresEndpoints
     private static async Task<IResult> ReorderSubtasks(
         int choreId,
         ReorderSubtasksRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreSubtaskService svc,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         // The chore must exist in the household (else 404). Mirrors the subtask CRUD scoping (M1).
         bool choreExists;
         await using (var context = await dbFactory.CreateDbContextAsync(ct))
         {
             choreExists = await context.Chores
-                .AnyAsync(c => c.HouseholdId == user.HouseholdId && c.ChoreId == choreId, ct);
+                .AnyAsync(c => c.HouseholdId == caller.HouseholdId && c.ChoreId == choreId, ct);
         }
         if (!choreExists) return Results.NotFound();
 
-        await svc.ReorderAsync(user.HouseholdId, choreId, req.OrderedSubtaskIds ?? new List<int>(), ct);
+        await svc.ReorderAsync(caller.HouseholdId, choreId, req.OrderedSubtaskIds ?? new List<int>(), ct);
         return Results.NoContent();
     }
 
     private static async Task<IResult> DeleteSubtask(
         int choreId,
         int subtaskId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreSubtaskService svc,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         try
         {
-            await svc.DeleteAsync(user.HouseholdId, choreId, subtaskId, ct);
+            await svc.DeleteAsync(caller.HouseholdId, choreId, subtaskId, ct);
             return Results.NoContent();
         }
         catch (ChoreNotFoundException) { return Results.NotFound(); }
@@ -604,14 +544,11 @@ public static class ChoresEndpoints
 
     private static async Task<IResult> SetDefaultView(
         DefaultViewRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var (outcome, normalized) = await ApplyDefaultViewAsync(dbFactory, user.HouseholdId, user.UserId, req.View, ct);
+        var (outcome, normalized) = await ApplyDefaultViewAsync(dbFactory, caller.HouseholdId, caller.UserId, req.View, ct);
         return outcome switch
         {
             DefaultViewOutcome.Ok => Results.Ok(new { view = normalized }),
@@ -658,14 +595,11 @@ public static class ChoresEndpoints
 
     private static async Task<IResult> SetCapacity(
         CapacityRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var (outcome, normalized) = await ApplyCapacityAsync(dbFactory, user.HouseholdId, user.UserId, req.Tier, ct);
+        var (outcome, normalized) = await ApplyCapacityAsync(dbFactory, caller.HouseholdId, caller.UserId, req.Tier, ct);
         return outcome switch
         {
             CapacityOutcome.Ok => Results.Ok(new { tier = normalized }),
@@ -720,7 +654,7 @@ public static class ChoresEndpoints
     /// </summary>
     private static async Task<IResult> GetEquity(
         [FromQuery] string? window,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         ChoreEquityCalculator equityCalculator,
         ChorePlanningCalculator planningCalculator,
         ChoreStatusCalculator statusCalculator,
@@ -729,9 +663,6 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         if (!TryParseEquityWindow(window, out var equityWindow))
         {
             return Results.BadRequest(new { message = $"Unknown window '{window}'. Valid: week, all" });
@@ -742,47 +673,47 @@ public static class ChoresEndpoints
         await using var context = await dbFactory.CreateDbContextAsync(ct);
 
         var members = await context.Users
-            .Where(u => u.HouseholdId == user.HouseholdId)
+            .Where(u => u.HouseholdId == caller.HouseholdId)
             .OrderBy(u => u.DisplayName)
             .Select(u => new MemberDto(u.Id, u.DisplayName, u.Initials, u.PictureUrl))
             .ToListAsync(ct);
 
         var completions = await context.ChoreCompletions
-            .Where(c => c.HouseholdId == user.HouseholdId)
+            .Where(c => c.HouseholdId == caller.HouseholdId)
             .ToListAsync(ct);
 
         // Active chores only (mirror ChoreBoardService) for the attention counts.
         var activeChores = await context.Chores
-            .Where(c => c.HouseholdId == user.HouseholdId && c.Status == ChoreStatus.Active)
+            .Where(c => c.HouseholdId == caller.HouseholdId && c.Status == ChoreStatus.Active)
             .ToListAsync(ct);
 
         // Planning footprint (Phase 15): ALL-TIME, household-scoped authorship across five lanes — these are
         // independent of the equity `window` (which governs only the physical lane). All HouseholdId-scoped (M1).
         var allChores = await context.Chores
-            .Where(c => c.HouseholdId == user.HouseholdId)
+            .Where(c => c.HouseholdId == caller.HouseholdId)
             .ToListAsync(ct);
 
         var recipes = await context.Recipes
-            .Where(r => r.HouseholdId == user.HouseholdId && !r.IsDeleted && r.CreatedByUserId != null)
+            .Where(r => r.HouseholdId == caller.HouseholdId && !r.IsDeleted && r.CreatedByUserId != null)
             .ToListAsync(ct);
 
         var manualListItems = await context.ShoppingListItems
-            .Where(s => s.HouseholdId == user.HouseholdId && s.IsManuallyAdded && s.AddedByUserId != null)
+            .Where(s => s.HouseholdId == caller.HouseholdId && s.IsManuallyAdded && s.AddedByUserId != null)
             .ToListAsync(ct);
 
         var choreEvents = await context.ChoreEvents
-            .Where(e => e.HouseholdId == user.HouseholdId)
+            .Where(e => e.HouseholdId == caller.HouseholdId)
             .ToListAsync(ct);
 
         var mealEntries = await context.MealPlanEntries
-            .Where(m => m.HouseholdId == user.HouseholdId && m.CreatedByUserId != null)
+            .Where(m => m.HouseholdId == caller.HouseholdId && m.CreatedByUserId != null)
             .ToListAsync(ct);
 
         // Per-member physical-capacity tiers (Phase 15 WP-05, D3). A lightweight household-scoped projection
         // separate from the MemberDto projection (so the board DTO / ChoreDtos.cs stay untouched — MN1) and
         // filtered to the caller's household (no cross-tenant leakage — M1). null tier ⇒ Full.
         var tiersByUserId = (await context.Users
-                .Where(u => u.HouseholdId == user.HouseholdId)
+                .Where(u => u.HouseholdId == caller.HouseholdId)
                 .Select(u => new { u.Id, u.PhysicalCapacityTier })
                 .ToListAsync(ct))
             .ToDictionary(u => u.Id, u => u.PhysicalCapacityTier);
@@ -835,7 +766,7 @@ public static class ChoresEndpoints
             // Planning is ALL-TIME — independent of the window param (D5).
             Planning = planning,
             // The caller's own capacity tier rides the payload (P4); null ⇒ Full.
-            CallerCapacityTier = tiersByUserId.GetValueOrDefault(user.UserId),
+            CallerCapacityTier = tiersByUserId.GetValueOrDefault(caller.UserId),
         };
 
         return Results.Ok(dto);
@@ -878,16 +809,12 @@ public static class ChoresEndpoints
     /// </summary>
     private static async Task<IResult> GetRecap(
         [FromQuery] int? weeks,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreRecapService recapService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         // HouseholdId comes from the resolved caller, never the client (M1). weeks is clamped in the service.
-        var dto = await recapService.GetRecapAsync(user.HouseholdId, weeks ?? 8, now: null, ct);
+        var dto = await recapService.GetRecapAsync(caller.HouseholdId, weeks ?? 8, now: null, ct);
         return Results.Ok(dto);
     }
 
@@ -900,18 +827,12 @@ public static class ChoresEndpoints
     /// </summary>
     private static async Task<IResult> GetLedger(
         [FromQuery] int? weeks,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IChoreHistoryService historyService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        // Non-empty 401 body (M7/fca-empty-404) — a deliberate improvement over the sibling handlers' bare
-        // Results.Unauthorized(): a specific message beats the generic /api backfill.
-        if (user is null) return Results.Json(new { message = "Unauthorized" }, statusCode: 401);
-
         // HouseholdId comes from the resolved caller, never the client (M1). weeks is clamped in the service.
-        var result = await historyService.GetHistoryAsync(user.HouseholdId, weeks ?? 12, now: null, ct);
+        var result = await historyService.GetHistoryAsync(caller.HouseholdId, weeks ?? 12, now: null, ct);
         return Results.Ok(ChoreLedgerProjection.ToLedger(result));
     }
 
@@ -922,15 +843,11 @@ public static class ChoresEndpoints
     /// Enums serialize camelCase (cadence:"weekly", sendDayOfWeek:"sunday"…).
     /// </summary>
     private static async Task<IResult> GetDigestSettings(
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IDigestSettingsService settingsService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var view = await settingsService.GetAsync(user.HouseholdId, ct);
+        var view = await settingsService.GetAsync(caller.HouseholdId, ct);
         return Results.Ok(view);
     }
 
@@ -941,18 +858,14 @@ public static class ChoresEndpoints
     /// </summary>
     private static async Task<IResult> UpdateDigestSettings(
         [FromBody] DigestSettingsRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IDigestSettingsService settingsService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         try
         {
-            await settingsService.UpdateAsync(user.HouseholdId, req.ToUpdate(), ct);
-            var view = await settingsService.GetAsync(user.HouseholdId, ct);
+            await settingsService.UpdateAsync(caller.HouseholdId, req.ToUpdate(), ct);
+            var view = await settingsService.GetAsync(caller.HouseholdId, ct);
             return Results.Ok(view);
         }
         catch (DigestSettingsValidationException ex)
@@ -969,22 +882,19 @@ public static class ChoresEndpoints
     /// returns void, so this probes first to report whether anything was actually seeded.
     /// </summary>
     private static async Task<IResult> SeedStarter(
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         bool alreadyHad;
         await using (var context = await dbFactory.CreateDbContextAsync(ct))
         {
-            alreadyHad = await context.Rooms.AnyAsync(r => r.HouseholdId == user.HouseholdId, ct)
-                || await context.Chores.AnyAsync(c => c.HouseholdId == user.HouseholdId, ct);
+            alreadyHad = await context.Rooms.AnyAsync(r => r.HouseholdId == caller.HouseholdId, ct)
+                || await context.Chores.AnyAsync(c => c.HouseholdId == caller.HouseholdId, ct);
         }
 
         var seeded = !alreadyHad;
-        await SeedData.SeedChoresAndRoomsAsync(dbFactory, user.HouseholdId);
+        await SeedData.SeedChoresAndRoomsAsync(dbFactory, caller.HouseholdId);
 
         return Results.Ok(new { seeded });
     }
