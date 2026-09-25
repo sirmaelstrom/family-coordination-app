@@ -285,7 +285,6 @@ public class RecipeService(
             .IgnoreQueryFilters(["Tenant"])
             .Where(r => r.HouseholdId == connectedHouseholdId && r.RecipeId == recipeId)
             .Include(r => r.Ingredients.OrderBy(i => i.SortOrder))
-            .Include(r => r.CreatedBy)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
