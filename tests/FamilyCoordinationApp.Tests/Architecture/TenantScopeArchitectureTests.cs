@@ -304,21 +304,310 @@ public class TenantScopeArchitectureTests
     }
 
     // ── Fact 3 (fca-household-scope D7/D12): contexts are built only by the factory ──
-    // The options-only constructor gives an Unfiltered tenant (D12). Banning
-    // direct construction in src confines that hole to the tests: production code
+    // The options-only constructor gives an Unfiltered tenant (D12). Banning every way
+    // to construct a context in src confines that hole to the tests: production code
     // can only get a context from TenantDbContextFactory, which always passes the
-    // scope's tenant. The target-typed form `ApplicationDbContext x = new(` is the
-    // same construction without the type name, so it is banned too. Comment lines
-    // are skipped: the docs may NAME the banned call. No IDesignTimeDbContextFactory
-    // exists (checked 2026-09-24); if one is added it gets an explicit entry here.
+    // scope's tenant.
+    //
+    // The scan runs on the WHOLE file after StripCommentsAndStrings has blanked every
+    // comment and string/char literal (keeping newlines, so an offset still maps to
+    // its line): docs and strings may NAME a banned form, and `\s` spans newlines, so
+    // a construction split across lines is still one match, reported at its start.
+    // One named rule per form (PR #120 review 1, astra/codex/opus):
+    //  - explicit-new: `new ApplicationDbContext(`, qualified or not, `(` on any line.
+    //  - target-typed-declaration: `ApplicationDbContext[?] x = new(` as a local,
+    //    field, or property initializer (`{ get; } = new(`), qualified or not.
+    //  - target-typed-return: `=> new(` on a method, local function or property
+    //    typed ApplicationDbContext[?] or Task/ValueTask of it, and every
+    //    `return new(` inside such a member's braces. A nested lambda that returns
+    //    another type false-flags, which fails safe.
+    //  - typed-lambda: `ApplicationDbContext (o) => new(o)`, and a delegate-typed
+    //    variable whose last type argument is ApplicationDbContext, initialized by
+    //    a lambda that returns `new(`.
+    //  - activation: `CreateInstance<ApplicationDbContext>`,
+    //    `GetServiceOrCreateInstance<ApplicationDbContext>`, and any
+    //    `typeof(ApplicationDbContext)` except one followed by `.Assembly`
+    //    (OnModelCreating reads the assembly for ApplyConfigurationsFromAssembly).
+    //  - subclass: a class or record whose base list starts with
+    //    ApplicationDbContext, the primary-constructor form included.
+    //  - options-type: any mention of DbContextOptions<ApplicationDbContext> or
+    //    DbContextOptionsBuilder<ApplicationDbContext>. The backstop for target-typed
+    //    `new(opts)` in argument position or an assignment, and for casts: a context
+    //    can't be built without options of that type, and naming the type trips
+    //    this rule. It has its own allow-list: the context, which declares the
+    //    constructors, and the factory, which receives the options from DI.
+    // Every rule but options-type exempts ContextConstructionAllowedFiles (the
+    // factory only); options-type exempts OptionsTypeAllowedFiles.
+    //
+    // Residual limits (what this scan does NOT see):
+    //  - a construction inside an interpolation hole is blanked with its string;
+    //  - reflection by string name (`Type.GetType("…")`) isn't caught, nor are
+    //    options reached without naming their type (`dynamic`, the non-generic base);
+    //  - Migrations/ is excluded (AppSourceFiles), so a factory there is invisible;
+    //  - .razor/.cshtml markup is lexed as C#: an apostrophe in markup blanks the
+    //    rest of its line;
+    //  - DI-activated contexts (AddDbContext<ApplicationDbContext> and similar) are
+    //    covered by TenantPlumbingTests' DI assertions, not by this scan.
+    // No IDesignTimeDbContextFactory exists (checked 2026-09-24); if one is added it
+    // gets an explicit entry here.
 
     internal static readonly string[] ContextConstructionAllowedFiles =
     [
         "Tenancy/TenantDbContextFactory.cs",
     ];
 
-    private static readonly Regex ContextConstructionRe =
-        new(@"new\s+ApplicationDbContext\s*\(|ApplicationDbContext\s+\w+\s*=\s*new\s*\(");
+    internal const string OptionsTypeRule = "options-type";
+
+    internal static readonly string[] OptionsTypeAllowedFiles =
+    [
+        "Data/ApplicationDbContext.cs",      // declares the constructors that take the options
+        "Tenancy/TenantDbContextFactory.cs", // receives the options from DI
+    ];
+
+    /// <summary>
+    /// Blanks every comment (<c>//</c>, <c>///</c>, <c>/* */</c>) and every string or char literal (regular,
+    /// verbatim, interpolated, raw) to spaces, keeping newlines and length so an offset still maps to its line.
+    /// An interpolation hole is blanked with its string.
+    /// </summary>
+    internal static string StripCommentsAndStrings(string source)
+    {
+        var chars = source.ToCharArray();
+        var i = 0;
+        while (i < source.Length)
+        {
+            var end = CommentOrLiteralEnd(source, i);
+            if (end == i)
+            {
+                i++;
+                continue;
+            }
+            for (var k = i; k < end; k++)
+                if (chars[k] is not ('\n' or '\r')) chars[k] = ' ';
+            i = end;
+        }
+        return new string(chars);
+    }
+
+    // The exclusive end of the comment or literal that starts at i, or i when none starts there.
+    private static int CommentOrLiteralEnd(string s, int i)
+    {
+        char At(int k) => k < s.Length ? s[k] : '\0';
+
+        if (s[i] == '/' && At(i + 1) == '/')
+        {
+            var newline = s.IndexOf('\n', i);
+            return newline < 0 ? s.Length : newline;
+        }
+        if (s[i] == '/' && At(i + 1) == '*')
+        {
+            var close = s.IndexOf("*/", i + 2, StringComparison.Ordinal);
+            return close < 0 ? s.Length : close + 2;
+        }
+        if (s[i] == '\'') return QuotedEnd(s, i + 1, '\'', interpolated: false);
+
+        // String prefixes: $…, @, $…@, @$…
+        var j = i;
+        var interpolated = false;
+        var verbatim = false;
+        while (At(j) == '$') { interpolated = true; j++; }
+        if (At(j) == '@')
+        {
+            verbatim = true;
+            j++;
+            while (At(j) == '$') { interpolated = true; j++; }
+        }
+        if (At(j) != '"') return i;
+
+        var quotes = 0;
+        while (At(j + quotes) == '"') quotes++;
+        if (!verbatim && quotes >= 3) // raw: ends at the next run of as many quotes
+        {
+            var close = s.IndexOf(new string('"', quotes), j + quotes, StringComparison.Ordinal);
+            return close < 0 ? s.Length : close + quotes;
+        }
+        return verbatim ? VerbatimEnd(s, j + 1, interpolated) : QuotedEnd(s, j + 1, '"', interpolated);
+    }
+
+    // A regular string or a char literal: backslash escapes; unterminated at the end of its line.
+    private static int QuotedEnd(string s, int k, char quote, bool interpolated)
+    {
+        while (k < s.Length)
+        {
+            var c = s[k];
+            if (c == '\\') { k += 2; continue; }
+            if (c == quote) return k + 1;
+            if (c == '\n') return k;
+            if (interpolated && c == '{')
+            {
+                if (k + 1 < s.Length && s[k + 1] == '{') { k += 2; continue; }
+                k = HoleEnd(s, k + 1);
+                continue;
+            }
+            k++;
+        }
+        return s.Length;
+    }
+
+    // A verbatim string: `""` escapes a quote; newlines are content.
+    private static int VerbatimEnd(string s, int k, bool interpolated)
+    {
+        while (k < s.Length)
+        {
+            var c = s[k];
+            if (c == '"')
+            {
+                if (k + 1 < s.Length && s[k + 1] == '"') { k += 2; continue; }
+                return k + 1;
+            }
+            if (interpolated && c == '{')
+            {
+                if (k + 1 < s.Length && s[k + 1] == '{') { k += 2; continue; }
+                k = HoleEnd(s, k + 1);
+                continue;
+            }
+            k++;
+        }
+        return s.Length;
+    }
+
+    // Just past the '}' that closes an interpolation hole whose body starts at k. Nested strings, chars and
+    // comments are skipped whole, so a quote or brace inside them can't end the hole early.
+    private static int HoleEnd(string s, int k)
+    {
+        var depth = 0;
+        while (k < s.Length)
+        {
+            var end = CommentOrLiteralEnd(s, k);
+            if (end > k)
+            {
+                k = end;
+                continue;
+            }
+            if (s[k] == '{') depth++;
+            else if (s[k] == '}')
+            {
+                if (depth == 0) return k + 1;
+                depth--;
+            }
+            k++;
+        }
+        return s.Length;
+    }
+
+    // An optionally qualified ApplicationDbContext type name (`Data.`, `global::FamilyCoordinationApp.Data.`).
+    private const string CtxType = @"(?:global\s*::\s*)?(?:\w+\s*\.\s*)*ApplicationDbContext\b";
+    // A type name starts here: not mid-identifier, not after a qualifier.
+    private const string TypeStart = @"(?<![\w.:])";
+    private const string NullableMark = @"(?:\s*\?)?";
+    // A member's declared type: ApplicationDbContext[?], or Task/ValueTask of it.
+    private const string CtxOrTaskOfCtx =
+        @"(?:(?:global\s*::\s*)?(?:\w+\s*\.\s*)*(?:Value)?Task\s*<\s*" + CtxType + NullableMark + @"\s*>|" + CtxType + ")" + NullableMark;
+    private const string ParamList = @"\((?:[^()]|\([^()]*\))*\)";
+    // A method or local function's signature tail: type parameters, parameters, constraints.
+    private const string SignatureTail = @"(?:<[^<>]*>)?\s*" + ParamList + @"(?:\s*where\b[^{};=]*)?";
+    // A type argument before the last one, with up to two levels of nested generics.
+    private const string TypeArg = @"(?:[^<>;{}()=,]|<(?:[^<>;{}()=]|<[^<>;{}()=]*>)*>)+";
+
+    private static readonly Regex ExplicitNewRe = new(@"\bnew\s+" + CtxType + @"\s*\(");
+
+    private static readonly Regex TargetTypedDeclarationRe =
+        new(TypeStart + CtxType + NullableMark + @"\s+\w+\s*(?:\{[^{}]*\}\s*)?=\s*new\s*\(");
+
+    private static readonly Regex ExpressionBodiedMemberRe =
+        new(TypeStart + CtxOrTaskOfCtx + @"\s+\w+\s*(?:" + SignatureTail + @")?\s*=>\s*new\s*\(");
+
+    // Ends at the member's opening brace; the body is brace-matched from there.
+    private static readonly Regex BlockBodiedMemberRe =
+        new(TypeStart + CtxOrTaskOfCtx + @"\s+\w+\s*(?:" + SignatureTail + @")?\s*\{");
+
+    private static readonly Regex ReturnNewRe = new(@"\breturn\s+new\s*\(");
+
+    // Ends at `new(` (expression body) or `{` (block body).
+    private static readonly Regex ExplicitReturnLambdaRe =
+        new(TypeStart + CtxType + NullableMark + @"\s*" + ParamList + @"\s*=>\s*(?:new\s*\(|\{)");
+
+    private static readonly Regex DelegateVariableRe =
+        new(TypeStart + @"(?:global\s*::\s*)?(?:\w+\s*\.\s*)*\w+\s*<\s*(?:" + TypeArg + @",\s*)*" + CtxType + NullableMark +
+            @"\s*>" + NullableMark + @"\s+\w+\s*=\s*(?:static\s+)?(?:async\s+)?(?:\w+|" + ParamList + @")\s*=>\s*(?:new\s*\(|\{)");
+
+    private static readonly Regex ActivationRe =
+        new(@"\b(?:CreateInstance|GetServiceOrCreateInstance)\s*<\s*" + CtxType + @"\s*>" +
+            @"|\btypeof\s*\(\s*" + CtxType + @"\s*\)(?!\s*\.\s*Assembly\b)");
+
+    private static readonly Regex SubclassRe =
+        new(@"\b(?:class|record)\s+\w+\s*(?:<[^<>]*>)?\s*(?:" + ParamList + @")?\s*:\s*" + CtxType);
+
+    private static readonly Regex OptionsTypeRe =
+        new(TypeStart + @"(?:global\s*::\s*)?(?:\w+\s*\.\s*)*DbContextOptions(?:Builder)?\s*<\s*" + CtxType + @"\s*>");
+
+    /// <summary>
+    /// Every context construction in <paramref name="source"/> as (line, rule), scanned on the whole comment- and
+    /// string-stripped text so a match may span lines; the line is where the match starts.
+    /// </summary>
+    internal static List<(int Line, string Rule)> ContextConstructions(string source)
+    {
+        var code = StripCommentsAndStrings(source);
+        var hits = new List<(int Index, string Rule)>();
+
+        void AddMatches(Regex re, string rule)
+        {
+            foreach (Match m in re.Matches(code)) hits.Add((m.Index, rule));
+        }
+
+        // A match ending in `{` opens a block body: flag each `return new(` inside it. Otherwise flag the match.
+        void AddBodies(Regex re, string rule, bool blockOnly)
+        {
+            foreach (Match m in re.Matches(code))
+            {
+                var last = m.Index + m.Length - 1;
+                if (code[last] != '{')
+                {
+                    if (!blockOnly) hits.Add((m.Index, rule));
+                    continue;
+                }
+                var close = MatchingBrace(code, last);
+                foreach (Match r in ReturnNewRe.Matches(code[..close], last))
+                    hits.Add((r.Index, rule));
+            }
+        }
+
+        AddMatches(ExplicitNewRe, "explicit-new");
+        AddMatches(TargetTypedDeclarationRe, "target-typed-declaration");
+        AddMatches(ExpressionBodiedMemberRe, "target-typed-return");
+        AddBodies(BlockBodiedMemberRe, "target-typed-return", blockOnly: true);
+        AddBodies(ExplicitReturnLambdaRe, "typed-lambda", blockOnly: false);
+        AddBodies(DelegateVariableRe, "typed-lambda", blockOnly: false);
+        AddMatches(ActivationRe, "activation");
+        AddMatches(SubclassRe, "subclass");
+        AddMatches(OptionsTypeRe, OptionsTypeRule);
+
+        return hits
+            .Distinct() // nested typed members brace-match the same `return new(`
+            .Select(h => (Line: code[..h.Index].Count(c => c == '\n') + 1, h.Rule))
+            .OrderBy(h => h.Line).ThenBy(h => h.Rule, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    // The index of the '}' matching the '{' at open (on stripped text, so no literal brace can miscount).
+    private static int MatchingBrace(string code, int open)
+    {
+        var depth = 0;
+        for (var k = open; k < code.Length; k++)
+        {
+            if (code[k] == '{') depth++;
+            else if (code[k] == '}' && --depth == 0) return k;
+        }
+        return code.Length;
+    }
+
+    internal static List<string> ContextConstructionOffenders(IEnumerable<(string RelativePath, string Source)> files) =>
+        files
+            .SelectMany(f => ContextConstructions(f.Source)
+                .Where(h => h.Rule == OptionsTypeRule
+                    ? !OptionsTypeAllowedFiles.Contains(f.RelativePath)
+                    : !ContextConstructionAllowedFiles.Contains(f.RelativePath))
+                .Select(h => $"{f.RelativePath}:{h.Line} [{h.Rule}]"))
+            .ToList();
 
     private static readonly Regex CreateUnfilteredCallRe = new(@"\bCreateUnfiltered\s*\(");
 
@@ -351,7 +640,9 @@ public class TenantScopeArchitectureTests
     [Fact]
     public void Fact3_ApplicationDbContext_is_constructed_only_by_the_tenant_factory()
     {
-        var offenders = OffendersOutside(ContextConstructionRe, ContextConstructionAllowedFiles);
+        var root = AppSourceRoot();
+        var offenders = ContextConstructionOffenders(AppSourceFiles()
+            .Select(f => (Path.GetRelativePath(root, f).Replace('\\', '/'), File.ReadAllText(f))));
 
         offenders.Should().BeEmpty(
             "construct contexts only through IDbContextFactory<ApplicationDbContext> (TenantDbContextFactory): a " +
@@ -362,14 +653,164 @@ public class TenantScopeArchitectureTests
     public void Fact3_guard_the_guard_the_factory_itself_is_seen_constructing()
     {
         var factory = File.ReadAllText(Path.Combine(AppSourceRoot(), "Tenancy", "TenantDbContextFactory.cs"));
-        CodeLinesMatching(factory, ContextConstructionRe).Should().NotBeEmpty(
-            "the pattern must match the one sanctioned construction, or it is matching nothing");
+        ContextConstructions(factory).Where(h => h.Rule == "explicit-new").Should().HaveCount(2,
+            "the scan must see the two sanctioned constructions (CreateDbContext, CreateDbContextAsync), or it is matching nothing");
     }
 
     [Fact]
-    public void NC_fact3_a_service_constructing_a_context_is_flagged()
+    public void Fact3_guard_the_guard_the_context_is_seen_naming_its_options_type()
     {
-        const string service = """
+        var context = File.ReadAllText(Path.Combine(AppSourceRoot(), "Data", "ApplicationDbContext.cs"));
+        ContextConstructions(context).Where(h => h.Rule == OptionsTypeRule).Should().NotBeEmpty(
+            "the options-type backstop must see the constructors' parameter type, or it is matching nothing");
+    }
+
+    // One row per construction form: the exact (line, rule) set each must yield.
+    public static TheoryData<string, string, string[]> ConstructionForms => new()
+    {
+        {
+            "explicit-new",
+            """
+            await using var db = new ApplicationDbContext(options);
+            """,
+            ["1 [explicit-new]"]
+        },
+        {
+            "explicit-new-split-line",
+            """
+            var a = new ApplicationDbContext
+                (options);
+            var b = new
+                ApplicationDbContext(options);
+            """,
+            ["1 [explicit-new]", "3 [explicit-new]"]
+        },
+        {
+            "explicit-new-qualified",
+            """
+            var a = new Data.ApplicationDbContext(options);
+            var b = new global::FamilyCoordinationApp.Data.ApplicationDbContext(options);
+            """,
+            ["1 [explicit-new]", "2 [explicit-new]"]
+        },
+        {
+            "explicit-new-after-literals",
+            """"
+            var q = '"'; var s = @"x""y"; var t = $"{(z ? "a" : "b")}"; var u = """ raw " quote """;
+            var db = new ApplicationDbContext(options);
+            /* c */ var db2 = new ApplicationDbContext(options); // new ApplicationDbContext(x)
+            """",
+            ["2 [explicit-new]", "3 [explicit-new]"]
+        },
+        {
+            "target-typed-declaration",
+            """
+            ApplicationDbContext a = new(options);
+            ApplicationDbContext? b = new(options);
+            private readonly ApplicationDbContext _c = new(options);
+            public ApplicationDbContext D { get; } = new(options);
+            Data.ApplicationDbContext e = new(options);
+            """,
+            [
+                "1 [target-typed-declaration]", "2 [target-typed-declaration]", "3 [target-typed-declaration]",
+                "4 [target-typed-declaration]", "5 [target-typed-declaration]",
+            ]
+        },
+        {
+            "target-typed-return-expression",
+            """
+            ApplicationDbContext Make() => new(options);
+            public static ApplicationDbContext? MakeNullable<T>(int n) where T : class => new(options);
+            ApplicationDbContext Prop => new(options);
+            async Task<ApplicationDbContext> MakeAsync() => new(options);
+            void Outer()
+            {
+                ApplicationDbContext Local() => new(options);
+            }
+            """,
+            [
+                "1 [target-typed-return]", "2 [target-typed-return]", "3 [target-typed-return]",
+                "4 [target-typed-return]", "7 [target-typed-return]",
+            ]
+        },
+        {
+            "target-typed-return-block",
+            """
+            ApplicationDbContext Make(bool fresh)
+            {
+                if (fresh)
+                    return new(options);
+                return new(other);
+            }
+            async Task<ApplicationDbContext> MakeAsync()
+            {
+                await Task.Yield();
+                return new(options);
+            }
+            async ValueTask<ApplicationDbContext?> MakeValueAsync() { return new(options); }
+            ApplicationDbContext Prop { get { return new(options); } }
+            """,
+            [
+                "4 [target-typed-return]", "5 [target-typed-return]", "10 [target-typed-return]",
+                "12 [target-typed-return]", "13 [target-typed-return]",
+            ]
+        },
+        {
+            "s0-target-typed-return",
+            """
+            internal static class NcScratchContextMaker
+            {
+                internal static ApplicationDbContext Make(DbContextOptions<ApplicationDbContext> o) => new(o);
+            }
+            """,
+            ["3 [options-type]", "3 [target-typed-return]"]
+        },
+        {
+            "typed-lambda",
+            """
+            var make = ApplicationDbContext (DbContextOptions<ApplicationDbContext> o) => new(o);
+            Func<DbContextOptions<ApplicationDbContext>, ApplicationDbContext> f = o => new(o);
+            Func<ApplicationDbContext> g = () =>
+            {
+                return new(options);
+            };
+            """,
+            ["1 [options-type]", "1 [typed-lambda]", "2 [options-type]", "2 [typed-lambda]", "5 [typed-lambda]"]
+        },
+        {
+            "activation",
+            """
+            var a = ActivatorUtilities.CreateInstance<ApplicationDbContext>(sp, options);
+            var b = ActivatorUtilities.GetServiceOrCreateInstance<Data.ApplicationDbContext>(sp);
+            var c = (ApplicationDbContext)Activator.CreateInstance(typeof(ApplicationDbContext), options)!;
+            var asm = typeof(ApplicationDbContext).Assembly;
+            """,
+            ["1 [activation]", "2 [activation]", "3 [activation]"]
+        },
+        {
+            "subclass",
+            """
+            public class SneakyContext : ApplicationDbContext
+            {
+                public SneakyContext(DbContextOptions<ApplicationDbContext> o) : base(o) { }
+            }
+            public sealed class PrimaryContext(DbContextOptions<ApplicationDbContext> o) : ApplicationDbContext(o);
+            public record RecordContext : Data.ApplicationDbContext;
+            """,
+            ["1 [subclass]", "3 [options-type]", "5 [options-type]", "5 [subclass]", "6 [subclass]"]
+        },
+        {
+            "options-type",
+            """
+            void Seed(ApplicationDbContext db) { }
+            void Run(DbContextOptions<ApplicationDbContext> opts) => Seed(new(opts));
+            var builder = new DbContextOptionsBuilder<ApplicationDbContext>();
+            """,
+            ["2 [options-type]", "3 [options-type]"]
+        },
+        {
+            "service-mixed",
+            """
             public class SneakyService(DbContextOptions<ApplicationDbContext> options)
             {
                 public async Task<int> CountAsync()
@@ -381,8 +822,40 @@ public class TenantScopeArchitectureTests
                     return await db.Rooms.CountAsync();
                 }
             }
-            """;
-        CodeLinesMatching(service, ContextConstructionRe).Should().Equal([5, 6]);
+            """,
+            ["1 [options-type]", "5 [explicit-new]", "6 [target-typed-declaration]"]
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(ConstructionForms))]
+    public void NC_fact3_each_construction_form_is_flagged_by_its_rule(string form, string source, string[] expected)
+    {
+        ContextConstructions(source).Select(h => $"{h.Line} [{h.Rule}]")
+            .Should().BeEquivalentTo(expected, "form {0} must yield exactly its (line, rule) set", form);
+    }
+
+    [Fact]
+    public void NC_fact3_forms_in_comments_and_strings_are_not_code()
+    {
+        const string notCode = """"
+            // new ApplicationDbContext(o); ApplicationDbContext a = new(o); ApplicationDbContext M() => new(o);
+            /* ApplicationDbContext (o) => new(o); typeof(ApplicationDbContext); class X : ApplicationDbContext
+               DbContextOptions<ApplicationDbContext> Func<int, ApplicationDbContext> f = o => new(o); */
+            /// <c>ActivatorUtilities.CreateInstance<ApplicationDbContext>(sp)</c> ApplicationDbContext M() { return new(o); }
+            var a = "new ApplicationDbContext(o); \"ApplicationDbContext b = new(o);\" DbContextOptions<ApplicationDbContext>";
+            var b = @"ApplicationDbContext M() => new(o);
+                class X : ApplicationDbContext { } ""typeof(ApplicationDbContext)"" ";
+            var c = $"{n} ApplicationDbContext M() {{ return new(o); }} Func<int, ApplicationDbContext> f = o => new(o);";
+            var d = """
+                ApplicationDbContext (o) => new(o); GetServiceOrCreateInstance<ApplicationDbContext>(sp)
+                record R(DbContextOptions<ApplicationDbContext> o) : ApplicationDbContext(o);
+                """;
+            var e = '"';
+            var asm = typeof(ApplicationDbContext).Assembly;
+            """";
+        ContextConstructions(notCode).Should().BeEmpty(
+            "comments, string and char literals, and typeof(ApplicationDbContext).Assembly are not constructions");
     }
 
     // Companion to fact 3: the Unfiltered tenant is reachable only through the

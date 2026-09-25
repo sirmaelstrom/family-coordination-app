@@ -1,6 +1,8 @@
+using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Tenancy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -332,5 +334,30 @@ public class TenantContextTests
         options.EnforceFilter.Should().BeTrue();
         options.EnforceWrites.Should().BeTrue();
         options.OutOfRequest.Should().Be(OutOfRequestMode.Throw);
+    }
+
+    [Fact]
+    public void Each_context_gets_its_own_copy_of_the_TenancyOptions()
+    {
+        // PR #120 review 1 (opus): contexts used to share the cached IOptions value, so one context's mutation
+        // reached every other context and the source.
+        var source = Options.Create(new TenancyOptions());
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"tenancy-options-{Guid.NewGuid()}")
+            .Options;
+        var factory = new TenantDbContextFactory(dbOptions, Create(new DefaultHttpContext()), source, TimeProvider.System);
+        using var a = factory.CreateDbContext();
+        using var b = factory.CreateDbContext();
+
+        a.Tenancy.EnforceFilter = false;
+
+        b.Tenancy.EnforceFilter.Should().BeTrue("another context's copy is untouched");
+        source.Value.EnforceFilter.Should().BeTrue("the source options are untouched");
+
+        source.Value.EnforceWrites = false;
+        source.Value.OutOfRequest = OutOfRequestMode.Unfiltered;
+
+        a.Tenancy.EnforceWrites.Should().BeTrue("a context's copy is fixed at creation");
+        a.Tenancy.OutOfRequest.Should().Be(OutOfRequestMode.Throw);
     }
 }

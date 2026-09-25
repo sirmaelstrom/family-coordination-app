@@ -12,9 +12,10 @@ public partial class ApplicationDbContext : DbContext
 {
     /// <summary>
     /// Options-only: a permanently <see cref="TenantState.Unfiltered"/> tenant with default options (D12). Kept for
-    /// the unit tests' direct construction and EF design-time. The architecture guard bans
-    /// <c>new ApplicationDbContext(</c> in <c>src</c> outside <see cref="TenantDbContextFactory"/>, so production
-    /// code cannot reach Unfiltered through it.
+    /// the unit tests' direct construction and EF design-time. Architecture-guard fact 3 bans every construction form
+    /// it names (explicit and target-typed <c>new</c>, typed lambdas, activation, subclassing, and any mention of this
+    /// context's options type) in <c>src</c> outside <see cref="TenantDbContextFactory"/>, so production code does not
+    /// reach Unfiltered through it, within the guard's stated limits.
     /// </summary>
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : this(options, TenantContext.CreateUnfiltered(), new TenancyOptions()) { }
@@ -26,13 +27,17 @@ public partial class ApplicationDbContext : DbContext
         ArgumentNullException.ThrowIfNull(tenant);
         ArgumentNullException.ThrowIfNull(tenancy);
         Tenant = tenant;
-        Tenancy = tenancy;
+        // A copy, taken here rather than in the factory so a hand-built context gets one too.
+        Tenancy = tenancy.Snapshot();
     }
 
     /// <summary>The creating scope's tenant. Services reach <c>RunAs</c>/<c>AllowCrossTenantWrite</c> through here.</summary>
     internal ITenantContext Tenant { get; }
 
-    /// <summary>The <c>Tenancy</c> options snapshot this context was created with.</summary>
+    /// <summary>
+    /// This context's own copy of the <c>Tenancy</c> options, taken at construction. Mutating it affects only this
+    /// context, never the <c>IOptions</c> source or another context.
+    /// </summary>
     internal TenancyOptions Tenancy { get; }
 
     /// <summary>The clock WP-03's write step stamps audit fields from (D16). Set by the factory.</summary>

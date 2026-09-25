@@ -16,4 +16,10 @@ public sealed class TenancyOptions
 
     /// <summary>What an Unset tenant means outside any HTTP request (D15).</summary>
     public OutOfRequestMode OutOfRequest { get; set; } = OutOfRequestMode.Throw;
+
+    /// <summary>
+    /// A copy for one context, so no context aliases the shared <c>IOptions</c> value. Every member is a value type,
+    /// so a memberwise copy is complete.
+    /// </summary>
+    internal TenancyOptions Snapshot() => (TenancyOptions)MemberwiseClone();
 }
