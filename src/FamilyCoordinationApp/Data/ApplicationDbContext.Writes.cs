@@ -14,9 +14,12 @@ namespace FamilyCoordinationApp.Data;
 /// never touched.</item>
 /// <item>Every Added, Modified or Deleted <see cref="ITenantEntity"/> is checked against the tenant: an Added row whose
 /// <c>HouseholdId</c> is unset (0, or EF's temporary key) is stamped, parents before children, except under a
-/// <c>Household</c> created in the same save, which is refused (<see cref="StampHouseholdId"/>); a row of another
+/// <c>Household</c> added in the same save, which is refused (<see cref="StampHouseholdId"/>); a row of another
 /// household throws <see cref="CrossTenantWriteException"/> unless inside <c>AllowCrossTenantWrite</c>; a changed
-/// <c>HouseholdId</c> always throws; an Unset tenant throws <see cref="TenantNotSetException"/>.</item>
+/// <c>HouseholdId</c> always throws; an Unset tenant throws <see cref="TenantNotSetException"/>. For a composite-key
+/// type (the key includes <c>HouseholdId</c>), EF's own key guard refuses a changed <c>HouseholdId</c> first, as an
+/// <see cref="InvalidOperationException"/> from <c>ChangeTracker.Entries()</c>: the write is still blocked, but that
+/// refusal is not a tenancy exception, so the D13 soak's log grep can't see it.</item>
 /// <item>A Modified or Deleted row whose primary key excludes <c>HouseholdId</c> (<c>User</c>,
 /// <c>HouseholdInvite</c>, <c>HouseholdCalendarToken</c>) must exist in the tenant's household, because its
 /// <c>UPDATE … WHERE Id = @id</c> would otherwise reach a row whose tracked <c>HouseholdId</c> was forged. A row
@@ -67,16 +70,21 @@ public partial class ApplicationDbContext
     }
 
     /// <summary>
-    /// The surrogate-key tenant types and their ownership queries. A unit test holds these keys equal to the
-    /// model-derived set (tenant types whose primary key excludes <c>HouseholdId</c>), and a save of a surrogate-key
-    /// tenant type missing here throws, so a new one can't slip past the check.
+    /// The surrogate-key tenant types and their ownership queries. A unit test holds these keys
+    /// (<see cref="OwnershipQueryTypes"/>) equal to the model-derived set (tenant types whose primary key excludes
+    /// <c>HouseholdId</c>), and a save of a surrogate-key tenant type missing here throws, so a new one can't slip past
+    /// the check. Private, with the <see cref="OwnershipQuery"/> record: its existence delegates wrap a Tenant bypass,
+    /// which must not be callable from elsewhere in the assembly without a pragma of its own.
     /// </summary>
-    internal static readonly IReadOnlyDictionary<Type, OwnershipQuery> OwnershipQueries = new Dictionary<Type, OwnershipQuery>
+    private static readonly IReadOnlyDictionary<Type, OwnershipQuery> OwnershipQueries = new Dictionary<Type, OwnershipQuery>
     {
         [typeof(User)] = OwnershipQuery.For<User>(),
         [typeof(HouseholdInvite)] = OwnershipQuery.For<HouseholdInvite>(),
         [typeof(HouseholdCalendarToken)] = OwnershipQuery.For<HouseholdCalendarToken>(),
     };
+
+    /// <summary>The types <see cref="OwnershipQueries"/> covers, and nothing callable (for the dispatch-set test).</summary>
+    internal static IReadOnlyCollection<Type> OwnershipQueryTypes => [.. OwnershipQueries.Keys];
 
     /// <summary>
     /// Stamps and validates every pending write, and returns the surrogate-key entries whose ownership the caller
@@ -100,8 +108,15 @@ public partial class ApplicationDbContext
             throw WriteWithNoTenant();
         }
 
-        StampHouseholdId(tenantEntries, tenantHh);
-        return Validate(tenantEntries, tenantHh, Tenant.IsCrossTenantWriteAllowed);
+        // The keys of the households this same save inserts, temporary or permanent (an explicit Id is permanent).
+        // Read from the entries already walked, so no second DetectChanges.
+        var newHouseholdKeys = entries
+            .Where(e => e.State == EntityState.Added && e.Entity is Household)
+            .Select(e => (int)e.Property(nameof(Household.Id)).CurrentValue!)
+            .ToHashSet();
+
+        StampHouseholdId(tenantEntries, tenantHh, newHouseholdKeys);
+        return Validate(tenantEntries, tenantHh, Tenant.IsCrossTenantWriteAllowed, newHouseholdKeys);
     }
 
     /// <summary>The same bypass states as the read filter's, minus the kill switch, which has its own setting here.</summary>
@@ -130,39 +145,34 @@ public partial class ApplicationDbContext
     /// through the entry clears EF's temporary flag and lets it fix up the keys.
     /// <para><b>"Unset" is not just 0 here.</b> <c>HouseholdId</c> is a foreign key to the store-generated
     /// <c>Household.Id</c>, so when a row is added with 0, EF replaces it with a <b>temporary</b> value (and would
-    /// refuse the save as an unknown key). So a temporary value counts as unset, unless it came from a
-    /// <c>Household</c> principal tracked in this save (a household being created now): that row is left alone, and
-    /// <see cref="Validate"/> refuses the save (<c>UnderANewHousehold</c>), inside <c>AllowCrossTenantWrite</c> too.</para>
-    /// <para><b>The refusal is of the save, not of every stamp.</b> Only the non-tenant foreign key is checked here, so a
-    /// tenant child of such a row (a <c>RecipeIngredient</c> under a new household's <c>Recipe</c>) got its temporary
-    /// key through a tenant principal and IS stamped to the tenant in the tracker before the parent's refusal aborts
-    /// the save. Nothing reaches the database, but the context stays mutated after the throw: discard it.</para>
+    /// refuse the save as an unknown key). So a temporary value counts as unset too.</para>
+    /// <para><b>Except under a household added in this save.</b> A row whose <c>HouseholdId</c> is the key of a
+    /// <c>Household</c> entry in state Added (<paramref name="newHouseholdKeys"/>, read from the change tracker) is
+    /// never stamped, and <see cref="Validate"/> refuses the save (<c>UnderANewHousehold</c>), inside
+    /// <c>AllowCrossTenantWrite</c> too. The match is by key value, so it holds whether that key is temporary or an
+    /// explicit permanent <c>Id</c>, and whether or not the row has a navigation to the household. A tenant child of
+    /// such a row (a <c>RecipeIngredient</c> under a new household's <c>Recipe</c>) carries the same household key
+    /// through its composite foreign key, so it is not stamped either. Limit: a row left at 0 gets EF's temporary
+    /// key, which could in principle equal a new household's temporary key in the same save; it is then refused rather
+    /// than stamped (fail closed, and no flow in <c>src</c> adds a household alongside unrelated tenant rows).</para>
+    /// <para>The refusal is of the save. Other rows in it may already be stamped when <see cref="Validate"/> throws, and
+    /// the context stays mutated after the throw: discard it.</para>
     /// </summary>
-    private static void StampHouseholdId(List<EntityEntry> tenantEntries, int tenantHh)
+    private static void StampHouseholdId(List<EntityEntry> tenantEntries, int tenantHh, HashSet<int> newHouseholdKeys)
     {
         foreach (var entry in tenantEntries
                      .Where(e => e.State == EntityState.Added)
                      .OrderBy(e => TenantParentDepth(e.Metadata, [])))
         {
             var householdId = entry.Property(nameof(ITenantEntity.HouseholdId));
-            var unset = (int)householdId.CurrentValue! == 0
-                        || (householdId.IsTemporary && !HouseholdIdComesFromATrackedHousehold(entry));
-            if (unset)
+            var current = (int)householdId.CurrentValue!;
+            if (newHouseholdKeys.Contains(current)) continue;
+            if (current == 0 || householdId.IsTemporary)
             {
                 householdId.CurrentValue = tenantHh;
             }
         }
     }
-
-    /// <summary>
-    /// Is this row's <c>HouseholdId</c> the key of a non-tenant principal (a <c>Household</c>) that this context
-    /// tracks? EF fixes up both navigation directions, so the dependent's reference is set either way.
-    /// </summary>
-    private static bool HouseholdIdComesFromATrackedHousehold(EntityEntry entry) =>
-        entry.Metadata.GetForeignKeys()
-            .Where(fk => fk.Properties.Any(p => p.Name == nameof(ITenantEntity.HouseholdId))
-                         && !typeof(ITenantEntity).IsAssignableFrom(fk.PrincipalEntityType.ClrType))
-            .Any(fk => fk.DependentToPrincipal is { } navigation && entry.Reference(navigation.Name).CurrentValue is not null);
 
     /// <summary>The longest chain of foreign keys from this type to other tenant types: 0 for a root.</summary>
     private static int TenantParentDepth(IReadOnlyEntityType type, HashSet<IReadOnlyEntityType> path)
@@ -181,7 +191,8 @@ public partial class ApplicationDbContext
         return depth;
     }
 
-    private static List<PendingOwnershipCheck> Validate(List<EntityEntry> tenantEntries, int tenantHh, bool crossTenantAllowed)
+    private static List<PendingOwnershipCheck> Validate(
+        List<EntityEntry> tenantEntries, int tenantHh, bool crossTenantAllowed, HashSet<int> newHouseholdKeys)
     {
         var ownershipChecks = new List<PendingOwnershipCheck>();
         foreach (var entry in tenantEntries)
@@ -194,9 +205,12 @@ public partial class ApplicationDbContext
             {
                 // Refused even inside AllowCrossTenantWrite: no sanctioned cross-write adds rows under a household
                 // created in the same save (invite accept touches an existing invite and a non-tenant connection).
-                if (householdId.IsTemporary)
+                // The key set is the detection; a temporary key left after the stamp is a fail-closed backstop (the
+                // stamp leaves one only on a key in the set, so it can't fire alone today).
+                if (newHouseholdKeys.Contains(current) || householdId.IsTemporary)
                 {
-                    throw CrossTenantWriteException.UnderANewHousehold(EntityName(entry), tenantHh);
+                    throw CrossTenantWriteException.UnderANewHousehold(
+                        EntityName(entry), KeyText(entry), current, householdId.IsTemporary, tenantHh);
                 }
                 if (current != tenantHh && !crossTenantAllowed)
                 {
@@ -220,9 +234,8 @@ public partial class ApplicationDbContext
             {
                 if (!OwnershipQueries.TryGetValue(entry.Metadata.ClrType, out var ownership))
                 {
-                    throw new InvalidOperationException(
-                        $"{EntityName(entry)} is a tenant entity whose primary key excludes HouseholdId, but it has no " +
-                        "ownership query. Add it to ApplicationDbContext.OwnershipQueries (D9).");
+                    throw CrossTenantWriteException.NoOwnershipQuery(
+                        EntityName(entry), KeyText(entry), entry.State.ToString(), original, tenantHh);
                 }
                 var id = (int)entry.Property("Id").OriginalValue!;
                 ownershipChecks.Add(new PendingOwnershipCheck(ownership, id, tenantHh, entry));
@@ -262,7 +275,7 @@ public partial class ApplicationDbContext
     private bool ExistsInAnyHousehold<TEntity>(int id) where TEntity : class, ITenantEntity
     {
         // TENANT-SCOPE-OK: returns a boolean only, consulted only after the tenant-scoped ownership query failed
-        // (the gate at Data/ApplicationDbContext.Writes.cs:50); true refuses the write, false lets EF report the delete.
+        // (the gate at Data/ApplicationDbContext.Writes.cs:53); true refuses the write, false lets EF report the delete.
         return Set<TEntity>().IgnoreQueryFilters(["Tenant", "SoftDelete"]).Any(e => EF.Property<int>(e, "Id") == id);
     }
 
@@ -270,12 +283,12 @@ public partial class ApplicationDbContext
     private async Task<bool> ExistsInAnyHouseholdAsync<TEntity>(int id, CancellationToken cancellationToken) where TEntity : class, ITenantEntity
     {
         // TENANT-SCOPE-OK: returns a boolean only, consulted only after the tenant-scoped ownership query failed
-        // (the gate at Data/ApplicationDbContext.Writes.cs:62); true refuses the write, false lets EF report the delete.
+        // (the gate at Data/ApplicationDbContext.Writes.cs:65); true refuses the write, false lets EF report the delete.
         return await Set<TEntity>().IgnoreQueryFilters(["Tenant", "SoftDelete"]).AnyAsync(e => EF.Property<int>(e, "Id") == id, cancellationToken);
     }
 
     /// <summary>One surrogate-key type's ownership query and its any-household existence check, sync and async.</summary>
-    internal sealed record OwnershipQuery(
+    private sealed record OwnershipQuery(
         Func<ApplicationDbContext, int, int, bool> Sync,
         Func<ApplicationDbContext, int, int, CancellationToken, Task<bool>> Async,
         Func<ApplicationDbContext, int, bool> ExistsSync,

@@ -109,13 +109,17 @@ public class TenantWriteTests
     {
         var household = new Household { Name = "new" };
         var room = new Room { Household = household, RoomId = 10, Name = "r", Icon = "r" };
-        await using (var db = Context(Caller(1)))
+        // Tenant 99, which InMemory's generator never hands this household, so a coincidence can't make the save pass.
+        await using (var db = Context(Caller(99)))
         {
             db.Rooms.Add(room);
 
-            // InMemory generates the new household's real id on Add, so this is a plain mismatch here. Npgsql keeps a
-            // temporary key until the insert (TenantWriteIntegrationTests covers that message).
-            await db.Invoking(d => d.SaveChangesAsync()).Should().ThrowExactlyAsync<CrossTenantWriteException>();
+            // InMemory generates the new household's real (permanent) id on Add; the refusal matches it against the
+            // Added-household key set, so it is UnderANewHousehold here too, naming that id. Npgsql's temporary key is
+            // in TenantWriteIntegrationTests.
+            await db.Invoking(d => d.SaveChangesAsync()).Should().ThrowExactlyAsync<CrossTenantWriteException>()
+                .WithMessage($"Added Room {{HouseholdId={household.Id}, RoomId=10}} belongs to a household created in this " +
+                             $"same save (household {household.Id}), but the tenant is household 99*");
 
             // The room's own tracked foreign key, not the household's generated key: it still names the new household.
             db.Entry(room).Property(r => r.HouseholdId).CurrentValue.Should().Be(household.Id,
@@ -375,9 +379,9 @@ public class TenantWriteTests
             .Where(t => typeof(ITenantEntity).IsAssignableFrom(t.ClrType) && !ApplicationDbContext.KeyIncludesHouseholdId(t))
             .Select(t => t.ClrType);
 
-        ApplicationDbContext.OwnershipQueries.Keys.Should().BeEquivalentTo(surrogateKeyTenantTypes,
+        ApplicationDbContext.OwnershipQueryTypes.Should().BeEquivalentTo(surrogateKeyTenantTypes,
             "a Modified/Deleted surrogate-key row with a forged HouseholdId would pass every in-memory check (D9)");
-        ApplicationDbContext.OwnershipQueries.Keys.Should().BeEquivalentTo(
+        ApplicationDbContext.OwnershipQueryTypes.Should().BeEquivalentTo(
             [typeof(User), typeof(HouseholdInvite), typeof(HouseholdCalendarToken)], "today's three (D9)");
     }
 

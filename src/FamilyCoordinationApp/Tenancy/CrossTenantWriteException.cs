@@ -6,14 +6,19 @@ namespace FamilyCoordinationApp.Tenancy;
 /// <list type="bullet">
 /// <item>an Added, Modified or Deleted <see cref="ITenantEntity"/> whose <c>HouseholdId</c> is not the tenant's,
 /// outside an <see cref="ITenantContext.AllowCrossTenantWrite"/> scope;</item>
-/// <item>any change to a row's <c>HouseholdId</c>, and an Added row under a <c>Household</c> created in the same save,
-/// both refused even inside that scope;</item>
-/// <item>a surrogate-key row that exists, but in another household.</item>
+/// <item>any change to a row's <c>HouseholdId</c>, and an Added row under a <c>Household</c> added in the same save,
+/// both refused even inside that scope. For a composite-key type (the key includes <c>HouseholdId</c>), EF's own key
+/// guard refuses a changed <c>HouseholdId</c> first, as an <see cref="InvalidOperationException"/>, so this exception
+/// covers that change on the surrogate-key types only;</item>
+/// <item>a surrogate-key row that exists, but in another household;</item>
+/// <item>a surrogate-key tenant type with no ownership query (fail closed: its ownership can't be checked).</item>
 /// </list>
 /// The message names the entity type, its key values and both household ids.
 /// <para>It derives from <see cref="Exception"/>, NOT <see cref="InvalidOperationException"/>, on purpose: endpoint
 /// handlers catch <see cref="InvalidOperationException"/> as "not found" (a 404/409 with no log line), which would
-/// hide a refusal from the D13 soak. A refusal must surface as an unhandled exception and be logged.</para>
+/// hide a refusal from the D13 soak. The write step's own refusals must surface as unhandled exceptions and be
+/// logged. EF's composite-key guard above is not one of them: the write is still blocked, but that refusal is not
+/// soak-visible.</para>
 /// </summary>
 public sealed class CrossTenantWriteException : Exception
 {
@@ -26,14 +31,29 @@ public sealed class CrossTenantWriteException : Exception
             "scope at an allowlisted call site (D9), or RunAs(householdId) for system work (D11).");
 
     /// <summary>
-    /// The row was added under a <c>Household</c> created in the same save, so its <c>HouseholdId</c> is still EF's
-    /// temporary key and can't be the tenant's. Refused even inside an <c>AllowCrossTenantWrite</c> scope: no
-    /// sanctioned cross-write creates a household. Save the household first, then add its rows inside
-    /// <c>RunAs(household.Id)</c> (the setup and approve paths do exactly this).
+    /// The row was added under a <c>Household</c> added in the same save: its <c>HouseholdId</c> is the key of a
+    /// <c>Household</c> entry in state Added (EF's temporary key, or an explicit <c>Id</c>), so it can't be the
+    /// tenant's. Refused even inside an <c>AllowCrossTenantWrite</c> scope: no sanctioned cross-write creates a
+    /// household. Save the household first, then add its rows inside <c>RunAs(household.Id)</c> (the setup and approve
+    /// paths do exactly this). A temporary household key is a large negative number, so the message labels it instead
+    /// of printing it (the row's key text still shows it).
     /// </summary>
-    internal static CrossTenantWriteException UnderANewHousehold(string entity, int tenantHouseholdId) =>
-        new($"Added {entity} belongs to a household created in this same save, but the tenant is household " +
-            $"{tenantHouseholdId}. Save the Household first, then add its rows inside context.Tenant.RunAs(household.Id) (D11).");
+    internal static CrossTenantWriteException UnderANewHousehold(
+        string entity, string key, int newHouseholdId, bool newHouseholdIdIsTemporary, int tenantHouseholdId) =>
+        new($"Added {entity} {key} belongs to a household created in this same save (" +
+            (newHouseholdIdIsTemporary ? "a temporary key; the household is unsaved" : $"household {newHouseholdId}") +
+            $"), but the tenant is household {tenantHouseholdId}. Save the Household first, then add its rows inside " +
+            "context.Tenant.RunAs(household.Id) (D11).");
+
+    /// <summary>
+    /// A tenant type whose primary key excludes <c>HouseholdId</c> has no ownership query, so the write step can't
+    /// check that a Modified or Deleted row is the tenant's: refused (fail closed). Not an
+    /// <see cref="InvalidOperationException"/>, so an endpoint's catch can't turn it into a silent 404.
+    /// </summary>
+    internal static CrossTenantWriteException NoOwnershipQuery(string entity, string key, string change, int trackedHouseholdId, int tenantHouseholdId) =>
+        new($"{change} {entity} {key} claims household {trackedHouseholdId} (the tenant is household {tenantHouseholdId}), " +
+            "but its type's primary key excludes HouseholdId and it has no ownership query, so the write is refused. " +
+            "Add it to ApplicationDbContext.OwnershipQueries (D9).");
 
     /// <summary>
     /// The row's own <c>HouseholdId</c> changed, or is marked modified with an unchanged value (<c>Update()</c>, or

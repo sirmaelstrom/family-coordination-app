@@ -210,7 +210,8 @@ public sealed class TenantWriteIntegrationTests(PostgresContainerFixture postgre
             db.Rooms.Add(new Room { Household = new Household { Name = "new" }, RoomId = 71, Name = "r", Icon = "r" });
 
             await db.Invoking(d => d.SaveChangesAsync()).Should().ThrowExactlyAsync<CrossTenantWriteException>()
-                .WithMessage("Added Room belongs to a household created in this same save*");
+                .WithMessage("Added Room {HouseholdId=*, RoomId=71} belongs to a household created in this same save " +
+                             $"(a temporary key; the household is unsaved), but the tenant is household {A}*");
         }
         LeaveRequest();
 
@@ -274,14 +275,22 @@ public sealed class TenantWriteIntegrationTests(PostgresContainerFixture postgre
             var tenant = scope.ServiceProvider.GetRequiredService<ITenantContext>();
             await using var db = await factory.CreateDbContextAsync();
             var recipe = new Recipe { Household = new Household { Name = "new" }, RecipeId = 90, Name = "under a new household" };
-            recipe.Ingredients.Add(new RecipeIngredient { RecipeId = 90, IngredientId = 1, Name = "salt" });
+            var ingredient = new RecipeIngredient { RecipeId = 90, IngredientId = 1, Name = "salt" };
+            recipe.Ingredients.Add(ingredient);
             db.Recipes.Add(recipe);
 
             using (tenant.AllowCrossTenantWrite("amendment 1, item 3: the scope does not admit a new household"))
             {
                 await db.Invoking(d => d.SaveChangesAsync()).Should().ThrowExactlyAsync<CrossTenantWriteException>()
-                    .WithMessage("Added Recipe belongs to a household created in this same save*");
+                    .WithMessage("Added Recipe {HouseholdId=*, RecipeId=90} belongs to a household created in this same save " +
+                                 $"(a temporary key; the household is unsaved), but the tenant is household {A}*");
             }
+
+            // The grandchild (amendment 2): it carries the new household's key through its composite FK to the recipe,
+            // so the key-set match leaves it unstamped too, instead of re-pointing it at the tenant in the tracker.
+            var ingredientHousehold = db.Entry(ingredient).Property(i => i.HouseholdId);
+            ingredientHousehold.CurrentValue.Should().Be(db.Entry(recipe).Property(r => r.HouseholdId).CurrentValue);
+            ingredientHousehold.IsTemporary.Should().BeTrue();
         }
         LeaveRequest();
 
@@ -289,6 +298,68 @@ public sealed class TenantWriteIntegrationTests(PostgresContainerFixture postgre
         (await check.Households.CountAsync()).Should().Be(2, "no household was created");
         (await check.Recipes.AnyAsync(r => r.RecipeId == 90)).Should().BeFalse();
         (await check.RecipeIngredients.AnyAsync(i => i.RecipeId == 90)).Should().BeFalse();
+    }
+
+    // ── A household added with an explicit (permanent) id (amendment 2, item 1) ──
+
+    [Fact]
+    public async Task Inside_AllowCrossTenantWrite_rows_under_a_household_added_with_an_explicit_id_are_still_refused()
+    {
+        var (scope, factory) = AsCaller(_factory, A, ChoresWebAppFactory.UserAId);
+        using (scope)
+        {
+            var tenant = scope.ServiceProvider.GetRequiredService<ITenantContext>();
+            await using var db = await factory.CreateDbContextAsync();
+            // Household.Id is identity-by-default, so an explicit id is a permanent key, never a temporary one.
+            var recipe = new Recipe { Household = new Household { Id = 9001, Name = "explicit id" }, RecipeId = 91, Name = "under it" };
+            recipe.Ingredients.Add(new RecipeIngredient { RecipeId = 91, IngredientId = 1, Name = "salt" });
+            db.Recipes.Add(recipe);
+
+            using (tenant.AllowCrossTenantWrite("amendment 2, item 1: an explicit-id household is still new"))
+            {
+                await db.Invoking(d => d.SaveChangesAsync()).Should().ThrowExactlyAsync<CrossTenantWriteException>()
+                    .WithMessage("Added Recipe {HouseholdId=9001, RecipeId=91} belongs to a household created in this same " +
+                                 $"save (household 9001), but the tenant is household {A}*");
+            }
+        }
+        LeaveRequest();
+
+        await using var check = await Unfiltered().CreateDbContextAsync();
+        (await check.Households.CountAsync()).Should().Be(2, "no household was created");
+        (await check.Recipes.AnyAsync(r => r.RecipeId == 91)).Should().BeFalse();
+        (await check.RecipeIngredients.AnyAsync(i => i.RecipeId == 91)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_row_naming_a_new_household_only_by_its_foreign_key_is_refused_inside_AllowCrossTenantWrite()
+    {
+        var (scope, factory) = AsCaller(_factory, A, ChoresWebAppFactory.UserAId);
+        using (scope)
+        {
+            var tenant = scope.ServiceProvider.GetRequiredService<ITenantContext>();
+            await using var db = await factory.CreateDbContextAsync();
+            var household = new Household { Id = 9002, Name = "explicit id" };
+            db.Households.Add(household);
+            var room = new Room { HouseholdId = 9002, RoomId = 72, Name = "fk only", Icon = "r" }; // no navigation set
+            db.Rooms.Add(room);
+
+            // Measured (amendment 2): EF's fixup sets the back-navigation from the FK when the principal is tracked, so
+            // on a real entity this test can't tell key-based detection from navigation-based. The navigation-less
+            // case is TenantWriteProbeTests.
+            db.Entry(room).Reference(r => r.Household).CurrentValue.Should().BeSameAs(household);
+
+            using (tenant.AllowCrossTenantWrite("amendment 2, item 1b: a plain mismatch can't be what refuses it"))
+            {
+                await db.Invoking(d => d.SaveChangesAsync()).Should().ThrowExactlyAsync<CrossTenantWriteException>()
+                    .WithMessage("Added Room {HouseholdId=9002, RoomId=72} belongs to a household created in this same " +
+                                 $"save (household 9002), but the tenant is household {A}*");
+            }
+        }
+        LeaveRequest();
+
+        await using var check = await Unfiltered().CreateDbContextAsync();
+        (await check.Households.CountAsync()).Should().Be(2, "no household was created");
+        (await check.Rooms.AnyAsync(r => r.RoomId == 72)).Should().BeFalse();
     }
 
     // ── A tenancy refusal is not swallowed by an endpoint's catch (amendment 1, item 1) ──
