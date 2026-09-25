@@ -69,8 +69,10 @@ public sealed class HouseholdCalendarTokenService(IDbContextFactory<ApplicationD
         var hash = HashForLookup(token);
 
         await using var context = await dbFactory.CreateDbContextAsync(ct);
-        // TENANT-SCOPE-OK: capability lookup by globally unique token hash is the scope source.
+        // TENANT-SCOPE-OK: capability lookup by globally unique token hash is the scope source. The anonymous feed
+        // (CalendarTokenEndpoints GetFeed, unmarked) has no tenant until this row names one.
         return await context.HouseholdCalendarTokens
+            .IgnoreQueryFilters(["Tenant"])
             .AsNoTracking()
             .Where(calendarToken => calendarToken.TokenHash == hash && calendarToken.RevokedAt == null)
             .FirstOrDefaultAsync(ct);

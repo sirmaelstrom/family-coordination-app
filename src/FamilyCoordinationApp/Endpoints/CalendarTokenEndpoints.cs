@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Services.Calendar;
+using FamilyCoordinationApp.Services.Dtos;
 using FamilyCoordinationApp.Services.Interfaces;
 using FamilyCoordinationApp.Tenancy;
 using Microsoft.AspNetCore.Diagnostics;
@@ -80,6 +81,7 @@ public static class CalendarTokenEndpoints
         ICalendarWriter calendarWriter,
         TimeProvider timeProvider,
         TimeZoneInfo timeZone,
+        ITenantContext tenant,
         CancellationToken ct)
     {
         var calendarToken = await tokenService.ResolveActiveAsync(token, ct);
@@ -88,8 +90,14 @@ public static class CalendarTokenEndpoints
         var nowUtc = timeProvider.GetUtcNow();
         var localToday = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(nowUtc, timeZone).DateTime);
         var weekStart = mealPlanService.GetWeekStartDate(localToday);
-        var boards = await Task.WhenAll(Enumerable.Range(0, 4)
-            .Select(offset => boardService.GetBoardAsync(calendarToken.HouseholdId, weekStart.AddDays(offset * 7), ct)));
+        // The anonymous feed has no caller: the token's household is the tenant (D11). The scope wraps the whole
+        // WhenAll, so all four concurrent loads read it; nothing inside changes the tenant.
+        MealPlanBoardDto[] boards;
+        using (tenant.RunAs(calendarToken.HouseholdId))
+        {
+            boards = await Task.WhenAll(Enumerable.Range(0, 4)
+                .Select(offset => boardService.GetBoardAsync(calendarToken.HouseholdId, weekStart.AddDays(offset * 7), ct)));
+        }
         var content = calendarWriter.WriteMealPlan(calendarToken.HouseholdId, weekStart, boards.SelectMany(board => board.Entries), nowUtc);
         return new CalendarResult(content);
     }

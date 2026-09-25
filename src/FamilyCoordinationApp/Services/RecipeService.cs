@@ -176,7 +176,7 @@ public class RecipeService(
     private static async Task<int> GetNextRecipeIdInternalAsync(ApplicationDbContext context, int householdId, CancellationToken cancellationToken)
     {
         var maxId = await context.Recipes
-            .IgnoreQueryFilters() // Include soft-deleted
+            .IgnoreQueryFilters(["SoftDelete"]) // Include soft-deleted
             .Where(r => r.HouseholdId == householdId)
             .MaxAsync(r => (int?)r.RecipeId, cancellationToken) ?? 0;
 
@@ -252,7 +252,10 @@ public class RecipeService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         // PRIVACY: Do NOT include CreatedBy — connected households should not see individual user details
+        // TENANT-SCOPE-OK: a connected household's recipes; gated by AreHouseholdsConnectedAsync at
+        // RecipesEndpoints.cs:453 (ListConnectedRecipes, the only caller). Soft delete stays in force.
         var query = context.Recipes
+            .IgnoreQueryFilters(["Tenant"])
             .Where(r => r.HouseholdId == connectedHouseholdId)
             .Include(r => r.Ingredients.OrderBy(i => i.SortOrder))
             .AsQueryable();
@@ -270,6 +273,19 @@ public class RecipeService(
         return await query
             .OrderBy(r => r.Name)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<Recipe?> GetConnectedRecipeAsync(int connectedHouseholdId, int recipeId, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        // TENANT-SCOPE-OK: one recipe of a connected household; gated by AreHouseholdsConnectedAsync at
+        // RecipesEndpoints.cs:477 and RecipesEndpoints.cs:502 (its only callers). The ordinary GetRecipeAsync stays filtered.
+        return await context.Recipes
+            .IgnoreQueryFilters(["Tenant"])
+            .Where(r => r.HouseholdId == connectedHouseholdId && r.RecipeId == recipeId)
+            .Include(r => r.Ingredients.OrderBy(i => i.SortOrder))
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     public async Task<Recipe> CopyRecipeFromConnectedHouseholdAsync(
@@ -319,7 +335,10 @@ public class RecipeService(
         int sourceHouseholdId, int sourceRecipeId, CancellationToken cancellationToken)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        // TENANT-SCOPE-OK: the copy source lives in a connected household; gated by AreHouseholdsConnectedAsync at
+        // RecipesEndpoints.cs:502 (CopyConnectedRecipe, the only caller of the copy)
         return await context.Recipes
+            .IgnoreQueryFilters(["Tenant"])
             .Where(r => r.HouseholdId == sourceHouseholdId && r.RecipeId == sourceRecipeId)
             .Select(r => r.ImagePath)
             .FirstOrDefaultAsync(cancellationToken);
@@ -335,7 +354,10 @@ public class RecipeService(
                 await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
                 // Load source recipe with ingredients
+                // TENANT-SCOPE-OK: the copy source lives in a connected household; gated by AreHouseholdsConnectedAsync
+                // at RecipesEndpoints.cs:502 (CopyConnectedRecipe). The write below targets the caller's household.
                 var sourceRecipe = await context.Recipes
+                    .IgnoreQueryFilters(["Tenant"])
                     .Where(r => r.HouseholdId == sourceHouseholdId && r.RecipeId == sourceRecipeId)
                     .Include(r => r.Ingredients.OrderBy(i => i.SortOrder))
                     .Include(r => r.Household)

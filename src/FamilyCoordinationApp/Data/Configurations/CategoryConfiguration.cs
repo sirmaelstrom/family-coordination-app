@@ -20,7 +20,8 @@ public class CategoryConfiguration : IEntityTypeConfiguration<Category>
         builder.Property(c => c.Color)
             .HasMaxLength(7);  // #FFFFFF format
 
-        builder.HasQueryFilter(c => !c.IsDeleted);
+        // Named, so ignoring soft delete keeps the "Tenant" filter (fca-household-scope D5).
+        builder.HasQueryFilter("SoftDelete", c => !c.IsDeleted);
 
         builder.HasOne(c => c.Household)
             .WithMany()

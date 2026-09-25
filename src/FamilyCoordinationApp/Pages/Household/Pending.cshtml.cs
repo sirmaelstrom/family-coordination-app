@@ -36,7 +36,8 @@ public class PendingModel : PageModel
 
         // Already provisioned into a household → into the app.
         // TENANT-SCOPE-OK: identity lookup by the caller's own authenticated email — pre-household onboarding surface
-        var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Email == email);
+        // (an unmarked page: no tenant exists here, D3)
+        var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).FirstOrDefaultAsync(u => u.Email == email);
         if (existingUser != null)
         {
             return Redirect("/");

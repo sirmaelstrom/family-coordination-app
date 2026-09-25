@@ -50,8 +50,9 @@ public class SetupService(
         await using var context = await dbFactory.CreateDbContextAsync();
 
         // Check if user already exists
-        // TENANT-SCOPE-OK: first-run setup — the household is being created; identity is the authenticated email
-        var existingUser = await context.Users.FirstOrDefaultAsync(u => u.Email == userEmail);
+        // TENANT-SCOPE-OK: first-run setup — the household is being created; identity is the authenticated email;
+        // gated by IsSetupCompleteAsync at FirstRunSetup.cshtml.cs:52 (setup refuses once any household exists)
+        var existingUser = await context.Users.IgnoreQueryFilters(["Tenant"]).FirstOrDefaultAsync(u => u.Email == userEmail);
         if (existingUser != null)
         {
             logger.LogWarning("User {Email} already exists with ID {UserId}", userEmail, existingUser.Id);
@@ -67,6 +68,10 @@ public class SetupService(
         await context.SaveChangesAsync();
 
         logger.LogInformation("Created household ID {HouseholdId}", household.Id);
+
+        // Everything from here is for the new household (D11): the user save and both seed helpers, whose own
+        // contexts come from the same scoped factory and so share this RunAs.
+        using var asNewHousehold = context.Tenant.RunAs(household.Id);
 
         var user = new User
         {

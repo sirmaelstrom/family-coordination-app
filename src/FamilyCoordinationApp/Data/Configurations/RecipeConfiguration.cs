@@ -41,8 +41,9 @@ public class RecipeConfiguration : IEntityTypeConfiguration<Recipe>
             .HasDefaultValue(RecipeType.Main)
             .HasConversion<int>();
 
-        // Query filter for soft delete
-        builder.HasQueryFilter(r => !r.IsDeleted);
+        // Query filter for soft delete. Named, so ignoring it keeps the "Tenant" filter (fca-household-scope D5):
+        // bypass with IgnoreQueryFilters(["SoftDelete"]), never the unnamed overload.
+        builder.HasQueryFilter("SoftDelete", r => !r.IsDeleted);
 
         // Indexes
         builder.HasIndex(r => new { r.HouseholdId, r.Name });

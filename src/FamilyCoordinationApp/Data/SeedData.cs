@@ -13,6 +13,10 @@ public static class SeedData
         if (household == null)
             return;
 
+        // Startup has no caller: seed as the dev household (D11). The helpers below create their own contexts from
+        // the same scoped factory, so this RunAs covers them too.
+        using var asHousehold = context.Tenant.RunAs(household.Id);
+
         var user = await context.Users.FirstOrDefaultAsync(u => u.HouseholdId == household.Id);
         if (user == null)
             return;
@@ -27,8 +31,9 @@ public static class SeedData
         await SeedDevEquityDataAsync(dbFactory, household.Id);
 
         // Only seed recipes if none exist yet (recipe seed is NOT idempotent row-by-row).
-        // TENANT-SCOPE-OK: dev seed guard over the whole database, pre-tenant
-        if (await context.Recipes.AnyAsync())
+        // TENANT-SCOPE-OK: dev seed guard over the whole database, pre-tenant (the Development-only startup seed,
+        // Program.cs IsDevelopment block); returns a boolean only
+        if (await context.Recipes.IgnoreQueryFilters(["Tenant"]).AnyAsync())
             return;
 
         // Seed default categories
@@ -468,7 +473,7 @@ public static class SeedData
 
         // Check if categories already exist for this household
         var existingCount = await context.Categories
-            .IgnoreQueryFilters()  // Include soft-deleted
+            .IgnoreQueryFilters(["SoftDelete"])  // Include soft-deleted
             .CountAsync(c => c.HouseholdId == householdId);
 
         if (existingCount > 0) return;

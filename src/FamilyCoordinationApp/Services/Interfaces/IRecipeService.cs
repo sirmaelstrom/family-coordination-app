@@ -24,5 +24,10 @@ public interface IRecipeService
 
     // Connected household recipes
     Task<List<Recipe>> GetRecipesFromConnectedHouseholdAsync(int viewingHouseholdId, int connectedHouseholdId, string? searchTerm = null, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// One recipe of a CONNECTED household, read past the Tenant filter (fca-household-scope D6). The caller must
+    /// have checked <c>AreHouseholdsConnectedAsync</c> first; <see cref="GetRecipeAsync"/> stays tenant-filtered.
+    /// </summary>
+    Task<Recipe?> GetConnectedRecipeAsync(int connectedHouseholdId, int recipeId, CancellationToken cancellationToken = default);
     Task<Recipe> CopyRecipeFromConnectedHouseholdAsync(int sourceHouseholdId, int sourceRecipeId, int targetHouseholdId, int userId, CancellationToken cancellationToken = default);
 }

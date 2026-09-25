@@ -3,6 +3,7 @@ using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services.Dtos;
 using FamilyCoordinationApp.Services.Interfaces;
+using FamilyCoordinationApp.Tenancy;
 
 namespace FamilyCoordinationApp.Services.Digest;
 
@@ -43,10 +44,16 @@ public class DigestService(
         // Candidate set: enabled + webhook-configured only (M1 — HouseholdId comes from these rows, never a
         // client). Disabled/unconfigured rows are filtered out here and are NOT counted in Skipped.
         List<DigestCandidate> candidates;
+        ITenantContext tenant;
         await using (var context = await dbFactory.CreateDbContextAsync(ct))
         {
-            // TENANT-SCOPE-OK: cron all-households sweep — M1: HouseholdId comes from these rows, never a client
+            // The scope's tenant, shared by every context this run creates (the factory is scoped).
+            tenant = context.Tenant;
+
+            // TENANT-SCOPE-OK: cron all-households sweep — M1: HouseholdId comes from these rows, never a client;
+            // gated by the trigger-token check at ChoresEndpoints.cs:1011
             candidates = await context.ChoreDigestSettings
+                .IgnoreQueryFilters(["Tenant"])
                 .Where(s => s.Enabled && s.WebhookUrlProtected != null)
                 .Select(s => new DigestCandidate(s.HouseholdId, s.SendDayOfWeek, s.SendHourLocal, s.LastSentAt))
                 .ToListAsync(ct);
@@ -59,6 +66,8 @@ public class DigestService(
             // Wrap each household so even an unexpected throw is isolated (M10) and never aborts the run.
             try
             {
+                // System work for this household only (D11): claim, build, decrypt, send and compensate all run as it.
+                using var asHousehold = tenant.RunAs(candidate.HouseholdId);
                 var outcome = await ProcessHouseholdAsync(candidate, asOf, ct);
                 switch (outcome)
                 {
