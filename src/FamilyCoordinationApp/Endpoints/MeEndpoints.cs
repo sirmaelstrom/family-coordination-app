@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Services;
+using FamilyCoordinationApp.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Endpoints;
@@ -19,6 +20,7 @@ public static class MeEndpoints
     {
         app.MapGet("/api/me", GetMe)
             .RequireAuthorization()
+            .RequireTenant()
             .DisableAntiforgery();
 
         return app;

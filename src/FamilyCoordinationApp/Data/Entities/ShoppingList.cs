@@ -1,6 +1,6 @@
 namespace FamilyCoordinationApp.Data.Entities;
 
-public class ShoppingList
+public class ShoppingList : Tenancy.ITenantEntity, Tenancy.IAuditable
 {
     public int HouseholdId { get; set; }
     public int ShoppingListId { get; set; }

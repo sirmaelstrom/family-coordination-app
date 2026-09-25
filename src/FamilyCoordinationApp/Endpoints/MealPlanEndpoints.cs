@@ -5,6 +5,7 @@ using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Dtos;
 using FamilyCoordinationApp.Services.Interfaces;
+using FamilyCoordinationApp.Tenancy;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -30,6 +31,7 @@ public static class MealPlanEndpoints
     {
         var group = app.MapGroup("/api/meal-plan")
             .RequireAuthorization()
+            .RequireTenant()
             // Mirrors the shopping-list/chores island groups: the island calls these with same-origin
             // credentialed fetch + JSON bodies (never HTML form posts) and the auth cookie is SameSite, so the
             // antiforgery token — which the SPA island can't readily supply — is not the CSRF control here.

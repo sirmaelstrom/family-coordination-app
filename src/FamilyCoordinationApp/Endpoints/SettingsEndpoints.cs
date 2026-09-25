@@ -3,6 +3,7 @@ using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services.Dtos;
 using FamilyCoordinationApp.Services.Interfaces;
+using FamilyCoordinationApp.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Endpoints;
@@ -25,6 +26,7 @@ public static class SettingsEndpoints
     {
         var group = app.MapGroup("/api/settings")
             .RequireAuthorization()
+            .RequireTenant()
             .DisableAntiforgery();
 
         // ── Categories ──────────────────────────────────────────────────────────

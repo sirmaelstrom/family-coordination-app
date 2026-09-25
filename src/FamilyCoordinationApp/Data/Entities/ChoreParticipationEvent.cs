@@ -11,7 +11,7 @@ namespace FamilyCoordinationApp.Data.Entities;
 /// user delete). The roster is single-frontier-serialized on the <c>Chore</c> row's xmin — this table
 /// carries no concurrency token of its own (appends never conflict; the fold normalizes order).</para>
 /// </summary>
-public class ChoreParticipationEvent
+public class ChoreParticipationEvent : Tenancy.ITenantEntity
 {
     public int HouseholdId { get; set; }
     public int ChoreId { get; set; }

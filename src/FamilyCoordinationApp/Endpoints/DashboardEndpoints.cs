@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Services.Interfaces;
+using FamilyCoordinationApp.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Endpoints;
@@ -22,6 +23,7 @@ public static class DashboardEndpoints
     {
         var group = app.MapGroup("/api/dashboard")
             .RequireAuthorization()
+            .RequireTenant()
             // Kept consistent with the other island endpoint groups (the island calls this with same-origin
             // credentialed fetch; there are no writes here, so antiforgery is moot either way).
             .DisableAntiforgery();

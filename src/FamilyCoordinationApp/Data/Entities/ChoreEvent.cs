@@ -5,7 +5,7 @@ namespace FamilyCoordinationApp.Data.Entities;
 /// <see cref="ChoreEventType.AutoReleased"/>, <see cref="ActorUserId"/> is the lapsed claimer
 /// whose claim expired (council M16).
 /// </summary>
-public class ChoreEvent
+public class ChoreEvent : Tenancy.ITenantEntity
 {
     public int HouseholdId { get; set; }
     public int ChoreId { get; set; }

@@ -2,7 +2,7 @@ using FamilyCoordinationApp.Constants;
 
 namespace FamilyCoordinationApp.Data.Entities;
 
-public class RecipeIngredient
+public class RecipeIngredient : Tenancy.ITenantEntity
 {
     public int HouseholdId { get; set; }
     public int RecipeId { get; set; }

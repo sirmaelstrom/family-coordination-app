@@ -8,6 +8,7 @@ using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Calendar;
 using FamilyCoordinationApp.Services.Digest;
 using FamilyCoordinationApp.Services.Interfaces;
+using FamilyCoordinationApp.Tenancy;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -16,6 +17,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
 using Polly;
 
@@ -76,6 +78,19 @@ if (File.Exists(dockerSecretPath))
 builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString)
            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
+
+// Tenancy plumbing (fca-household-scope WP-01; decisions D2/D14/D15). AddDbContextFactory above stays for its
+// DbContextOptions registration; its singleton factory is swapped for the SCOPED TenantDbContextFactory, so every
+// context carries the scope's ITenantContext while the files that inject IDbContextFactory stay unchanged.
+// ApplicationDbContext itself is re-registered to resolve THROUGH that factory (EF design-time resolves it), so no
+// resolution path can bypass the wrapper. Options bind lazily (Configure, not an eager Get<T>()) so test-host
+// settings apply.
+builder.Services.Configure<TenancyOptions>(builder.Configuration.GetSection("Tenancy"));
+builder.Services.AddScoped<ITenantContext, TenantContext>();
+builder.Services.RemoveAll<IDbContextFactory<ApplicationDbContext>>();
+builder.Services.AddScoped<IDbContextFactory<ApplicationDbContext>, TenantDbContextFactory>();
+builder.Services.RemoveAll<ApplicationDbContext>();
+builder.Services.AddScoped(static sp => sp.GetRequiredService<IDbContextFactory<ApplicationDbContext>>().CreateDbContext());
 
 // Services
 builder.Services.AddScoped<SetupService>();
@@ -489,6 +504,10 @@ app.Use(async (context, next) =>
 });
 
 app.UseAuthorization();
+
+// Sets the request's tenant for endpoints marked RequireTenant() (fca-household-scope D3). AFTER authorization, so
+// the auth pipeline has already answered anonymous and non-whitelisted callers; unmarked endpoints pass through.
+app.UseMiddleware<CallerTenantMiddleware>();
 
 app.MapStaticAssets();
 

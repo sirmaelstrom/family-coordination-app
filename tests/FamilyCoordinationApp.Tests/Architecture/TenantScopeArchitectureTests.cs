@@ -42,7 +42,8 @@ namespace FamilyCoordinationApp.Tests.Architecture;
 ///    statement.
 ///
 /// Baseline adjudicated 2026-08-29 (amended at council r1, which surfaced four
-/// projection-passing reads the first scan missed): 19 pragmas — auth/identity
+/// projection-passing reads the first scan missed), re-counted 2026-09-25 by
+/// `grep -rn 'TENANT-SCOPE-OK:' src --include=*.cs` @ 240dc28: 21 pragmas — auth/identity
 /// resolution before a household exists, identity resolution that IS the scope
 /// source (UserContextResolver/Me/Presence), dev-only paths, invite redemption
 /// which is cross-household by design, dual-mode site-admin queries scoped
@@ -263,16 +264,157 @@ public class TenantScopeArchitectureTests
     // A file that creates a context MUST yield at least one receiver, or its
     // queries are invisible to the scan — the sync-factory blindness class
     // (council r1, opus #3: SeedData.cs was covered only by naming luck).
+    //
+    // ONE exemption (fca-household-scope WP-01, pre-authorized at council r1):
+    // Tenancy/TenantDbContextFactory.cs DEFINES CreateDbContext() and never
+    // receives or queries a context. Exempted by exact path, never by pattern.
+    internal static readonly string[] ReceiverExemptFiles =
+    [
+        "Tenancy/TenantDbContextFactory.cs", // defines the factory, never receives a context
+    ];
+
+    internal static List<string> BlindContextCreatingFiles(IEnumerable<(string RelativePath, string Source)> files) =>
+        files
+            .Where(f => !ReceiverExemptFiles.Contains(f.RelativePath))
+            .Where(f => f.Source.Contains("CreateDbContext") && Receivers(f.Source).Count == 0)
+            .Select(f => f.RelativePath)
+            .ToList();
+
     [Fact]
     public void Every_context_creating_file_yields_receivers()
     {
         var root = AppSourceRoot();
-        var blind = AppSourceFiles()
-            .Select(f => new { File = f, Source = File.ReadAllText(f) })
-            .Where(x => x.Source.Contains("CreateDbContext") && Receivers(x.Source).Count == 0)
-            .Select(x => Path.GetRelativePath(root, x.File).Replace('\\', '/'))
-            .ToList();
+        var blind = BlindContextCreatingFiles(AppSourceFiles()
+            .Select(f => (Path.GetRelativePath(root, f).Replace('\\', '/'), File.ReadAllText(f))));
         blind.Should().BeEmpty("a file that creates a DbContext but yields no receiver is scanned as if it had no queries");
+    }
+
+    [Fact]
+    public void NC_the_receiver_exemption_covers_exactly_the_factory_file()
+    {
+        const string definesFactory = """
+            public ApplicationDbContext CreateDbContext() => Build();
+            """;
+        BlindContextCreatingFiles(
+        [
+            ("Tenancy/TenantDbContextFactory.cs", definesFactory),
+            ("Services/SomeOtherFactory.cs", definesFactory),
+        ]).Should().Equal(["Services/SomeOtherFactory.cs"],
+            "the exemption is the factory's exact path; any OTHER receiver-less file defining CreateDbContext is still blind");
+    }
+
+    // ── Fact 3 (fca-household-scope D7/D12): contexts are built only by the factory ──
+    // The options-only constructor gives an Unfiltered tenant (D12). Banning
+    // direct construction in src confines that hole to the tests: production code
+    // can only get a context from TenantDbContextFactory, which always passes the
+    // scope's tenant. The target-typed form `ApplicationDbContext x = new(` is the
+    // same construction without the type name, so it is banned too. Comment lines
+    // are skipped: the docs may NAME the banned call. No IDesignTimeDbContextFactory
+    // exists (checked 2026-09-24); if one is added it gets an explicit entry here.
+
+    internal static readonly string[] ContextConstructionAllowedFiles =
+    [
+        "Tenancy/TenantDbContextFactory.cs",
+    ];
+
+    private static readonly Regex ContextConstructionRe =
+        new(@"new\s+ApplicationDbContext\s*\(|ApplicationDbContext\s+\w+\s*=\s*new\s*\(");
+
+    private static readonly Regex CreateUnfilteredCallRe = new(@"\bCreateUnfiltered\s*\(");
+
+    internal static List<int> CodeLinesMatching(string source, Regex pattern)
+    {
+        var lines = source.Split('\n');
+        var hits = new List<int>();
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i].TrimStart();
+            if (line.StartsWith("//", StringComparison.Ordinal) || line.StartsWith('*')) continue;
+            if (pattern.IsMatch(lines[i])) hits.Add(i + 1);
+        }
+        return hits;
+    }
+
+    private static List<string> OffendersOutside(Regex pattern, string[] allowedFiles)
+    {
+        var root = AppSourceRoot();
+        var offenders = new List<string>();
+        foreach (var file in AppSourceFiles())
+        {
+            var rel = Path.GetRelativePath(root, file).Replace('\\', '/');
+            if (allowedFiles.Contains(rel)) continue;
+            offenders.AddRange(CodeLinesMatching(File.ReadAllText(file), pattern).Select(line => $"{rel}:{line}"));
+        }
+        return offenders;
+    }
+
+    [Fact]
+    public void Fact3_ApplicationDbContext_is_constructed_only_by_the_tenant_factory()
+    {
+        var offenders = OffendersOutside(ContextConstructionRe, ContextConstructionAllowedFiles);
+
+        offenders.Should().BeEmpty(
+            "construct contexts only through IDbContextFactory<ApplicationDbContext> (TenantDbContextFactory): a " +
+            "directly built context has no request tenant. Offenders:\n  " + string.Join("\n  ", offenders));
+    }
+
+    [Fact]
+    public void Fact3_guard_the_guard_the_factory_itself_is_seen_constructing()
+    {
+        var factory = File.ReadAllText(Path.Combine(AppSourceRoot(), "Tenancy", "TenantDbContextFactory.cs"));
+        CodeLinesMatching(factory, ContextConstructionRe).Should().NotBeEmpty(
+            "the pattern must match the one sanctioned construction, or it is matching nothing");
+    }
+
+    [Fact]
+    public void NC_fact3_a_service_constructing_a_context_is_flagged()
+    {
+        const string service = """
+            public class SneakyService(DbContextOptions<ApplicationDbContext> options)
+            {
+                public async Task<int> CountAsync()
+                {
+                    await using var db = new ApplicationDbContext(options);
+                    ApplicationDbContext other = new(options);
+                    // new ApplicationDbContext(options) in a comment is not code
+                    /// <c>new ApplicationDbContext(</c> in a doc comment is not code either
+                    return await db.Rooms.CountAsync();
+                }
+            }
+            """;
+        CodeLinesMatching(service, ContextConstructionRe).Should().Equal([5, 6]);
+    }
+
+    // Companion to fact 3: the Unfiltered tenant is reachable only through the
+    // options-only constructor. The definition in Tenancy/TenantContext.cs is not a call.
+    internal static readonly string[] CreateUnfilteredAllowedFiles =
+    [
+        "Data/ApplicationDbContext.cs",
+        "Tenancy/TenantContext.cs", // the definition
+    ];
+
+    [Fact]
+    public void CreateUnfiltered_is_called_only_by_the_options_only_context_constructor()
+    {
+        var offenders = OffendersOutside(CreateUnfilteredCallRe, CreateUnfilteredAllowedFiles);
+
+        offenders.Should().BeEmpty(
+            "only ApplicationDbContext's options-only constructor may create an Unfiltered tenant (D12). Offenders:\n  " +
+            string.Join("\n  ", offenders));
+
+        var context = File.ReadAllText(Path.Combine(AppSourceRoot(), "Data", "ApplicationDbContext.cs"));
+        CodeLinesMatching(context, CreateUnfilteredCallRe).Should().ContainSingle(
+            "guard the guard: the one sanctioned call is seen");
+    }
+
+    [Fact]
+    public void NC_a_CreateUnfiltered_call_is_flagged()
+    {
+        const string service = """
+            var tenant = TenantContext.CreateUnfiltered();
+            // TenantContext.CreateUnfiltered() in a comment is not code
+            """;
+        CodeLinesMatching(service, CreateUnfilteredCallRe).Should().Equal([1]);
     }
 
     [Fact]

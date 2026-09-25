@@ -1,11 +1,42 @@
 using Microsoft.EntityFrameworkCore;
 using FamilyCoordinationApp.Data.Entities;
+using FamilyCoordinationApp.Tenancy;
 
 namespace FamilyCoordinationApp.Data;
 
-public class ApplicationDbContext : DbContext
+/// <summary>
+/// The app's EF context. <c>partial</c> so the tenancy work (fca-household-scope) can add its read filter
+/// (WP-02) and write step (WP-03) in their own files.
+/// </summary>
+public partial class ApplicationDbContext : DbContext
 {
-    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
+    /// <summary>
+    /// Options-only: a permanently <see cref="TenantState.Unfiltered"/> tenant with default options (D12). Kept for
+    /// the unit tests' direct construction and EF design-time. The architecture guard bans
+    /// <c>new ApplicationDbContext(</c> in <c>src</c> outside <see cref="TenantDbContextFactory"/>, so production
+    /// code cannot reach Unfiltered through it.
+    /// </summary>
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+        : this(options, TenantContext.CreateUnfiltered(), new TenancyOptions()) { }
+
+    /// <summary>The tenant-aware constructor, called only by <see cref="TenantDbContextFactory"/>.</summary>
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, ITenantContext tenant, TenancyOptions tenancy)
+        : base(options)
+    {
+        ArgumentNullException.ThrowIfNull(tenant);
+        ArgumentNullException.ThrowIfNull(tenancy);
+        Tenant = tenant;
+        Tenancy = tenancy;
+    }
+
+    /// <summary>The creating scope's tenant. Services reach <c>RunAs</c>/<c>AllowCrossTenantWrite</c> through here.</summary>
+    internal ITenantContext Tenant { get; }
+
+    /// <summary>The <c>Tenancy</c> options snapshot this context was created with.</summary>
+    internal TenancyOptions Tenancy { get; }
+
+    /// <summary>The clock WP-03's write step stamps audit fields from (D16). Set by the factory.</summary>
+    internal TimeProvider Clock { get; init; } = TimeProvider.System;
 
     public DbSet<Household> Households => Set<Household>();
     public DbSet<User> Users => Set<User>();

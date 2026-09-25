@@ -3,6 +3,7 @@ using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Interfaces;
+using FamilyCoordinationApp.Tenancy;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,6 +21,7 @@ public static class RoomsEndpoints
     {
         var group = app.MapGroup("/api/rooms")
             .RequireAuthorization()
+            .RequireTenant()
             .DisableAntiforgery();
 
         group.MapGet("/", ListRooms);

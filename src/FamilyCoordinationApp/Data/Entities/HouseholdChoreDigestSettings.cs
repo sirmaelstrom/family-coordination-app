@@ -5,7 +5,7 @@ namespace FamilyCoordinationApp.Data.Entities;
 /// PK is <see cref="HouseholdId"/> (1:1 with Household) — value-generated-never.
 /// <see cref="WebhookUrlProtected"/> holds ciphertext; encryption/decryption lives in WP-03.
 /// </summary>
-public class HouseholdChoreDigestSettings
+public class HouseholdChoreDigestSettings : Tenancy.ITenantEntity, Tenancy.IAuditable
 {
     /// <summary>PK and FK to <see cref="Household"/>. Caller-supplied; never generated.</summary>
     public int HouseholdId { get; set; }

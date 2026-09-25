@@ -4,7 +4,7 @@ namespace FamilyCoordinationApp.Data.Entities;
 /// Append-only completion log for a chore (P2). Carries the effort points snapshot at completion
 /// time — the v1.1 equity substrate (MN3/MN4: the log ships now, the equity layer does not).
 /// </summary>
-public class ChoreCompletion
+public class ChoreCompletion : Tenancy.ITenantEntity
 {
     public int HouseholdId { get; set; }
     public int ChoreId { get; set; }
