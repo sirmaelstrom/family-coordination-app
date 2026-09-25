@@ -51,6 +51,7 @@ services:
       CHORES_TIMEZONE: ${CHORES_TIMEZONE:-}
       # Tenancy kill switches, incident rollback only (fca-household-scope D14). Persist `false` in .env.local, which
       # deploy.sh copies over .env on every deploy; to apply now, set it in .env too and recreate app (not --restart).
+      # Only true/false are valid: any other value (0, no) fails bool binding at startup and the app crash-loops.
       Tenancy__EnforceFilter: ${TENANCY_ENFORCE_FILTER:-true}
       Tenancy__EnforceWrites: ${TENANCY_ENFORCE_WRITES:-true}
     volumes:

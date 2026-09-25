@@ -34,15 +34,19 @@ list: `HouseholdMemberService` gains the pragma it never had, and `FeedbackServi
 predicate (new, the 23rd bypass) and the filter's own doc comment in `ApplicationDbContext.cs`. The pre-switch
 census (198 rows, 22 bypasses) is this file's first commit.
 
-**Line numbers** point at the switch commit's tree, refreshed by amendment 1 for the files it edited
+**Line numbers** point at the switch commit's tree, refreshed by amendments 1 and 2 for the files they edited
 (`FeedbackService.cs`, `RecipeService.cs`); a `bypass:` row's line is the **first line of the statement** holding the
 bypass. Each `bypass:` row also carries a **site id**, `` `Member#fingerprint` ``: the enclosing method and the first
 8 hex digits of SHA-256 over the statement's comment- and string-stripped text with all whitespace removed. Guard
 fact 2 (`TenantFilterArchitectureTests`) matches each Tenant bypass in `src` to exactly one row of its file with the
 same site id, and each row to one bypass: a new or substituted bypass without a row, or a stale row, fails CI, even
 when the file's count is unchanged. Lines, whitespace and comments are not in the id, so an unrelated edit that
-shifts or re-flows a bypass doesn't fail. Editing the bypass statement, renaming its method or moving it does: review
-the gate, then re-point the row (the failure prints the new id beside the statement).
+shifts or re-flows a bypass doesn't fail. Editing the bypass statement, renaming its method or moving it to another
+method or file does: review the gate, then re-point the row (the failure prints the new id beside the statement).
+**Limit:** the fingerprint covers only the bypass statement. A move within its method that leaves that statement's
+text unchanged (out of a gating `if`/`else`, say) keeps the id, and so do edits to a separate statement the bypass
+widens. Behavior tests pin those, not fact 2, so a bypass carries its gate and base query in its own statement where
+it can (`FeedbackService.GetFeedbackAsync` does).
 
 | file:line | expression (trimmed) | classification | gate / household source |
 |---|---|---|---|
@@ -161,10 +165,10 @@ the gate, then re-point the row (the failure prints the new id beside the statem
 | `Services/DraftService.cs:52` | `d.HouseholdId == householdId &&` | caller-scoped (no change) | `householdId` parameter; every caller passes the resolved caller's household from a marked group (call-site pass) |
 | `Services/DraftService.cs:86` | `d.HouseholdId == householdId &&` | caller-scoped (no change) | `householdId` parameter; every caller passes the resolved caller's household from a marked group (call-site pass) |
 | `Services/DraftService.cs:111` | `d.HouseholdId == householdId &&` | caller-scoped (no change) | `householdId` parameter; every caller passes the resolved caller's household from a marked group (call-site pass) |
-| `Services/FeedbackService.cs:88` | `query = query.Where(f => f.HouseholdId == householdId);` | caller-scoped (no change) | `Feedback` is not a tenant entity (dual-mode, R-C1); the non-admin predicate stays (MN1), and a non-admin's `User` include stays under the Tenant filter |
-| `Services/FeedbackService.cs:94` `GetFeedbackAsync#dce17c9c` | `query = query.IgnoreQueryFilters(["Tenant"]);` (the site-admin branch only) | bypass: feedback authors across households | gated by `isSiteAdmin` (`siteAdmin.IsSiteAdmin` at Endpoints/SettingsAdminEndpoints.cs:344): only the site-admin branch applies it, so only the admin loads other households' authors. The base `Feedbacks.AsNoTracking().Include(f => f.User)` at :81 keeps its dual-mode fca#111 pragma. `Feedback` itself is not a tenant entity; the `User` include is |
-| `Services/FeedbackService.cs:121` | `Feedbacks.Where(f => f.Id == id)` (MutateAsync) | caller-scoped (no change) | `Feedback` is not a tenant entity and nothing is included, so no Tenant filter applies; fca#111 pragma unchanged |
-| `Services/FeedbackService.cs:125` | `query = query.Where(f => f.HouseholdId == householdId);` | caller-scoped (no change) | `Feedback` is not a tenant entity (dual-mode, R-C1); the non-admin predicate stays (MN1) |
+| `Services/FeedbackService.cs:84` `GetFeedbackAsync#ab1a9863` | `IQueryable<Feedback> query = (isSiteAdmin ? context.Feedbacks.IgnoreQueryFilters(["Tenant"]) : context.Feedbacks).AsNoTracking().Include(f => f.User);` (the site-admin arm only) | bypass: feedback authors across households | gated by `isSiteAdmin` (`siteAdmin.IsSiteAdmin` at Endpoints/SettingsAdminEndpoints.cs:344), inside the bypass's own statement: only the admin arm ignores the filter, so only the admin loads other households' authors, and the gate and base query are in the site id. The statement keeps the dual-mode fca#111 pragma. `Feedback` itself is not a tenant entity; the `User` include is |
+| `Services/FeedbackService.cs:93` | `query = query.Where(f => f.HouseholdId == householdId);` | caller-scoped (no change) | `Feedback` is not a tenant entity (dual-mode, R-C1); the non-admin predicate stays (MN1), and a non-admin's `User` include stays under the Tenant filter |
+| `Services/FeedbackService.cs:120` | `Feedbacks.Where(f => f.Id == id)` (MutateAsync) | caller-scoped (no change) | `Feedback` is not a tenant entity and nothing is included, so no Tenant filter applies; fca#111 pragma unchanged |
+| `Services/FeedbackService.cs:124` | `query = query.Where(f => f.HouseholdId == householdId);` | caller-scoped (no change) | `Feedback` is not a tenant entity (dual-mode, R-C1); the non-admin predicate stays (MN1) |
 | `Services/HouseholdConnectionService.cs:82` | `.Where(i => i.HouseholdId == householdId && !i.IsUsed && i.ExpiresAt > DateTime.UtcNow)` | caller-scoped (no change) | `householdId` parameter; every caller passes the resolved caller's household from a marked group (call-site pass) |
 | `Services/HouseholdConnectionService.cs:92` | `.Where(i => i.HouseholdId == householdId && !i.IsUsed && i.ExpiresAt > DateTime.UtcNow)` | caller-scoped (no change) | `householdId` parameter; every caller passes the resolved caller's household from a marked group (call-site pass) |
 | `Services/HouseholdConnectionService.cs:124` `ValidateInviteCodeAsync#1c1f6b7d` | `HouseholdInvites.Include(i => i.Household).FirstOrDefaultAsync(i => i.InviteCode == normalizedCode)` (validate) | bypass: invite validate | the invite code is the capability (exact match, then `IsUsed`/`ExpiresAt`/self checks below it), rate-limited by `IsRateLimited` at Services/HouseholdConnectionService.cs:115 |

@@ -23,7 +23,10 @@ namespace FamilyCoordinationApp.Tests.Architecture;
 /// Tenant bypass. It needs a <c>// TENANT-SCOPE-OK:</c> pragma in the comment run directly above the FIRST line of its
 /// statement, and each bypass matches exactly one <c>bypass:</c> row of <c>.planning/tenancy-bypass-inventory.md</c>
 /// (and each row one bypass) by its site id: the file, the enclosing member and a fingerprint of the statement
-/// (<see cref="BypassSiteId"/>). A line shift keeps the id; a changed, moved or substituted bypass doesn't. Treating
+/// (<see cref="BypassSiteId"/>). A line shift keeps the id; a changed or substituted bypass statement, or one moved to
+/// another method or file, doesn't. The fingerprint covers only the bypass statement: a move within its method that
+/// leaves that text unchanged (out of a gating <c>if</c>, say) keeps the id, and so do edits to a separate statement the
+/// bypass widens. Behavior tests pin those, not fact 2; keep a bypass's gate inside its statement where you can. Treating
 /// any non-soft-delete argument as a bypass (a variable, <c>new[] { … }</c>) is deliberate: a list the scan can't
 /// read is not a list it can clear.</item>
 /// <item><b>Fact 4:</b> the <c>.RunAs(</c> calls per file are exactly the D11 allowlist's counts (every match counts,
@@ -314,11 +317,16 @@ public class TenantFilterArchitectureTests
     /// <para><b>What still passes, and why:</b> a line match would fail CI on every unrelated edit that shifts a
     /// bypass, which trains people to regenerate the inventory blindly. The id ignores lines, whitespace, re-flowing
     /// and comments, so blank lines, comments, pragma rewording and edits elsewhere in the file or method pass. Editing
-    /// the bypass statement itself, renaming its member or moving it changes the id: that is the review point, and the
-    /// failure prints the new id beside the statement. Rows still carry <c>file:line</c>, for reviewers; a stale line
-    /// number doesn't fail.</para>
-    /// <para><b>Stated limits:</b> two textually identical bypass statements in one member share an id and match as a
-    /// count; a change only inside a string literal of the statement keeps the id (strings are blanked).</para>
+    /// the bypass statement itself, renaming its member or moving it to another member or file changes the id: that is
+    /// the review point, and the failure prints the new id beside the statement. Rows still carry <c>file:line</c>, for
+    /// reviewers; a stale line number doesn't fail.</para>
+    /// <para><b>Stated limits:</b> the fingerprint covers only the bypass statement. A move within its method that
+    /// leaves that statement's text unchanged (out of a gating <c>if</c>/<c>else</c>, say) keeps the id, and so do edits
+    /// to a separate statement the bypass widens (a query built earlier and bypassed later). Behavior tests pin those,
+    /// not fact 2, so a bypass should carry its gate and base query in its own statement (see
+    /// <c>FeedbackService.GetFeedbackAsync</c>). Two textually identical bypass statements in one member share an id
+    /// and match as a count; a change only inside a string literal of the statement keeps the id (strings are
+    /// blanked).</para>
     /// </summary>
     [Fact]
     public void Fact2_each_Tenant_bypass_in_src_matches_its_own_inventory_bypass_row()
