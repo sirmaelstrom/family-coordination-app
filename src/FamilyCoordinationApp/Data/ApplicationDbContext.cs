@@ -43,6 +43,31 @@ public partial class ApplicationDbContext : DbContext
     /// <summary>The clock WP-03's write step stamps audit fields from (D16). Set by the factory.</summary>
     internal TimeProvider Clock { get; init; } = TimeProvider.System;
 
+    /// <summary>
+    /// The Tenant filter's bypass term (D12, D14, D15): the kill switch is off, the tenant is Unfiltered, or the
+    /// tenant is out of request with <c>OutOfRequest=Unfiltered</c>. The out-of-request mode is read through the
+    /// tenant, which is authoritative (WP-01). Static so <c>TenantFilterSpikeTests</c> pins this exact code.
+    /// </summary>
+    internal static bool BypassTenantFilterFor(ITenantContext tenant, TenancySettings tenancy) =>
+        !tenancy.EnforceFilter
+        || tenant.IsUnfiltered
+        || (tenant.IsOutOfRequest && tenant.OutOfRequestMode == OutOfRequestMode.Unfiltered);
+
+    /// <summary>
+    /// The Tenant filter's household term. EF evaluates every filter parameter even when the bypass term
+    /// short-circuits the <c>OR</c>, so a bypassing context answers 0 (unused) instead of throwing, which keeps the
+    /// D14 rollback working. Otherwise the Caller or System household, or <see cref="TenantNotSetException"/>.
+    /// </summary>
+    internal static int CurrentHouseholdIdFor(ITenantContext tenant, TenancySettings tenancy)
+    {
+        if (BypassTenantFilterFor(tenant, tenancy)) return 0;
+        if (tenant.State is TenantState.Caller or TenantState.System && tenant.HouseholdId is { } householdId)
+        {
+            return householdId;
+        }
+        throw TenantNotSetException.For(tenant);
+    }
+
     public DbSet<Household> Households => Set<Household>();
     public DbSet<User> Users => Set<User>();
     public DbSet<Recipe> Recipes => Set<Recipe>();
