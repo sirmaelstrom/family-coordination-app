@@ -3,6 +3,7 @@ using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Tenancy;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Xunit;
@@ -17,8 +18,8 @@ namespace FamilyCoordinationApp.Tests.Architecture;
 /// <item><b>Fact 1:</b> no bare <c>IgnoreQueryFilters()</c>: it would drop <c>"Tenant"</c> along with soft delete.</item>
 /// <item><b>Fact 2:</b> every <c>IgnoreQueryFilters(…)</c> whose argument is not exactly <c>["SoftDelete"]</c> is a
 /// Tenant bypass. It needs a <c>// TENANT-SCOPE-OK:</c> pragma in the comment run directly above the FIRST line of its
-/// statement, and the set of bypass statements equals, <c>file:line</c> for <c>file:line</c>, the
-/// <c>bypass:</c> rows of <c>.planning/tenancy-bypass-inventory.md</c>. Treating any non-soft-delete argument as a
+/// statement, and the bypass statements match the <c>bypass:</c> rows of <c>.planning/tenancy-bypass-inventory.md</c>
+/// file by file, count for count. Treating any non-soft-delete argument as a
 /// bypass (a variable, <c>new[] { … }</c>) is deliberate: a list the scan can't read is not a list it can clear.</item>
 /// <item><b>Fact 4:</b> the files calling <c>.RunAs(</c> are exactly the D11 allowlist.</item>
 /// <item><b>Fact 5:</b> every <see cref="ITenantEntity"/> has a query filter named <c>"Tenant"</c>, and the
@@ -182,20 +183,25 @@ public class TenantFilterArchitectureTests
             "above the first line of its statement (MN3, P2). Offenders:\n" + string.Join("\n", offenders));
     }
 
+    /// <summary>
+    /// File by file, count for count: a line-exact match would fail CI on every unrelated edit that shifts a bypass,
+    /// which trains people to regenerate the inventory blindly. The rows still carry lines, for reviewers.
+    /// </summary>
     [Fact]
-    public void Fact2_the_Tenant_bypasses_in_src_are_exactly_the_inventory_bypass_rows()
+    public void Fact2_the_Tenant_bypasses_in_src_match_the_inventory_bypass_rows_file_by_file()
     {
         var inSource = AllFilterCalls().Where(c => c.Call.IsTenantBypass)
-            .Select(c => $"{c.File}:{c.Call.StatementLine}").OrderBy(s => s, StringComparer.Ordinal).ToList();
-        var inInventory = InventoryBypassRows(InventoryText()).OrderBy(s => s, StringComparer.Ordinal).ToList();
+            .Select(c => $"{c.File}:{c.Call.StatementLine}").ToList();
+        var inInventory = InventoryBypassRows(InventoryText());
 
         inSource.Should().NotBeEmpty("the scan must see the bypasses the switch placed (guard the guard)");
-        inSource.Should().Equal(inInventory,
-            "every Tenant bypass in src has an inventory row and every `bypass:` row names a bypass in src (M4, V6); " +
-            "a row's file:line is its statement's first line. In src only: " +
-            string.Join(", ", inSource.Except(inInventory)) + ". In the inventory only: " +
-            string.Join(", ", inInventory.Except(inSource)));
+        PerFile(inSource).Should().BeEquivalentTo(PerFile(inInventory),
+            "every Tenant bypass in src has an inventory row and every `bypass:` row names a bypass in src (M4, V6). " +
+            "In src: " + string.Join(", ", inSource.Order(StringComparer.Ordinal)));
     }
+
+    internal static Dictionary<string, int> PerFile(IEnumerable<string> locations) =>
+        locations.GroupBy(l => l[..l.LastIndexOf(':')]).ToDictionary(g => g.Key, g => g.Count());
 
     [Fact]
     public void Fact4_RunAs_is_called_only_from_the_allowlisted_files()
@@ -216,6 +222,7 @@ public class TenantFilterArchitectureTests
 
         var tenantTypes = db.Model.GetEntityTypes().Count(t => typeof(ITenantEntity).IsAssignableFrom(t.ClrType));
 
+        using var scope = new AssertionScope(); // report the coverage reasons even when the count also fails
         tenantTypes.Should().Be(21, "D5's 21 tenant entities (guard the guard: the model is the real one)");
         FilterCoverageViolations(db.Model, UnfilteredHouseholdIdEntities).Should().BeEmpty();
     }
@@ -287,6 +294,8 @@ public class TenantFilterArchitectureTests
             """;
 
         InventoryBypassRows(markdown).Should().Equal("Services/A.cs:10", "Services/B.cs:9");
+        PerFile(["Services/A.cs:10", "Services/A.cs:30", "Services/B.cs:9"]).Should().BeEquivalentTo(
+            new Dictionary<string, int> { ["Services/A.cs"] = 2, ["Services/B.cs"] = 1 });
     }
 
     [Fact]

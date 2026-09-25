@@ -34,9 +34,10 @@ list: `HouseholdMemberService` gains the pragma it never had, and `FeedbackServi
 predicate (new, the 23rd bypass) and the filter's own doc comment in `ApplicationDbContext.cs`. The pre-switch
 census (198 rows, 22 bypasses) is this file's first commit.
 
-**Line numbers** point at the switch commit's tree. A `bypass:` row's line is the **first line of the statement**
-holding the bypass, and guard fact 2 (`TenantFilterArchitectureTests`) holds those rows equal, `file:line` for
-`file:line`, to the Tenant bypasses in `src`: a new bypass without a row, or a stale row, fails CI.
+**Line numbers** point at the switch commit's tree; a `bypass:` row's line is the **first line of the statement**
+holding the bypass. Guard fact 2 (`TenantFilterArchitectureTests`) holds the `bypass:` rows equal to the Tenant
+bypasses in `src`, **file by file, count for count**: a new bypass without a row, or a stale row, fails CI. Lines
+are not compared, so an unrelated edit that shifts a bypass doesn't; re-point them when a file's bypasses change.
 
 | file:line | expression (trimmed) | classification | gate / household source |
 |---|---|---|---|
