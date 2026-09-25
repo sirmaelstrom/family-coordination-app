@@ -412,6 +412,8 @@ app.UseWhen(
             new { message = ApiStatusMessages.For(context.HttpContext.Response.StatusCode) })));
 app.UseWhen(
     static context => !context.Request.Path.StartsWithSegments(ApiAwareAuthEvents.ApiPrefix),
+    // The re-execution target must stay unmarked (no RequireTenant): re-execution reuses the request's DI scope, so a
+    // marked target would call SetCaller twice and throw (a fail-closed 500). See CallerTenantMiddleware.
     static branch => branch.UseStatusCodePagesWithReExecute("/not-found"));
 app.UseHttpsRedirection();
 // /uploads/{householdId}/* is household user content and must NOT be served by this middleware: it runs

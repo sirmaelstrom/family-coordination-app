@@ -336,10 +336,18 @@ public class TenantScopeArchitectureTests
     //    can't be built without options of that type, and naming the type trips
     //    this rule. It has its own allow-list: the context, which declares the
     //    constructors, and the factory, which receives the options from DI.
-    // Every rule but options-type exempts ContextConstructionAllowedFiles (the
-    // factory only); options-type exempts OptionsTypeAllowedFiles.
+    //  - alias (PR #120 review 2): a `using`/`global using` alias directive whose
+    //    target is the context or its options type. Every context alias is also
+    //    read as ApplicationDbContext in every rule above, and every options alias
+    //    as the options type, across all scanned files (a global alias in one file
+    //    resolves usage in another); an alias of an alias is resolved too.
+    // Every rule but options-type and alias exempts ContextConstructionAllowedFiles
+    // (the factory only); options-type exempts OptionsTypeAllowedFiles; alias exempts
+    // no file.
     //
     // Residual limits (what this scan does NOT see):
+    //  - an alias declared outside the scanned files, such as a csproj
+    //    `<Using Alias=…>` (its generated global using lives under obj/);
     //  - a construction inside an interpolation hole is blanked with its string;
     //  - reflection by string name (`Type.GetType("…")`) isn't caught, nor are
     //    options reached without naming their type (`dynamic`, the non-generic base);
@@ -494,59 +502,133 @@ public class TenantScopeArchitectureTests
         return s.Length;
     }
 
-    // An optionally qualified ApplicationDbContext type name (`Data.`, `global::FamilyCoordinationApp.Data.`).
-    private const string CtxType = @"(?:global\s*::\s*)?(?:\w+\s*\.\s*)*ApplicationDbContext\b";
+    // ── Aliases (PR #120 review 2, astra + opus) ────────────────────────────
+    // `using Ctx = FamilyCoordinationApp.Data.ApplicationDbContext;` makes every rule
+    // blind unless the alias name is treated as the context. Pass 1 (CollectAliases)
+    // reads every alias directive in all the files scanned, so a `global using` in one
+    // file resolves usage in another, and iterates to a fixpoint, so an alias of an
+    // alias is collected too. Pass 2 (ConstructionRules) matches every context alias
+    // wherever ApplicationDbContext is matched, and every options alias as the options
+    // type. The directive itself is flagged under `alias`, with no allow-listed file.
+
+    internal const string AliasRule = "alias";
+
+    /// <summary>The context aliases and options aliases found by <see cref="CollectAliases"/>.</summary>
+    internal sealed record ContextAliases(IReadOnlyList<string> Context, IReadOnlyList<string> Options)
+    {
+        public static readonly ContextAliases None = new([], []);
+    }
+
     // A type name starts here: not mid-identifier, not after a qualifier.
     private const string TypeStart = @"(?<![\w.:])";
     private const string NullableMark = @"(?:\s*\?)?";
-    // A member's declared type: ApplicationDbContext[?], or Task/ValueTask of it.
-    private const string CtxOrTaskOfCtx =
-        @"(?:(?:global\s*::\s*)?(?:\w+\s*\.\s*)*(?:Value)?Task\s*<\s*" + CtxType + NullableMark + @"\s*>|" + CtxType + ")" + NullableMark;
+    private const string Qualifier = @"(?:global\s*::\s*)?(?:\w+\s*\.\s*)*";
     private const string ParamList = @"\((?:[^()]|\([^()]*\))*\)";
     // A method or local function's signature tail: type parameters, parameters, constraints.
     private const string SignatureTail = @"(?:<[^<>]*>)?\s*" + ParamList + @"(?:\s*where\b[^{};=]*)?";
     // A type argument before the last one, with up to two levels of nested generics.
     private const string TypeArg = @"(?:[^<>;{}()=,]|<(?:[^<>;{}()=]|<[^<>;{}()=]*>)*>)+";
 
-    private static readonly Regex ExplicitNewRe = new(@"\bnew\s+" + CtxType + @"\s*\(");
+    // The context type, optionally qualified (`Data.`, `global::FamilyCoordinationApp.Data.`): ApplicationDbContext
+    // or any context alias.
+    private static string CtxTypePattern(ContextAliases aliases) =>
+        Qualifier + "(?:" + string.Join("|", new[] { "ApplicationDbContext" }.Concat(aliases.Context).Select(Regex.Escape)) + @")\b";
 
-    private static readonly Regex TargetTypedDeclarationRe =
-        new(TypeStart + CtxType + NullableMark + @"\s+\w+\s*(?:\{[^{}]*\}\s*)?=\s*new\s*\(");
+    // The options type, optionally qualified: DbContextOptions[Builder]<context type>, or any options alias.
+    private static string OptionsTypePattern(ContextAliases aliases, string ctxType) =>
+        Qualifier + @"(?:DbContextOptions(?:Builder)?\s*<\s*" + ctxType + @"\s*>" +
+        string.Concat(aliases.Options.Select(o => "|" + Regex.Escape(o) + @"\b")) + ")";
 
-    private static readonly Regex ExpressionBodiedMemberRe =
-        new(TypeStart + CtxOrTaskOfCtx + @"\s+\w+\s*(?:" + SignatureTail + @")?\s*=>\s*new\s*\(");
+    // `using X = <target>;` or `global using X = <target>;`.
+    private static Regex AliasDirectiveRe(string target) =>
+        new(@"(?<![\w.])(?:global\s+)?using\s+(?<name>\w+)\s*=\s*(?:" + target + @")\s*;");
 
-    // Ends at the member's opening brace; the body is brace-matched from there.
-    private static readonly Regex BlockBodiedMemberRe =
-        new(TypeStart + CtxOrTaskOfCtx + @"\s+\w+\s*(?:" + SignatureTail + @")?\s*\{");
+    /// <summary>
+    /// Pass 1: every alias directive in <paramref name="strippedSources"/> whose target is the context (a context
+    /// alias) or its options/options-builder type (an options alias), to a fixpoint so aliases of aliases count.
+    /// </summary>
+    internal static ContextAliases CollectAliases(IEnumerable<string> strippedSources)
+    {
+        var sources = strippedSources.ToList();
+        var context = new SortedSet<string>(StringComparer.Ordinal);
+        var options = new SortedSet<string>(StringComparer.Ordinal);
+        int before;
+        do
+        {
+            before = context.Count + options.Count;
+            var known = new ContextAliases([.. context], [.. options]);
+            var ctxType = CtxTypePattern(known);
+            var contextDirective = AliasDirectiveRe(ctxType);
+            var optionsDirective = AliasDirectiveRe(OptionsTypePattern(known, ctxType));
+            foreach (var s in sources)
+            {
+                foreach (Match m in contextDirective.Matches(s)) context.Add(m.Groups["name"].Value);
+                foreach (Match m in optionsDirective.Matches(s)) options.Add(m.Groups["name"].Value);
+            }
+        } while (context.Count + options.Count != before);
+        return new ContextAliases([.. context], [.. options]);
+    }
+
+    /// <summary>Pass 2: every fact-3 rule, with the given aliases read as the context and its options type.</summary>
+    private sealed class ConstructionRules
+    {
+        public ConstructionRules(ContextAliases aliases)
+        {
+            var ctx = CtxTypePattern(aliases);
+            // A member's declared type: the context[?], or Task/ValueTask of it.
+            var ctxOrTaskOfCtx =
+                "(?:" + Qualifier + @"(?:Value)?Task\s*<\s*" + ctx + NullableMark + @"\s*>|" + ctx + ")" + NullableMark;
+            var optionsType = OptionsTypePattern(aliases, ctx);
+
+            ExplicitNew = new(@"\bnew\s+" + ctx + @"\s*\(");
+            TargetTypedDeclaration = new(TypeStart + ctx + NullableMark + @"\s+\w+\s*(?:\{[^{}]*\}\s*)?=\s*new\s*\(");
+            ExpressionBodiedMember = new(TypeStart + ctxOrTaskOfCtx + @"\s+\w+\s*(?:" + SignatureTail + @")?\s*=>\s*new\s*\(");
+            BlockBodiedMember = new(TypeStart + ctxOrTaskOfCtx + @"\s+\w+\s*(?:" + SignatureTail + @")?\s*\{");
+            ExplicitReturnLambda = new(TypeStart + ctx + NullableMark + @"\s*" + ParamList + @"\s*=>\s*(?:new\s*\(|\{)");
+            DelegateVariable = new(TypeStart + Qualifier + @"\w+\s*<\s*(?:" + TypeArg + @",\s*)*" + ctx + NullableMark +
+                @"\s*>" + NullableMark + @"\s+\w+\s*=\s*(?:static\s+)?(?:async\s+)?(?:\w+|" + ParamList + @")\s*=>\s*(?:new\s*\(|\{)");
+            Activation = new(@"\b(?:CreateInstance|GetServiceOrCreateInstance)\s*<\s*" + ctx + @"\s*>" +
+                @"|\btypeof\s*\(\s*" + ctx + @"\s*\)(?!\s*\.\s*Assembly\b)");
+            Subclass = new(@"\b(?:class|record)\s+\w+\s*(?:<[^<>]*>)?\s*(?:" + ParamList + @")?\s*:\s*" + ctx);
+            OptionsType = new(TypeStart + optionsType);
+            AliasDirective = AliasDirectiveRe(ctx + "|" + optionsType);
+        }
+
+        public Regex ExplicitNew { get; }
+        public Regex TargetTypedDeclaration { get; }
+        public Regex ExpressionBodiedMember { get; }
+        // Ends at the member's opening brace; the body is brace-matched from there.
+        public Regex BlockBodiedMember { get; }
+        // Ends at `new(` (expression body) or `{` (block body).
+        public Regex ExplicitReturnLambda { get; }
+        public Regex DelegateVariable { get; }
+        public Regex Activation { get; }
+        public Regex Subclass { get; }
+        public Regex OptionsType { get; }
+        public Regex AliasDirective { get; }
+    }
 
     private static readonly Regex ReturnNewRe = new(@"\breturn\s+new\s*\(");
 
-    // Ends at `new(` (expression body) or `{` (block body).
-    private static readonly Regex ExplicitReturnLambdaRe =
-        new(TypeStart + CtxType + NullableMark + @"\s*" + ParamList + @"\s*=>\s*(?:new\s*\(|\{)");
+    private static int LineOf(string code, int index) => code[..index].Count(c => c == '\n') + 1;
 
-    private static readonly Regex DelegateVariableRe =
-        new(TypeStart + @"(?:global\s*::\s*)?(?:\w+\s*\.\s*)*\w+\s*<\s*(?:" + TypeArg + @",\s*)*" + CtxType + NullableMark +
-            @"\s*>" + NullableMark + @"\s+\w+\s*=\s*(?:static\s+)?(?:async\s+)?(?:\w+|" + ParamList + @")\s*=>\s*(?:new\s*\(|\{)");
-
-    private static readonly Regex ActivationRe =
-        new(@"\b(?:CreateInstance|GetServiceOrCreateInstance)\s*<\s*" + CtxType + @"\s*>" +
-            @"|\btypeof\s*\(\s*" + CtxType + @"\s*\)(?!\s*\.\s*Assembly\b)");
-
-    private static readonly Regex SubclassRe =
-        new(@"\b(?:class|record)\s+\w+\s*(?:<[^<>]*>)?\s*(?:" + ParamList + @")?\s*:\s*" + CtxType);
-
-    private static readonly Regex OptionsTypeRe =
-        new(TypeStart + @"(?:global\s*::\s*)?(?:\w+\s*\.\s*)*DbContextOptions(?:Builder)?\s*<\s*" + CtxType + @"\s*>");
+    /// <summary>
+    /// Every context construction in <paramref name="source"/> as (line, rule), with the aliases declared in the
+    /// source itself resolved. See <see cref="ContextConstructions(string, ContextAliases)"/>.
+    /// </summary>
+    internal static List<(int Line, string Rule)> ContextConstructions(string source) =>
+        ContextConstructions(source, CollectAliases([StripCommentsAndStrings(source)]));
 
     /// <summary>
     /// Every context construction in <paramref name="source"/> as (line, rule), scanned on the whole comment- and
-    /// string-stripped text so a match may span lines; the line is where the match starts.
+    /// string-stripped text so a match may span lines; the line is where the match starts. Each
+    /// <paramref name="aliases"/> name is read as the context or its options type.
     /// </summary>
-    internal static List<(int Line, string Rule)> ContextConstructions(string source)
+    internal static List<(int Line, string Rule)> ContextConstructions(string source, ContextAliases aliases) =>
+        Constructions(StripCommentsAndStrings(source), new ConstructionRules(aliases));
+
+    private static List<(int Line, string Rule)> Constructions(string code, ConstructionRules rules)
     {
-        var code = StripCommentsAndStrings(source);
         var hits = new List<(int Index, string Rule)>();
 
         void AddMatches(Regex re, string rule)
@@ -571,19 +653,22 @@ public class TenantScopeArchitectureTests
             }
         }
 
-        AddMatches(ExplicitNewRe, "explicit-new");
-        AddMatches(TargetTypedDeclarationRe, "target-typed-declaration");
-        AddMatches(ExpressionBodiedMemberRe, "target-typed-return");
-        AddBodies(BlockBodiedMemberRe, "target-typed-return", blockOnly: true);
-        AddBodies(ExplicitReturnLambdaRe, "typed-lambda", blockOnly: false);
-        AddBodies(DelegateVariableRe, "typed-lambda", blockOnly: false);
-        AddMatches(ActivationRe, "activation");
-        AddMatches(SubclassRe, "subclass");
-        AddMatches(OptionsTypeRe, OptionsTypeRule);
+        AddMatches(rules.ExplicitNew, "explicit-new");
+        AddMatches(rules.TargetTypedDeclaration, "target-typed-declaration");
+        AddMatches(rules.ExpressionBodiedMember, "target-typed-return");
+        AddBodies(rules.BlockBodiedMember, "target-typed-return", blockOnly: true);
+        AddBodies(rules.ExplicitReturnLambda, "typed-lambda", blockOnly: false);
+        AddBodies(rules.DelegateVariable, "typed-lambda", blockOnly: false);
+        AddMatches(rules.Activation, "activation");
+        AddMatches(rules.Subclass, "subclass");
+        AddMatches(rules.OptionsType, OptionsTypeRule);
+        AddMatches(rules.AliasDirective, AliasRule);
 
         return hits
-            .Distinct() // nested typed members brace-match the same `return new(`
-            .Select(h => (Line: code[..h.Index].Count(c => c == '\n') + 1, h.Rule))
+            .Select(h => (Line: LineOf(code, h.Index), h.Rule))
+            // A (line, rule) SET: nested typed members brace-match the same `return new(`, and an options-alias
+            // directive names the options type twice on one line.
+            .Distinct()
             .OrderBy(h => h.Line).ThenBy(h => h.Rule, StringComparer.Ordinal)
             .ToList();
     }
@@ -600,49 +685,54 @@ public class TenantScopeArchitectureTests
         return code.Length;
     }
 
-    internal static List<string> ContextConstructionOffenders(IEnumerable<(string RelativePath, string Source)> files) =>
-        files
-            .SelectMany(f => ContextConstructions(f.Source)
-                .Where(h => h.Rule == OptionsTypeRule
-                    ? !OptionsTypeAllowedFiles.Contains(f.RelativePath)
-                    : !ContextConstructionAllowedFiles.Contains(f.RelativePath))
+    /// <summary>
+    /// Fact 3's offenders across <paramref name="files"/>: aliases are collected over ALL of them first (pass 1), then
+    /// each file is scanned with them (pass 2). Allow-lists: options-type → <see cref="OptionsTypeAllowedFiles"/>;
+    /// alias → none; every other rule → <see cref="ContextConstructionAllowedFiles"/>.
+    /// </summary>
+    internal static List<string> ContextConstructionOffenders(IEnumerable<(string RelativePath, string Source)> files)
+    {
+        var stripped = files.Select(f => (f.RelativePath, Code: StripCommentsAndStrings(f.Source))).ToList();
+        var rules = new ConstructionRules(CollectAliases(stripped.Select(f => f.Code)));
+        return stripped
+            .SelectMany(f => Constructions(f.Code, rules)
+                .Where(h => h.Rule switch
+                {
+                    OptionsTypeRule => !OptionsTypeAllowedFiles.Contains(f.RelativePath),
+                    AliasRule => true,
+                    _ => !ContextConstructionAllowedFiles.Contains(f.RelativePath),
+                })
                 .Select(h => $"{f.RelativePath}:{h.Line} [{h.Rule}]"))
             .ToList();
-
-    private static readonly Regex CreateUnfilteredCallRe = new(@"\bCreateUnfiltered\s*\(");
-
-    internal static List<int> CodeLinesMatching(string source, Regex pattern)
-    {
-        var lines = source.Split('\n');
-        var hits = new List<int>();
-        for (var i = 0; i < lines.Length; i++)
-        {
-            var line = lines[i].TrimStart();
-            if (line.StartsWith("//", StringComparison.Ordinal) || line.StartsWith('*')) continue;
-            if (pattern.IsMatch(lines[i])) hits.Add(i + 1);
-        }
-        return hits;
     }
 
-    private static List<string> OffendersOutside(Regex pattern, string[] allowedFiles)
+    private static IEnumerable<(string RelativePath, string Source)> AppSources()
     {
         var root = AppSourceRoot();
-        var offenders = new List<string>();
-        foreach (var file in AppSourceFiles())
-        {
-            var rel = Path.GetRelativePath(root, file).Replace('\\', '/');
-            if (allowedFiles.Contains(rel)) continue;
-            offenders.AddRange(CodeLinesMatching(File.ReadAllText(file), pattern).Select(line => $"{rel}:{line}"));
-        }
-        return offenders;
+        return AppSourceFiles().Select(f => (Path.GetRelativePath(root, f).Replace('\\', '/'), File.ReadAllText(f)));
     }
+
+    /// <summary>
+    /// The lines on which <paramref name="pattern"/> matches the comment- and string-stripped source, each the line
+    /// where its match starts: a whole-file scan, so a reference split across lines is still seen.
+    /// </summary>
+    internal static List<int> ReferenceLines(string source, Regex pattern)
+    {
+        var code = StripCommentsAndStrings(source);
+        return pattern.Matches(code).Select(m => LineOf(code, m.Index)).Distinct().ToList();
+    }
+
+    internal static List<string> ReferenceOffenders(
+        IEnumerable<(string RelativePath, string Source)> files, Regex pattern, string[] allowedFiles) =>
+        files
+            .Where(f => !allowedFiles.Contains(f.RelativePath))
+            .SelectMany(f => ReferenceLines(f.Source, pattern).Select(line => $"{f.RelativePath}:{line}"))
+            .ToList();
 
     [Fact]
     public void Fact3_ApplicationDbContext_is_constructed_only_by_the_tenant_factory()
     {
-        var root = AppSourceRoot();
-        var offenders = ContextConstructionOffenders(AppSourceFiles()
-            .Select(f => (Path.GetRelativePath(root, f).Replace('\\', '/'), File.ReadAllText(f))));
+        var offenders = ContextConstructionOffenders(AppSources());
 
         offenders.Should().BeEmpty(
             "construct contexts only through IDbContextFactory<ApplicationDbContext> (TenantDbContextFactory): a " +
@@ -652,9 +742,10 @@ public class TenantScopeArchitectureTests
     [Fact]
     public void Fact3_guard_the_guard_the_factory_itself_is_seen_constructing()
     {
+        // NotBeEmpty, not an exact count (PR #120 review 2, opus): a harmless refactor of the factory must not fail this.
         var factory = File.ReadAllText(Path.Combine(AppSourceRoot(), "Tenancy", "TenantDbContextFactory.cs"));
-        ContextConstructions(factory).Where(h => h.Rule == "explicit-new").Should().HaveCount(2,
-            "the scan must see the two sanctioned constructions (CreateDbContext, CreateDbContextAsync), or it is matching nothing");
+        ContextConstructions(factory).Where(h => h.Rule == "explicit-new").Should().NotBeEmpty(
+            "the scan must see the sanctioned construction, or it is matching nothing");
     }
 
     [Fact]
@@ -858,25 +949,98 @@ public class TenantScopeArchitectureTests
             "comments, string and char literals, and typeof(ApplicationDbContext).Assembly are not constructions");
     }
 
+    // PR #120 review 2: the alias repros, run through ContextConstructionOffenders as two files
+    // (Services/A.cs, Services/B.cs) so a global alias in one resolves usage in the other. The astra and opus
+    // repros are verbatim from the lens files; astra's gains one target-typed line (`Db target = new(options);`).
+    public static TheoryData<string, string, string, string[]> AliasForms => new()
+    {
+        {
+            "astra-using-Db",
+            """
+            using Db = FamilyCoordinationApp.Data.ApplicationDbContext;
+            // Inside a method:
+            var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<Db>().Options;
+            using var db = new Db(options);
+            Db target = new(options);
+            """,
+            "",
+            [
+                "Services/A.cs:1 [alias]", "Services/A.cs:3 [options-type]", "Services/A.cs:4 [explicit-new]",
+                "Services/A.cs:5 [target-typed-declaration]",
+            ]
+        },
+        {
+            "opus-using-Ctx",
+            """
+            using Ctx = FamilyCoordinationApp.Data.ApplicationDbContext;
+            public class Sneaky(Microsoft.EntityFrameworkCore.DbContextOptions<Ctx> o) { public Ctx Make() => new Ctx(o); public Ctx Make2() => new(o); }
+            """,
+            "",
+            [
+                "Services/A.cs:1 [alias]", "Services/A.cs:2 [explicit-new]", "Services/A.cs:2 [options-type]",
+                "Services/A.cs:2 [target-typed-return]",
+            ]
+        },
+        {
+            "opus-global-using-across-files",
+            """
+            global using Ctx = FamilyCoordinationApp.Data.ApplicationDbContext;
+            """,
+            """
+            public class Sneaky(Microsoft.EntityFrameworkCore.DbContextOptions<Ctx> o) { public Ctx Make() => new Ctx(o); public Ctx Make2() => new(o); }
+            """,
+            [
+                "Services/A.cs:1 [alias]", "Services/B.cs:1 [explicit-new]", "Services/B.cs:1 [options-type]",
+                "Services/B.cs:1 [target-typed-return]",
+            ]
+        },
+        {
+            "options-alias",
+            """
+            using Opts = Microsoft.EntityFrameworkCore.DbContextOptions<FamilyCoordinationApp.Data.ApplicationDbContext>;
+            public class Sneaky(Opts o) { public FamilyCoordinationApp.Data.ApplicationDbContext Make() => new FamilyCoordinationApp.Data.ApplicationDbContext(o); public FamilyCoordinationApp.Data.ApplicationDbContext Make2() => new(o); }
+            """,
+            "",
+            [
+                "Services/A.cs:1 [alias]", "Services/A.cs:1 [options-type]", "Services/A.cs:2 [explicit-new]",
+                "Services/A.cs:2 [options-type]", "Services/A.cs:2 [target-typed-return]",
+            ]
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(AliasForms))]
+    public void NC_fact3_an_alias_of_the_context_or_its_options_is_resolved(
+        string form, string fileA, string fileB, string[] expected)
+    {
+        ContextConstructionOffenders([("Services/A.cs", fileA), ("Services/B.cs", fileB)])
+            .Should().BeEquivalentTo(expected, "form {0} must yield exactly its file:line [rule] set", form);
+    }
+
     // Companion to fact 3: the Unfiltered tenant is reachable only through the
     // options-only constructor. The definition in Tenancy/TenantContext.cs is not a call.
+    // Whole-file scan of the stripped source for ANY reference (PR #120 review 2, opus):
+    // a method group (`Func<TenantContext> f = TenantContext.CreateUnfiltered;`) or a
+    // call split across lines is a reference too; a comment mention is not.
     internal static readonly string[] CreateUnfilteredAllowedFiles =
     [
         "Data/ApplicationDbContext.cs",
         "Tenancy/TenantContext.cs", // the definition
     ];
 
+    private static readonly Regex CreateUnfilteredRe = new(@"\bCreateUnfiltered\b");
+
     [Fact]
     public void CreateUnfiltered_is_called_only_by_the_options_only_context_constructor()
     {
-        var offenders = OffendersOutside(CreateUnfilteredCallRe, CreateUnfilteredAllowedFiles);
+        var offenders = ReferenceOffenders(AppSources(), CreateUnfilteredRe, CreateUnfilteredAllowedFiles);
 
         offenders.Should().BeEmpty(
             "only ApplicationDbContext's options-only constructor may create an Unfiltered tenant (D12). Offenders:\n  " +
             string.Join("\n  ", offenders));
 
         var context = File.ReadAllText(Path.Combine(AppSourceRoot(), "Data", "ApplicationDbContext.cs"));
-        CodeLinesMatching(context, CreateUnfilteredCallRe).Should().ContainSingle(
+        ReferenceLines(context, CreateUnfilteredRe).Should().ContainSingle(
             "guard the guard: the one sanctioned call is seen");
     }
 
@@ -886,8 +1050,52 @@ public class TenantScopeArchitectureTests
         const string service = """
             var tenant = TenantContext.CreateUnfiltered();
             // TenantContext.CreateUnfiltered() in a comment is not code
+            Func<TenantContext> f = TenantContext.CreateUnfiltered;
+            var split = TenantContext.CreateUnfiltered
+                ();
             """;
-        CodeLinesMatching(service, CreateUnfilteredCallRe).Should().Equal([1]);
+        ReferenceLines(service, CreateUnfilteredRe).Should().Equal([1, 3, 4],
+            "a call, a method group, and a split call (reported at its first line) are references; a comment is not");
+    }
+
+    // SetCaller is middleware-only (ITenantContext's doc), and nothing else enforced it (PR #120 review 2, opus):
+    // a service calling context.Tenant.SetCaller on an Unset tenant would set a permanent tenant, outside fact 4's
+    // RunAs allowlist. Same whole-file scan as the CreateUnfiltered companion.
+    internal static readonly string[] SetCallerAllowedFiles =
+    [
+        "Tenancy/CallerTenantMiddleware.cs", // the caller
+        "Tenancy/ITenantContext.cs",         // the definition
+        "Tenancy/TenantContext.cs",          // the definition
+    ];
+
+    private static readonly Regex SetCallerRe = new(@"\bSetCaller\b");
+
+    [Fact]
+    public void SetCaller_is_referenced_only_by_the_caller_middleware()
+    {
+        var offenders = ReferenceOffenders(AppSources(), SetCallerRe, SetCallerAllowedFiles);
+
+        offenders.Should().BeEmpty(
+            "only CallerTenantMiddleware may set the request's caller tenant. Offenders:\n  " + string.Join("\n  ", offenders));
+
+        var middleware = File.ReadAllText(Path.Combine(AppSourceRoot(), "Tenancy", "CallerTenantMiddleware.cs"));
+        ReferenceLines(middleware, SetCallerRe).Should().NotBeEmpty("guard the guard: the middleware's call is seen");
+    }
+
+    [Fact]
+    public void NC_a_SetCaller_call_outside_the_middleware_is_flagged()
+    {
+        const string service = """
+            public async Task SneakAsync()
+            {
+                await using var context = await dbFactory.CreateDbContextAsync();
+                context.Tenant.SetCaller(1, 1);
+            }
+            """;
+        ReferenceOffenders(
+                [("Services/SneakyService.cs", service), ("Tenancy/CallerTenantMiddleware.cs", service)],
+                SetCallerRe, SetCallerAllowedFiles)
+            .Should().Equal(["Services/SneakyService.cs:4"], "the allow-list covers the middleware file, nothing else");
     }
 
     [Fact]

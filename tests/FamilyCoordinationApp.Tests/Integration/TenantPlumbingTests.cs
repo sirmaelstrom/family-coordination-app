@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Tenancy;
+using FamilyCoordinationApp.Tests.Architecture;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -366,26 +367,38 @@ public sealed class TenantPlumbingTests(PostgresContainerFixture postgres) : IAs
     }
 
     /// <summary>
-    /// The named host classes whose declaration body lacks a <c>TestHostTenancy.Apply(</c> call, or whose
-    /// declaration can't be found in the given sources at all. The body is found by brace matching from the
-    /// class declaration (lexically naive; a brace inside a string literal would skew it).
+    /// The named host classes whose <c>ConfigureWebHost</c> override doesn't call <c>TestHostTenancy.Apply(</c>, or
+    /// that have no such override, or whose declaration can't be found in the given sources at all. Everything runs
+    /// on <see cref="TenantScopeArchitectureTests.StripCommentsAndStrings"/> output, so a commented-out call or a
+    /// brace in a string can't satisfy or skew it (PR #120 review 2, codex): the class body is brace-matched from the
+    /// declaration, then the override's body inside it, and the call must sit in that override body.
     /// </summary>
     internal static List<string> HostsMissingTenancyApply(IEnumerable<string> hostNames, IReadOnlyCollection<string> sources)
     {
+        var stripped = sources.Select(TenantScopeArchitectureTests.StripCommentsAndStrings).ToList();
         var missing = new List<string>();
         foreach (var name in hostNames)
         {
-            var body = sources
+            var body = stripped
                 .Select(s => (Source: s, Match: Regex.Match(s, $@"\bclass\s+{Regex.Escape(name)}\b")))
                 .Where(x => x.Match.Success)
                 .Select(x => ClassBody(x.Source, x.Match.Index))
                 .FirstOrDefault();
-            if (body is null) missing.Add($"{name} (declaration not found in the test sources)");
-            else if (!body.Contains("TestHostTenancy.Apply(", StringComparison.Ordinal)) missing.Add(name);
+            if (body is null)
+            {
+                missing.Add($"{name} (declaration not found in the test sources)");
+                continue;
+            }
+
+            var overrideDecl = Regex.Match(body, @"\boverride\s+void\s+ConfigureWebHost\s*\(");
+            var overrideBody = overrideDecl.Success ? ClassBody(body, overrideDecl.Index) : null;
+            if (overrideBody is null) missing.Add($"{name} (no ConfigureWebHost override)");
+            else if (!Regex.IsMatch(overrideBody, @"\bTestHostTenancy\s*\.\s*Apply\s*\(")) missing.Add(name);
         }
         return missing;
     }
 
+    // The brace-matched body that follows declarationIndex (a class, or a method: the first '{' after it).
     private static string? ClassBody(string source, int declarationIndex)
     {
         var open = source.IndexOf('{', declarationIndex);
@@ -444,9 +457,34 @@ public sealed class TenantPlumbingTests(PostgresContainerFixture postgres) : IAs
             }
             // A mention outside the class body must not count: TestHostTenancy.Apply(builder)
             """;
+        // PR #120 review 2 (codex): a commented-out call inside ConfigureWebHost must not count either.
+        const string commentedOut = """
+            public sealed class CommentHost : WebApplicationFactory<Program>
+            {
+                protected override void ConfigureWebHost(IWebHostBuilder builder)
+                {
+                    builder.UseEnvironment("Testing");
+                    // TestHostTenancy.Apply(builder);
+                }
+            }
+            """;
+        const string noOverride = """
+            public sealed class NoOverrideHost : WebApplicationFactory<Program>
+            {
+                private static void Unused(IWebHostBuilder builder) => TestHostTenancy.Apply(builder);
+            }
+            """;
 
-        HostsMissingTenancyApply(["GoodHost", "RogueHost", "GhostHost"], [compliant, rogue]).Should()
-            .BeEquivalentTo(["RogueHost", "GhostHost (declaration not found in the test sources)"]);
+        HostsMissingTenancyApply(
+                ["GoodHost", "RogueHost", "GhostHost", "CommentHost", "NoOverrideHost"],
+                [compliant, rogue, commentedOut, noOverride]).Should()
+            .BeEquivalentTo(
+            [
+                "RogueHost",
+                "GhostHost (declaration not found in the test sources)",
+                "CommentHost",
+                "NoOverrideHost (no ConfigureWebHost override)",
+            ]);
     }
 }
 

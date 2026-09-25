@@ -27,18 +27,18 @@ public partial class ApplicationDbContext : DbContext
         ArgumentNullException.ThrowIfNull(tenant);
         ArgumentNullException.ThrowIfNull(tenancy);
         Tenant = tenant;
-        // A copy, taken here rather than in the factory so a hand-built context gets one too.
-        Tenancy = tenancy.Snapshot();
+        // A snapshot, taken here rather than in the factory so a hand-built context gets one too.
+        Tenancy = new TenancySettings(tenancy);
     }
 
     /// <summary>The creating scope's tenant. Services reach <c>RunAs</c>/<c>AllowCrossTenantWrite</c> through here.</summary>
     internal ITenantContext Tenant { get; }
 
     /// <summary>
-    /// This context's own copy of the <c>Tenancy</c> options, taken at construction. Mutating it affects only this
-    /// context, never the <c>IOptions</c> source or another context.
+    /// An immutable snapshot of the <c>Tenancy</c> options, taken at construction. Nothing can change it afterwards:
+    /// not this context, another context, or a later change to the <c>IOptions</c> source.
     /// </summary>
-    internal TenancyOptions Tenancy { get; }
+    internal TenancySettings Tenancy { get; }
 
     /// <summary>The clock WP-03's write step stamps audit fields from (D16). Set by the factory.</summary>
     internal TimeProvider Clock { get; init; } = TimeProvider.System;

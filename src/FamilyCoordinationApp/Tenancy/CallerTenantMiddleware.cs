@@ -12,6 +12,9 @@ namespace FamilyCoordinationApp.Tenancy;
 /// on their own until WP-04 collapses them onto <see cref="CallerScope"/>. An unresolvable caller gets
 /// <b>401</b> with a JSON <c>{ message }</c> (constraints M5), never 400 or 403. Unmarked endpoints pass through
 /// with the tenant still Unset.</para>
+/// <para><b>Runs once per DI scope.</b> <c>UseStatusCodePagesWithReExecute</c> re-runs a non-<c>/api</c> request
+/// through its target in the SAME scope, so a re-execution target must stay unmarked. A marked one would call
+/// <see cref="ITenantContext.SetCaller"/> a second time in one scope, which throws: a fail-closed 500.</para>
 /// </summary>
 public sealed class CallerTenantMiddleware(RequestDelegate next)
 {

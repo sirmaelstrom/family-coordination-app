@@ -4,7 +4,13 @@ namespace FamilyCoordinationApp.Tenancy;
 
 /// <summary>
 /// The scoped <see cref="ITenantContext"/> (fca-household-scope D2). One instance per DI scope — per HTTP request,
-/// or per <c>CreateScope()</c> — and never ambient: no <c>AsyncLocal</c>, no static accessor (MN10).
+/// or per <c>CreateScope()</c> — and never ambient: this class holds no <c>AsyncLocal</c> and no static accessor
+/// (MN10).
+/// <para><b>But <see cref="IsOutOfRequest"/> follows the async flow.</b> It reads
+/// <c>IHttpContextAccessor.HttpContext</c>, which is <c>AsyncLocal</c>-backed. So a <c>CreateScope()</c> or
+/// <c>Task.Run</c> started inside a request counts as in-request, and a continuation that outlives its request
+/// counts as out-of-request (Unfiltered in the test hosts, a throw in production). WP-02 relies on this split
+/// (D15).</para>
 /// <para><b>State machine</b> (council round 1): <see cref="SetCaller"/> only from Unset; <see cref="RunAs"/> pushes
 /// System and its dispose restores the exact previous state (Caller's <c>UserId</c> included);
 /// <see cref="AllowCrossTenantWrite"/> is a depth counter. Both kinds of scope share ONE stack, so disposing any

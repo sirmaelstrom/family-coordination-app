@@ -1,3 +1,4 @@
+using System.Reflection;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Tenancy;
 using FluentAssertions;
@@ -339,25 +340,48 @@ public class TenantContextTests
     [Fact]
     public void Each_context_gets_its_own_copy_of_the_TenancyOptions()
     {
-        // PR #120 review 1 (opus): contexts used to share the cached IOptions value, so one context's mutation
-        // reached every other context and the source.
+        // PR #120 review 1 (opus): contexts used to share the cached IOptions value. Review 2 (opus): the per-context
+        // copy is now an immutable TenancySettings snapshot, so no context can be mutated; what remains observable is
+        // that each context snapshots the source at ITS creation and never follows it afterwards.
         var source = Options.Create(new TenancyOptions());
         var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase($"tenancy-options-{Guid.NewGuid()}")
             .Options;
         var factory = new TenantDbContextFactory(dbOptions, Create(new DefaultHttpContext()), source, TimeProvider.System);
         using var a = factory.CreateDbContext();
-        using var b = factory.CreateDbContext();
 
-        a.Tenancy.EnforceFilter = false;
-
-        b.Tenancy.EnforceFilter.Should().BeTrue("another context's copy is untouched");
-        source.Value.EnforceFilter.Should().BeTrue("the source options are untouched");
-
+        source.Value.EnforceFilter = false;
         source.Value.EnforceWrites = false;
         source.Value.OutOfRequest = OutOfRequestMode.Unfiltered;
+        using var b = factory.CreateDbContext();
 
-        a.Tenancy.EnforceWrites.Should().BeTrue("a context's copy is fixed at creation");
-        a.Tenancy.OutOfRequest.Should().Be(OutOfRequestMode.Throw);
+        (a.Tenancy.EnforceFilter, a.Tenancy.EnforceWrites, a.Tenancy.OutOfRequest).Should().Be(
+            (true, true, OutOfRequestMode.Throw), "a context's snapshot is fixed at its creation");
+        (b.Tenancy.EnforceFilter, b.Tenancy.EnforceWrites, b.Tenancy.OutOfRequest).Should().Be(
+            (false, false, OutOfRequestMode.Unfiltered), "a later context snapshots the source as it is then");
+        a.Tenancy.Should().NotBeSameAs(b.Tenancy, "each context holds its own snapshot");
+    }
+
+    [Fact]
+    public void TenancySettings_is_immutable_and_mirrors_every_TenancyOptions_member()
+    {
+        // PR #120 review 2 (opus): a settable per-context copy would let `db.Tenancy.EnforceFilter = false` bypass
+        // WP-02's filter at runtime, unseen by the IgnoreQueryFilters guard facts.
+        const BindingFlags instance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        var properties = typeof(TenancySettings).GetProperties(instance);
+
+        properties.Should().OnlyContain(p => p.SetMethod == null,
+            "a setter, public or not and including init, is a way to change a context's switches");
+        typeof(TenancySettings).GetFields(instance).Should().OnlyContain(f => f.IsInitOnly,
+            "every field is readonly");
+
+        var tenancy = typeof(ApplicationDbContext).GetProperty("Tenancy", instance);
+        tenancy.Should().NotBeNull();
+        tenancy!.PropertyType.Should().Be(typeof(TenancySettings));
+        tenancy.SetMethod.Should().BeNull("the context's snapshot can't be replaced either");
+
+        properties.Select(p => p.Name).Should().BeEquivalentTo(
+            typeof(TenancyOptions).GetProperties(instance).Select(p => p.Name),
+            "a new TenancyOptions member must be mirrored in the snapshot, or it never reaches a context");
     }
 }

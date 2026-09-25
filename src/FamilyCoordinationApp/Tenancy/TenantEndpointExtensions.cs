@@ -12,8 +12,9 @@ public sealed class TenantScopedMetadata
 }
 
 /// <summary>
-/// <c>RequireTenant()</c> for route groups and single endpoints (D3). The groups are not nested, so the marker is
-/// applied per group. The marker map (what is marked, and the pinned unmarked list) is enforced by the
+/// <c>RequireTenant()</c> for route groups and single endpoints (D3). Groups ARE nested (<c>SettingsEndpoints</c>
+/// maps <c>/categories</c> and <c>/members</c> inside the marked <c>/api/settings</c> group), and the marker carries
+/// into nested groups, so it is applied once per top-level group. The marker map (what is marked, and the pinned unmarked list) is enforced by the
 /// endpoint-coverage fact in <c>TenantPlumbingTests</c>.
 /// </summary>
 public static class TenantEndpointExtensions
