@@ -6,7 +6,7 @@ namespace FamilyCoordinationApp.Data.Entities;
 /// the uniqueness guarantee. No navigation properties — memberships are queried explicitly through
 /// <see cref="FamilyCoordinationApp.Services.ChoreRoomMembership"/>, matching the rest of the model.
 /// </summary>
-public class ChoreRoom
+public class ChoreRoom : Tenancy.ITenantEntity
 {
     public int HouseholdId { get; set; }
     public int ChoreId { get; set; }

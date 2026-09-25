@@ -1,6 +1,6 @@
 namespace FamilyCoordinationApp.Data.Entities;
 
-public class Household
+public class Household : Tenancy.IAuditable
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;

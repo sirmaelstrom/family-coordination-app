@@ -1,6 +1,6 @@
 namespace FamilyCoordinationApp.Data.Entities;
 
-public class MealPlan
+public class MealPlan : Tenancy.ITenantEntity, Tenancy.IAuditable
 {
     public int HouseholdId { get; set; }
     public int MealPlanId { get; set; }

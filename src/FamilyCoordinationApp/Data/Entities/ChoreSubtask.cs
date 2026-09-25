@@ -6,7 +6,7 @@ namespace FamilyCoordinationApp.Data.Entities;
 /// writes must never touch Chore.Version. On the SATISFYING completion of a recurring chore, all of its
 /// subtasks reset to IsDone=false (handled in ChoreService.CompleteAsync).
 /// </summary>
-public class ChoreSubtask
+public class ChoreSubtask : Tenancy.ITenantEntity, Tenancy.IAuditable
 {
     public int HouseholdId { get; set; }
     public int ChoreId { get; set; }

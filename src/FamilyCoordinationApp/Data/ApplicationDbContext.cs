@@ -1,11 +1,47 @@
 using Microsoft.EntityFrameworkCore;
 using FamilyCoordinationApp.Data.Entities;
+using FamilyCoordinationApp.Tenancy;
 
 namespace FamilyCoordinationApp.Data;
 
-public class ApplicationDbContext : DbContext
+/// <summary>
+/// The app's EF context. <c>partial</c> so the tenancy work (fca-household-scope) can add its read filter
+/// (WP-02) and write step (WP-03) in their own files.
+/// </summary>
+public partial class ApplicationDbContext : DbContext
 {
-    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
+    /// <summary>
+    /// Options-only: a permanently <see cref="TenantState.Unfiltered"/> tenant with default options (D12). Kept for
+    /// the unit tests' direct construction and EF design-time. Architecture-guard fact 3 bans every construction form
+    /// it names (explicit and target-typed <c>new</c>, typed lambdas, activation, subclassing, and any mention of this
+    /// context's options type) in <c>src</c> outside <see cref="TenantDbContextFactory"/>, so production code does not
+    /// reach Unfiltered through it, within the guard's stated limits.
+    /// </summary>
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+        : this(options, TenantContext.CreateUnfiltered(), new TenancyOptions()) { }
+
+    /// <summary>The tenant-aware constructor, called only by <see cref="TenantDbContextFactory"/>.</summary>
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, ITenantContext tenant, TenancyOptions tenancy)
+        : base(options)
+    {
+        ArgumentNullException.ThrowIfNull(tenant);
+        ArgumentNullException.ThrowIfNull(tenancy);
+        Tenant = tenant;
+        // A snapshot, taken here rather than in the factory so a hand-built context gets one too.
+        Tenancy = new TenancySettings(tenancy);
+    }
+
+    /// <summary>The creating scope's tenant. Services reach <c>RunAs</c>/<c>AllowCrossTenantWrite</c> through here.</summary>
+    internal ITenantContext Tenant { get; }
+
+    /// <summary>
+    /// An immutable snapshot of the <c>Tenancy</c> options, taken at construction. Nothing can change it afterwards:
+    /// not this context, another context, or a later change to the <c>IOptions</c> source.
+    /// </summary>
+    internal TenancySettings Tenancy { get; }
+
+    /// <summary>The clock WP-03's write step stamps audit fields from (D16). Set by the factory.</summary>
+    internal TimeProvider Clock { get; init; } = TimeProvider.System;
 
     public DbSet<Household> Households => Set<Household>();
     public DbSet<User> Users => Set<User>();

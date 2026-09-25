@@ -5,6 +5,7 @@ using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Dtos;
 using FamilyCoordinationApp.Services.Interfaces;
+using FamilyCoordinationApp.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Endpoints;
@@ -53,6 +54,7 @@ public static class SettingsAdminEndpoints
         // ── Feedback (dual-mode) ──────────────────────────────────────────────────
         var feedback = app.MapGroup("/api/settings/feedback")
             .RequireAuthorization()
+            .RequireTenant()
             .DisableAntiforgery();
         feedback.MapPost("/", SubmitFeedback);
         feedback.MapGet("/", GetFeedback);

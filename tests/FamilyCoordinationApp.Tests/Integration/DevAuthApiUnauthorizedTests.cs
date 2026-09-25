@@ -64,6 +64,7 @@ public sealed class DevAuthTestingWebAppFactory(string connectionString) : WebAp
         // Satisfy the mandatory Google OAuth config keys so Program.cs startup does not throw.
         builder.UseSetting("Authentication:Google:ClientId", "test-client-id");
         builder.UseSetting("Authentication:Google:ClientSecret", "test-client-secret");
+        TestHostTenancy.Apply(builder);
     }
 
     /// <summary>

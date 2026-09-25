@@ -2,6 +2,7 @@ using System.Security.Claims;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Services.Dtos;
 using FamilyCoordinationApp.Services.Interfaces;
+using FamilyCoordinationApp.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Endpoints;
@@ -34,6 +35,7 @@ public static class SettingsConnectionsEndpoints
     {
         var group = app.MapGroup("/api/settings/connections")
             .RequireAuthorization()
+            .RequireTenant()
             .DisableAntiforgery();
 
         group.MapGet("/", GetConnections);

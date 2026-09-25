@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace FamilyCoordinationApp.Data.Entities;
 
-public class Chore
+public class Chore : Tenancy.ITenantEntity, Tenancy.IAuditable
 {
     public int HouseholdId { get; set; }
     public int ChoreId { get; set; }

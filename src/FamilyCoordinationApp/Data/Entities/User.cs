@@ -1,6 +1,6 @@
 namespace FamilyCoordinationApp.Data.Entities;
 
-public class User
+public class User : Tenancy.ITenantEntity, Tenancy.IAuditable
 {
     public int Id { get; set; }
     public int HouseholdId { get; set; }

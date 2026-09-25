@@ -4,6 +4,7 @@ using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Dtos;
 using FamilyCoordinationApp.Services.Interfaces;
+using FamilyCoordinationApp.Tenancy;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -30,6 +31,7 @@ public static class RecipesEndpoints
     {
         var group = app.MapGroup("/api/recipes")
             .RequireAuthorization()
+            .RequireTenant()
             // Same rationale as the other island groups: same-origin credentialed fetch + JSON/multipart bodies,
             // SameSite auth cookie — the antiforgery token the SPA can't readily supply is not the CSRF control.
             .DisableAntiforgery();

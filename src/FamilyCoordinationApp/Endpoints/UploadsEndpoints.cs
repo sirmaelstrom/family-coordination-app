@@ -2,6 +2,7 @@ using System.Security.Claims;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Interfaces;
+using FamilyCoordinationApp.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Endpoints;
@@ -70,6 +71,7 @@ public static class UploadsEndpoints
         // GET + HEAD: the static-file middleware answered both, and this endpoint replaces it.
         app.MapMethods("/uploads/{householdId:int}/{fileName}", ["GET", "HEAD"], ServeUpload)
             .RequireAuthorization()
+            .RequireTenant()
             .WithName("ServeUpload");
     }
 

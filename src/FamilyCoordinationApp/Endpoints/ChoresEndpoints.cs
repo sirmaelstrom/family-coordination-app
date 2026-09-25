@@ -7,6 +7,7 @@ using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Digest;
 using FamilyCoordinationApp.Services.Dtos;
 using FamilyCoordinationApp.Services.Interfaces;
+using FamilyCoordinationApp.Tenancy;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -29,6 +30,7 @@ public static class ChoresEndpoints
     {
         var group = app.MapGroup("/api/chores")
             .RequireAuthorization()
+            .RequireTenant()
             .DisableAntiforgery();
 
         group.MapGet("/board", GetBoard);

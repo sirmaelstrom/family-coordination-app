@@ -2,6 +2,7 @@ using System.Security.Claims;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Services.Calendar;
 using FamilyCoordinationApp.Services.Interfaces;
+using FamilyCoordinationApp.Tenancy;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.EntityFrameworkCore;
@@ -15,6 +16,7 @@ public static class CalendarTokenEndpoints
     {
         var management = app.MapGroup("/api/meal-plan/calendar-token")
             .RequireAuthorization()
+            .RequireTenant()
             .DisableAntiforgery();
 
         management.MapPost("", CreateOrRotate);

@@ -4,6 +4,7 @@ using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Interfaces;
+using FamilyCoordinationApp.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Endpoints;
@@ -14,6 +15,7 @@ public static class ShoppingListEndpoints
     {
         var group = app.MapGroup("/api/shopping-lists")
             .RequireAuthorization()
+            .RequireTenant()
             .DisableAntiforgery();
 
         group.MapGet("/", GetActiveLists);

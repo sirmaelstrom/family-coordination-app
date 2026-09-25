@@ -4,7 +4,7 @@ namespace FamilyCoordinationApp.Data.Entities;
 
 public enum MealType { Breakfast, Lunch, Dinner, Snack }
 
-public class MealPlanEntry
+public class MealPlanEntry : Tenancy.ITenantEntity
 {
     public int HouseholdId { get; set; }
     public int MealPlanId { get; set; }

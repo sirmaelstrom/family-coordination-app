@@ -4,7 +4,7 @@ namespace FamilyCoordinationApp.Data.Entities;
 /// A rotatable, read-only capability for a household's calendar feed. Only the SHA-256 hash of the secret is
 /// persisted, so a database read cannot recover a usable feed URL.
 /// </summary>
-public class HouseholdCalendarToken
+public class HouseholdCalendarToken : Tenancy.ITenantEntity, Tenancy.IAuditable
 {
     public int Id { get; set; }
     public int HouseholdId { get; set; }

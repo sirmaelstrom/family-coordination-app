@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Services;
+using FamilyCoordinationApp.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Endpoints;
@@ -26,6 +27,7 @@ public static class PresenceEndpoints
         // (the SPA calls these with credentials: 'include' and no CSRF token — same-origin cookie only, M2).
         var group = app.MapGroup("/api/presence")
             .RequireAuthorization()
+            .RequireTenant()
             .DisableAntiforgery();
 
         group.MapPost("/heartbeat", Heartbeat);

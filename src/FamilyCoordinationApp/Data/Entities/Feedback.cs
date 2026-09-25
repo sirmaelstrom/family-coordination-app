@@ -7,7 +7,7 @@ public enum FeedbackType
     General
 }
 
-public class Feedback
+public class Feedback : Tenancy.IAuditable
 {
     public int Id { get; set; }
     public int? UserId { get; set; }

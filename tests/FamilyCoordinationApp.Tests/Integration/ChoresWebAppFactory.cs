@@ -4,13 +4,16 @@ using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services.Digest;
 using FamilyCoordinationApp.Services.Interfaces;
+using FamilyCoordinationApp.Tenancy;
 using FamilyCoordinationApp.Tests.Fakes;
 using FamilyCoordinationApp.Tests.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -115,9 +118,27 @@ public class ChoresWebAppFactory(PostgresContainerFixture postgres) : WebApplica
         _connectionString ??= await postgres.CreateDatabaseConnectionStringAsync();
     }
 
+    /// <summary>
+    /// Optional <see cref="ITenantContext"/> decorator, for the tenancy plumbing tests only (fca-household-scope
+    /// WP-01, V1). When set before the host is built, every DI scope's tenant is this function applied to a real
+    /// <see cref="TenantContext"/>, so a test can observe what the caller-resolution middleware set. Wired through
+    /// <c>ConfigureTestServices</c>; there are no test-only endpoints (M12).
+    /// </summary>
+    public Func<ITenantContext, IServiceProvider, ITenantContext>? TenantContextDecorator { get; init; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        TestHostTenancy.Apply(builder);
+
+        if (TenantContextDecorator is { } decorate)
+        {
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<ITenantContext>();
+                services.AddScoped(sp => decorate(ActivatorUtilities.CreateInstance<TenantContext>(sp), sp));
+            });
+        }
 
         builder.UseSetting("ConnectionStrings:DefaultConnection", _connectionString ?? postgres.ConnectionString);
         // Satisfy the mandatory Google OAuth config keys so Program.cs does not throw at startup (council C3).

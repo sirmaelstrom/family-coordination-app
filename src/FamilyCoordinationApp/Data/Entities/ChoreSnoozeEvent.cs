@@ -16,7 +16,7 @@ namespace FamilyCoordinationApp.Data.Entities;
 /// shape; a distinct entity (not a <see cref="ChoreEvent"/> type) because it carries the snooze-specific
 /// <see cref="SnoozedUntil"/> date payload the generic audit event has no place for.
 /// </summary>
-public class ChoreSnoozeEvent
+public class ChoreSnoozeEvent : Tenancy.ITenantEntity
 {
     public int HouseholdId { get; set; }
     public int ChoreId { get; set; }

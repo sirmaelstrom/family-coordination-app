@@ -1,6 +1,6 @@
 namespace FamilyCoordinationApp.Data.Entities;
 
-public class Category
+public class Category : Tenancy.ITenantEntity
 {
     public int HouseholdId { get; set; }
     public int CategoryId { get; set; }

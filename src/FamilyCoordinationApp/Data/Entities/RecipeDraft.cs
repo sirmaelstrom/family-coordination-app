@@ -1,6 +1,6 @@
 namespace FamilyCoordinationApp.Data.Entities;
 
-public class RecipeDraft
+public class RecipeDraft : Tenancy.ITenantEntity
 {
     public int HouseholdId { get; set; }
     public int UserId { get; set; }  // References User.Id

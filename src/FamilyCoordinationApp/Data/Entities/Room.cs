@@ -1,6 +1,6 @@
 namespace FamilyCoordinationApp.Data.Entities;
 
-public class Room
+public class Room : Tenancy.ITenantEntity, Tenancy.IAuditable
 {
     public int HouseholdId { get; set; }
     public int RoomId { get; set; }
