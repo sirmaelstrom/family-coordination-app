@@ -168,7 +168,10 @@ public static class UploadsEndpoints
 
         var storedPath = $"/uploads/{householdId}/{fileName}";
         await using var context = await dbFactory.CreateDbContextAsync(ct);
+        // TENANT-SCOPE-OK: rule 2 reads the OWNING (connected) household's recipes; gated by AreHouseholdsConnectedAsync
+        // at UploadsEndpoints.cs:167, and it answers only whether that household references this exact file
         return await context.Recipes
+            .IgnoreQueryFilters(["Tenant"])
             .AnyAsync(r => r.HouseholdId == householdId && r.ImagePath == storedPath, ct);
     }
 

@@ -1,4 +1,3 @@
-using System.Linq.Expressions;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Tenancy;
 using FamilyCoordinationApp.Tests.Integration;
@@ -13,9 +12,10 @@ namespace FamilyCoordinationApp.Tests.Tenancy;
 /// <summary>
 /// The E1 spike (fca-household-scope WP-02 step 1), kept as the mechanism's regression pin. A scratch context with two
 /// tiny entities carries the SAME filter the app ships: <c>HasQueryFilter("Tenant", e => BypassTenantFilter ||
-/// e.HouseholdId == CurrentHouseholdId)</c>, whose two instance properties delegate to
-/// <see cref="ApplicationDbContext.BypassTenantFilterFor"/> and <see cref="ApplicationDbContext.CurrentHouseholdIdFor"/>,
-/// over the real <see cref="TenantContext"/> and a <see cref="TenancySettings"/> built from <see cref="TenancyOptions"/>.
+/// e.HouseholdId == CurrentHouseholdId)</c>, built by <see cref="ApplicationDbContext.ApplyTenantFilter"/>, whose two
+/// instance properties delegate to <see cref="ApplicationDbContext.BypassTenantFilterFor"/> and
+/// <see cref="ApplicationDbContext.CurrentHouseholdIdFor"/>, over the real <see cref="TenantContext"/> and a
+/// <see cref="TenancySettings"/> built from <see cref="TenancyOptions"/>.
 /// <para>It proves, per provider: (a) an Unset tenant throws <see cref="TenantNotSetException"/>, EF re-reads the
 /// properties on every execution (two tenants, two results), and a bypassing context never throws; (b) the named
 /// <c>"Tenant"</c> and <c>"SoftDelete"</c> filters compose, and ignoring one keeps the other. Npgsql only: (c) the
@@ -290,9 +290,8 @@ public sealed class SpikeItem : ITenantEntity
 }
 
 /// <summary>
-/// The scratch context. Its filter is built exactly as <c>ApplicationDbContext.OnModelCreating</c> builds it: a loop
-/// over the <see cref="ITenantEntity"/> types, each given the expression tree for
-/// <c>e => BypassTenantFilter || e.HouseholdId == CurrentHouseholdId</c> over this context.
+/// The scratch context. Its Tenant filter comes from the app's own builder,
+/// <see cref="ApplicationDbContext.ApplyTenantFilter"/>, over this context's two same-named properties.
 /// </summary>
 public sealed class SpikeContext : DbContext
 {
@@ -321,17 +320,6 @@ public sealed class SpikeContext : DbContext
         modelBuilder.Entity<SpikeRoom>().HasMany(r => r.Items).WithOne().HasForeignKey(i => i.RoomId);
         modelBuilder.Entity<SpikeRoom>().HasQueryFilter("SoftDelete", r => !r.IsDeleted);
 
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes()
-                     .Where(t => typeof(ITenantEntity).IsAssignableFrom(t.ClrType)).ToList())
-        {
-            var e = Expression.Parameter(entityType.ClrType, "e");
-            var self = Expression.Constant(this);
-            var body = Expression.OrElse(
-                Expression.Property(self, nameof(BypassTenantFilter)),
-                Expression.Equal(
-                    Expression.Property(e, nameof(ITenantEntity.HouseholdId)),
-                    Expression.Property(self, nameof(CurrentHouseholdId))));
-            modelBuilder.Entity(entityType.ClrType).HasQueryFilter("Tenant", Expression.Lambda(body, e));
-        }
+        ApplicationDbContext.ApplyTenantFilter(modelBuilder, this);
     }
 }

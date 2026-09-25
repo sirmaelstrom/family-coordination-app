@@ -19,7 +19,7 @@ src/FamilyCoordinationApp/
   Program.cs              # Startup: DI, auth, middleware pipeline, endpoint maps, SPA fallbacks
   Data/
     ApplicationDbContext.cs
-    Entities/              # EF entities (composite keys: HouseholdId + EntityId)
+    Entities/              # EF entities (mostly composite keys HouseholdId + EntityId; 6 surrogate Id)
     Configurations/        # EF fluent config (IEntityTypeConfiguration<T>)
     SeedData.cs            # Dev seed data
   Services/
@@ -59,7 +59,13 @@ tests/FamilyCoordinationApp.Tests/
 
 ## Key Architectural Patterns
 
-**Multi-tenant isolation**: All entities use composite primary keys (`HouseholdId` + entity-specific ID). Every query filters by `HouseholdId` — it's a security boundary. This includes the in-memory presence roster (`PresenceService.GetAllActiveUsers(householdId)`).
+**Multi-tenant isolation** (a security boundary; fca-household-scope, quest `ec788d69`): tenancy is enforced in the data pipeline, not per query.
+- **Reads:** every `ITenantEntity` carries a named global query filter `"Tenant"` (`ApplicationDbContext.ApplyTenantFilter`), which scopes queries, `Include` navigations and `ExecuteUpdate`/`ExecuteDelete`. The tenant comes from the scoped `ITenantContext`: `CallerTenantMiddleware` sets it for `RequireTenant()` groups. A tenant query with no tenant **throws `TenantNotSetException`**, never returns empty or everything. **Writes:** central checks in `SaveChanges` join in WP-03.
+- **Cross-household reads** use `IgnoreQueryFilters(["Tenant"])` plus a `// TENANT-SCOPE-OK: <reason naming the gate file:line>` pragma above the statement. Every one is a `bypass:` row in `.planning/tenancy-bypass-inventory.md`, and `TenantFilterArchitectureTests` holds the two equal. A bare `IgnoreQueryFilters()` is banned: soft delete is the named filter `"SoftDelete"`.
+- **System work** with no caller (digest, calendar feed, setup, admin approve/create, the dev seed, the login profile write) runs inside `context.Tenant.RunAs(householdId)`; the calling files are pinned.
+- **The hand-written `HouseholdId` predicates stay** as a second layer until WP-05 retires them after the production soak.
+- **Keys:** most entities use composite primary keys (`HouseholdId` + entity-specific ID); 6 use a surrogate `Id` (`User`, `HouseholdInvite`, `HouseholdCalendarToken`, `Household`, `HouseholdRequest`, `Feedback`).
+- The in-memory presence roster (`PresenceService.GetAllActiveUsers(householdId)`) is household-scoped by hand.
 
 **DbContextFactory**: Services and endpoints inject `IDbContextFactory<ApplicationDbContext>` (not `DbContext`) and create short-lived contexts via `dbFactory.CreateDbContextAsync()`.
 

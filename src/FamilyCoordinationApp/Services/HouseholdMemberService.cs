@@ -31,7 +31,10 @@ public sealed class HouseholdMemberService(
 
         // Intentional cross-household read (R-A4): the email belonging to ANOTHER household is rejected — this
         // takes precedence (parity WhitelistAdmin.AddUser:181). It returns no data, only the rejection outcome.
+        // TENANT-SCOPE-OK: cross-household email uniqueness, returning only a boolean; reached only through the
+        // marked members group (AddMember at SettingsEndpoints.cs:46)
         var inOtherHousehold = await context.Users
+            .IgnoreQueryFilters(["Tenant"])
             .AnyAsync(u => u.Email == normalized && u.HouseholdId != householdId, cancellationToken);
         if (inOtherHousehold)
         {

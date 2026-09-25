@@ -119,8 +119,10 @@ public class HouseholdConnectionService(
 
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        // TENANT-SCOPE-OK: invite redemption resolves a code issued by ANOTHER household — cross-household by design
+        // TENANT-SCOPE-OK: invite redemption resolves a code issued by ANOTHER household — cross-household by design;
+        // the code is the capability (exact match, then the used/expired/self checks below), rate-limited at HouseholdConnectionService.cs:115
         var invite = await context.HouseholdInvites
+            .IgnoreQueryFilters(["Tenant"])
             .Include(i => i.Household)
             .FirstOrDefaultAsync(i => i.InviteCode == normalizedCode, cancellationToken);
 
@@ -173,8 +175,10 @@ public class HouseholdConnectionService(
         try
         {
             // Validate the invite
-            // TENANT-SCOPE-OK: invite redemption resolves a code issued by ANOTHER household — cross-household by design
+            // TENANT-SCOPE-OK: invite redemption resolves a code issued by ANOTHER household — cross-household by design;
+            // the code is the capability (exact match, then the used/expired/self/connected checks below)
             var invite = await context.HouseholdInvites
+                .IgnoreQueryFilters(["Tenant"])
                 .Include(i => i.Household)
                 .FirstOrDefaultAsync(i => i.InviteCode == normalizedCode, cancellationToken);
 
@@ -213,7 +217,12 @@ public class HouseholdConnectionService(
             };
 
             context.HouseholdConnections.Add(connection);
-            await context.SaveChangesAsync(cancellationToken);
+            // The invite row belongs to the INVITING household; marking it used is the one sanctioned cross-tenant
+            // write (D9). Inert until WP-03's write step.
+            using (context.Tenant.AllowCrossTenantWrite("invite accept writes UsedByHouseholdId on the inviting household's row"))
+            {
+                await context.SaveChangesAsync(cancellationToken);
+            }
             await transaction.CommitAsync(cancellationToken);
 
             // Reset failed attempts on success

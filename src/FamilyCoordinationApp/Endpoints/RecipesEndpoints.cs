@@ -479,8 +479,8 @@ public static class RecipesEndpoints
             return Forbidden();
         }
 
-        // Reuse the household-scoped fetch with the CONNECTED id (connection-gated above) — the only single-fetch.
-        var recipe = await recipeService.GetRecipeAsync(chId, recipeId, ct);
+        // The connected-household fetch (a Tenant bypass, connection-gated above) — the only single-fetch.
+        var recipe = await recipeService.GetConnectedRecipeAsync(chId, recipeId, ct);
         if (recipe is null) return Results.NotFound(new { message = "Recipe not found." });
 
         // Strip author for connected reads (privacy — mirrors GetRecipesFromConnectedHouseholdAsync excluding CreatedBy).
@@ -505,7 +505,7 @@ public static class RecipesEndpoints
         }
 
         // Validate the source exists in the connected household before copying (clean 404, no NRE in the service).
-        var source = await recipeService.GetRecipeAsync(chId, recipeId, ct);
+        var source = await recipeService.GetConnectedRecipeAsync(chId, recipeId, ct);
         if (source is null) return Results.NotFound(new { message = "Recipe not found." });
 
         var copy = await recipeService.CopyRecipeFromConnectedHouseholdAsync(chId, recipeId, user.HouseholdId, user.UserId, ct);

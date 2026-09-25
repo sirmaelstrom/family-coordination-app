@@ -48,7 +48,8 @@ public class RequestModel : PageModel
 
         await using var db = await _dbFactory.CreateDbContextAsync();
         // TENANT-SCOPE-OK: identity lookup by the caller's own authenticated email — pre-household onboarding surface
-        var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Email == UserEmail);
+        // (an unmarked page: no tenant exists here, D3)
+        var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).FirstOrDefaultAsync(u => u.Email == UserEmail);
         if (existingUser != null)
         {
             IsAlreadyInHousehold = true;
@@ -90,7 +91,8 @@ public class RequestModel : PageModel
             await using var db = await _dbFactory.CreateDbContextAsync();
 
             // TENANT-SCOPE-OK: identity lookup by the caller's own authenticated email — pre-household onboarding surface
-            var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Email == UserEmail);
+            // (an unmarked page: no tenant exists here, D3)
+            var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).FirstOrDefaultAsync(u => u.Email == UserEmail);
             if (existingUser != null)
             {
                 IsAlreadyInHousehold = true;

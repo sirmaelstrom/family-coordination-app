@@ -28,7 +28,10 @@ public sealed class HouseholdRequestService(
             .ToListAsync(cancellationToken);
 
         // Include Users so the endpoint can project MemberCount = Users.Count (R-C8).
+        // TENANT-SCOPE-OK: site-admin list of every household with its member count; gated by RequireSiteAdmin at
+        // SettingsAdminEndpoints.cs:77 (the Users include must see every household's members)
         var households = await context.Households
+            .IgnoreQueryFilters(["Tenant"])
             .AsNoTracking()
             .Include(h => h.Users)
             .OrderBy(h => h.Name)
@@ -70,6 +73,10 @@ public sealed class HouseholdRequestService(
         };
         context.Households.Add(household);
         await context.SaveChangesAsync(cancellationToken); // assign household.Id for the user FK below
+
+        // Everything from here is for the new household (D11), including the post-commit seed, whose own context
+        // comes from the same scoped factory and so shares this RunAs.
+        using var asNewHousehold = context.Tenant.RunAs(household.Id);
 
         context.Users.Add(new User
         {
@@ -175,8 +182,9 @@ public sealed class HouseholdRequestService(
         // The owner email must be free across ALL households (cross-tenant read, like AddMemberAsync's guard): an
         // existing user already has a home, and the unique Users.Email constraint would reject the insert anyway.
         // Cheap pre-check for a clean 409 before opening the transaction.
-        // TENANT-SCOPE-OK: deliberate cross-tenant uniqueness check — Users.Email is globally unique (comment above)
-        var emailTaken = await context.Users.AnyAsync(u => u.Email == email, cancellationToken);
+        // TENANT-SCOPE-OK: deliberate cross-tenant uniqueness check — Users.Email is globally unique (comment above);
+        // gated by RequireSiteAdmin at SettingsAdminEndpoints.cs:150, and it returns only a boolean
+        var emailTaken = await context.Users.IgnoreQueryFilters(["Tenant"]).AnyAsync(u => u.Email == email, cancellationToken);
         if (emailTaken)
         {
             return new CreateHouseholdResult(CreateHouseholdOutcome.EmailInUse, null);
@@ -192,6 +200,9 @@ public sealed class HouseholdRequestService(
         var household = new Household { Name = name, CreatedAt = now };
         context.Households.Add(household);
         await context.SaveChangesAsync(cancellationToken); // assign household.Id for the user FK below
+
+        // Everything from here is for the new household (D11), including the post-commit seed (same rule as approve).
+        using var asNewHousehold = context.Tenant.RunAs(household.Id);
 
         // Fall back to the email local-part when no display name is given (parity AddMemberAsync).
         var ownerName = string.IsNullOrWhiteSpace(ownerDisplayName) ? email.Split('@')[0] : ownerDisplayName!.Trim();

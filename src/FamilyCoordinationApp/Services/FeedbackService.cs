@@ -77,8 +77,10 @@ public sealed class FeedbackService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         // Read-only projection ⇒ AsNoTracking (council R6).
-        // TENANT-SCOPE-OK: dual-mode (R-C1) — site admin sees all households; non-admin scope applied conditionally below
-        IQueryable<Feedback> query = context.Feedbacks.AsNoTracking().Include(f => f.User);
+        // TENANT-SCOPE-OK: dual-mode (R-C1) — site admin sees all households; non-admin scope applied conditionally below.
+        // The Tenant bypass keeps OTHER households' authors (User is a tenant entity) for the site admin, gated by
+        // IsSiteAdmin at SettingsAdminEndpoints.cs:344; a non-admin still gets the HouseholdId predicate below
+        IQueryable<Feedback> query = context.Feedbacks.IgnoreQueryFilters(["Tenant"]).AsNoTracking().Include(f => f.User);
 
         // Dual-mode: site admin → all households; regular user → own household only (R-C1, server-scoped). A
         // non-admin with no resolved household sees nothing rather than everything.

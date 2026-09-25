@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Tenancy;
@@ -68,6 +69,12 @@ public partial class ApplicationDbContext : DbContext
         throw TenantNotSetException.For(tenant);
     }
 
+    /// <summary>The Tenant filter's bypass term, read by EF on every query execution.</summary>
+    internal bool BypassTenantFilter => BypassTenantFilterFor(Tenant, Tenancy);
+
+    /// <summary>The Tenant filter's household term, read by EF on every query execution. Throws when Unset (D12).</summary>
+    internal int CurrentHouseholdId => CurrentHouseholdIdFor(Tenant, Tenancy);
+
     public DbSet<Household> Households => Set<Household>();
     public DbSet<User> Users => Set<User>();
     public DbSet<Recipe> Recipes => Set<Recipe>();
@@ -97,5 +104,31 @@ public partial class ApplicationDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        ApplyTenantFilter(modelBuilder, this);
+    }
+
+    /// <summary>
+    /// The read switch (fca-household-scope D1/D5, WP-02): every <see cref="ITenantEntity"/> gets the named filter
+    /// <c>"Tenant"</c>: <c>e => BypassTenantFilter || e.HouseholdId == CurrentHouseholdId</c>. It scopes reads,
+    /// <c>Include</c> navigations and <c>ExecuteUpdate</c>/<c>ExecuteDelete</c>. EF swaps the model-building context
+    /// for the executing one and re-reads both properties per execution (pinned by <c>TenantFilterSpikeTests</c>,
+    /// whose scratch context calls this same method). Bypass it only with <c>IgnoreQueryFilters(["Tenant"])</c> and a
+    /// <c>TENANT-SCOPE-OK</c> pragma naming the gate.
+    /// </summary>
+    /// <param name="context">A context type declaring the two filter properties by these names.</param>
+    internal static void ApplyTenantFilter(ModelBuilder modelBuilder, DbContext context)
+    {
+        var self = Expression.Constant(context);
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes()
+                     .Where(t => typeof(ITenantEntity).IsAssignableFrom(t.ClrType)).ToList())
+        {
+            var e = Expression.Parameter(entityType.ClrType, "e");
+            var body = Expression.OrElse(
+                Expression.Property(self, nameof(BypassTenantFilter)),
+                Expression.Equal(
+                    Expression.Property(e, nameof(ITenantEntity.HouseholdId)),
+                    Expression.Property(self, nameof(CurrentHouseholdId))));
+            modelBuilder.Entity(entityType.ClrType).HasQueryFilter("Tenant", Expression.Lambda(body, e));
+        }
     }
 }

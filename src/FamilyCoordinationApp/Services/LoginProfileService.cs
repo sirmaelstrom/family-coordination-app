@@ -37,10 +37,17 @@ public sealed class LoginProfileService(
         try
         {
             await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
-            // TENANT-SCOPE-OK: login-time identity lookup by the authenticated email — household not yet resolved
-            var user = await context.Users.FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+            // TENANT-SCOPE-OK: login-time identity lookup by the authenticated email — household not yet resolved (the
+            // OAuth OnCreatingTicket event, Program.cs, runs with no tenant)
+            var user = await context.Users
+                .IgnoreQueryFilters(["Tenant"])
+                .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
             if (user is null)
                 return;
+
+            // The profile write is system work for the user's own household (D11): the scope spans every mutation
+            // through the save, so WP-03's write step sees a tenant that matches the row.
+            using var asHousehold = context.Tenant.RunAs(user.HouseholdId);
 
             user.LastLoginAt = clock.GetUtcNow().UtcDateTime;
             user.Initials = UserProfile.ComputeInitials(user.DisplayName);
