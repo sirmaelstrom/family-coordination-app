@@ -5,7 +5,7 @@ namespace FamilyCoordinationApp.Tenancy;
 /// is shared by every tenant entity type, so the message names the tenant STATE, not an entity. It never degrades to
 /// an empty or unfiltered result: a missing <c>RequireTenant()</c>, <c>RunAs</c> or bypass fails loudly.
 /// </summary>
-public sealed class TenantNotSetException : InvalidOperationException
+public sealed class TenantNotSetException : Exception
 {
     public TenantNotSetException(string message) : base(message) { }
 

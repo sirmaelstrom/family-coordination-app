@@ -1,7 +1,12 @@
+using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
+using FamilyCoordinationApp.Services;
+using FamilyCoordinationApp.Services.Interfaces;
 using FamilyCoordinationApp.Tenancy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
@@ -10,8 +15,10 @@ using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace FamilyCoordinationApp.Tests.Integration;
@@ -210,6 +217,195 @@ public sealed class TenantWriteIntegrationTests(PostgresContainerFixture postgre
         await using var check = await Unfiltered().CreateDbContextAsync();
         (await check.Households.CountAsync()).Should().Be(2);
         (await check.Rooms.AnyAsync(r => r.RoomId == 71)).Should().BeFalse();
+    }
+
+    // ── A concurrent delete is not a forged row (amendment 1, item 2) ───────
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_concurrent_delete_of_an_owned_surrogate_key_row_is_a_concurrency_conflict_not_a_forgery(bool sync)
+    {
+        int doomed;
+        await using (var seed = await Unfiltered().CreateDbContextAsync())
+        {
+            var user = new User { HouseholdId = A, Email = $"race-{sync}@a.test", DisplayName = "Race", CreatedAt = DateTime.UtcNow };
+            seed.Users.Add(user);
+            await seed.SaveChangesAsync();
+            doomed = user.Id;
+        }
+
+        var (scope, factory) = AsCaller(_factory, A, ChoresWebAppFactory.UserAId);
+        using (scope)
+        {
+            await using var first = await factory.CreateDbContextAsync();
+            var loaded = await first.Users.SingleAsync(u => u.Id == doomed);
+
+            await using (var second = await factory.CreateDbContextAsync())
+            {
+                second.Users.Remove(await second.Users.SingleAsync(u => u.Id == doomed));
+                await second.SaveChangesAsync();
+            }
+
+            // The row is gone from every household: the ownership query fails, the any-household check finds nothing,
+            // and base SaveChanges reports 0 rows affected as before the write step (HouseholdMemberService.DeleteMemberAsync
+            // turns that DbUpdateException into Blocked).
+            first.Users.Remove(loaded);
+            if (sync)
+            {
+                first.Invoking(d => d.SaveChanges()).Should().ThrowExactly<DbUpdateConcurrencyException>();
+            }
+            else
+            {
+                await first.Invoking(d => d.SaveChangesAsync()).Should().ThrowExactlyAsync<DbUpdateConcurrencyException>();
+            }
+        }
+        LeaveRequest();
+    }
+
+    // ── The new-household refusal holds inside AllowCrossTenantWrite (amendment 1, item 3) ──
+
+    [Fact]
+    public async Task Inside_AllowCrossTenantWrite_rows_under_a_household_created_in_the_same_save_are_still_refused()
+    {
+        var (scope, factory) = AsCaller(_factory, A, ChoresWebAppFactory.UserAId);
+        using (scope)
+        {
+            var tenant = scope.ServiceProvider.GetRequiredService<ITenantContext>();
+            await using var db = await factory.CreateDbContextAsync();
+            var recipe = new Recipe { Household = new Household { Name = "new" }, RecipeId = 90, Name = "under a new household" };
+            recipe.Ingredients.Add(new RecipeIngredient { RecipeId = 90, IngredientId = 1, Name = "salt" });
+            db.Recipes.Add(recipe);
+
+            using (tenant.AllowCrossTenantWrite("amendment 1, item 3: the scope does not admit a new household"))
+            {
+                await db.Invoking(d => d.SaveChangesAsync()).Should().ThrowExactlyAsync<CrossTenantWriteException>()
+                    .WithMessage("Added Recipe belongs to a household created in this same save*");
+            }
+        }
+        LeaveRequest();
+
+        await using var check = await Unfiltered().CreateDbContextAsync();
+        (await check.Households.CountAsync()).Should().Be(2, "no household was created");
+        (await check.Recipes.AnyAsync(r => r.RecipeId == 90)).Should().BeFalse();
+        (await check.RecipeIngredients.AnyAsync(i => i.RecipeId == 90)).Should().BeFalse();
+    }
+
+    // ── A tenancy refusal is not swallowed by an endpoint's catch (amendment 1, item 1) ──
+
+    /// <summary>
+    /// <c>RoomsEndpoints.UpdateRoom</c> wraps <c>IRoomService.UpdateRoomAsync</c> in
+    /// <c>catch (InvalidOperationException) → 404</c>, with no log line. The test host swaps in a decorator whose
+    /// update, for a marker name, performs a genuine refused write (or a tenant query with no tenant) through the
+    /// request's own services, and captures the host's logs with a test-only <see cref="ILoggerProvider"/> added
+    /// through <c>ConfigureLogging</c>.
+    /// </summary>
+    [Theory]
+    [InlineData(ForgingRoomService.ForgeCrossTenantWrite, typeof(CrossTenantWriteException))]
+    [InlineData(ForgingRoomService.QueryWithNoTenant, typeof(TenantNotSetException))]
+    public async Task A_tenancy_refusal_on_an_endpoint_that_catches_InvalidOperationException_answers_500_and_is_logged(
+        string marker, Type expected)
+    {
+        var logs = new CapturingLoggerProvider();
+        await using var host = _factory.WithWebHostBuilder(b =>
+        {
+            b.ConfigureLogging(l => l.AddProvider(logs));
+            b.ConfigureTestServices(services => services.AddScoped<IRoomService>(sp => new ForgingRoomService(
+                ActivatorUtilities.CreateInstance<RoomService>(sp),
+                sp.GetRequiredService<IDbContextFactory<ApplicationDbContext>>(),
+                sp.GetRequiredService<IServiceScopeFactory>())));
+        });
+        using var client = host.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        client.DefaultRequestHeaders.Add(ChoresWebAppFactory.TestUserHeader, ChoresWebAppFactory.UserAEmail);
+
+        var response = await client.PutAsJsonAsync("/api/rooms/1", new { name = marker, icon = "x", photoPath = (string?)null });
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError,
+            "the handler's catch (InvalidOperationException) → 404 must not see a tenancy refusal; body: {0}", body);
+        body.Should().Contain("\"message\"", "the /api exception branch answers JSON {message}");
+        body.Should().NotContain(expected.Name, "nothing from the exception reaches the wire");
+
+        var logged = logs.Entries.Where(e => e.Exception?.GetType() == expected).ToList();
+        logged.Should().ContainSingle("the refusal is logged once, with the exception attached. Captured: {0}",
+            string.Join(" | ", logs.Entries.Where(e => e.Level >= LogLevel.Warning)
+                .Select(e => $"{e.Level} {e.Category}: {e.Message} [{e.Exception?.GetType().Name}]")));
+        // Measured (amendment 1): the /api branch's ExceptionHandlerMiddleware logs it once, and the console formatter
+        // (what `docker logs` shows) prints the exception's full type name on the line after this message.
+        logged[0].Level.Should().Be(LogLevel.Error);
+        logged[0].Category.Should().Be("Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware");
+        logged[0].Message.Should().Be("An unhandled exception has occurred while executing the request.");
+        body.Should().Be("{\"message\":\"Something went wrong on our end.\"}");
+    }
+
+    /// <summary>A test-only room service: a marker name triggers a tenancy refusal; everything else is the real service.</summary>
+    private sealed class ForgingRoomService(
+        IRoomService inner, IDbContextFactory<ApplicationDbContext> dbFactory, IServiceScopeFactory scopes) : IRoomService
+    {
+        public const string ForgeCrossTenantWrite = "forge a cross-tenant write";
+        public const string QueryWithNoTenant = "query with no tenant";
+
+        public async Task<Room> UpdateRoomAsync(
+            int householdId, int roomId, string name, string icon, string? photoPath, CancellationToken cancellationToken = default)
+        {
+            if (name == ForgeCrossTenantWrite)
+            {
+                // The request's Caller-bound factory: a Modified room of household B under Caller(A) reaches the write step.
+                await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+                var foreign = new Room { HouseholdId = B, RoomId = roomId, Name = name, Icon = icon };
+                db.Rooms.Attach(foreign);
+                db.Entry(foreign).Property(r => r.Name).IsModified = true;
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            else if (name == QueryWithNoTenant)
+            {
+                // A fresh DI scope has its own Unset tenant, and it is still in-request (the HttpContext accessor flows
+                // with the async context), so a tenant query throws TenantNotSetException, as the read filter does.
+                using var scope = scopes.CreateScope();
+                await using var db = await scope.ServiceProvider
+                    .GetRequiredService<IDbContextFactory<ApplicationDbContext>>().CreateDbContextAsync(cancellationToken);
+                await db.Rooms.CountAsync(cancellationToken);
+            }
+            return await inner.UpdateRoomAsync(householdId, roomId, name, icon, photoPath, cancellationToken);
+        }
+
+        public Task<List<Room>> ListRoomsAsync(int householdId, CancellationToken cancellationToken = default) =>
+            inner.ListRoomsAsync(householdId, cancellationToken);
+
+        public Task<Room?> GetRoomAsync(int householdId, int roomId, CancellationToken cancellationToken = default) =>
+            inner.GetRoomAsync(householdId, roomId, cancellationToken);
+
+        public Task<Room> CreateRoomAsync(int householdId, string name, string icon, string? photoPath = null, CancellationToken cancellationToken = default) =>
+            inner.CreateRoomAsync(householdId, name, icon, photoPath, cancellationToken);
+
+        public Task DeleteRoomAsync(int householdId, int roomId, CancellationToken cancellationToken = default) =>
+            inner.DeleteRoomAsync(householdId, roomId, cancellationToken);
+
+        public Task ReorderAsync(int householdId, IReadOnlyList<int> orderedRoomIds, CancellationToken cancellationToken = default) =>
+            inner.ReorderAsync(householdId, orderedRoomIds, cancellationToken);
+    }
+
+    /// <summary>Records every log entry the host writes: category, level, formatted message and the exception.</summary>
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        public sealed record Entry(string Category, LogLevel Level, string Message, Exception? Exception);
+
+        public ConcurrentQueue<Entry> Entries { get; } = new();
+
+        public ILogger CreateLogger(string categoryName) => new Logger(categoryName, Entries);
+
+        public void Dispose() { }
+
+        private sealed class Logger(string category, ConcurrentQueue<Entry> sink) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+                Func<TState, Exception?, string> formatter) =>
+                sink.Enqueue(new Entry(category, logLevel, formatter(state, exception), exception));
+        }
     }
 
     // ── The login outcome (moved here from WP-02 by council round 1) ────────

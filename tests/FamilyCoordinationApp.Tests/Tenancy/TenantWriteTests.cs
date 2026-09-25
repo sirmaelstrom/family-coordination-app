@@ -108,14 +108,19 @@ public class TenantWriteTests
     public async Task A_row_added_under_a_household_created_in_the_same_save_is_refused_not_re_pointed()
     {
         var household = new Household { Name = "new" };
+        var room = new Room { Household = household, RoomId = 10, Name = "r", Icon = "r" };
         await using (var db = Context(Caller(1)))
         {
-            db.Rooms.Add(new Room { Household = household, RoomId = 10, Name = "r", Icon = "r" });
+            db.Rooms.Add(room);
 
             // InMemory generates the new household's real id on Add, so this is a plain mismatch here. Npgsql keeps a
             // temporary key until the insert (TenantWriteIntegrationTests covers that message).
             await db.Invoking(d => d.SaveChangesAsync()).Should().ThrowExactlyAsync<CrossTenantWriteException>();
-            household.Id.Should().NotBe(1, "the room was not re-pointed at the tenant's household");
+
+            // The room's own tracked foreign key, not the household's generated key: it still names the new household.
+            db.Entry(room).Property(r => r.HouseholdId).CurrentValue.Should().Be(household.Id,
+                "the room was not re-pointed at the tenant's household");
+            room.Household.Should().BeSameAs(household);
         }
 
         (await RoomsInStoreAsync()).Should().BeEmpty();
@@ -174,6 +179,41 @@ public class TenantWriteTests
             await db.Invoking(d => d.SaveChangesAsync()).Should().ThrowExactlyAsync<CrossTenantWriteException>()
                 .WithMessage("Modified User {Id=7} moves from household 1 to household 2*");
         }
+    }
+
+    [Fact]
+    public async Task A_surrogate_key_rows_HouseholdId_marked_modified_but_unchanged_is_refused_with_its_own_message()
+    {
+        await SeedAsync(new User { Id = 7, HouseholdId = 1, Email = "u@a.test", DisplayName = "U", CreatedAt = FixedNow });
+
+        await using var db = Context(Caller(1));
+        var user = await db.Users.SingleAsync();
+        db.Entry(user).Property(u => u.HouseholdId).IsModified = true; // what Update() or State = Modified does
+
+        await db.Invoking(d => d.SaveChangesAsync()).Should().ThrowExactlyAsync<CrossTenantWriteException>()
+            .WithMessage("Modified User {Id=7} has HouseholdId marked modified (household 1, unchanged; the tenant is " +
+                         "household 1). It would be written unchanged, and is refused*");
+    }
+
+    [Fact]
+    public async Task An_added_rows_message_names_its_key_as_it_stands_not_as_first_tracked()
+    {
+        await using var db = Context(Caller(1));
+        var room = Room(2, 10);
+        db.Rooms.Add(room);
+        room.RoomId = 11; // re-keyed after Add, before the save
+
+        await db.Invoking(d => d.SaveChangesAsync()).Should().ThrowExactlyAsync<CrossTenantWriteException>()
+            .WithMessage("Added Room {HouseholdId=2, RoomId=11} belongs to household 2*");
+    }
+
+    [Fact]
+    public void The_tenancy_exceptions_are_not_InvalidOperationExceptions()
+    {
+        // Endpoint handlers catch InvalidOperationException as "not found" (a 404/409 with no log line); a tenancy
+        // refusal must not be caught there (amendment 1; the end-to-end proof is in TenantWriteIntegrationTests).
+        typeof(InvalidOperationException).IsAssignableFrom(typeof(CrossTenantWriteException)).Should().BeFalse();
+        typeof(InvalidOperationException).IsAssignableFrom(typeof(TenantNotSetException)).Should().BeFalse();
     }
 
     // ── Deleted ─────────────────────────────────────────────────────────────

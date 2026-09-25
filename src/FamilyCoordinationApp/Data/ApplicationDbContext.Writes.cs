@@ -12,19 +12,34 @@ namespace FamilyCoordinationApp.Data;
 /// <item>An Added <see cref="IAuditable"/> with a <c>default</c> <c>CreatedAt</c> gets <see cref="Clock"/>'s now. This
 /// runs in every tenant state and with the kill switch off: audit is independent of tenancy. Modified entries are
 /// never touched.</item>
-/// <item>Every Added, Modified or Deleted <see cref="ITenantEntity"/> is checked against the tenant: an Added
-/// <c>HouseholdId == 0</c> is stamped (parents before children); a row of another household throws
-/// <see cref="CrossTenantWriteException"/> unless inside <c>AllowCrossTenantWrite</c>; a changed <c>HouseholdId</c>
-/// always throws; an Unset tenant throws <see cref="TenantNotSetException"/>.</item>
+/// <item>Every Added, Modified or Deleted <see cref="ITenantEntity"/> is checked against the tenant: an Added row whose
+/// <c>HouseholdId</c> is unset (0, or EF's temporary key) is stamped, parents before children, except under a
+/// <c>Household</c> created in the same save, which is refused (<see cref="StampHouseholdId"/>); a row of another
+/// household throws <see cref="CrossTenantWriteException"/> unless inside <c>AllowCrossTenantWrite</c>; a changed
+/// <c>HouseholdId</c> always throws; an Unset tenant throws <see cref="TenantNotSetException"/>.</item>
 /// <item>A Modified or Deleted row whose primary key excludes <c>HouseholdId</c> (<c>User</c>,
 /// <c>HouseholdInvite</c>, <c>HouseholdCalendarToken</c>) must exist in the tenant's household, because its
-/// <c>UPDATE … WHERE Id = @id</c> would otherwise reach a row whose tracked <c>HouseholdId</c> was forged.</item>
+/// <c>UPDATE … WHERE Id = @id</c> would otherwise reach a row whose tracked <c>HouseholdId</c> was forged. A row
+/// that exists in ANOTHER household is refused; a row that exists nowhere (a concurrent delete) is left to base
+/// <c>SaveChanges</c>, which raises <c>DbUpdateConcurrencyException</c> as before (<see cref="Owned{TEntity}"/>).</item>
 /// </list>
 /// The tenant checks are skipped with <c>Tenancy:EnforceWrites=false</c> (the D14 kill switch) and in the bypass
 /// states (the options-only Unfiltered constructor, or out of request with <c>OutOfRequest=Unfiltered</c>), which
-/// production cannot reach. <c>ExecuteUpdate</c>/<c>ExecuteDelete</c> never pass through here: the read filter scopes
-/// the rows they select, and <c>TenantWriteArchitectureTests</c> bans a <c>SetProperty</c> that assigns
-/// <c>HouseholdId</c>.
+/// production cannot reach.
+/// <para><b>What this step does NOT cover</b> (so don't rely on it for these):</para>
+/// <list type="bullet">
+/// <item>Non-tenant root writes: <c>Household</c>, <c>HouseholdConnection</c> and <c>Feedback</c> are not
+/// <see cref="ITenantEntity"/>, so their writes pass unchecked, and so do the database cascades a <c>Household</c>
+/// delete triggers.</item>
+/// <item><c>ExecuteUpdate</c>/<c>ExecuteDelete</c> never pass through here. The read filter scopes the rows they
+/// select, and <c>TenantWriteArchitectureTests</c> bans only a <c>SetProperty</c> that assigns <c>HouseholdId</c>.</item>
+/// <item>Raw SQL through <c>Database</c>'s raw-SQL APIs (the fca#111 guard demands a <c>TENANT-SCOPE-OK</c> pragma on each call site).</item>
+/// <item>An Added surrogate-key row with an explicit <c>Id</c> that collides with another household's row: the
+/// ownership check runs for Modified/Deleted only, so this reaches the database as a primary-key violation
+/// (<c>DbUpdateException</c>), not a <see cref="CrossTenantWriteException"/>.</item>
+/// <item>References from a tenant row to another household's rows through a non-<c>HouseholdId</c> column (a
+/// <c>Chore.OwnerUserId</c> naming another household's user): only <c>HouseholdId</c> is checked.</item>
+/// </list>
 /// </summary>
 public partial class ApplicationDbContext
 {
@@ -32,10 +47,10 @@ public partial class ApplicationDbContext
     {
         foreach (var check in PrepareWrites())
         {
-            if (!check.Ownership.Sync(this, check.Id, check.TenantHouseholdId))
-            {
-                throw check.NotOwned();
-            }
+            if (check.Ownership.Sync(this, check.Id, check.TenantHouseholdId)) continue;
+            // Not in the tenant's household. A row that is gone (a concurrent delete) falls through, and base raises
+            // DbUpdateConcurrencyException as it did before the write step. A row that exists elsewhere is refused.
+            if (check.Ownership.ExistsSync(this, check.Id)) throw check.NotOwned();
         }
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
@@ -44,10 +59,9 @@ public partial class ApplicationDbContext
     {
         foreach (var check in PrepareWrites())
         {
-            if (!await check.Ownership.Async(this, check.Id, check.TenantHouseholdId, cancellationToken))
-            {
-                throw check.NotOwned();
-            }
+            if (await check.Ownership.Async(this, check.Id, check.TenantHouseholdId, cancellationToken)) continue;
+            // As in SaveChanges: absent falls through to base's concurrency exception; present elsewhere is refused.
+            if (await check.Ownership.ExistsAsync(this, check.Id, cancellationToken)) throw check.NotOwned();
         }
         return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
@@ -117,8 +131,12 @@ public partial class ApplicationDbContext
     /// <para><b>"Unset" is not just 0 here.</b> <c>HouseholdId</c> is a foreign key to the store-generated
     /// <c>Household.Id</c>, so when a row is added with 0, EF replaces it with a <b>temporary</b> value (and would
     /// refuse the save as an unknown key). So a temporary value counts as unset, unless it came from a
-    /// <c>Household</c> principal tracked in this save (a household being created now), which is set by the code and
-    /// is never re-pointed at the tenant: <see cref="Validate"/> refuses it as a mismatch instead.</para>
+    /// <c>Household</c> principal tracked in this save (a household being created now): that row is left alone, and
+    /// <see cref="Validate"/> refuses the save (<c>UnderANewHousehold</c>), inside <c>AllowCrossTenantWrite</c> too.</para>
+    /// <para><b>The refusal is of the save, not of every stamp.</b> Only the non-tenant foreign key is checked here, so a
+    /// tenant child of such a row (a <c>RecipeIngredient</c> under a new household's <c>Recipe</c>) got its temporary
+    /// key through a tenant principal and IS stamped to the tenant in the tracker before the parent's refusal aborts
+    /// the save. Nothing reaches the database, but the context stays mutated after the throw: discard it.</para>
     /// </summary>
     private static void StampHouseholdId(List<EntityEntry> tenantEntries, int tenantHh)
     {
@@ -174,7 +192,9 @@ public partial class ApplicationDbContext
 
             if (entry.State == EntityState.Added)
             {
-                if (householdId.IsTemporary && !crossTenantAllowed)
+                // Refused even inside AllowCrossTenantWrite: no sanctioned cross-write adds rows under a household
+                // created in the same save (invite accept touches an existing invite and a non-tenant connection).
+                if (householdId.IsTemporary)
                 {
                     throw CrossTenantWriteException.UnderANewHousehold(EntityName(entry), tenantHh);
                 }
@@ -219,6 +239,10 @@ public partial class ApplicationDbContext
     /// also names the household itself, so the check still holds while the read kill switch
     /// (<c>Tenancy:EnforceFilter=false</c>) is off. It ignores only <c>SoftDelete</c>, so an update to a soft-deleted
     /// own row isn't taken for a foreign one. It materializes nothing and doesn't run <c>DetectChanges</c>.
+    /// <para><c>false</c> means ABSENT or FOREIGN, and the two need opposite answers, so a <c>false</c> is followed by
+    /// <see cref="ExistsInAnyHousehold{TEntity}"/>: a row that exists in another household is refused
+    /// (<see cref="CrossTenantWriteException"/>), and a row that exists nowhere, deleted concurrently, is left to base
+    /// <c>SaveChanges</c>, which raises <c>DbUpdateConcurrencyException</c> as it did before the write step.</para>
     /// </summary>
     private bool Owned<TEntity>(int id, int householdId) where TEntity : class, ITenantEntity =>
         Set<TEntity>().IgnoreQueryFilters(["SoftDelete"])
@@ -229,14 +253,39 @@ public partial class ApplicationDbContext
         Set<TEntity>().IgnoreQueryFilters(["SoftDelete"])
             .AnyAsync(e => EF.Property<int>(e, "Id") == id && EF.Property<int>(e, nameof(ITenantEntity.HouseholdId)) == householdId, cancellationToken);
 
-    /// <summary>One surrogate-key type's ownership query, in its sync and async forms.</summary>
+    /// <summary>
+    /// Does a row with this <c>Id</c> exist in ANY household? A boolean only, consulted only after
+    /// <see cref="Owned{TEntity}"/> answered <c>false</c>, to tell a forged key (present elsewhere: refuse) from a
+    /// concurrent delete (absent: let base raise its concurrency exception). It ignores <c>SoftDelete</c> too, so a
+    /// soft-deleted foreign row still counts as present and is refused.
+    /// </summary>
+    private bool ExistsInAnyHousehold<TEntity>(int id) where TEntity : class, ITenantEntity
+    {
+        // TENANT-SCOPE-OK: returns a boolean only, consulted only after the tenant-scoped ownership query failed
+        // (the gate at Data/ApplicationDbContext.Writes.cs:50); true refuses the write, false lets EF report the delete.
+        return Set<TEntity>().IgnoreQueryFilters(["Tenant", "SoftDelete"]).Any(e => EF.Property<int>(e, "Id") == id);
+    }
+
+    /// <inheritdoc cref="ExistsInAnyHousehold{TEntity}"/>
+    private async Task<bool> ExistsInAnyHouseholdAsync<TEntity>(int id, CancellationToken cancellationToken) where TEntity : class, ITenantEntity
+    {
+        // TENANT-SCOPE-OK: returns a boolean only, consulted only after the tenant-scoped ownership query failed
+        // (the gate at Data/ApplicationDbContext.Writes.cs:62); true refuses the write, false lets EF report the delete.
+        return await Set<TEntity>().IgnoreQueryFilters(["Tenant", "SoftDelete"]).AnyAsync(e => EF.Property<int>(e, "Id") == id, cancellationToken);
+    }
+
+    /// <summary>One surrogate-key type's ownership query and its any-household existence check, sync and async.</summary>
     internal sealed record OwnershipQuery(
         Func<ApplicationDbContext, int, int, bool> Sync,
-        Func<ApplicationDbContext, int, int, CancellationToken, Task<bool>> Async)
+        Func<ApplicationDbContext, int, int, CancellationToken, Task<bool>> Async,
+        Func<ApplicationDbContext, int, bool> ExistsSync,
+        Func<ApplicationDbContext, int, CancellationToken, Task<bool>> ExistsAsync)
     {
         public static OwnershipQuery For<TEntity>() where TEntity : class, ITenantEntity =>
             new((db, id, householdId) => db.Owned<TEntity>(id, householdId),
-                (db, id, householdId, ct) => db.OwnedAsync<TEntity>(id, householdId, ct));
+                (db, id, householdId, ct) => db.OwnedAsync<TEntity>(id, householdId, ct),
+                (db, id) => db.ExistsInAnyHousehold<TEntity>(id),
+                (db, id, ct) => db.ExistsInAnyHouseholdAsync<TEntity>(id, ct));
     }
 
     private sealed record PendingOwnershipCheck(OwnershipQuery Ownership, int Id, int TenantHouseholdId, EntityEntry Entry)
@@ -249,9 +298,10 @@ public partial class ApplicationDbContext
 
     private static string EntityName(EntityEntry entry) => entry.Metadata.ClrType.Name;
 
+    /// <summary>The key as the row stands: current values for an Added entry, original (as loaded) otherwise.</summary>
     private static string KeyText(EntityEntry entry) =>
         "{" + string.Join(", ", entry.Metadata.FindPrimaryKey()!.Properties
-            .Select(p => $"{p.Name}={entry.Property(p.Name).OriginalValue}")) + "}";
+            .Select(p => $"{p.Name}={(entry.State == EntityState.Added ? entry.Property(p.Name).CurrentValue : entry.Property(p.Name).OriginalValue)}")) + "}";
 
     private TenantNotSetException WriteWithNoTenant()
     {
