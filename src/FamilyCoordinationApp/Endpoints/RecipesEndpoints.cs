@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
@@ -12,9 +11,9 @@ namespace FamilyCoordinationApp.Endpoints;
 
 /// <summary>
 /// Minimal-API surface for the recipes island (strangler — mirrors <see cref="MealPlanEndpoints"/>): a
-/// <c>/api/recipes</c> group behind <c>.RequireAuthorization().DisableAntiforgery()</c>, every handler resolving
-/// the HouseholdId/UserId from the authenticated caller (M1, never client-supplied) via
-/// <see cref="UserContextResolver"/>. Writes delegate to <see cref="IRecipeService"/> / <see cref="IImageService"/>
+/// <c>/api/recipes</c> group behind <c>.RequireAuthorization().DisableAntiforgery()</c>, every handler taking
+/// the HouseholdId/UserId of the authenticated caller (M1, never client-supplied) as the <see cref="CallerScope"/>
+/// that <see cref="CallerTenantMiddleware"/> resolved. Writes delegate to <see cref="IRecipeService"/> / <see cref="IImageService"/>
 /// / <see cref="IDraftService"/> / <see cref="IRecipeImportService"/>; recipe→DTO shaping goes through the ONE
 /// <see cref="IRecipeProjectionService"/> (no card/detail drift, M9). Kept SEPARATE from the meal-plan picker's
 /// <c>/api/meal-plan/recipes/*</c> (spec D11).
@@ -84,17 +83,13 @@ public static class RecipesEndpoints
 
     private static async Task<IResult> ListRecipes(
         [FromQuery] string? q,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IRecipeService recipeService,
         IRecipeProjectionService projection,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var recipes = await recipeService.GetRecipesAsync(user.HouseholdId, q, ct);
-        var favorites = await recipeService.GetFavoriteRecipeIdsAsync(user.UserId, user.HouseholdId, ct);
+        var recipes = await recipeService.GetRecipesAsync(caller.HouseholdId, q, ct);
+        var favorites = await recipeService.GetFavoriteRecipeIdsAsync(caller.UserId, caller.HouseholdId, ct);
 
         var items = recipes.Select(projection.ToListItem).ToList();
         return Results.Ok(new RecipeListDto(items, favorites.ToList()));
@@ -102,16 +97,12 @@ public static class RecipesEndpoints
 
     private static async Task<IResult> GetRecipe(
         int recipeId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IRecipeService recipeService,
         IRecipeProjectionService projection,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var recipe = await recipeService.GetRecipeAsync(user.HouseholdId, recipeId, ct);
+        var recipe = await recipeService.GetRecipeAsync(caller.HouseholdId, recipeId, ct);
         if (recipe is null) return Results.NotFound(new { message = "Recipe not found." });
 
         return Results.Ok(projection.ToFull(recipe));
@@ -119,62 +110,54 @@ public static class RecipesEndpoints
 
     private static async Task<IResult> CreateRecipe(
         RecipeWriteRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IRecipeService recipeService,
         IRecipeProjectionService projection,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         if (string.IsNullOrWhiteSpace(req.Name))
         {
             return Results.BadRequest(new { message = "Recipe name is required." });
         }
 
 
-        if (!ImagePathPolicy.TryNormalize(req.ImagePath, user.HouseholdId, out var imagePath))
+        if (!ImagePathPolicy.TryNormalize(req.ImagePath, caller.HouseholdId, out var imagePath))
         {
             return Results.BadRequest(new { message = "Image path is not valid." });
         }
 
-        var recipe = MapToRecipe(req, user.HouseholdId, recipeId: 0, imagePath);
-        recipe.CreatedByUserId = user.UserId;
+        var recipe = MapToRecipe(req, caller.HouseholdId, recipeId: 0, imagePath);
+        recipe.CreatedByUserId = caller.UserId;
         recipe.CreatedAt = DateTime.UtcNow;
 
         var created = await recipeService.CreateRecipeAsync(recipe, ct);
 
         // Re-fetch so the response projection has the CreatedBy nav (CreateRecipeAsync doesn't load it).
-        var full = await recipeService.GetRecipeAsync(user.HouseholdId, created.RecipeId, ct);
+        var full = await recipeService.GetRecipeAsync(caller.HouseholdId, created.RecipeId, ct);
         return Results.Created($"/api/recipes/{created.RecipeId}", projection.ToFull(full!));
     }
 
     private static async Task<IResult> UpdateRecipe(
         int recipeId,
         RecipeWriteRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IRecipeService recipeService,
         IRecipeProjectionService projection,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         if (string.IsNullOrWhiteSpace(req.Name))
         {
             return Results.BadRequest(new { message = "Recipe name is required." });
         }
 
 
-        if (!ImagePathPolicy.TryNormalize(req.ImagePath, user.HouseholdId, out var imagePath))
+        if (!ImagePathPolicy.TryNormalize(req.ImagePath, caller.HouseholdId, out var imagePath))
         {
             return Results.BadRequest(new { message = "Image path is not valid." });
         }
 
-        var recipe = MapToRecipe(req, user.HouseholdId, recipeId, imagePath);
-        recipe.UpdatedByUserId = user.UserId;
+        var recipe = MapToRecipe(req, caller.HouseholdId, recipeId, imagePath);
+        recipe.UpdatedByUserId = caller.UserId;
 
         try
         {
@@ -194,23 +177,19 @@ public static class RecipesEndpoints
 
         // Project from a FRESH load, NOT the UpdateRecipeAsync return — its Ingredients nav is stale after the
         // RemoveRange/Add (spec §11.11 / council).
-        var full = await recipeService.GetRecipeAsync(user.HouseholdId, recipeId, ct);
+        var full = await recipeService.GetRecipeAsync(caller.HouseholdId, recipeId, ct);
         return Results.Ok(projection.ToFull(full!));
     }
 
     private static async Task<IResult> DeleteRecipe(
         int recipeId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IRecipeService recipeService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         try
         {
-            await recipeService.DeleteRecipeAsync(user.HouseholdId, recipeId, ct);
+            await recipeService.DeleteRecipeAsync(caller.HouseholdId, recipeId, ct);
             return Results.NoContent();
         }
         catch (InvalidOperationException)
@@ -221,21 +200,17 @@ public static class RecipesEndpoints
 
     private static async Task<IResult> ToggleFavorite(
         int recipeId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IRecipeService recipeService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         // Existence pre-check FIRST — a bare ToggleFavorite inserts a UserFavorite directly, so a missing or
         // cross-household recipe id would FK-violation/500. The household-scoped lookup makes it a clean 404 (M1).
-        var recipe = await recipeService.GetRecipeAsync(user.HouseholdId, recipeId, ct);
+        var recipe = await recipeService.GetRecipeAsync(caller.HouseholdId, recipeId, ct);
         if (recipe is null) return Results.NotFound(new { message = "Recipe not found." });
 
-        await recipeService.ToggleFavoriteAsync(user.UserId, user.HouseholdId, recipeId, ct);
-        var isFavorite = await recipeService.IsFavoriteAsync(user.UserId, user.HouseholdId, recipeId, ct);
+        await recipeService.ToggleFavoriteAsync(caller.UserId, caller.HouseholdId, recipeId, ct);
+        var isFavorite = await recipeService.IsFavoriteAsync(caller.UserId, caller.HouseholdId, recipeId, ct);
         return Results.Ok(new { isFavorite });
     }
 
@@ -243,31 +218,23 @@ public static class RecipesEndpoints
 
     private static async Task<IResult> IngredientSuggestions(
         [FromQuery] string? prefix,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IRecipeService recipeService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         // The service guards <2 chars ⇒ []; pass through.
-        var suggestions = await recipeService.GetIngredientSuggestionsAsync(user.HouseholdId, prefix ?? string.Empty, ct);
+        var suggestions = await recipeService.GetIngredientSuggestionsAsync(caller.HouseholdId, prefix ?? string.Empty, ct);
         return Results.Ok(suggestions);
     }
 
-    private static async Task<IResult> ParseIngredient(
+    // No CallerScope on the two parse endpoints: they never use the caller. The group's RequireTenant() still
+    // guarantees an authenticated, resolvable one.
+    private static IResult ParseIngredient(
         ParseIngredientRequest req,
-        ClaimsPrincipal principal,
         IIngredientParser parser,
         ICategoryInferenceService categoryInference,
-        IRecipeProjectionService projection,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
-        CancellationToken ct)
+        IRecipeProjectionService projection)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         // ParseIngredient THROWS on empty input — guard BEFORE calling (a 400, not a 500).
         if (string.IsNullOrWhiteSpace(req.Text))
         {
@@ -279,18 +246,12 @@ public static class RecipesEndpoints
         return Results.Ok(projection.ToParsed(parsed, category));
     }
 
-    private static async Task<IResult> ParseIngredients(
+    private static IResult ParseIngredients(
         ParseIngredientsRequest req,
-        ClaimsPrincipal principal,
         IIngredientParser parser,
         ICategoryInferenceService categoryInference,
-        IRecipeProjectionService projection,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
-        CancellationToken ct)
+        IRecipeProjectionService projection)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         var parsed = (req.Lines ?? new List<string>())
             .Where(l => !string.IsNullOrWhiteSpace(l))
             .Select(l =>
@@ -303,15 +264,11 @@ public static class RecipesEndpoints
     }
 
     private static async Task<IResult> GetCategories(
-        ClaimsPrincipal principal,
+        CallerScope caller,
         ICategoryService categoryService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var categories = await categoryService.GetCategoriesAsync(user.HouseholdId, cancellationToken: ct);
+        var categories = await categoryService.GetCategoriesAsync(caller.HouseholdId, cancellationToken: ct);
         return Results.Ok(categories.Select(c => new CategoryDto(c.Name)).ToList());
     }
 
@@ -319,14 +276,10 @@ public static class RecipesEndpoints
 
     private static async Task<IResult> UploadImage(
         IFormFile? file,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IImageService imageService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         if (file is null || file.Length == 0)
         {
             return Results.BadRequest(new { message = "No file uploaded." });
@@ -334,7 +287,7 @@ public static class RecipesEndpoints
 
         try
         {
-            var path = await imageService.SaveImageAsync(file, user.HouseholdId, ct);
+            var path = await imageService.SaveImageAsync(file, caller.HouseholdId, ct);
             return Results.Created(path, new { imagePath = path });
         }
         catch (InvalidOperationException ex)
@@ -345,15 +298,11 @@ public static class RecipesEndpoints
     }
 
     private static async Task<IResult> ListImages(
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IImageService imageService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var images = await imageService.ListImagesAsync(user.HouseholdId, ct);
+        var images = await imageService.ListImagesAsync(caller.HouseholdId, ct);
         return Results.Ok(images.ToArray());
     }
 
@@ -367,14 +316,11 @@ public static class RecipesEndpoints
     /// </summary>
     private static async Task<IResult> PreviewImport(
         ImportRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IRecipeImportService importService,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         if (string.IsNullOrWhiteSpace(req.Url))
         {
             return Results.BadRequest(new { message = "A recipe URL is required." });
@@ -382,7 +328,7 @@ public static class RecipesEndpoints
 
         if (!req.Force)
         {
-            var existing = await FindExistingBySourceUrlAsync(dbFactory, user.HouseholdId, req.Url, ct);
+            var existing = await FindExistingBySourceUrlAsync(dbFactory, caller.HouseholdId, req.Url, ct);
             if (existing is not null)
             {
                 return Results.Ok(new RecipeImportPreviewDto(
@@ -398,7 +344,7 @@ public static class RecipesEndpoints
 
         // ImportFromUrlAsync returns an UNSAVED entity — here it is mapped to the preview DTO and
         // deliberately NEVER persisted (that is the whole point of this endpoint).
-        var result = await importService.ImportFromUrlAsync(req.Url, user.HouseholdId, user.UserId, ct);
+        var result = await importService.ImportFromUrlAsync(req.Url, caller.HouseholdId, caller.UserId, ct);
 
         if (result.Success && result.Recipe is not null)
         {
@@ -425,37 +371,29 @@ public static class RecipesEndpoints
     // ─── Connected households ──────────────────────────────────────────────────────
 
     private static async Task<IResult> GetConnections(
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IHouseholdConnectionService connectionService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var connections = await connectionService.GetConnectedHouseholdsAsync(user.HouseholdId, ct);
+        var connections = await connectionService.GetConnectedHouseholdsAsync(caller.HouseholdId, ct);
         return Results.Ok(connections.Select(c => new ConnectedHouseholdDto(c.HouseholdId, c.HouseholdName)).ToList());
     }
 
     private static async Task<IResult> ListConnectedRecipes(
         int chId,
         [FromQuery] string? q,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IRecipeService recipeService,
         IRecipeProjectionService projection,
         IHouseholdConnectionService connectionService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        if (!await connectionService.AreHouseholdsConnectedAsync(user.HouseholdId, chId, ct))
+        if (!await connectionService.AreHouseholdsConnectedAsync(caller.HouseholdId, chId, ct))
         {
             return Forbidden();
         }
 
-        var recipes = await recipeService.GetRecipesFromConnectedHouseholdAsync(user.HouseholdId, chId, q, ct);
+        var recipes = await recipeService.GetRecipesFromConnectedHouseholdAsync(caller.HouseholdId, chId, q, ct);
         var items = recipes.Select(projection.ToListItem).ToList();
         // Same shape as the own list (favorites always empty for a connected household).
         return Results.Ok(new RecipeListDto(items, Array.Empty<int>()));
@@ -464,17 +402,13 @@ public static class RecipesEndpoints
     private static async Task<IResult> GetConnectedRecipe(
         int chId,
         int recipeId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IRecipeService recipeService,
         IRecipeProjectionService projection,
         IHouseholdConnectionService connectionService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        if (!await connectionService.AreHouseholdsConnectedAsync(user.HouseholdId, chId, ct))
+        if (!await connectionService.AreHouseholdsConnectedAsync(caller.HouseholdId, chId, ct))
         {
             return Forbidden();
         }
@@ -490,16 +424,12 @@ public static class RecipesEndpoints
     private static async Task<IResult> CopyConnectedRecipe(
         int chId,
         int recipeId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IRecipeService recipeService,
         IHouseholdConnectionService connectionService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        if (!await connectionService.AreHouseholdsConnectedAsync(user.HouseholdId, chId, ct))
+        if (!await connectionService.AreHouseholdsConnectedAsync(caller.HouseholdId, chId, ct))
         {
             return Forbidden();
         }
@@ -508,7 +438,7 @@ public static class RecipesEndpoints
         var source = await recipeService.GetConnectedRecipeAsync(chId, recipeId, ct);
         if (source is null) return Results.NotFound(new { message = "Recipe not found." });
 
-        var copy = await recipeService.CopyRecipeFromConnectedHouseholdAsync(chId, recipeId, user.HouseholdId, user.UserId, ct);
+        var copy = await recipeService.CopyRecipeFromConnectedHouseholdAsync(chId, recipeId, caller.HouseholdId, caller.UserId, ct);
         return Results.Created($"/api/recipes/{copy.RecipeId}", new { recipeId = copy.RecipeId });
     }
 
@@ -516,36 +446,28 @@ public static class RecipesEndpoints
 
     private static async Task<IResult> GetDraft(
         [FromQuery] int? recipeId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IDraftService draftService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         // recipeId omitted ⇒ "new recipe" draft ⇒ 0 sentinel (matches SaveDraft).
-        var draft = await draftService.GetDraftAsync(user.HouseholdId, user.UserId, recipeId ?? 0, ct);
+        var draft = await draftService.GetDraftAsync(caller.HouseholdId, caller.UserId, recipeId ?? 0, ct);
         // 204 when there's no draft (the island's request<T> treats No-Content as null); 200 + body otherwise.
         return draft is null ? Results.NoContent() : Results.Ok(draft);
     }
 
     private static async Task<IResult> SaveDraft(
         SaveDraftRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IDraftService draftService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         if (string.IsNullOrWhiteSpace(req.Name))
         {
             return Results.BadRequest(new { message = "Draft name is required." });
         }
 
-        if (!ImagePathPolicy.TryNormalize(req.ImagePath, user.HouseholdId, out var imagePath))
+        if (!ImagePathPolicy.TryNormalize(req.ImagePath, caller.HouseholdId, out var imagePath))
         {
             return Results.BadRequest(new { message = "Image path is not valid." });
         }
@@ -559,21 +481,17 @@ public static class RecipesEndpoints
                 .ToList());
 
         // recipeId null ⇒ "new recipe" draft ⇒ 0 sentinel (RecipeDraft's composite PK can't take null).
-        await draftService.SaveDraftAsync(user.HouseholdId, user.UserId, req.RecipeId ?? 0, draft, ct);
+        await draftService.SaveDraftAsync(caller.HouseholdId, caller.UserId, req.RecipeId ?? 0, draft, ct);
         return Results.NoContent();
     }
 
     private static async Task<IResult> DeleteDraft(
         [FromQuery] int? recipeId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IDraftService draftService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        await draftService.DeleteDraftAsync(user.HouseholdId, user.UserId, recipeId ?? 0, ct);
+        await draftService.DeleteDraftAsync(caller.HouseholdId, caller.UserId, recipeId ?? 0, ct);
         return Results.NoContent();
     }
 

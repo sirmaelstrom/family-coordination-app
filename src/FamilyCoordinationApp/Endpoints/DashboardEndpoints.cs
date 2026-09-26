@@ -1,16 +1,14 @@
 using System.Security.Claims;
-using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Services.Interfaces;
 using FamilyCoordinationApp.Tenancy;
-using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Endpoints;
 
 /// <summary>
 /// Minimal-API surface for the dashboard island (strangler — mirrors <see cref="MealPlanEndpoints"/>): a
 /// <c>/api/dashboard</c> group behind <c>.RequireAuthorization().DisableAntiforgery()</c>. ONE read route —
-/// the dashboard is a pure read-aggregate (D1). The handler resolves the HouseholdId/UserId from the
-/// authenticated caller (M1, never client-supplied) via <see cref="UserContextResolver"/>, resolves the
+/// the dashboard is a pure read-aggregate (D1). The handler takes the HouseholdId/UserId of the
+/// authenticated caller (M1, never client-supplied) as a <see cref="CallerScope"/>, resolves the
 /// greeting name from the caller's claims, and delegates the whole <c>DashboardDto</c> assembly to
 /// <see cref="IDashboardService"/> (ONE projection — no drift, M9).
 ///
@@ -34,16 +32,13 @@ public static class DashboardEndpoints
     }
 
     private static async Task<IResult> GetDashboard(
+        CallerScope caller,
         ClaimsPrincipal principal,
         IDashboardService dashboardService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         var greetingName = ResolveGreetingName(principal);
-        var dashboard = await dashboardService.GetDashboardAsync(user.HouseholdId, user.UserId, greetingName, ct);
+        var dashboard = await dashboardService.GetDashboardAsync(caller.HouseholdId, caller.UserId, greetingName, ct);
         return Results.Ok(dashboard);
     }
 

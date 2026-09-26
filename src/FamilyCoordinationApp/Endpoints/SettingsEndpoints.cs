@@ -1,17 +1,14 @@
-using System.Security.Claims;
-using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services.Dtos;
 using FamilyCoordinationApp.Services.Interfaces;
 using FamilyCoordinationApp.Tenancy;
-using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Endpoints;
 
 /// <summary>
 /// Minimal-API surface for Settings island A (Household settings, strangler — mirrors <see cref="RecipesEndpoints"/>):
-/// an <c>/api/settings</c> group behind <c>.RequireAuthorization().DisableAntiforgery()</c>, every handler resolving
-/// the HouseholdId/UserId from the authenticated caller (M1, never client-supplied) via <see cref="UserContextResolver"/>.
+/// an <c>/api/settings</c> group behind <c>.RequireAuthorization().DisableAntiforgery()</c>, every handler taking the
+/// HouseholdId/UserId of the authenticated caller (M1, never client-supplied) as a <see cref="CallerScope"/>.
 /// Categories ride the existing <see cref="ICategoryService"/>; members go through the new
 /// <see cref="IHouseholdMemberService"/> (the safety rules live there, server-enforced — review R-A2).
 ///
@@ -53,15 +50,11 @@ public static class SettingsEndpoints
     // ─── Categories ───────────────────────────────────────────────────────────────
 
     private static async Task<IResult> ListCategories(
-        ClaimsPrincipal principal,
+        CallerScope caller,
         ICategoryService categoryService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var all = await categoryService.GetCategoriesAsync(user.HouseholdId, includeDeleted: true, ct);
+        var all = await categoryService.GetCategoriesAsync(caller.HouseholdId, includeDeleted: true, ct);
         var active = all.Where(c => !c.IsDeleted).OrderBy(c => c.SortOrder).Select(ToDto).ToList();
         var deleted = all.Where(c => c.IsDeleted).Select(ToDto).ToList();
         return Results.Ok(new CategoryListDto(active, deleted));
@@ -69,14 +62,10 @@ public static class SettingsEndpoints
 
     private static async Task<IResult> CreateCategory(
         CategoryWriteRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         ICategoryService categoryService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         if (string.IsNullOrWhiteSpace(req.Name))
         {
             return Results.BadRequest(new { message = "Category name is required." });
@@ -84,7 +73,7 @@ public static class SettingsEndpoints
 
         var created = await categoryService.CreateCategoryAsync(new Category
         {
-            HouseholdId = user.HouseholdId,
+            HouseholdId = caller.HouseholdId,
             Name = req.Name.Trim(),
             IconEmoji = req.IconEmoji ?? string.Empty,
             Color = string.IsNullOrWhiteSpace(req.Color) ? "#808080" : req.Color,
@@ -97,20 +86,16 @@ public static class SettingsEndpoints
     private static async Task<IResult> UpdateCategory(
         int categoryId,
         CategoryWriteRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         ICategoryService categoryService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         if (string.IsNullOrWhiteSpace(req.Name))
         {
             return Results.BadRequest(new { message = "Category name is required." });
         }
 
-        var existing = await categoryService.GetCategoryAsync(user.HouseholdId, categoryId, ct);
+        var existing = await categoryService.GetCategoryAsync(caller.HouseholdId, categoryId, ct);
         if (existing is null) return Results.NotFound(new { message = "Category not found." });
 
         existing.Name = req.Name.Trim();
@@ -122,103 +107,79 @@ public static class SettingsEndpoints
 
     private static async Task<IResult> DeleteCategory(
         int categoryId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         ICategoryService categoryService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var existing = await categoryService.GetCategoryAsync(user.HouseholdId, categoryId, ct);
+        var existing = await categoryService.GetCategoryAsync(caller.HouseholdId, categoryId, ct);
         if (existing is null) return Results.NotFound(new { message = "Category not found." });
         if (existing.IsDeleted) return Results.NoContent(); // already soft-deleted (idempotent)
 
-        await categoryService.DeleteCategoryAsync(user.HouseholdId, categoryId, ct);
+        await categoryService.DeleteCategoryAsync(caller.HouseholdId, categoryId, ct);
         return Results.NoContent();
     }
 
     private static async Task<IResult> RestoreCategory(
         int categoryId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         ICategoryService categoryService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var existing = await categoryService.GetCategoryAsync(user.HouseholdId, categoryId, ct);
+        var existing = await categoryService.GetCategoryAsync(caller.HouseholdId, categoryId, ct);
         if (existing is null) return Results.NotFound(new { message = "Category not found." });
         if (!existing.IsDeleted) return Results.NoContent(); // already active (idempotent)
 
-        await categoryService.RestoreCategoryAsync(user.HouseholdId, categoryId, ct);
+        await categoryService.RestoreCategoryAsync(caller.HouseholdId, categoryId, ct);
         return Results.NoContent();
     }
 
     private static async Task<IResult> UpdateSortOrder(
         SortOrderRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         ICategoryService categoryService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         var orders = req.OrderedIds.Select((id, index) => (CategoryId: id, SortOrder: index)).ToList();
-        await categoryService.UpdateSortOrderAsync(user.HouseholdId, orders, ct);
+        await categoryService.UpdateSortOrderAsync(caller.HouseholdId, orders, ct);
         return Results.NoContent();
     }
 
     private static async Task<IResult> CategoryInUse(
         int categoryId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         ICategoryService categoryService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var existing = await categoryService.GetCategoryAsync(user.HouseholdId, categoryId, ct);
+        var existing = await categoryService.GetCategoryAsync(caller.HouseholdId, categoryId, ct);
         if (existing is null) return Results.NotFound(new { message = "Category not found." });
 
-        var inUse = await categoryService.HasIngredientsAsync(user.HouseholdId, existing.Name, ct);
+        var inUse = await categoryService.HasIngredientsAsync(caller.HouseholdId, existing.Name, ct);
         return Results.Ok(new { inUse });
     }
 
     // ─── Members ────────────────────────────────────────────────────────────────
 
     private static async Task<IResult> ListMembers(
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IHouseholdMemberService memberService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var members = await memberService.GetMembersAsync(user.HouseholdId, ct);
-        return Results.Ok(new MemberListDto(user.UserId, members.Select(ToMemberDto).ToList()));
+        var members = await memberService.GetMembersAsync(caller.HouseholdId, ct);
+        return Results.Ok(new MemberListDto(caller.UserId, members.Select(ToMemberDto).ToList()));
     }
 
     private static async Task<IResult> AddMember(
         AddMemberRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IHouseholdMemberService memberService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         if (string.IsNullOrWhiteSpace(req.Email))
         {
             return Results.BadRequest(new { message = "Email is required." });
         }
 
-        var result = await memberService.AddMemberAsync(user.HouseholdId, req.Email, ct);
+        var result = await memberService.AddMemberAsync(caller.HouseholdId, req.Email, ct);
         return result.Outcome switch
         {
             AddMemberOutcome.OtherHousehold => Results.Conflict(
@@ -234,16 +195,12 @@ public static class SettingsEndpoints
     private static async Task<IResult> SetWhitelist(
         int userId,
         SetWhitelistRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IHouseholdMemberService memberService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         var (result, updated) = await memberService.SetWhitelistAsync(
-            user.HouseholdId, user.UserId, userId, req.IsWhitelisted, ct);
+            caller.HouseholdId, caller.UserId, userId, req.IsWhitelisted, ct);
         return result switch
         {
             MemberMutationResult.Ok => Results.Ok(ToMemberDto(updated!)),
@@ -255,15 +212,11 @@ public static class SettingsEndpoints
 
     private static async Task<IResult> DeleteMember(
         int userId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IHouseholdMemberService memberService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var result = await memberService.DeleteMemberAsync(user.HouseholdId, user.UserId, userId, ct);
+        var result = await memberService.DeleteMemberAsync(caller.HouseholdId, caller.UserId, userId, ct);
         return result switch
         {
             MemberMutationResult.Ok => Results.NoContent(),

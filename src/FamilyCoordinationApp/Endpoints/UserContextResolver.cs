@@ -6,8 +6,8 @@ namespace FamilyCoordinationApp.Endpoints;
 
 /// <summary>
 /// Resolves the authenticated caller's household + user id from their cookie claims (M1: the HouseholdId
-/// the endpoints filter by comes ONLY from here, never from client input). Every endpoint group
-/// resolves through here — the ShoppingListEndpoints fork was folded in by quest 9101a410.
+/// the endpoints filter by comes ONLY from here, never from client input). Its one caller is
+/// <c>CallerTenantMiddleware</c>; handlers take the resulting <c>CallerScope</c> (fca-household-scope WP-04).
 /// </summary>
 public static class UserContextResolver
 {
@@ -16,9 +16,9 @@ public static class UserContextResolver
 
     /// <summary>
     /// Resolve the caller's <see cref="UserContext"/> from their email claim, or <c>null</c> when there is no
-    /// email claim or no matching user row. Endpoints treat <c>null</c> as <c>401 Unauthorized</c>.
+    /// email claim or no matching user row. The middleware answers <c>null</c> with <c>401</c> + JSON.
     /// </summary>
-    public static async Task<UserContext?> ResolveUserAsync(
+    internal static async Task<UserContext?> ResolveUserAsync(
         ClaimsPrincipal principal,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken cancellationToken)

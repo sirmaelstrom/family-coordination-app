@@ -62,15 +62,10 @@ public static class PresenceEndpoints
         return Results.NoContent();
     }
 
-    private static async Task<IResult> GetUsers(
-        ClaimsPrincipal principal,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
-        PresenceService presence,
-        CancellationToken ct)
+    private static IResult GetUsers(
+        CallerScope caller,
+        PresenceService presence)
     {
-        var caller = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (caller is null) return Results.Unauthorized();
-
         // Drive the staleness decay PollingService used to run on a timer (WP-12 deletes it), so closed-tab
         // users age Online→Away→Offline instead of showing Online forever. Idempotent + cheap (in-memory).
         presence.UpdatePresence();

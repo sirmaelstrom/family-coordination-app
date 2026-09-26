@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Interfaces;
@@ -79,17 +78,12 @@ public static class UploadsEndpoints
         int householdId,
         string fileName,
         HttpContext http,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         IHouseholdConnectionService connectionService,
         IWebHostEnvironment environment,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        // Non-empty body: a bare Results.Unauthorized() is an empty 4xx, which re-executes through the
-        // GET-only /not-found page — the same house rule the denial path below already honours.
-        if (user is null) return Unauthorized();
-
         // The route parameter cannot contain a '/', but reject the traversal shapes explicitly rather than
         // relying on that: this check is the one a future refactor is most likely to route around.
         if (string.IsNullOrWhiteSpace(fileName) ||
@@ -103,7 +97,7 @@ public static class UploadsEndpoints
         var extension = Path.GetExtension(fileName);
         if (!ContentTypes.TryGetValue(extension, out var contentType)) return NotFound();
 
-        if (!await CanReadHouseholdUploadsAsync(user, householdId, fileName, dbFactory, connectionService, ct))
+        if (!await CanReadHouseholdUploadsAsync(caller, householdId, fileName, dbFactory, connectionService, ct))
         {
             return NotFound();
         }
@@ -143,7 +137,7 @@ public static class UploadsEndpoints
     /// pinning directly.
     /// </summary>
     internal static async Task<bool> CanReadHouseholdUploadsAsync(
-        UserContextResolver.UserContext user,
+        CallerScope caller,
         int householdId,
         string fileName,
         IDbContextFactory<ApplicationDbContext> dbFactory,
@@ -151,7 +145,7 @@ public static class UploadsEndpoints
         CancellationToken ct)
     {
         // Rule 1 — the caller's own household owns the directory. Every chore/room photo and own-recipe image.
-        if (user.HouseholdId == householdId) return true;
+        if (caller.HouseholdId == householdId) return true;
 
         // Rule 2 — the households are connected AND the OWNING household has a recipe pointing at this exact
         // file. Connection alone is deliberately NOT enough: household connections share RECIPES, so a
@@ -164,12 +158,12 @@ public static class UploadsEndpoints
         // because Recipe.ImagePath comes from the request body — write-boundary validation (ImagePathPolicy,
         // quest b0edfd94) constrains NEW writes to own-household paths, but legacy rows are not
         // retro-validated and this gate must hold without trusting any of them.
-        if (!await connectionService.AreHouseholdsConnectedAsync(user.HouseholdId, householdId, ct)) return false;
+        if (!await connectionService.AreHouseholdsConnectedAsync(caller.HouseholdId, householdId, ct)) return false;
 
         var storedPath = $"/uploads/{householdId}/{fileName}";
         await using var context = await dbFactory.CreateDbContextAsync(ct);
         // TENANT-SCOPE-OK: rule 2 reads the OWNING (connected) household's recipes; gated by AreHouseholdsConnectedAsync
-        // at UploadsEndpoints.cs:167, and it answers only whether that household references this exact file
+        // at UploadsEndpoints.cs:161, and it answers only whether that household references this exact file
         return await context.Recipes
             .IgnoreQueryFilters(["Tenant"])
             .AnyAsync(r => r.HouseholdId == householdId && r.ImagePath == storedPath, ct);
@@ -182,8 +176,4 @@ public static class UploadsEndpoints
     /// </summary>
     private static IResult NotFound() =>
         Results.Json(new { message = "Image not found." }, statusCode: StatusCodes.Status404NotFound);
-
-    /// <summary>401 with a body, for the same reason <see cref="NotFound"/> carries one.</summary>
-    private static IResult Unauthorized() =>
-        Results.Json(new { message = "Unauthorized." }, statusCode: StatusCodes.Status401Unauthorized);
 }

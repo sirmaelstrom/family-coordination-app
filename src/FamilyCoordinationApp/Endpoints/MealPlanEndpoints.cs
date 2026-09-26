@@ -1,21 +1,18 @@
 using System.Globalization;
-using System.Security.Claims;
-using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Dtos;
 using FamilyCoordinationApp.Services.Interfaces;
 using FamilyCoordinationApp.Tenancy;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Endpoints;
 
 /// <summary>
 /// Minimal-API surface for the meal-plan island (strangler — mirrors <see cref="ChoresEndpoints"/>): a
 /// <c>/api/meal-plan</c> group behind <c>.RequireAuthorization().DisableAntiforgery()</c>, every handler
-/// resolving the HouseholdId/UserId from the authenticated caller (M1, never client-supplied) via
-/// <see cref="UserContextResolver"/>. Writes delegate to <see cref="IMealPlanService"/> / <see cref="IRecipeService"/>;
+/// taking the HouseholdId/UserId of the authenticated caller (M1, never client-supplied) as a
+/// <see cref="CallerScope"/>. Writes delegate to <see cref="IMealPlanService"/> / <see cref="IRecipeService"/>;
 /// the board read + per-entry projection delegate to <see cref="IMealPlanBoardService"/> (ONE projection — no
 /// card/response drift, M9).
 ///
@@ -55,15 +52,11 @@ public static class MealPlanEndpoints
 
     private static async Task<IResult> GetBoard(
         [FromQuery] string? weekStart,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IMealPlanService mealPlanService,
         IMealPlanBoardService boardService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         // Snap to the week's Monday SERVER-side (the client may send any date in the week; this is the only
         // authority on the week boundary). Missing/unparseable ⇒ current week (matches the Blazor page's
         // DateTime.Today). The island always sends a "YYYY-MM-DD", so the fallback is rarely hit.
@@ -72,7 +65,7 @@ public static class MealPlanEndpoints
             : DateOnly.FromDateTime(DateTime.Today);
         var monday = mealPlanService.GetWeekStartDate(baseDate);
 
-        var board = await boardService.GetBoardAsync(user.HouseholdId, monday, ct);
+        var board = await boardService.GetBoardAsync(caller.HouseholdId, monday, ct);
         return Results.Ok(board);
     }
 
@@ -80,16 +73,12 @@ public static class MealPlanEndpoints
 
     private static async Task<IResult> AddEntry(
         AddEntryRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IMealPlanService mealPlanService,
         IMealPlanBoardService boardService,
         IRecipeService recipeService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         // XOR: exactly one of recipeId / customMealName. The service also guards (throws
         // InvalidOperationException), but validate here for a clean 400 rather than a 500.
         var hasRecipe = req.RecipeId.HasValue;
@@ -107,7 +96,7 @@ public static class MealPlanEndpoints
         Recipe? recipe = null;
         if (req.RecipeId.HasValue)
         {
-            recipe = await recipeService.GetRecipeAsync(user.HouseholdId, req.RecipeId.Value, ct);
+            recipe = await recipeService.GetRecipeAsync(caller.HouseholdId, req.RecipeId.Value, ct);
             if (recipe is null)
             {
                 return Results.NotFound(new { message = "Recipe not found." });
@@ -115,13 +104,13 @@ public static class MealPlanEndpoints
         }
 
         var entry = await mealPlanService.AddMealAsync(
-            user.HouseholdId,
+            caller.HouseholdId,
             req.Date,
             req.MealType,
             req.RecipeId,
             hasCustom ? req.CustomMealName!.Trim() : null,
             string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes.Trim(),
-            user.UserId,
+            caller.UserId,
             ct);
 
         var dto = boardService.ProjectEntry(entry, recipe);
@@ -132,21 +121,17 @@ public static class MealPlanEndpoints
         int mealPlanId,
         int entryId,
         MoveEntryRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IMealPlanService mealPlanService,
         IMealPlanBoardService boardService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         try
         {
             // Household-scoped move to another same-week slot (drag-to-assign). The service loads the
             // Recipe nav, so the response reuses the ONE board projection (M9) with no extra query.
             var entry = await mealPlanService.MoveMealAsync(
-                user.HouseholdId, mealPlanId, entryId, req.Date, req.MealType, req.Version, user.UserId, ct);
+                caller.HouseholdId, mealPlanId, entryId, req.Date, req.MealType, req.Version, caller.UserId, ct);
             return Results.Ok(boardService.ProjectEntry(entry, entry.Recipe));
         }
         catch (MealPlanConflictException ex)
@@ -169,20 +154,16 @@ public static class MealPlanEndpoints
         int mealPlanId,
         int entryId,
         SetEntryServingsRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IMealPlanService mealPlanService,
         IMealPlanBoardService boardService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         try
         {
             // The service loads the Recipe nav, so the response reuses the ONE board projection (M9).
             var entry = await mealPlanService.SetMealServingsAsync(
-                user.HouseholdId, mealPlanId, entryId, req.Servings, req.Version, user.UserId, ct);
+                caller.HouseholdId, mealPlanId, entryId, req.Servings, req.Version, caller.UserId, ct);
             return Results.Ok(boardService.ProjectEntry(entry, entry.Recipe));
         }
         catch (MealPlanConflictException ex)
@@ -203,18 +184,14 @@ public static class MealPlanEndpoints
         int mealPlanId,
         int entryId,
         [FromBody] EntryVersionRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IMealPlanService mealPlanService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         try
         {
             // Household-scoped — a cross-household id finds nothing ⇒ throws ⇒ 404 (M1).
-            await mealPlanService.RemoveMealAsync(user.HouseholdId, mealPlanId, entryId, req.Version, ct);
+            await mealPlanService.RemoveMealAsync(caller.HouseholdId, mealPlanId, entryId, req.Version, ct);
             return Results.NoContent();
         }
         catch (MealPlanConflictException ex)
@@ -232,31 +209,23 @@ public static class MealPlanEndpoints
 
     private static async Task<IResult> SearchRecipes(
         [FromQuery] string? q,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IRecipeService recipeService,
         IMealPlanBoardService boardService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var recipes = await recipeService.GetRecipesAsync(user.HouseholdId, q, ct);
+        var recipes = await recipeService.GetRecipesAsync(caller.HouseholdId, q, ct);
         var summaries = recipes.Select(boardService.ToRecipeSummary).ToList();
         return Results.Ok(summaries);
     }
 
     private static async Task<IResult> QuickCreateRecipe(
         QuickCreateRecipeRequest req,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IRecipeService recipeService,
         IMealPlanBoardService boardService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
         if (string.IsNullOrWhiteSpace(req.Name))
         {
             return Results.BadRequest(new { message = "Recipe name is required." });
@@ -264,10 +233,10 @@ public static class MealPlanEndpoints
 
         var recipe = new Recipe
         {
-            HouseholdId = user.HouseholdId,
+            HouseholdId = caller.HouseholdId,
             Name = req.Name.Trim(),
             RecipeType = req.RecipeType,
-            CreatedByUserId = user.UserId,
+            CreatedByUserId = caller.UserId,
             CreatedAt = DateTime.UtcNow,
         };
 
@@ -278,16 +247,12 @@ public static class MealPlanEndpoints
 
     private static async Task<IResult> GetRecipeDetail(
         int recipeId,
-        ClaimsPrincipal principal,
+        CallerScope caller,
         IRecipeService recipeService,
         IMealPlanBoardService boardService,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var recipe = await recipeService.GetRecipeAsync(user.HouseholdId, recipeId, ct);
+        var recipe = await recipeService.GetRecipeAsync(caller.HouseholdId, recipeId, ct);
         // Non-empty body so callers receive a specific 404 message instead of the generic /api backfill.
         if (recipe is null) return Results.NotFound(new { message = "Recipe not found." });
 

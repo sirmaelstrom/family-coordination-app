@@ -1,12 +1,9 @@
-using System.Security.Claims;
-using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Services.Calendar;
 using FamilyCoordinationApp.Services.Dtos;
 using FamilyCoordinationApp.Services.Interfaces;
 using FamilyCoordinationApp.Tenancy;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Extensions;
-using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Endpoints;
 
@@ -29,15 +26,11 @@ public static class CalendarTokenEndpoints
 
     private static async Task<IResult> CreateOrRotate(
         HttpContext httpContext,
-        ClaimsPrincipal principal,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CallerScope caller,
         IHouseholdCalendarTokenService tokenService,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var created = await tokenService.CreateOrRotateAsync(user.HouseholdId, ct);
+        var created = await tokenService.CreateOrRotateAsync(caller.HouseholdId, ct);
         var url = UriHelper.BuildAbsolute(
             httpContext.Request.Scheme,
             httpContext.Request.Host,
@@ -48,28 +41,20 @@ public static class CalendarTokenEndpoints
     }
 
     private static async Task<IResult> Revoke(
-        ClaimsPrincipal principal,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CallerScope caller,
         IHouseholdCalendarTokenService tokenService,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        await tokenService.RevokeAsync(user.HouseholdId, ct);
+        await tokenService.RevokeAsync(caller.HouseholdId, ct);
         return Results.NoContent();
     }
 
     private static async Task<IResult> GetStatus(
-        ClaimsPrincipal principal,
-        IDbContextFactory<ApplicationDbContext> dbFactory,
+        CallerScope caller,
         IHouseholdCalendarTokenService tokenService,
         CancellationToken ct)
     {
-        var user = await UserContextResolver.ResolveUserAsync(principal, dbFactory, ct);
-        if (user is null) return Results.Unauthorized();
-
-        var active = await tokenService.GetActiveAsync(user.HouseholdId, ct);
+        var active = await tokenService.GetActiveAsync(caller.HouseholdId, ct);
         return Results.Ok(new { active = active is not null, createdAt = active?.CreatedAt });
     }
 
