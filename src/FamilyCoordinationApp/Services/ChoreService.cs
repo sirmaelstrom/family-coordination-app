@@ -48,6 +48,13 @@ public class ChoreService(
                     await EnsureHouseholdMemberAsync(context, householdId, assigneeId, cancellationToken);
                 }
 
+                // A non-null owner must be a member too (M1). The write step checks HouseholdId only, not user
+                // references, so without this another household's user id would be stored as the owner.
+                if (cmd.OwnerUserId is { } ownerId)
+                {
+                    await EnsureHouseholdMemberAsync(context, householdId, ownerId, cancellationToken);
+                }
+
                 // Resolve the desired room membership set (Phase 13). On create: the roomIds set, or General
                 // (no memberships) when null/empty. Validate every id is a room in the household (M1/M6 —
                 // ChoreValidationException → 400 with a body at the endpoint).
@@ -129,6 +136,13 @@ public class ChoreService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         var chore = await LoadChoreAsync(context, householdId, choreId, cancellationToken);
         var previousRequiredCount = chore.RequiredCount;
+
+        // A non-null owner must be a member (M1), checked before the photo delete below so a rejected edit
+        // leaves the chore's photo on disk.
+        if (cmd.OwnerUserId is { } ownerId)
+        {
+            await EnsureHouseholdMemberAsync(context, householdId, ownerId, cancellationToken);
+        }
 
         // Delete-on-replace for the photo (M8) — drop the old file when the path changes.
         if (!string.Equals(chore.PhotoPath, cmd.PhotoPath, StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(chore.PhotoPath))

@@ -180,38 +180,42 @@ public class ShoppingListService(
         var wasConflict = false;
         string? conflictMessage = null;
 
+        // One context for the whole call, outside the retry loop: the catch below reads the database values
+        // and merges into this context's tracked entry, and the retry saves that merged entry. A context
+        // opened inside the try is already disposed when the catch runs (quest 489954e5), and a retry that
+        // re-fetched and re-applied the caller's values would discard the merge.
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        // Fetch fresh entity from this context to avoid disposed context error
+        var existing = await context.ShoppingListItems
+            .FirstOrDefaultAsync(i =>
+                i.HouseholdId == item.HouseholdId &&
+                i.ShoppingListId == item.ShoppingListId &&
+                i.ItemId == item.ItemId, cancellationToken);
+
+        if (existing == null)
+        {
+            logger.LogWarning("Item {ItemId} not found during update", item.ItemId);
+            return (false, false, "Item not found");
+        }
+
+        // Apply changes from the passed-in item. This copy is a whitelist — a field left off
+        // it is silently dropped on the floor (QuantityDelta was, which made regenerate lose
+        // every quantity edit; council round 1 on PR #101).
+        existing.IsChecked = item.IsChecked;
+        existing.CheckedAt = item.CheckedAt;
+        existing.Name = item.Name;
+        existing.Quantity = item.Quantity;
+        existing.QuantityDelta = item.QuantityDelta;
+        existing.Unit = item.Unit;
+        existing.Category = item.Category;
+        existing.UpdatedByUserId = item.UpdatedByUserId;
+        existing.UpdatedAt = DateTime.UtcNow;
+
         while (retries < maxRetries)
         {
             try
             {
-                await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
-
-                // Fetch fresh entity from this context to avoid disposed context error
-                var existing = await context.ShoppingListItems
-                    .FirstOrDefaultAsync(i =>
-                        i.HouseholdId == item.HouseholdId &&
-                        i.ShoppingListId == item.ShoppingListId &&
-                        i.ItemId == item.ItemId, cancellationToken);
-
-                if (existing == null)
-                {
-                    logger.LogWarning("Item {ItemId} not found during update", item.ItemId);
-                    return (false, false, "Item not found");
-                }
-
-                // Apply changes from the passed-in item. This copy is a whitelist — a field left off
-                // it is silently dropped on the floor (QuantityDelta was, which made regenerate lose
-                // every quantity edit; council round 1 on PR #101).
-                existing.IsChecked = item.IsChecked;
-                existing.CheckedAt = item.CheckedAt;
-                existing.Name = item.Name;
-                existing.Quantity = item.Quantity;
-                existing.QuantityDelta = item.QuantityDelta;
-                existing.Unit = item.Unit;
-                existing.Category = item.Category;
-                existing.UpdatedByUserId = item.UpdatedByUserId;
-                existing.UpdatedAt = DateTime.UtcNow;
-
                 await context.SaveChangesAsync(cancellationToken);
 
                 logger.LogInformation("Updated item {ItemId} in ShoppingList {ShoppingListId} for household {HouseholdId} (conflict: {WasConflict})",
