@@ -100,6 +100,15 @@ public sealed class ShoppingListItemConflictTests(PostgresContainerFixture postg
         after.IsChecked.Should().BeTrue("checked wins: the other user checked it, so it stays checked");
         after.CheckedAt.Should().Be(OtherCheckedAt, "the caller sent no CheckedAt, so the database's is kept");
         after.Quantity.Should().Be(3m, "last write wins for the non-checkbox fields, so the caller's edit lands");
+
+        // The PATCH endpoint answers with the object it passed in (ToItemDto(item)), so the merged row must be
+        // copied back onto it — otherwise the client is told the item is unchecked, with a stale Version.
+        edit.IsChecked.Should().BeTrue("the caller's object must carry the merged checked state it is answered with");
+        edit.CheckedAt.Should().Be(OtherCheckedAt);
+        edit.Quantity.Should().Be(3m);
+        edit.Version.Should().Be(after.Version, "the caller's object must carry the saved xmin, not the pre-save one");
+        // Postgres stores microseconds; the in-memory value keeps .NET's 100 ns ticks.
+        edit.UpdatedAt.Should().BeCloseTo(after.UpdatedAt!.Value, TimeSpan.FromMicroseconds(1));
     }
 }
 

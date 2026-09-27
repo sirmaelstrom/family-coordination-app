@@ -218,6 +218,20 @@ public class ShoppingListService(
             {
                 await context.SaveChangesAsync(cancellationToken);
 
+                // Copy the saved row back onto the caller's object: the endpoint answers with `item`, so without
+                // this a checked-wins merge and the new xmin Version never reach the client. Same whitelist as
+                // the apply block above, plus Version — a field left off it is answered stale.
+                item.IsChecked = existing.IsChecked;
+                item.CheckedAt = existing.CheckedAt;
+                item.Name = existing.Name;
+                item.Quantity = existing.Quantity;
+                item.QuantityDelta = existing.QuantityDelta;
+                item.Unit = existing.Unit;
+                item.Category = existing.Category;
+                item.UpdatedByUserId = existing.UpdatedByUserId;
+                item.UpdatedAt = existing.UpdatedAt;
+                item.Version = existing.Version;
+
                 logger.LogInformation("Updated item {ItemId} in ShoppingList {ShoppingListId} for household {HouseholdId} (conflict: {WasConflict})",
                     item.ItemId, item.ShoppingListId, item.HouseholdId, wasConflict);
 
