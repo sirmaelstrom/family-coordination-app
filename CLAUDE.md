@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Family Coordination App — a household coordination app (meal planning, recipe management, shopping lists, chores, multi-user collaboration) on a self-hosted Ubuntu server, deployed via GitHub Actions. Originally Blazor Server; since the **de-Blazor flip (WP-12, 2026-07-04)** it is a **SvelteKit SPA (Svelte 5, `adapter-static`, `frontend/app/`) served at the site root by an ASP.NET Core backend** over `/api` with same-origin cookie auth. The only server-rendered UI is a small set of static Razor Pages (`src/FamilyCoordinationApp/Pages/`): login/legal/error + onboarding (request/pending/setup). Blazor Server, MudBlazor, the per-surface islands, and the `*_USE_ISLAND` flags are **gone**.
 
+**Every push or merge to `master` deploys to production** via `.github/workflows/deploy.yml`, so a merge is a deploy.
+
 **Status**: Production, actively used. The strangler migration (8 islands → SvelteKit shell → flip) is complete — Spine keystone quest `ae67f7dc`. The separate `family-kitchen-svelte` project is dormant/superseded.
 
 ## Build & Test Commands
