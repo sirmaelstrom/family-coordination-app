@@ -57,10 +57,10 @@ public class RequestModel : PageModel
             return Page();
         }
 
-        var pending = await db.HouseholdRequests
-            .WhereEmailMatches(UserEmail)
-            .FirstOrDefaultAsync(r => r.Status == HouseholdRequestStatus.Pending);
-        if (pending != null)
+        // The same newest-request selection as the pending page and OnPost: an older Pending row behind a newer
+        // Rejected one must not redirect, or the pending page (which shows the Rejected one) links straight back.
+        var newest = await db.HouseholdRequests.WhereEmailMatches(UserEmail).NewestRequestOrDefaultAsync(_logger, UserEmail);
+        if (newest?.Status == HouseholdRequestStatus.Pending)
         {
             // Already have a pending request — go straight to the status page.
             return Redirect("/household/pending");

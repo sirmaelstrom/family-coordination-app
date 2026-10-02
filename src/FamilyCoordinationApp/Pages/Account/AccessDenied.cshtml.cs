@@ -15,8 +15,13 @@ namespace FamilyCoordinationApp.Pages.Account;
 public class AccessDeniedModel : PageModel
 {
     private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
+    private readonly ILogger<AccessDeniedModel> _logger;
 
-    public AccessDeniedModel(IDbContextFactory<ApplicationDbContext> dbFactory) => _dbFactory = dbFactory;
+    public AccessDeniedModel(IDbContextFactory<ApplicationDbContext> dbFactory, ILogger<AccessDeniedModel> logger)
+    {
+        _dbFactory = dbFactory;
+        _logger = logger;
+    }
 
     public bool IsAuthenticated { get; private set; }
     public bool IsInHousehold { get; private set; }
@@ -40,10 +45,9 @@ public class AccessDeniedModel : PageModel
 
         if (!IsInHousehold)
         {
-            var request = await db.HouseholdRequests
-                .WhereEmailMatches(email)
-                .FirstOrDefaultAsync(r => r.Status == HouseholdRequestStatus.Pending);
-            HasPendingRequest = request != null;
+            // The same newest-request selection as the pending page, so "Check Request Status" shows what it promises.
+            var newest = await db.HouseholdRequests.WhereEmailMatches(email).NewestRequestOrDefaultAsync(_logger, email);
+            HasPendingRequest = newest?.Status == HouseholdRequestStatus.Pending;
         }
     }
 }

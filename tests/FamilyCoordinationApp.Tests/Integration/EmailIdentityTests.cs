@@ -5,6 +5,7 @@ using System.Security.Claims;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Endpoints;
+using FamilyCoordinationApp.Pages.Account;
 using FamilyCoordinationApp.Pages.Household;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Interfaces;
@@ -204,6 +205,64 @@ public sealed class EmailIdentityTests(PostgresContainerFixture postgres)
         pending.RequestRecord!.Id.Should().Be(newestId);
         logger.Messages.Should().ContainSingle(m => m.Contains("matches more than one household request"));
     }
+
+    // Review 5390524560: an older Pending row behind a newer Rejected one. Every onboarding page must read the newest,
+    // or the request page redirects to the pending page, which shows the rejection and links straight back.
+    [Fact]
+    public async Task OlderPendingBehindNewerRejected_RequestPageRendersTheForm_NotARedirect()
+    {
+        var dbFactory = await SeedOlderPendingNewerRejectedAsync();
+
+        var request = new RequestModel(dbFactory, NullLogger<RequestModel>.Instance)
+        {
+            PageContext = new PageContext { HttpContext = new DefaultHttpContext { User = DupPrincipal() } }
+        };
+
+        (await request.OnGetAsync()).Should().BeOfType<PageResult>(
+            "the newest request is Rejected, so the resubmission form is reachable");
+    }
+
+    [Fact]
+    public async Task OlderPendingBehindNewerRejected_AccessDeniedOffersNoStatusLink()
+    {
+        var dbFactory = await SeedOlderPendingNewerRejectedAsync();
+
+        var accessDenied = new AccessDeniedModel(dbFactory, NullLogger<AccessDeniedModel>.Instance)
+        {
+            PageContext = new PageContext { HttpContext = new DefaultHttpContext { User = DupPrincipal() } }
+        };
+        await accessDenied.OnGetAsync();
+
+        accessDenied.HasPendingRequest.Should().BeFalse("the newest request is Rejected, not Pending");
+    }
+
+    private async Task<IDbContextFactory<ApplicationDbContext>> SeedOlderPendingNewerRejectedAsync()
+    {
+        var dbFactory = await CreateDatabaseAsync();
+        await using var seed = await dbFactory.CreateDbContextAsync();
+        seed.HouseholdRequests.AddRange(
+            new HouseholdRequest
+            {
+                Email = "Dup@Home.Test",
+                DisplayName = "Dup",
+                HouseholdName = "Older",
+                Status = HouseholdRequestStatus.Pending,
+                RequestedAt = DateTime.UtcNow.AddDays(-2)
+            },
+            new HouseholdRequest
+            {
+                Email = "dup@home.test",
+                DisplayName = "Dup",
+                HouseholdName = "Newest",
+                Status = HouseholdRequestStatus.Rejected,
+                RequestedAt = DateTime.UtcNow.AddDays(-1)
+            });
+        await seed.SaveChangesAsync();
+        return dbFactory;
+    }
+
+    private static ClaimsPrincipal DupPrincipal() =>
+        new(new ClaimsIdentity([new Claim(ClaimTypes.Email, "dup@home.test")], "Test"));
 
     [Fact]
     public async Task Approve_RefusesWhenALegacyMixedCaseUserHoldsTheEmail()
