@@ -35,13 +35,14 @@ public class AccessDeniedModel : PageModel
         await using var db = await _dbFactory.CreateDbContextAsync();
         // TENANT-SCOPE-OK: identity lookup by the caller's own authenticated email — pre-household onboarding surface
         // (an unmarked page: no tenant exists here, D3)
-        var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).FirstOrDefaultAsync(u => u.Email == email);
+        var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).WhereEmailMatches(email).FirstOrDefaultAsync();
         IsInHousehold = existingUser != null;
 
         if (!IsInHousehold)
         {
             var request = await db.HouseholdRequests
-                .FirstOrDefaultAsync(r => r.Email == email && r.Status == HouseholdRequestStatus.Pending);
+                .WhereEmailMatches(email)
+                .FirstOrDefaultAsync(r => r.Status == HouseholdRequestStatus.Pending);
             HasPendingRequest = request != null;
         }
     }

@@ -50,7 +50,7 @@ public class RequestModel : PageModel
         await using var db = await _dbFactory.CreateDbContextAsync();
         // TENANT-SCOPE-OK: identity lookup by the caller's own authenticated email — pre-household onboarding surface
         // (an unmarked page: no tenant exists here, D3)
-        var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).FirstOrDefaultAsync(u => u.Email == UserEmail);
+        var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).WhereEmailMatches(UserEmail).FirstOrDefaultAsync();
         if (existingUser != null)
         {
             IsAlreadyInHousehold = true;
@@ -58,7 +58,8 @@ public class RequestModel : PageModel
         }
 
         var pending = await db.HouseholdRequests
-            .FirstOrDefaultAsync(r => r.Email == UserEmail && r.Status == HouseholdRequestStatus.Pending);
+            .WhereEmailMatches(UserEmail)
+            .FirstOrDefaultAsync(r => r.Status == HouseholdRequestStatus.Pending);
         if (pending != null)
         {
             // Already have a pending request — go straight to the status page.
@@ -93,14 +94,14 @@ public class RequestModel : PageModel
 
             // TENANT-SCOPE-OK: identity lookup by the caller's own authenticated email — pre-household onboarding surface
             // (an unmarked page: no tenant exists here, D3)
-            var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).FirstOrDefaultAsync(u => u.Email == UserEmail);
+            var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).WhereEmailMatches(UserEmail).FirstOrDefaultAsync();
             if (existingUser != null)
             {
                 IsAlreadyInHousehold = true;
                 return Page();
             }
 
-            var existing = await db.HouseholdRequests.FirstOrDefaultAsync(r => r.Email == UserEmail);
+            var existing = await db.HouseholdRequests.WhereEmailMatches(UserEmail).NewestRequestOrDefaultAsync(_logger, UserEmail);
             if (existing != null)
             {
                 if (existing.Status == HouseholdRequestStatus.Pending)

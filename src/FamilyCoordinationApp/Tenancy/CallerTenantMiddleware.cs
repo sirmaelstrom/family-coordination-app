@@ -21,7 +21,8 @@ public sealed class CallerTenantMiddleware(RequestDelegate next)
     public async Task InvokeAsync(
         HttpContext context,
         ITenantContext tenant,
-        IDbContextFactory<ApplicationDbContext> dbFactory)
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        ILogger<CallerTenantMiddleware> logger)
     {
         if (context.GetEndpoint()?.Metadata.GetMetadata<TenantScopedMetadata>() is null)
         {
@@ -29,7 +30,7 @@ public sealed class CallerTenantMiddleware(RequestDelegate next)
             return;
         }
 
-        var caller = await UserContextResolver.ResolveUserAsync(context.User, dbFactory, context.RequestAborted);
+        var caller = await UserContextResolver.ResolveUserAsync(context.User, dbFactory, logger, context.RequestAborted);
         if (caller is null)
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;

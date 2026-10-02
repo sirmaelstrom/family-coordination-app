@@ -30,6 +30,7 @@ public static class MeEndpoints
         ClaimsPrincipal principal,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         ISiteAdminService siteAdmin,
+        ILoggerFactory loggers,
         CancellationToken ct)
     {
         var email = principal.FindFirst(ClaimTypes.Email)?.Value;
@@ -40,7 +41,7 @@ public static class MeEndpoints
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         // TENANT-SCOPE-OK: identity resolution by the caller's authenticated email — this query IS the scope source
         var user = await db.Users
-            .Where(u => u.Email == email)
+            .WhereEmailMatches(email)
             .Select(u => new
             {
                 u.Id,
@@ -49,7 +50,7 @@ public static class MeEndpoints
                 u.Initials,
                 u.PictureUrl,
             })
-            .FirstOrDefaultAsync(ct);
+            .SingleIdentityOrDefaultAsync(loggers.CreateLogger(typeof(MeEndpoints).FullName!), email, ct);
 
         if (user is null) return Results.Unauthorized();
 

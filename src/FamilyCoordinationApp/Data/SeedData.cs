@@ -389,7 +389,9 @@ public static class SeedData
         {
             email = EmailAddress.Normalize(email);
             var existing = await context.Users
-                .Where(u => u.HouseholdId == householdId && u.Email == email)
+                .WhereEmailMatches(email)
+                .Where(u => u.HouseholdId == householdId)
+                .OrderBy(u => u.Id)
                 .Select(u => (int?)u.Id)
                 .FirstOrDefaultAsync();
 

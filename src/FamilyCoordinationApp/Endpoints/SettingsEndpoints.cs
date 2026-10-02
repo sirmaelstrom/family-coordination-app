@@ -184,6 +184,8 @@ public static class SettingsEndpoints
         {
             AddMemberOutcome.OtherHousehold => Results.Conflict(
                 new { message = "This email is already associated with another household." }),
+            AddMemberOutcome.Ambiguous => Results.Conflict(
+                new { message = "This email matches more than one existing account. Ask the site admin to reconcile them." }),
             AddMemberOutcome.AlreadyActive => Results.Ok(
                 new MemberActionDto(ToMemberDto(result.User!), "alreadyActive")),
             AddMemberOutcome.Reenabled => Results.Ok(
