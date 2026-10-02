@@ -65,7 +65,8 @@ public class RecipeImportService(
     IIngredientParser ingredientParser,
     ICategoryInferenceService categoryInference,
     IYouTubeRecipeExtractor youtubeExtractor,
-    ILogger<RecipeImportService> logger) : IRecipeImportService
+    ILogger<RecipeImportService> logger,
+    IHouseholdClock clock) : IRecipeImportService
 {
     public async Task<RecipeImportResult> ImportFromUrlAsync(string url, int householdId, int userId, CancellationToken cancellationToken = default)
     {
@@ -193,7 +194,7 @@ public class RecipeImportService(
             PrepTimeMinutes = ParseIsoDuration(schema.PrepTime),
             CookTimeMinutes = ParseIsoDuration(schema.CookTime),
             CreatedByUserId = userId,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = clock.UtcNow,
             Ingredients = new List<RecipeIngredient>()
         };
 

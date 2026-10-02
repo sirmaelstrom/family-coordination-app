@@ -38,9 +38,9 @@ public class HouseholdConnectionServiceTests : IDisposable
         _connectionLoggerMock = new Mock<ILogger<HouseholdConnectionService>>();
         _recipeLoggerMock = new Mock<ILogger<RecipeService>>();
 
-        _connectionService = new HouseholdConnectionService(_dbFactoryMock.Object, _connectionLoggerMock.Object);
+        _connectionService = new HouseholdConnectionService(_dbFactoryMock.Object, _connectionLoggerMock.Object, TestClocks.System);
         _imageServiceMock = new Mock<IImageService>();
-        _recipeService = new RecipeService(_dbFactoryMock.Object, _imageServiceMock.Object, _recipeLoggerMock.Object);
+        _recipeService = new RecipeService(_dbFactoryMock.Object, _imageServiceMock.Object, _recipeLoggerMock.Object, TestClocks.System);
 
         // Clear rate limit state between tests
         HouseholdConnectionService.ClearRateLimitState();

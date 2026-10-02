@@ -94,7 +94,7 @@ public sealed class CalendarTokenEndpointTests(PostgresContainerFixture postgres
     public async Task FourConcurrentRotations_CompleteWithOneActiveToken()
     {
         const int rotations = 4;
-        var service = new HouseholdCalendarTokenService(new PostgresDbContextFactory(_factory.ConnectionString));
+        var service = new HouseholdCalendarTokenService(new PostgresDbContextFactory(_factory.ConnectionString), Services.TestClocks.System);
 
         var created = await Task.WhenAll(Enumerable.Range(0, rotations)
             .Select(_ => service.CreateOrRotateAsync(ChoresWebAppFactory.HouseholdAId)));

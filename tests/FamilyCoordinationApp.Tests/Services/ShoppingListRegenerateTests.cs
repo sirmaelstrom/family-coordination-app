@@ -62,7 +62,8 @@ public class ShoppingListRegenerateTests : IDisposable
             dbFactoryMock.Object,
             new Mock<IShoppingListService>().Object,
             new UnitConverter(),
-            new Mock<ILogger<ShoppingListGenerator>>().Object);
+            new Mock<ILogger<ShoppingListGenerator>>().Object,
+            TestClocks.System);
 
         SeedAsync().GetAwaiter().GetResult();
         _saveCounter.Saves = 0; // count only what regenerate does
@@ -224,7 +225,7 @@ public class ShoppingListRegenerateTests : IDisposable
         dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => new ApplicationDbContext(_options));
         var service = new ShoppingListService(
-            dbFactoryMock.Object, new Mock<ILogger<ShoppingListService>>().Object);
+            dbFactoryMock.Object, new Mock<ILogger<ShoppingListService>>().Object, TestClocks.System);
 
         // The eggs row (generated, no delta yet): the user edits 2 → 5, PatchItem-style.
         var eggs = (await ItemsAsync()).Single(i => i.Name == "eggs");

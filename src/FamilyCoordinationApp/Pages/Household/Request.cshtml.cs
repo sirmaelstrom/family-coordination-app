@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
+using FamilyCoordinationApp.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -20,11 +21,13 @@ public class RequestModel : PageModel
 {
     private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
     private readonly ILogger<RequestModel> _logger;
+    private readonly IHouseholdClock _clock;
 
-    public RequestModel(IDbContextFactory<ApplicationDbContext> dbFactory, ILogger<RequestModel> logger)
+    public RequestModel(IDbContextFactory<ApplicationDbContext> dbFactory, ILogger<RequestModel> logger, IHouseholdClock clock)
     {
         _dbFactory = dbFactory;
         _logger = logger;
+        _clock = clock;
     }
 
     public bool IsAuthenticated { get; private set; }
@@ -114,7 +117,7 @@ public class RequestModel : PageModel
                     existing.DisplayName = displayName;
                     existing.GoogleId = googleId;
                     existing.Status = HouseholdRequestStatus.Pending;
-                    existing.RequestedAt = DateTime.UtcNow;
+                    existing.RequestedAt = _clock.UtcNow;
                     existing.ReviewedAt = null;
                     existing.ReviewedBy = null;
                     existing.RejectionReason = null;
@@ -129,7 +132,7 @@ public class RequestModel : PageModel
                     GoogleId = googleId,
                     HouseholdName = HouseholdName.Trim(),
                     Status = HouseholdRequestStatus.Pending,
-                    RequestedAt = DateTime.UtcNow
+                    RequestedAt = _clock.UtcNow
                 });
             }
 

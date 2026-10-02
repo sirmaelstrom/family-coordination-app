@@ -341,6 +341,7 @@ public static class ShoppingListEndpoints
         CallerScope caller,
         IShoppingListService svc,
         IDbContextFactory<ApplicationDbContext> dbFactory,
+        IHouseholdClock clock,
         CancellationToken ct)
     {
         var archived = await IsListArchivedAsync(dbFactory, caller.HouseholdId, listId, ct);
@@ -361,7 +362,7 @@ public static class ShoppingListEndpoints
         if (req.IsChecked is not null && req.IsChecked.Value != item.IsChecked)
         {
             item.IsChecked = req.IsChecked.Value;
-            item.CheckedAt = req.IsChecked.Value ? DateTime.UtcNow : null;
+            item.CheckedAt = req.IsChecked.Value ? clock.UtcNow : null;
         }
         if (req.Quantity is not null)
         {

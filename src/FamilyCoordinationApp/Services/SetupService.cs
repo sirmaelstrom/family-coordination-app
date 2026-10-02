@@ -7,7 +7,8 @@ namespace FamilyCoordinationApp.Services;
 public class SetupService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     SetupCompletionLatch latch,
-    ILogger<SetupService> logger)
+    ILogger<SetupService> logger,
+    IHouseholdClock clock)
 {
 
     /// <summary>
@@ -62,7 +63,7 @@ public class SetupService(
         var household = new Household
         {
             Name = householdName,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = clock.UtcNow
         };
         context.Households.Add(household);
         await context.SaveChangesAsync();
@@ -80,8 +81,8 @@ public class SetupService(
             DisplayName = displayName,
             GoogleId = googleId,
             IsWhitelisted = true,
-            CreatedAt = DateTime.UtcNow,
-            LastLoginAt = DateTime.UtcNow,
+            CreatedAt = clock.UtcNow,
+            LastLoginAt = clock.UtcNow,
             Initials = UserProfile.ComputeInitials(displayName)
         };
         context.Users.Add(user);

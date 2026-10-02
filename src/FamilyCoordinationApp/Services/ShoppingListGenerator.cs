@@ -48,7 +48,8 @@ public class ShoppingListGenerator(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     IShoppingListService shoppingListService,
     UnitConverter unitConverter,
-    ILogger<ShoppingListGenerator> logger) : IShoppingListGenerator
+    ILogger<ShoppingListGenerator> logger,
+    IHouseholdClock clock) : IShoppingListGenerator
 {
 
     public async Task<ShoppingList> GenerateFromMealPlanAsync(
@@ -226,8 +227,8 @@ public class ShoppingListGenerator(
                 IsChecked = previous?.IsChecked ?? false,
                 CheckedAt = previous?.CheckedAt,
                 SortOrder = previous?.SortOrder ?? 0,
-                AddedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                AddedAt = clock.UtcNow,
+                UpdatedAt = clock.UtcNow
             });
         }
 

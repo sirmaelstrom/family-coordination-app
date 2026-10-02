@@ -8,7 +8,8 @@ namespace FamilyCoordinationApp.Services;
 public class RoomService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     IImageService imageService,
-    ILogger<RoomService> logger) : IRoomService
+    ILogger<RoomService> logger,
+    IHouseholdClock clock) : IRoomService
 {
     public async Task<List<Room>> ListRoomsAsync(int householdId, CancellationToken cancellationToken = default)
     {
@@ -52,7 +53,7 @@ public class RoomService(
                     Icon = icon.Trim(),
                     PhotoPath = photoPath,
                     SortOrder = maxSortOrder + 1,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = clock.UtcNow
                 };
 
                 context.Rooms.Add(room);

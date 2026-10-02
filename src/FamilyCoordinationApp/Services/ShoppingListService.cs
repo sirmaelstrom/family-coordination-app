@@ -8,7 +8,8 @@ namespace FamilyCoordinationApp.Services;
 
 public class ShoppingListService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
-    ILogger<ShoppingListService> logger) : IShoppingListService
+    ILogger<ShoppingListService> logger,
+    IHouseholdClock clock) : IShoppingListService
 {
 
     public async Task<ShoppingList> CreateShoppingListAsync(int householdId, string name, int? mealPlanId = null, CancellationToken cancellationToken = default)
@@ -28,7 +29,7 @@ public class ShoppingListService(
                     ShoppingListId = maxId + 1,
                     Name = name,
                     MealPlanId = mealPlanId,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = clock.UtcNow,
                     IsArchived = false
                 };
 
@@ -152,8 +153,8 @@ public class ShoppingListService(
                     .MaxAsync(i => (int?)i.ItemId, cancellationToken) ?? 0;
 
                 item.ItemId = maxItemId + 1;
-                item.AddedAt = DateTime.UtcNow;
-                item.UpdatedAt = DateTime.UtcNow;
+                item.AddedAt = clock.UtcNow;
+                item.UpdatedAt = clock.UtcNow;
                 item.IsChecked = false;
 
                 context.ShoppingListItems.Add(item);
@@ -210,7 +211,7 @@ public class ShoppingListService(
         existing.Unit = item.Unit;
         existing.Category = item.Category;
         existing.UpdatedByUserId = item.UpdatedByUserId;
-        existing.UpdatedAt = DateTime.UtcNow;
+        existing.UpdatedAt = clock.UtcNow;
 
         while (retries < maxRetries)
         {
@@ -265,7 +266,7 @@ public class ShoppingListService(
                             entry.CurrentValues[nameof(ShoppingListItem.CheckedAt)] =
                                 entry.CurrentValues[nameof(ShoppingListItem.CheckedAt)] ??
                                 databaseValues[nameof(ShoppingListItem.CheckedAt)] ??
-                                DateTime.UtcNow;
+                                clock.UtcNow;
                         }
 
                         // For quantity/name changes, check if there's a true conflict
@@ -449,7 +450,7 @@ public class ShoppingListService(
                 {
                     item.Category = update.Category;
                 }
-                item.UpdatedAt = DateTime.UtcNow;
+                item.UpdatedAt = clock.UtcNow;
             }
         }
 

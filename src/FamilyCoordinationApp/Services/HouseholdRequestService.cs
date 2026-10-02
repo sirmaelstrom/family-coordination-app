@@ -13,7 +13,8 @@ namespace FamilyCoordinationApp.Services;
 /// </summary>
 public sealed class HouseholdRequestService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
-    ILogger<HouseholdRequestService> logger) : IHouseholdRequestService
+    ILogger<HouseholdRequestService> logger,
+    IHouseholdClock clock) : IHouseholdRequestService
 {
     public async Task<HouseholdAdminData> GetDataAsync(CancellationToken cancellationToken = default)
     {
@@ -64,7 +65,7 @@ public sealed class HouseholdRequestService(
             return new ApproveResult(ReviewOutcome.AlreadyReviewed, null);
         }
 
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow;
 
         var household = new Household
         {
@@ -154,7 +155,7 @@ public sealed class HouseholdRequestService(
         }
 
         request.Status = HouseholdRequestStatus.Rejected;
-        request.ReviewedAt = DateTime.UtcNow;
+        request.ReviewedAt = clock.UtcNow;
         request.ReviewedBy = reviewerEmail;
         request.RejectionReason = reason; // OPTIONAL — null/empty is allowed (R-C7)
         await context.SaveChangesAsync(cancellationToken);
@@ -190,7 +191,7 @@ public sealed class HouseholdRequestService(
             return new CreateHouseholdResult(CreateHouseholdOutcome.EmailInUse, null);
         }
 
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow;
 
         // R-C2: household + owner + default categories commit atomically (same shape as ApproveAsync). The owner FK
         // needs household.Id, so the household flushes first; a failure anywhere rolls the whole thing back — no

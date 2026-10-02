@@ -271,7 +271,8 @@ public sealed class ShoppingListEndpointTests(PostgresContainerFixture postgres)
         var archived = (await ClientA.GetFromJsonAsync<List<ArchivedSummary>>("/api/shopping-lists/archived", Json))!;
         var row = archived.Single(l => l.id == summary.id);
         row.hasMealPlan.Should().BeTrue();
-        row.createdAt.Should().BeAfter(DateTime.UtcNow.AddDays(-1));
+        // The host's clock is the factory's frozen one (IHouseholdClock, quest 5197d71c), not the wall clock.
+        row.createdAt.Should().BeAfter(_factory.Clock.GetUtcNow().UtcDateTime.AddDays(-1));
 
         var detail = await ClientA.GetAsync($"/api/shopping-lists/archived/{summary.id}");
         detail.StatusCode.Should().Be(HttpStatusCode.OK);

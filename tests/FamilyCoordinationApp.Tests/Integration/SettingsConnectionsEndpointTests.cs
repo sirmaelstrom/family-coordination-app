@@ -83,7 +83,8 @@ public sealed class SettingsConnectionsEndpointTests(PostgresContainerFixture po
     {
         var invite = await GenerateInviteAsync(ClientA);
         invite.code.Should().HaveLength(6);
-        DateTime.Parse(invite.expiresAt).ToUniversalTime().Should().BeAfter(DateTime.UtcNow);
+        // The host's clock is the factory's frozen one (IHouseholdClock, quest 5197d71c), not the wall clock.
+        DateTime.Parse(invite.expiresAt).ToUniversalTime().Should().BeAfter(_factory.Clock.GetUtcNow().UtcDateTime);
 
         // GET reflects the active invite.
         var after = await GetConnectionsAsync(ClientA);

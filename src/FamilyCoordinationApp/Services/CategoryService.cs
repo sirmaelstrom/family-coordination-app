@@ -7,7 +7,8 @@ namespace FamilyCoordinationApp.Services;
 
 public class CategoryService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
-    ILogger<CategoryService> logger) : ICategoryService
+    ILogger<CategoryService> logger,
+    IHouseholdClock clock) : ICategoryService
 {
 
     public async Task<List<Category>> GetCategoriesAsync(int householdId, bool includeDeleted = false, CancellationToken cancellationToken = default)
@@ -104,7 +105,7 @@ public class CategoryService(
 
         // Soft delete
         category.IsDeleted = true;
-        category.DeletedAt = DateTime.UtcNow;
+        category.DeletedAt = clock.UtcNow;
 
         await context.SaveChangesAsync(cancellationToken);
 
