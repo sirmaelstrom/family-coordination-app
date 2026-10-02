@@ -43,7 +43,9 @@ public sealed class DashboardEndpointTests(PostgresContainerFixture postgres) : 
     private HttpClient ClientA => _factory.CreateClientAs(ChoresWebAppFactory.UserAEmail);
     private HttpClient ClientB => _factory.CreateClientAs(ChoresWebAppFactory.UserBEmail);
 
-    private static readonly DateOnly Today = DateOnly.FromDateTime(DateTime.Today);
+    // The household's today under the factory's frozen clock (FixedNowUtc 2026-06-07 23:30Z is 18:30 CDT), not the
+    // test machine's DateTime.Today: the dashboard dates by the household clock (quest 5197d71c).
+    private static readonly DateOnly Today = new(2026, 6, 7);
     private static string Iso(DateOnly d) => d.ToString("yyyy-MM-dd");
 
     // ─── Seeding helpers (real API — parity-correct) ─────────────────────────────

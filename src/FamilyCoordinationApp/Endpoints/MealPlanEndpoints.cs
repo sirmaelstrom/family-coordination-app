@@ -55,14 +55,15 @@ public static class MealPlanEndpoints
         CallerScope caller,
         IMealPlanService mealPlanService,
         IMealPlanBoardService boardService,
+        IHouseholdClock clock,
         CancellationToken ct)
     {
         // Snap to the week's Monday SERVER-side (the client may send any date in the week; this is the only
-        // authority on the week boundary). Missing/unparseable ⇒ current week (matches the Blazor page's
-        // DateTime.Today). The island always sends a "YYYY-MM-DD", so the fallback is rarely hit.
+        // authority on the week boundary). Missing/unparseable ⇒ the week of the household's today. The island
+        // always sends a "YYYY-MM-DD", so the fallback is rarely hit.
         var baseDate = DateOnly.TryParseExact(weekStart, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
             ? parsed
-            : DateOnly.FromDateTime(DateTime.Today);
+            : clock.Today(caller.HouseholdId);
         var monday = mealPlanService.GetWeekStartDate(baseDate);
 
         var board = await boardService.GetBoardAsync(caller.HouseholdId, monday, ct);
@@ -224,6 +225,7 @@ public static class MealPlanEndpoints
         CallerScope caller,
         IRecipeService recipeService,
         IMealPlanBoardService boardService,
+        IHouseholdClock clock,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Name))
@@ -237,7 +239,7 @@ public static class MealPlanEndpoints
             Name = req.Name.Trim(),
             RecipeType = req.RecipeType,
             CreatedByUserId = caller.UserId,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = clock.UtcNow,
         };
 
         var created = await recipeService.CreateRecipeAsync(recipe, ct);

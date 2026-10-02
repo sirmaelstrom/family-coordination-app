@@ -99,13 +99,13 @@ public static class ChoresEndpoints
         IChoreBoardService boardService,
         TimeProvider timeProvider,
         TimeZoneInfo timeZone,
+        IHouseholdClock clock,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
         // A "first due" floor (Chore.SnoozedUntil) must be in the future — same rule as the quick-snooze
         // endpoint (ResolveSnooze). Resolve today in the household tz (MN4 — never client date math).
-        var today = DateOnly.FromDateTime(
-            TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, timeZone));
+        var today = clock.Today(caller.HouseholdId);
         var (floorOk, floorError) = ValidateFloor(req.SnoozedUntil, today);
         if (!floorOk) return Results.BadRequest(new { message = floorError });
 
@@ -134,13 +134,13 @@ public static class ChoresEndpoints
         IChoreBoardService boardService,
         TimeProvider timeProvider,
         TimeZoneInfo timeZone,
+        IHouseholdClock clock,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
         // A "next due" floor (Chore.SnoozedUntil) must be in the future — same rule as the quick-snooze
         // endpoint (ResolveSnooze). Resolve today in the household tz (MN4 — never client date math).
-        var today = DateOnly.FromDateTime(
-            TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, timeZone));
+        var today = clock.Today(caller.HouseholdId);
         var (floorOk, floorError) = ValidateFloor(req.SnoozedUntil, today);
         if (!floorOk) return Results.BadRequest(new { message = floorError });
 
@@ -306,11 +306,11 @@ public static class ChoresEndpoints
         IChoreBoardService boardService,
         TimeProvider timeProvider,
         TimeZoneInfo timeZone,
+        IHouseholdClock clock,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        var today = DateOnly.FromDateTime(
-            TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, timeZone));
+        var today = clock.Today(caller.HouseholdId);
 
         var (ok, until, error) = ResolveSnooze(req.Days, req.Until, today);
         if (!ok)

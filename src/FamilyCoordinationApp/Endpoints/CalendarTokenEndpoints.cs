@@ -1,3 +1,4 @@
+using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Calendar;
 using FamilyCoordinationApp.Services.Dtos;
 using FamilyCoordinationApp.Services.Interfaces;
@@ -65,7 +66,7 @@ public static class CalendarTokenEndpoints
         IMealPlanBoardService boardService,
         ICalendarWriter calendarWriter,
         TimeProvider timeProvider,
-        TimeZoneInfo timeZone,
+        IHouseholdClock clock,
         ITenantContext tenant,
         CancellationToken ct)
     {
@@ -73,7 +74,7 @@ public static class CalendarTokenEndpoints
         if (calendarToken is null) return CalendarNotFoundResult.Instance;
 
         var nowUtc = timeProvider.GetUtcNow();
-        var localToday = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(nowUtc, timeZone).DateTime);
+        var localToday = clock.Today(calendarToken.HouseholdId);
         var weekStart = mealPlanService.GetWeekStartDate(localToday);
         // The anonymous feed has no caller: the token's household is the tenant (D11). The scope wraps the whole
         // WhenAll, so all four concurrent loads read it; nothing inside changes the tenant.

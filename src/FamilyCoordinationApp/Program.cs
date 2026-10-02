@@ -138,6 +138,8 @@ builder.Services.AddScoped<IChoreBoardService, ChoreBoardService>();
 builder.Services.AddSingleton<ChoreStatusCalculator>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(ResolveChoresTimeZone(builder.Configuration));
+// The household clock (quest 5197d71c): "now" and each household's "today", over the two singletons above.
+builder.Services.AddSingleton<IHouseholdClock, HouseholdClock>();
 
 // Chores v1.1 (WP-06): equity distribution + weekly Discord digest. The equity calculator and the digest
 // builder are pure/stateless singletons (mirroring ChoreStatusCalculator); the settings service (webhook
