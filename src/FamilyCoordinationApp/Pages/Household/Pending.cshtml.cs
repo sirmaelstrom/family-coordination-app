@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
+using FamilyCoordinationApp.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -30,7 +31,7 @@ public class PendingModel : PageModel
             return Page();
         }
 
-        var email = User.FindFirst(ClaimTypes.Email)?.Value ?? "";
+        var email = EmailAddress.Normalize(User.FindFirst(ClaimTypes.Email)?.Value ?? "");
 
         await using var db = await _dbFactory.CreateDbContextAsync();
 

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
+using FamilyCoordinationApp.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -44,7 +45,7 @@ public class RequestModel : PageModel
             return Page();
         }
 
-        UserEmail = User.FindFirst(ClaimTypes.Email)?.Value ?? "";
+        UserEmail = EmailAddress.Normalize(User.FindFirst(ClaimTypes.Email)?.Value ?? "");
 
         await using var db = await _dbFactory.CreateDbContextAsync();
         // TENANT-SCOPE-OK: identity lookup by the caller's own authenticated email — pre-household onboarding surface
@@ -76,7 +77,7 @@ public class RequestModel : PageModel
         }
 
         // Identity is resolved server-side from claims — the form supplies only the household name.
-        UserEmail = User.FindFirst(ClaimTypes.Email)?.Value ?? "";
+        UserEmail = EmailAddress.Normalize(User.FindFirst(ClaimTypes.Email)?.Value ?? "");
         var displayName = User.FindFirst(ClaimTypes.Name)?.Value ?? UserEmail;
         var googleId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 

@@ -34,6 +34,8 @@ public sealed class LoginProfileService(
         if (string.IsNullOrWhiteSpace(email))
             return;
 
+        email = EmailAddress.Normalize(email);
+
         try
         {
             await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);

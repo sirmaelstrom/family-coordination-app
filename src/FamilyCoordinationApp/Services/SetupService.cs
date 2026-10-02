@@ -43,6 +43,7 @@ public class SetupService(
         string displayName,
         string googleId)
     {
+        userEmail = EmailAddress.Normalize(userEmail);
         logger.LogInformation(
             "Starting household creation: Name={HouseholdName}, Email={Email}, GoogleId={GoogleId}",
             householdName, userEmail, googleId);
@@ -104,6 +105,7 @@ public class SetupService(
 
     public async Task<User?> GetUserByEmailAsync(string email)
     {
+        email = EmailAddress.Normalize(email);
         await using var context = await dbFactory.CreateDbContextAsync();
         // TENANT-SCOPE-OK: identity lookup by authenticated email for onboarding/setup flows — pre-household
         return await context.Users

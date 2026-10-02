@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using FamilyCoordinationApp.Data;
+using FamilyCoordinationApp.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Endpoints;
@@ -25,6 +26,8 @@ public static class UserContextResolver
     {
         var email = principal.FindFirst(ClaimTypes.Email)?.Value;
         if (string.IsNullOrEmpty(email)) return null;
+
+        email = EmailAddress.Normalize(email);
 
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         // TENANT-SCOPE-OK: identity resolution by the caller's authenticated email — this query IS the scope source;

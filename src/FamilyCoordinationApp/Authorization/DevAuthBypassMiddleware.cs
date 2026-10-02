@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using FamilyCoordinationApp.Data;
+using FamilyCoordinationApp.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Authorization;
@@ -91,7 +92,7 @@ public sealed class DevAuthBypassMiddleware(RequestDelegate next, ILogger<DevAut
 
         var claims = new List<Claim>
         {
-            new(ClaimTypes.Email, email),
+            new(ClaimTypes.Email, EmailAddress.Normalize(email)),
             new(ClaimTypes.Name, name),
             new(ClaimTypes.NameIdentifier, googleId),
         };

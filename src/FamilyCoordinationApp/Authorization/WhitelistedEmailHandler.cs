@@ -44,7 +44,7 @@ public class WhitelistedEmailHandler(
             return; // Fail authorization silently
         }
 
-        var email = emailClaim.Value;
+        var email = EmailAddress.Normalize(emailClaim.Value);
 
         try
         {

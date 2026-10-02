@@ -26,7 +26,7 @@ public sealed class HouseholdMemberService(
 
     public async Task<AddMemberResult> AddMemberAsync(int householdId, string email, CancellationToken cancellationToken = default)
     {
-        var normalized = email.Trim().ToLowerInvariant();
+        var normalized = EmailAddress.Normalize(email);
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         // Intentional cross-household read (R-A4): the email belonging to ANOTHER household is rejected — this

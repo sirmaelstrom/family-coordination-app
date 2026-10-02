@@ -49,6 +49,8 @@ public static class PresenceEndpoints
         var email = principal.FindFirst(ClaimTypes.Email)?.Value;
         if (string.IsNullOrEmpty(email)) return Results.Unauthorized();
 
+        email = EmailAddress.Normalize(email);
+
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         // TENANT-SCOPE-OK: identity resolution by the caller's authenticated email — this query IS the scope source
         var user = await db.Users

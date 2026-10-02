@@ -81,7 +81,7 @@ public sealed class HouseholdRequestService(
         context.Users.Add(new User
         {
             HouseholdId = household.Id,
-            Email = request.Email,
+            Email = EmailAddress.Normalize(request.Email),
             DisplayName = request.DisplayName,
             GoogleId = request.GoogleId,
             IsWhitelisted = true,
@@ -91,7 +91,7 @@ public sealed class HouseholdRequestService(
 
         request.Status = HouseholdRequestStatus.Approved;
         request.ReviewedAt = now;
-        request.ReviewedBy = reviewerEmail;
+        request.ReviewedBy = EmailAddress.Normalize(reviewerEmail);
 
         // Seed the nine default categories on THIS context, inside the same transaction (R-C2) — not the old
         // separate-context SeedDefaultCategoriesAsync, which committed independently.
@@ -155,7 +155,7 @@ public sealed class HouseholdRequestService(
 
         request.Status = HouseholdRequestStatus.Rejected;
         request.ReviewedAt = DateTime.UtcNow;
-        request.ReviewedBy = reviewerEmail;
+        request.ReviewedBy = EmailAddress.Normalize(reviewerEmail);
         request.RejectionReason = reason; // OPTIONAL — null/empty is allowed (R-C7)
         await context.SaveChangesAsync(cancellationToken);
 
@@ -171,7 +171,7 @@ public sealed class HouseholdRequestService(
         CancellationToken cancellationToken = default)
     {
         var name = householdName?.Trim() ?? "";
-        var email = ownerEmail?.Trim().ToLowerInvariant() ?? "";
+        var email = EmailAddress.Normalize(ownerEmail ?? "");
         if (name.Length == 0 || email.Length == 0)
         {
             return new CreateHouseholdResult(CreateHouseholdOutcome.InvalidInput, null);
