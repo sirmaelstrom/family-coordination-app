@@ -11,7 +11,8 @@ namespace FamilyCoordinationApp.Tests.Architecture;
 /// <c>DateTimeOffset.Now</c> directly. The scan reads the comment- and string-stripped <c>src</c>
 /// (<see cref="TenantScopeArchitectureTests.StripCommentsAndStrings"/>, the same files the tenancy facts scan), so a doc
 /// mention is not a read.
-/// <para><b>Key:</b> each read is identified by its file and its trimmed source line, compared as a multiset against
+/// <para><b>Key:</b> the regex runs over the whole stripped file, so a read split across lines (<c>DateTime</c> then
+/// <c>.Today</c>) is found. Each read is identified by its file and the trimmed text of the line(s) it spans, compared as a multiset against
 /// <see cref="Allowlist"/>. A new read on any other line fails (unlisted); a second copy of an allowed line in the same
 /// file fails (the count goes up); a removed or edited allowed line fails (stale), so the list cannot outlive its reason.
 /// <b>Stated limits:</b> a read moved to another line in the same file with identical text keeps its key; a read inside
@@ -78,37 +79,79 @@ public sealed class ClockArchitectureTests
         (string, string)[] allow = [("A.cs", "var now = DateTime.UtcNow;")];
 
         var duplicated = DirectReads("A.cs", "var now = DateTime.UtcNow;\nvar now = DateTime.UtcNow;\n").ToList();
-        Compare(duplicated, allow).Unlisted.Should().Equal(["A.cs: var now = DateTime.UtcNow;"]);
+        Compare(duplicated, allow).Unlisted.Should().Equal(["A.cs:2: var now = DateTime.UtcNow;"]);
 
         var elsewhere = DirectReads("B.cs", "var now = DateTime.UtcNow;\n").ToList();
         var (unlisted, stale) = Compare(elsewhere, allow);
-        unlisted.Should().Equal(["B.cs: var now = DateTime.UtcNow;"]);
+        unlisted.Should().Equal(["B.cs:1: var now = DateTime.UtcNow;"]);
         stale.Should().Equal(["A.cs: var now = DateTime.UtcNow;"]);
+    }
+
+    // Review 5390910610: C# lets a member access span lines, so a per-line scan never sees `DateTime` + `.Today`.
+    [Fact]
+    public void NC_a_read_split_across_lines_is_found_and_reported_at_its_first_line()
+    {
+        const string source = """
+            var a = 1;
+            var today = DateOnly.FromDateTime(DateTime
+                .Today);
+            var stamp = DateTimeOffset.
+                UtcNow;
+            """;
+
+        var reads = DirectReads("S.cs", source).ToList();
+
+        reads.Select(r => (r.LineNumber, r.Line)).Should().Equal(
+            (2, "var today = DateOnly.FromDateTime(DateTime .Today);"),
+            (4, "var stamp = DateTimeOffset. UtcNow;"));
+        Compare(reads, []).Unlisted.Should().Equal(
+            "S.cs:2: var today = DateOnly.FromDateTime(DateTime .Today);",
+            "S.cs:4: var stamp = DateTimeOffset. UtcNow;");
     }
 
     // ── Detector ───────────────────────────────────────────────────────────────────────
 
-    internal static IEnumerable<(string File, string Line)> DirectReads(string relativePath, string source)
+    /// <summary>
+    /// Every direct read in <paramref name="source"/>. The regex runs over the whole stripped source (its <c>\s*</c>
+    /// spans newlines), and each match maps back to the line it starts on. <c>Line</c> is the original text of every
+    /// line the match spans, trimmed and joined with one space, so a single-line read keys exactly as its line.
+    /// </summary>
+    internal static IEnumerable<(string File, string Line, int LineNumber)> DirectReads(string relativePath, string source)
     {
         var stripped = TenantScopeArchitectureTests.StripCommentsAndStrings(source);
         var originalLines = source.Split('\n');
-        var strippedLines = stripped.Split('\n');
-        for (var i = 0; i < strippedLines.Length; i++)
+        foreach (Match match in DirectRead.Matches(stripped))
         {
-            foreach (Match _ in DirectRead.Matches(strippedLines[i]))
-                yield return (relativePath, originalLines[i].Trim());
+            var first = LineIndexAt(stripped, match.Index);
+            var last = LineIndexAt(stripped, match.Index + match.Length - 1);
+            var text = string.Join(" ", originalLines[first..(last + 1)].Select(l => l.Trim()));
+            yield return (relativePath, text, first + 1);
         }
     }
 
-    internal static (List<string> Unlisted, List<string> Stale) Compare(
-        IReadOnlyList<(string File, string Line)> reads, IReadOnlyList<(string File, string Line)> allow)
+    private static int LineIndexAt(string text, int index)
     {
-        static string Key((string File, string Line) r) => $"{r.File}: {r.Line}";
-        var remaining = allow.Select(Key).ToList();
-        var unlisted = new List<string>();
-        foreach (var key in reads.Select(Key))
+        var line = 0;
+        for (var i = 0; i < index; i++)
         {
-            if (!remaining.Remove(key)) unlisted.Add(key);
+            if (text[i] == '\n') line++;
+        }
+
+        return line;
+    }
+
+    /// <summary>
+    /// Multiset comparison on (file, line text). Unlisted reads are reported as <c>file:line: text</c>; stale allowlist
+    /// entries as <c>file: text</c> (an entry carries no line number by design: a line shift must not break it).
+    /// </summary>
+    internal static (List<string> Unlisted, List<string> Stale) Compare(
+        IReadOnlyList<(string File, string Line, int LineNumber)> reads, IReadOnlyList<(string File, string Line)> allow)
+    {
+        var remaining = allow.Select(a => $"{a.File}: {a.Line}").ToList();
+        var unlisted = new List<string>();
+        foreach (var read in reads)
+        {
+            if (!remaining.Remove($"{read.File}: {read.Line}")) unlisted.Add($"{read.File}:{read.LineNumber}: {read.Line}");
         }
 
         return (unlisted, remaining);
