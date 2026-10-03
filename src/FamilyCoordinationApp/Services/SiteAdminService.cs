@@ -16,7 +16,7 @@ public class SiteAdminService(IConfiguration configuration) : ISiteAdminService
 {
     private readonly HashSet<string> _adminEmails = (configuration["SITE_ADMIN_EMAILS"] ?? "")
         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-        .Select(e => e.ToLowerInvariant())
+        .Select(EmailAddress.Normalize)
         .ToHashSet();
 
     public bool IsSiteAdmin(string? email)
@@ -24,6 +24,6 @@ public class SiteAdminService(IConfiguration configuration) : ISiteAdminService
         if (string.IsNullOrWhiteSpace(email))
             return false;
 
-        return _adminEmails.Contains(email.ToLowerInvariant());
+        return _adminEmails.Contains(EmailAddress.Normalize(email));
     }
 }

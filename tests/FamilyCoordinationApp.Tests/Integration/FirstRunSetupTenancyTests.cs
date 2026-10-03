@@ -32,7 +32,7 @@ public sealed class FirstRunSetupTenancyTests(PostgresContainerFixture postgres)
             try
             {
                 var (household, _) = await scope.ServiceProvider.GetRequiredService<SetupService>()
-                    .CreateHouseholdAsync("First Home", "first@home.test", "First Owner", "google-first");
+                    .CreateHouseholdAsync("First Home", "  First@Home.Test  ", "First Owner", "google-first");
                 householdId = household.Id;
             }
             finally

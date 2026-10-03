@@ -41,6 +41,7 @@ public static class PresenceEndpoints
         ClaimsPrincipal principal,
         IDbContextFactory<ApplicationDbContext> dbFactory,
         PresenceService presence,
+        ILoggerFactory loggers,
         CancellationToken ct)
     {
         // PresenceService.Heartbeat needs display name / initials / picture, which UserContextResolver
@@ -49,12 +50,14 @@ public static class PresenceEndpoints
         var email = principal.FindFirst(ClaimTypes.Email)?.Value;
         if (string.IsNullOrEmpty(email)) return Results.Unauthorized();
 
+        email = EmailAddress.Normalize(email);
+
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         // TENANT-SCOPE-OK: identity resolution by the caller's authenticated email — this query IS the scope source
         var user = await db.Users
-            .Where(u => u.Email == email)
+            .WhereEmailMatches(email)
             .Select(u => new { u.Id, u.HouseholdId, u.DisplayName, u.Initials, u.PictureUrl })
-            .FirstOrDefaultAsync(ct);
+            .SingleIdentityOrDefaultAsync(loggers.CreateLogger(typeof(PresenceEndpoints).FullName!), email, ct);
 
         if (user is null) return Results.Unauthorized();
 

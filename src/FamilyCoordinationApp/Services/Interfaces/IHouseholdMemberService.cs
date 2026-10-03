@@ -48,9 +48,12 @@ public enum AddMemberOutcome
     AlreadyActive,
     /// <summary>The email belongs to ANOTHER household — rejected (maps to 409, no data leak).</summary>
     OtherHousehold,
+    /// <summary>More than one user in this household matches when case is ignored (legacy rows) — refused (409).</summary>
+    Ambiguous,
 }
 
-/// <summary>The added/affected member (null for <see cref="AddMemberOutcome.OtherHousehold"/>).</summary>
+/// <summary>The added/affected member (null for <see cref="AddMemberOutcome.OtherHousehold"/> and
+/// <see cref="AddMemberOutcome.Ambiguous"/>).</summary>
 public sealed record AddMemberResult(AddMemberOutcome Outcome, User? User);
 
 /// <summary>Outcome of a member toggle/delete — maps to HTTP in the endpoint (Self ⇒ 400; Last*/Blocked ⇒ 409; NotFound ⇒ 404).</summary>

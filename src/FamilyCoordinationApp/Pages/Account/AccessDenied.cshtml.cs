@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
+using FamilyCoordinationApp.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
@@ -14,8 +15,13 @@ namespace FamilyCoordinationApp.Pages.Account;
 public class AccessDeniedModel : PageModel
 {
     private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
+    private readonly ILogger<AccessDeniedModel> _logger;
 
-    public AccessDeniedModel(IDbContextFactory<ApplicationDbContext> dbFactory) => _dbFactory = dbFactory;
+    public AccessDeniedModel(IDbContextFactory<ApplicationDbContext> dbFactory, ILogger<AccessDeniedModel> logger)
+    {
+        _dbFactory = dbFactory;
+        _logger = logger;
+    }
 
     public bool IsAuthenticated { get; private set; }
     public bool IsInHousehold { get; private set; }
@@ -29,19 +35,19 @@ public class AccessDeniedModel : PageModel
             return;
         }
 
-        var email = User.FindFirst(ClaimTypes.Email)?.Value ?? "";
+        var email = EmailAddress.Normalize(User.FindFirst(ClaimTypes.Email)?.Value ?? "");
 
         await using var db = await _dbFactory.CreateDbContextAsync();
         // TENANT-SCOPE-OK: identity lookup by the caller's own authenticated email — pre-household onboarding surface
         // (an unmarked page: no tenant exists here, D3)
-        var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).FirstOrDefaultAsync(u => u.Email == email);
+        var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).WhereEmailMatches(email).FirstOrDefaultAsync();
         IsInHousehold = existingUser != null;
 
         if (!IsInHousehold)
         {
-            var request = await db.HouseholdRequests
-                .FirstOrDefaultAsync(r => r.Email == email && r.Status == HouseholdRequestStatus.Pending);
-            HasPendingRequest = request != null;
+            // The same newest-request selection as the pending page, so "Check Request Status" shows what it promises.
+            var newest = await db.HouseholdRequests.WhereEmailMatches(email).NewestRequestOrDefaultAsync(_logger, email);
+            HasPendingRequest = newest?.Status == HouseholdRequestStatus.Pending;
         }
     }
 }

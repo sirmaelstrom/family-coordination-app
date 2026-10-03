@@ -290,6 +290,7 @@ builder.Services.AddAuthentication(options =>
     // so ClaimTypes.Email/Name and urn:google:picture are on the principal.
     options.Events.OnCreatingTicket = async context =>
     {
+        EmailAddress.NormalizeClaims(context.Principal!);
         var profiles = context.HttpContext.RequestServices.GetRequiredService<LoginProfileService>();
         await profiles.RefreshAsync(context.Principal!, context.HttpContext.RequestAborted);
     };

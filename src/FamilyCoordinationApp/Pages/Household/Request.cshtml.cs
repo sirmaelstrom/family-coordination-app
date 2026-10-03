@@ -47,21 +47,22 @@ public class RequestModel : PageModel
             return Page();
         }
 
-        UserEmail = User.FindFirst(ClaimTypes.Email)?.Value ?? "";
+        UserEmail = EmailAddress.Normalize(User.FindFirst(ClaimTypes.Email)?.Value ?? "");
 
         await using var db = await _dbFactory.CreateDbContextAsync();
         // TENANT-SCOPE-OK: identity lookup by the caller's own authenticated email — pre-household onboarding surface
         // (an unmarked page: no tenant exists here, D3)
-        var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).FirstOrDefaultAsync(u => u.Email == UserEmail);
+        var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).WhereEmailMatches(UserEmail).FirstOrDefaultAsync();
         if (existingUser != null)
         {
             IsAlreadyInHousehold = true;
             return Page();
         }
 
-        var pending = await db.HouseholdRequests
-            .FirstOrDefaultAsync(r => r.Email == UserEmail && r.Status == HouseholdRequestStatus.Pending);
-        if (pending != null)
+        // The same newest-request selection as the pending page and OnPost: an older Pending row behind a newer
+        // Rejected one must not redirect, or the pending page (which shows the Rejected one) links straight back.
+        var newest = await db.HouseholdRequests.WhereEmailMatches(UserEmail).NewestRequestOrDefaultAsync(_logger, UserEmail);
+        if (newest?.Status == HouseholdRequestStatus.Pending)
         {
             // Already have a pending request — go straight to the status page.
             return Redirect("/household/pending");
@@ -79,7 +80,7 @@ public class RequestModel : PageModel
         }
 
         // Identity is resolved server-side from claims — the form supplies only the household name.
-        UserEmail = User.FindFirst(ClaimTypes.Email)?.Value ?? "";
+        UserEmail = EmailAddress.Normalize(User.FindFirst(ClaimTypes.Email)?.Value ?? "");
         var displayName = User.FindFirst(ClaimTypes.Name)?.Value ?? UserEmail;
         var googleId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
@@ -95,14 +96,14 @@ public class RequestModel : PageModel
 
             // TENANT-SCOPE-OK: identity lookup by the caller's own authenticated email — pre-household onboarding surface
             // (an unmarked page: no tenant exists here, D3)
-            var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).FirstOrDefaultAsync(u => u.Email == UserEmail);
+            var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).WhereEmailMatches(UserEmail).FirstOrDefaultAsync();
             if (existingUser != null)
             {
                 IsAlreadyInHousehold = true;
                 return Page();
             }
 
-            var existing = await db.HouseholdRequests.FirstOrDefaultAsync(r => r.Email == UserEmail);
+            var existing = await db.HouseholdRequests.WhereEmailMatches(UserEmail).NewestRequestOrDefaultAsync(_logger, UserEmail);
             if (existing != null)
             {
                 if (existing.Status == HouseholdRequestStatus.Pending)

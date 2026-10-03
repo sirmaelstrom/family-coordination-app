@@ -1,4 +1,5 @@
 using FamilyCoordinationApp.Data.Entities;
+using FamilyCoordinationApp.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Data;
@@ -386,8 +387,11 @@ public static class SeedData
         // Using email uniqueness to detect presence — mirrors how SetupService creates users.
         async Task<int> EnsureUserAsync(string email, string displayName, string initials)
         {
+            email = EmailAddress.Normalize(email);
             var existing = await context.Users
-                .Where(u => u.HouseholdId == householdId && u.Email == email)
+                .WhereEmailMatches(email)
+                .Where(u => u.HouseholdId == householdId)
+                .OrderBy(u => u.Id)
                 .Select(u => (int?)u.Id)
                 .FirstOrDefaultAsync();
 

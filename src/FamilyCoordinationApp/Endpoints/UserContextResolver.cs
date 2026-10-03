@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using FamilyCoordinationApp.Data;
+using FamilyCoordinationApp.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Endpoints;
@@ -16,24 +17,28 @@ public static class UserContextResolver
 
     /// <summary>
     /// Resolve the caller's <see cref="UserContext"/> from their email claim, or <c>null</c> when there is no
-    /// email claim or no matching user row. The middleware answers <c>null</c> with <c>401</c> + JSON.
+    /// email claim, no matching user row, or more than one (legacy rows that differ only in case). The middleware
+    /// answers <c>null</c> with <c>401</c> + JSON.
     /// </summary>
     internal static async Task<UserContext?> ResolveUserAsync(
         ClaimsPrincipal principal,
         IDbContextFactory<ApplicationDbContext> dbFactory,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         var email = principal.FindFirst(ClaimTypes.Email)?.Value;
         if (string.IsNullOrEmpty(email)) return null;
+
+        email = EmailAddress.Normalize(email);
 
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         // TENANT-SCOPE-OK: identity resolution by the caller's authenticated email — this query IS the scope source;
         // Tenant bypass because CallerTenantMiddleware calls this BEFORE any tenant exists (the resolved row sets it)
         var user = await context.Users
             .IgnoreQueryFilters(["Tenant"])
-            .Where(u => u.Email == email)
+            .WhereEmailMatches(email)
             .Select(u => new { u.Id, u.HouseholdId })
-            .FirstOrDefaultAsync(cancellationToken);
+            .SingleIdentityOrDefaultAsync(logger, email, cancellationToken);
 
         return user is null ? null : new UserContext(user.HouseholdId, user.Id);
     }

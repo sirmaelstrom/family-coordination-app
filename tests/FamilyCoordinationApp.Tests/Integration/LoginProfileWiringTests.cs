@@ -25,8 +25,10 @@ namespace FamilyCoordinationApp.Tests.Integration;
 [Trait("kind", "integration")]
 public sealed class LoginProfileWiringTests(PostgresContainerFixture postgres)
 {
-    [Fact]
-    public async Task TheGoogleCreatingTicketEvent_RefreshesTheSignedInUsersProfile()
+    [Theory]
+    [InlineData("signin@a.test")]
+    [InlineData("  SignIn@A.Test  ")]
+    public async Task TheGoogleCreatingTicketEvent_RefreshesTheSignedInUsersProfile(string email)
     {
         var connectionString = await postgres.CreateDatabaseConnectionStringAsync();
         await using var factory = new DevAuthTestingWebAppFactory(connectionString);
@@ -53,7 +55,7 @@ public sealed class LoginProfileWiringTests(PostgresContainerFixture postgres)
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
             [
-                new Claim(ClaimTypes.Email, "signin@a.test"),
+                new Claim(ClaimTypes.Email, email),
                 new Claim(ClaimTypes.Name, "Sign In"),
                 new Claim("urn:google:picture", "https://pic.test/s.jpg"),
                 new Claim(ClaimTypes.NameIdentifier, "google-subject-42")
@@ -73,6 +75,8 @@ public sealed class LoginProfileWiringTests(PostgresContainerFixture postgres)
             empty.RootElement);
 
         await options.Events.CreatingTicket(context);
+
+        principal.FindFirst(ClaimTypes.Email)!.Value.Should().Be("signin@a.test");
 
         await using var db = await dbFactory.CreateDbContextAsync();
         var user = await db.Users.AsNoTracking().SingleAsync(u => u.Email == "signin@a.test");

@@ -106,6 +106,47 @@ public class HouseholdMemberServiceTests : IDisposable
         (await _service.GetMembersAsync(HhA)).Should().NotContain(m => m.Email == "bob@b.test");
     }
 
+    // Legacy rows (review 5387127961): the old claim-based writers stored mixed case, and no migration rewrote it.
+
+    [Fact]
+    public async Task AddMember_LegacyMixedCaseDisabledRow_IsReenabled_NotDuplicated()
+    {
+        _seedContext.Users.Add(new User { Id = 20, HouseholdId = HhA, Email = "Erin@A.Test", DisplayName = "Erin", IsWhitelisted = false, CreatedAt = DateTime.UtcNow });
+        await _seedContext.SaveChangesAsync();
+
+        var result = await _service.AddMemberAsync(HhA, "erin@a.test");
+
+        result.Outcome.Should().Be(AddMemberOutcome.Reenabled);
+        result.User!.Id.Should().Be(20);
+        (await _service.GetMembersAsync(HhA)).Count(m => m.Email.Equals("erin@a.test", StringComparison.OrdinalIgnoreCase))
+            .Should().Be(1, "no lowercase row is inserted beside the legacy one");
+    }
+
+    [Fact]
+    public async Task AddMember_LegacyMixedCaseRowInAnotherHousehold_IsRejected()
+    {
+        _seedContext.Users.Add(new User { Id = 23, HouseholdId = HhB, Email = "Gail@B.Test", DisplayName = "Gail", IsWhitelisted = true, CreatedAt = DateTime.UtcNow });
+        await _seedContext.SaveChangesAsync();
+
+        var result = await _service.AddMemberAsync(HhA, "gail@b.test");
+
+        result.Outcome.Should().Be(AddMemberOutcome.OtherHousehold);
+    }
+
+    [Fact]
+    public async Task AddMember_CaseDuplicateRowsInThisHousehold_AreRefused()
+    {
+        _seedContext.Users.AddRange(
+            new User { Id = 21, HouseholdId = HhA, Email = "Finn@A.Test", DisplayName = "Finn", IsWhitelisted = false, CreatedAt = DateTime.UtcNow },
+            new User { Id = 22, HouseholdId = HhA, Email = "finn@a.test", DisplayName = "finn", IsWhitelisted = true, CreatedAt = DateTime.UtcNow });
+        await _seedContext.SaveChangesAsync();
+
+        var result = await _service.AddMemberAsync(HhA, "finn@a.test");
+
+        result.Outcome.Should().Be(AddMemberOutcome.Ambiguous);
+        result.User.Should().BeNull();
+    }
+
     // ─── SetWhitelist (toggle) ──────────────────────────────────────────────────────
 
     [Fact]
