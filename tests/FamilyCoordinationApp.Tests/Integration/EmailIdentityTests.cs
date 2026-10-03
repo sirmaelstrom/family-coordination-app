@@ -49,7 +49,7 @@ public sealed class EmailIdentityTests(PostgresContainerFixture postgres)
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim(ClaimTypes.Email, "  Request@Home.Test  "), new Claim(ClaimTypes.Name, "Requester")], "Test"));
 
-        var request = new RequestModel(dbFactory, NullLogger<RequestModel>.Instance)
+        var request = new RequestModel(dbFactory, NullLogger<RequestModel>.Instance, Services.TestClocks.System)
         {
             PageContext = new PageContext { HttpContext = new DefaultHttpContext { User = principal } },
             HouseholdName = "Requested Home"
@@ -142,7 +142,7 @@ public sealed class EmailIdentityTests(PostgresContainerFixture postgres)
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim(ClaimTypes.Email, "Request@Home.Test"), new Claim(ClaimTypes.Name, "Requester")], "Test"));
-        var request = new RequestModel(dbFactory, NullLogger<RequestModel>.Instance)
+        var request = new RequestModel(dbFactory, NullLogger<RequestModel>.Instance, Services.TestClocks.System)
         {
             PageContext = new PageContext { HttpContext = new DefaultHttpContext { User = principal } },
             HouseholdName = "New Home"
@@ -213,7 +213,7 @@ public sealed class EmailIdentityTests(PostgresContainerFixture postgres)
     {
         var dbFactory = await SeedOlderPendingNewerRejectedAsync();
 
-        var request = new RequestModel(dbFactory, NullLogger<RequestModel>.Instance)
+        var request = new RequestModel(dbFactory, NullLogger<RequestModel>.Instance, Services.TestClocks.System)
         {
             PageContext = new PageContext { HttpContext = new DefaultHttpContext { User = DupPrincipal() } }
         };
@@ -294,7 +294,7 @@ public sealed class EmailIdentityTests(PostgresContainerFixture postgres)
             requestId = request.Id;
         }
 
-        var service = new HouseholdRequestService(dbFactory, NullLogger<HouseholdRequestService>.Instance);
+        var service = new HouseholdRequestService(dbFactory, NullLogger<HouseholdRequestService>.Instance, Services.TestClocks.System);
         var result = await service.ApproveAsync(requestId, "admin@site.test");
 
         result.Outcome.Should().Be(ReviewOutcome.EmailInUse,
@@ -328,7 +328,7 @@ public sealed class EmailIdentityTests(PostgresContainerFixture postgres)
             requestId = request.Id;
         }
 
-        var service = new HouseholdRequestService(dbFactory, NullLogger<HouseholdRequestService>.Instance);
+        var service = new HouseholdRequestService(dbFactory, NullLogger<HouseholdRequestService>.Instance, Services.TestClocks.System);
         var result = await service.ApproveAsync(requestId, "  Admin@Site.Test  ");
         result.Outcome.Should().Be(ReviewOutcome.Ok);
 
