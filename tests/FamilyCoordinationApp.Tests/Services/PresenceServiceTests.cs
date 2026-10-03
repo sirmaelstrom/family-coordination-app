@@ -17,7 +17,7 @@ public class PresenceServiceTests
     [Fact]
     public void Heartbeat_MarksUserOnline_AndListsThem()
     {
-        var svc = new PresenceService();
+        var svc = new PresenceService(TestClocks.System);
         svc.Heartbeat(1, householdId: 10, "Alice", pictureUrl: null, initials: "AL", currentPage: "/shopping-list");
 
         var active = svc.GetAllActiveUsers(10).ToList();
@@ -28,7 +28,7 @@ public class PresenceServiceTests
     [Fact]
     public void GetAllActiveUsers_ReturnsEveryOnlineUser_TheEndpointExcludesTheCaller()
     {
-        var svc = new PresenceService();
+        var svc = new PresenceService(TestClocks.System);
         svc.Heartbeat(1, 10, "Alice", null, "AL");
         svc.Heartbeat(2, 10, "Bob", null, "BO");
 
@@ -39,7 +39,7 @@ public class PresenceServiceTests
     [Fact]
     public void GetAllActiveUsers_IsHouseholdScoped_NoCrossTenantLeak()
     {
-        var svc = new PresenceService();
+        var svc = new PresenceService(TestClocks.System);
         svc.Heartbeat(1, 10, "Alice", null, "AL");
         svc.Heartbeat(2, 20, "Mallory", null, "MA");
 
@@ -51,7 +51,7 @@ public class PresenceServiceTests
     [Fact]
     public void Heartbeat_ReheartbeatKeepsHouseholdCurrent()
     {
-        var svc = new PresenceService();
+        var svc = new PresenceService(TestClocks.System);
         svc.Heartbeat(1, 10, "Alice", null, "AL");
 
         // A user moved to another household must not linger in the old household's roster.
@@ -64,7 +64,7 @@ public class PresenceServiceTests
     [Fact]
     public void UpdatePresence_AgesAStaleUserToOffline_SoTheyDropFromTheRoster()
     {
-        var svc = new PresenceService();
+        var svc = new PresenceService(TestClocks.System);
         svc.Heartbeat(1, 10, "Alice", null, "AL");
 
         // Simulate a closed tab: last seen 16 minutes ago (> the 15-min Offline threshold).
@@ -79,7 +79,7 @@ public class PresenceServiceTests
     [Fact]
     public void UpdatePresence_AgesAnIdleUserToAway_ButKeepsThemInTheRoster()
     {
-        var svc = new PresenceService();
+        var svc = new PresenceService(TestClocks.System);
         svc.Heartbeat(1, 10, "Alice", null, "AL");
 
         // Idle 6 minutes (> the 5-min Away threshold, < the 15-min Offline threshold).

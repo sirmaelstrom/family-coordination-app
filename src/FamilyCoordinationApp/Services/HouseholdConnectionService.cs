@@ -8,7 +8,8 @@ namespace FamilyCoordinationApp.Services;
 
 public class HouseholdConnectionService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
-    ILogger<HouseholdConnectionService> logger) : IHouseholdConnectionService
+    ILogger<HouseholdConnectionService> logger,
+    IHouseholdClock clock) : IHouseholdConnectionService
 {
     private const string InviteCharset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private const int InviteCodeLength = 6;
@@ -42,8 +43,8 @@ public class HouseholdConnectionService(
                     HouseholdId = householdId,
                     InviteCode = code,
                     CreatedByUserId = userId,
-                    CreatedAt = DateTime.UtcNow,
-                    ExpiresAt = DateTime.UtcNow.Add(expiry),
+                    CreatedAt = clock.UtcNow,
+                    ExpiresAt = clock.UtcNow.Add(expiry),
                     IsUsed = false
                 };
 
@@ -79,7 +80,7 @@ public class HouseholdConnectionService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await context.HouseholdInvites
-            .Where(i => i.HouseholdId == householdId && !i.IsUsed && i.ExpiresAt > DateTime.UtcNow)
+            .Where(i => i.HouseholdId == householdId && !i.IsUsed && i.ExpiresAt > clock.UtcNow)
             .OrderByDescending(i => i.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
     }
@@ -89,13 +90,13 @@ public class HouseholdConnectionService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var activeInvites = await context.HouseholdInvites
-            .Where(i => i.HouseholdId == householdId && !i.IsUsed && i.ExpiresAt > DateTime.UtcNow)
+            .Where(i => i.HouseholdId == householdId && !i.IsUsed && i.ExpiresAt > clock.UtcNow)
             .ToListAsync(cancellationToken);
 
         foreach (var invite in activeInvites)
         {
             invite.IsUsed = true;
-            invite.UsedAt = DateTime.UtcNow;
+            invite.UsedAt = clock.UtcNow;
         }
 
         if (activeInvites.Count > 0)
@@ -138,7 +139,7 @@ public class HouseholdConnectionService(
             return (false, null, "This invite code has already been used.");
         }
 
-        if (invite.ExpiresAt <= DateTime.UtcNow)
+        if (invite.ExpiresAt <= clock.UtcNow)
         {
             RecordFailedAttempt(acceptingHouseholdId);
             return (false, null, "This invite code has expired.");
@@ -188,7 +189,7 @@ public class HouseholdConnectionService(
             if (invite.IsUsed)
                 return (false, null, "This invite code has already been used.");
 
-            if (invite.ExpiresAt <= DateTime.UtcNow)
+            if (invite.ExpiresAt <= clock.UtcNow)
                 return (false, null, "This invite code has expired.");
 
             if (invite.HouseholdId == acceptingHouseholdId)
@@ -199,7 +200,7 @@ public class HouseholdConnectionService(
 
             // Mark invite as used
             invite.IsUsed = true;
-            invite.UsedAt = DateTime.UtcNow;
+            invite.UsedAt = clock.UtcNow;
             invite.UsedByHouseholdId = acceptingHouseholdId;
             invite.UsedByUserId = userId;
 
@@ -211,7 +212,7 @@ public class HouseholdConnectionService(
             {
                 HouseholdId1 = id1,
                 HouseholdId2 = id2,
-                ConnectedAt = DateTime.UtcNow,
+                ConnectedAt = clock.UtcNow,
                 InitiatedByUserId = invite.CreatedByUserId,
                 AcceptedByUserId = userId
             };
@@ -306,13 +307,13 @@ public class HouseholdConnectionService(
             .AnyAsync(c => c.HouseholdId1 == minId && c.HouseholdId2 == maxId, cancellationToken);
     }
 
-    private static bool IsRateLimited(int householdId)
+    private bool IsRateLimited(int householdId)
     {
         if (!FailedAttempts.TryGetValue(householdId, out var entry))
             return false;
 
         // Reset if window has expired
-        if (DateTime.UtcNow - entry.WindowStart > RateLimitWindow)
+        if (clock.UtcNow - entry.WindowStart > RateLimitWindow)
         {
             FailedAttempts.TryRemove(householdId, out _);
             return false;
@@ -321,16 +322,16 @@ public class HouseholdConnectionService(
         return entry.Count >= MaxFailedAttempts;
     }
 
-    private static void RecordFailedAttempt(int householdId)
+    private void RecordFailedAttempt(int householdId)
     {
         FailedAttempts.AddOrUpdate(
             householdId,
-            _ => (1, DateTime.UtcNow),
+            _ => (1, clock.UtcNow),
             (_, existing) =>
             {
                 // Reset window if expired
-                if (DateTime.UtcNow - existing.WindowStart > RateLimitWindow)
-                    return (1, DateTime.UtcNow);
+                if (clock.UtcNow - existing.WindowStart > RateLimitWindow)
+                    return (1, clock.UtcNow);
 
                 return (existing.Count + 1, existing.WindowStart);
             });

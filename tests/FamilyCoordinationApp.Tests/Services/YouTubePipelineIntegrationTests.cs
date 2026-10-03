@@ -42,7 +42,8 @@ public class YouTubePipelineIntegrationTests
             _ingredientParser,
             _categoryInferenceMock.Object,
             youtubeExtractor,
-            NullLogger<RecipeImportService>.Instance);
+            NullLogger<RecipeImportService>.Instance,
+            TestClocks.System);
     }
 
     [Fact]

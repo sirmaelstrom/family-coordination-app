@@ -7,7 +7,9 @@ using Npgsql;
 
 namespace FamilyCoordinationApp.Services.Calendar;
 
-public sealed class HouseholdCalendarTokenService(IDbContextFactory<ApplicationDbContext> dbFactory) : IHouseholdCalendarTokenService
+public sealed class HouseholdCalendarTokenService(
+    IDbContextFactory<ApplicationDbContext> dbFactory,
+    IHouseholdClock clock) : IHouseholdCalendarTokenService
 {
     public Task<CreatedCalendarToken> CreateOrRotateAsync(int householdId, CancellationToken ct = default) =>
         CreateOrRotateAsync(householdId, retryOnUniqueViolation: true, ct);
@@ -20,7 +22,7 @@ public sealed class HouseholdCalendarTokenService(IDbContextFactory<ApplicationD
         try
         {
             var token = CreateToken();
-            var now = DateTime.UtcNow;
+            var now = clock.UtcNow;
             await using var context = await dbFactory.CreateDbContextAsync(ct);
             await using var transaction = await context.Database.BeginTransactionAsync(ct);
 
@@ -52,7 +54,7 @@ public sealed class HouseholdCalendarTokenService(IDbContextFactory<ApplicationD
 
     public async Task RevokeAsync(int householdId, CancellationToken ct = default)
     {
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow;
         await using var context = await dbFactory.CreateDbContextAsync(ct);
         var active = await context.HouseholdCalendarTokens
             .Where(calendarToken => calendarToken.HouseholdId == householdId && calendarToken.RevokedAt == null)

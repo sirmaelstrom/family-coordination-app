@@ -17,7 +17,7 @@ public class UserPresence
     public string? CurrentPage { get; set; }  // e.g., "/shopping-list"
 }
 
-public class PresenceService
+public class PresenceService(IHouseholdClock clock)
 {
     private readonly ConcurrentDictionary<int, UserPresence> _presence = new();
 
@@ -37,13 +37,13 @@ public class PresenceService
                 DisplayName = displayName,
                 PictureUrl = pictureUrl,
                 Initials = initials,
-                LastSeen = DateTime.UtcNow,
+                LastSeen = clock.UtcNow,
                 Status = PresenceStatus.Online,
                 CurrentPage = currentPage
             },
             (_, existing) =>
             {
-                existing.LastSeen = DateTime.UtcNow;
+                existing.LastSeen = clock.UtcNow;
                 existing.Status = PresenceStatus.Online;
                 existing.CurrentPage = currentPage;
                 existing.HouseholdId = householdId;
@@ -61,7 +61,7 @@ public class PresenceService
     /// </summary>
     public void UpdatePresence()
     {
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow;
         var changed = false;
 
         foreach (var kvp in _presence)

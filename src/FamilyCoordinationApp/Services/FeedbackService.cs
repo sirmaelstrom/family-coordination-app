@@ -14,7 +14,8 @@ namespace FamilyCoordinationApp.Services;
 /// </summary>
 public sealed class FeedbackService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
-    ILogger<FeedbackService> logger) : IFeedbackService
+    ILogger<FeedbackService> logger,
+    IHouseholdClock clock) : IFeedbackService
 {
     /// <summary>Column limit for <c>CurrentPage</c> and <c>UserAgent</c> (<c>FeedbackConfiguration</c>).</summary>
     private const int DiagnosticMaxLength = 500;
@@ -41,7 +42,7 @@ public sealed class FeedbackService(
             Message = message.Trim(),
             CurrentPage = Truncate(currentPage),
             UserAgent = Truncate(userAgent),
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = clock.UtcNow,
         };
 
         context.Feedbacks.Add(feedback);

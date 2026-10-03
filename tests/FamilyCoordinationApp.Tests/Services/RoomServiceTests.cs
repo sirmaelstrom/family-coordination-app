@@ -40,7 +40,8 @@ public class RoomServiceTests : IDisposable
         _service = new RoomService(
             dbFactoryMock.Object,
             _imageService,
-            new Mock<ILogger<RoomService>>().Object);
+            new Mock<ILogger<RoomService>>().Object,
+            TestClocks.System);
 
         SeedTestData();
     }

@@ -73,7 +73,7 @@ public sealed class ShoppingListItemConflictTests(PostgresContainerFixture postg
             await other.SaveChangesAsync();
             otherWriterRan = true;
         });
-        var service = new ShoppingListService(factory, NullLogger<ShoppingListService>.Instance);
+        var service = new ShoppingListService(factory, NullLogger<ShoppingListService>.Instance, Services.TestClocks.System);
 
         // The caller still sees the item unchecked and edits its quantity.
         var edit = new ShoppingListItem

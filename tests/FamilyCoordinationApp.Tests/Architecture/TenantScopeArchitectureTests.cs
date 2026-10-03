@@ -706,7 +706,7 @@ public class TenantScopeArchitectureTests
             .ToList();
     }
 
-    private static IEnumerable<(string RelativePath, string Source)> AppSources()
+    internal static IEnumerable<(string RelativePath, string Source)> AppSources()
     {
         var root = AppSourceRoot();
         return AppSourceFiles().Select(f => (Path.GetRelativePath(root, f).Replace('\\', '/'), File.ReadAllText(f)));

@@ -13,7 +13,8 @@ namespace FamilyCoordinationApp.Services;
 /// </summary>
 public sealed class HouseholdMemberService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
-    ILogger<HouseholdMemberService> logger) : IHouseholdMemberService
+    ILogger<HouseholdMemberService> logger,
+    IHouseholdClock clock) : IHouseholdMemberService
 {
     public async Task<List<User>> GetMembersAsync(int householdId, CancellationToken cancellationToken = default)
     {
@@ -77,7 +78,7 @@ public sealed class HouseholdMemberService(
             DisplayName = normalized.Split('@')[0],
             GoogleId = null, // set when the user first logs in with Google (parity)
             IsWhitelisted = true,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = clock.UtcNow,
             Initials = UserProfile.ComputeInitials(normalized.Split('@')[0]),
         };
         context.Users.Add(created);

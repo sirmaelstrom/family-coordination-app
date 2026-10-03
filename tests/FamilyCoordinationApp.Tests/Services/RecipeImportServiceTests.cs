@@ -33,7 +33,8 @@ public class RecipeImportServiceTests
             _ingredientParserMock.Object,
             _categoryInferenceMock.Object,
             _youtubeExtractorMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            TestClocks.System);
     }
 
     [Fact]

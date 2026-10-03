@@ -8,7 +8,8 @@ namespace FamilyCoordinationApp.Services;
 public class RecipeService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     IImageService imageService,
-    ILogger<RecipeService> logger) : IRecipeService
+    ILogger<RecipeService> logger,
+    IHouseholdClock clock) : IRecipeService
 {
 
     public async Task<List<Recipe>> GetRecipesAsync(int householdId, string? searchTerm = null, CancellationToken cancellationToken = default)
@@ -56,7 +57,7 @@ public class RecipeService(
 
                 // Get next recipe ID for this household
                 recipe.RecipeId = await GetNextRecipeIdInternalAsync(context, recipe.HouseholdId, cancellationToken);
-                recipe.CreatedAt = DateTime.UtcNow;
+                recipe.CreatedAt = clock.UtcNow;
 
                 // Set ingredient IDs and household IDs
                 var ingredientId = 1;
@@ -112,7 +113,7 @@ public class RecipeService(
         existing.PrepTimeMinutes = recipe.PrepTimeMinutes;
         existing.CookTimeMinutes = recipe.CookTimeMinutes;
         existing.RecipeType = recipe.RecipeType; // was silently dropped — fixed for the recipes island (spec D12)
-        existing.UpdatedAt = DateTime.UtcNow;
+        existing.UpdatedAt = clock.UtcNow;
         existing.UpdatedByUserId = recipe.UpdatedByUserId;
 
         // Replace ingredients (simpler than tracking changes)
@@ -166,7 +167,7 @@ public class RecipeService(
 
         // Soft delete
         recipe.IsDeleted = true;
-        recipe.UpdatedAt = DateTime.UtcNow;
+        recipe.UpdatedAt = clock.UtcNow;
 
         await context.SaveChangesAsync(cancellationToken);
 
@@ -236,7 +237,7 @@ public class RecipeService(
                 UserId = userId,
                 HouseholdId = householdId,
                 RecipeId = recipeId,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = clock.UtcNow
             });
             logger.LogInformation("User {UserId} favorited recipe {RecipeId}", userId, recipeId);
         }
@@ -386,7 +387,7 @@ public class RecipeService(
                     CookTimeMinutes = sourceRecipe.CookTimeMinutes,
                     RecipeType = sourceRecipe.RecipeType,
                     CreatedByUserId = userId,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = clock.UtcNow,
                     SharedFromHouseholdId = sourceHouseholdId,
                     SharedFromHouseholdName = sourceRecipe.Household.Name,
                     SharedFromRecipeId = sourceRecipeId

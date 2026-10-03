@@ -7,7 +7,8 @@ namespace FamilyCoordinationApp.Services;
 
 public class MealPlanService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
-    ILogger<MealPlanService> logger) : IMealPlanService
+    ILogger<MealPlanService> logger,
+    IHouseholdClock clock) : IMealPlanService
 {
 
     public async Task<MealPlan> GetOrCreateMealPlanAsync(int householdId, DateOnly weekStart, CancellationToken cancellationToken = default)
@@ -53,7 +54,7 @@ public class MealPlanService(
                     HouseholdId = householdId,
                     MealPlanId = nextId,
                     WeekStartDate = weekStart,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = clock.UtcNow
                 };
 
                 context.MealPlans.Add(mealPlan);
@@ -111,7 +112,7 @@ public class MealPlanService(
                         duplicateEntry.Notes = notes;
                     }
 
-                    duplicateEntry.UpdatedAt = DateTime.UtcNow;
+                    duplicateEntry.UpdatedAt = clock.UtcNow;
                     duplicateEntry.UpdatedByUserId = userId;
 
                     // Update parent MealPlan timestamp for polling
@@ -200,11 +201,11 @@ public class MealPlanService(
 
         entry.Date = newDate;
         entry.MealType = newMealType;
-        entry.UpdatedAt = DateTime.UtcNow;
+        entry.UpdatedAt = clock.UtcNow;
         entry.UpdatedByUserId = userId;
 
         // Update parent MealPlan timestamp for polling
-        mealPlan.UpdatedAt = DateTime.UtcNow;
+        mealPlan.UpdatedAt = clock.UtcNow;
 
         await SaveWithConcurrencyAsync(context, entry, version, cancellationToken);
 
@@ -279,7 +280,7 @@ public class MealPlanService(
         }
 
         entry.Servings = servings;
-        entry.UpdatedAt = DateTime.UtcNow;
+        entry.UpdatedAt = clock.UtcNow;
         entry.UpdatedByUserId = userId;
 
         // Update parent MealPlan timestamp for polling (parity MoveMealAsync — the board polls on it).
@@ -287,7 +288,7 @@ public class MealPlanService(
             .FirstOrDefaultAsync(mp => mp.HouseholdId == householdId && mp.MealPlanId == mealPlanId, cancellationToken);
         if (mealPlan != null)
         {
-            mealPlan.UpdatedAt = DateTime.UtcNow;
+            mealPlan.UpdatedAt = clock.UtcNow;
         }
 
         await SaveWithConcurrencyAsync(context, entry, version, cancellationToken);
@@ -349,14 +350,14 @@ public class MealPlanService(
         return maxId + 1;
     }
 
-    private static async Task UpdateMealPlanTimestampAsync(ApplicationDbContext context, int householdId, int mealPlanId, CancellationToken cancellationToken)
+    private async Task UpdateMealPlanTimestampAsync(ApplicationDbContext context, int householdId, int mealPlanId, CancellationToken cancellationToken)
     {
         var mealPlan = await context.MealPlans
             .FirstOrDefaultAsync(mp => mp.HouseholdId == householdId && mp.MealPlanId == mealPlanId, cancellationToken);
 
         if (mealPlan != null)
         {
-            mealPlan.UpdatedAt = DateTime.UtcNow;
+            mealPlan.UpdatedAt = clock.UtcNow;
         }
     }
 }

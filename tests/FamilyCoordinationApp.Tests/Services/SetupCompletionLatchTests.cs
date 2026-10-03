@@ -45,7 +45,7 @@ public sealed class SetupCompletionLatchTests
     }
 
     private static SetupService Service(IDbContextFactory<ApplicationDbContext> dbFactory, SetupCompletionLatch latch) =>
-        new(dbFactory, latch, NullLogger<SetupService>.Instance);
+        new(dbFactory, latch, NullLogger<SetupService>.Instance, TestClocks.System);
 
     [Fact]
     public async Task NoHousehold_ReturnsFalse_AndKeepsQuerying()

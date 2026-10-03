@@ -36,7 +36,8 @@ public interface IDraftService
 
 public class DraftService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
-    ILogger<DraftService> logger) : IDraftService
+    ILogger<DraftService> logger,
+    IHouseholdClock clock) : IDraftService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -59,7 +60,7 @@ public class DraftService(
         if (existing != null)
         {
             existing.DraftJson = json;
-            existing.UpdatedAt = DateTime.UtcNow;
+            existing.UpdatedAt = clock.UtcNow;
         }
         else
         {
@@ -69,7 +70,7 @@ public class DraftService(
                 UserId = userId,
                 RecipeId = recipeId,
                 DraftJson = json,
-                UpdatedAt = DateTime.UtcNow
+                UpdatedAt = clock.UtcNow
             });
         }
 

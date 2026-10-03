@@ -33,7 +33,7 @@ public class HouseholdMemberServiceTests : IDisposable
         var factory = new Mock<IDbContextFactory<ApplicationDbContext>>();
         factory.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => new ApplicationDbContext(options));
-        _service = new HouseholdMemberService(factory.Object, Mock.Of<ILogger<HouseholdMemberService>>());
+        _service = new HouseholdMemberService(factory.Object, Mock.Of<ILogger<HouseholdMemberService>>(), TestClocks.System);
 
         Seed();
     }

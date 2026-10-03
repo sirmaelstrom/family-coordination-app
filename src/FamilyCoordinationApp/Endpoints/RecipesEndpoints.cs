@@ -113,6 +113,7 @@ public static class RecipesEndpoints
         CallerScope caller,
         IRecipeService recipeService,
         IRecipeProjectionService projection,
+        IHouseholdClock clock,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Name))
@@ -128,7 +129,7 @@ public static class RecipesEndpoints
 
         var recipe = MapToRecipe(req, caller.HouseholdId, recipeId: 0, imagePath);
         recipe.CreatedByUserId = caller.UserId;
-        recipe.CreatedAt = DateTime.UtcNow;
+        recipe.CreatedAt = clock.UtcNow;
 
         var created = await recipeService.CreateRecipeAsync(recipe, ct);
 

@@ -19,7 +19,8 @@ public class DashboardService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     IChoreBoardService choreBoardService,
     IShoppingListService shoppingListService,
-    IMealPlanService mealPlanService) : IDashboardService
+    IMealPlanService mealPlanService,
+    IHouseholdClock clock) : IDashboardService
 {
     public async Task<DashboardDto> GetDashboardAsync(
         int householdId,
@@ -45,8 +46,9 @@ public class DashboardService(
         var remaining = allItems.Count - checkedCount;
         var shopping = new DashboardShoppingSummaryDto(remaining, checkedCount, allItems.Count);
 
-        // Today's meals: SERVER decides "today", queries that week's plan for today's entries only.
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        // Today's meals: SERVER decides "today" in the household's timezone (the same date chores counts DueToday
+        // against), and queries that week's plan for today's entries only.
+        var today = clock.Today(householdId);
         var todaysMeals = await GetTodaysMealsAsync(householdId, today, cancellationToken);
 
         return new DashboardDto(greetingName, householdName, today, chores, shopping, todaysMeals);
