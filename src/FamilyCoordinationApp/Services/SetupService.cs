@@ -43,6 +43,7 @@ public class SetupService(
         string displayName,
         string googleId)
     {
+        userEmail = EmailAddress.Normalize(userEmail);
         logger.LogInformation(
             "Starting household creation: Name={HouseholdName}, Email={Email}, GoogleId={GoogleId}",
             householdName, userEmail, googleId);
@@ -52,7 +53,7 @@ public class SetupService(
         // Check if user already exists
         // TENANT-SCOPE-OK: first-run setup — the household is being created; identity is the authenticated email;
         // gated by IsSetupCompleteAsync at FirstRunSetup.cshtml.cs:52 (setup refuses once any household exists)
-        var existingUser = await context.Users.IgnoreQueryFilters(["Tenant"]).FirstOrDefaultAsync(u => u.Email == userEmail);
+        var existingUser = await context.Users.IgnoreQueryFilters(["Tenant"]).WhereEmailMatches(userEmail).FirstOrDefaultAsync();
         if (existingUser != null)
         {
             logger.LogWarning("User {Email} already exists with ID {UserId}", userEmail, existingUser.Id);
@@ -104,10 +105,12 @@ public class SetupService(
 
     public async Task<User?> GetUserByEmailAsync(string email)
     {
+        email = EmailAddress.Normalize(email);
         await using var context = await dbFactory.CreateDbContextAsync();
         // TENANT-SCOPE-OK: identity lookup by authenticated email for onboarding/setup flows — pre-household
         return await context.Users
             .Include(u => u.Household)
-            .FirstOrDefaultAsync(u => u.Email == email);
+            .WhereEmailMatches(email)
+            .SingleIdentityOrDefaultAsync(logger, email);
     }
 }

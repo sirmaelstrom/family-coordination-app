@@ -26,7 +26,7 @@ public sealed class HouseholdMemberService(
 
     public async Task<AddMemberResult> AddMemberAsync(int householdId, string email, CancellationToken cancellationToken = default)
     {
-        var normalized = email.Trim().ToLowerInvariant();
+        var normalized = EmailAddress.Normalize(email);
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         // Intentional cross-household read (R-A4): the email belonging to ANOTHER household is rejected — this
@@ -35,15 +35,28 @@ public sealed class HouseholdMemberService(
         // marked members group (AddMember at SettingsEndpoints.cs:46)
         var inOtherHousehold = await context.Users
             .IgnoreQueryFilters(["Tenant"])
-            .AnyAsync(u => u.Email == normalized && u.HouseholdId != householdId, cancellationToken);
+            .WhereEmailMatches(normalized)
+            .AnyAsync(u => u.HouseholdId != householdId, cancellationToken);
         if (inOtherHousehold)
         {
             return new AddMemberResult(AddMemberOutcome.OtherHousehold, null);
         }
 
-        var existing = await context.Users
-            .FirstOrDefaultAsync(u => u.Email == normalized && u.HouseholdId == householdId, cancellationToken);
+        var existingRows = await context.Users
+            .WhereEmailMatches(normalized)
+            .Where(u => u.HouseholdId == householdId)
+            .Take(2)
+            .ToListAsync(cancellationToken);
+        if (existingRows.Count > 1)
+        {
+            // Legacy rows that differ only in case: re-enabling or reporting either one would be a guess.
+            logger.LogWarning(
+                "Add member {Email} to household {HouseholdId} refused: more than one user matches when case is ignored",
+                normalized, householdId);
+            return new AddMemberResult(AddMemberOutcome.Ambiguous, null);
+        }
 
+        var existing = existingRows.SingleOrDefault();
         if (existing is not null)
         {
             if (existing.IsWhitelisted)

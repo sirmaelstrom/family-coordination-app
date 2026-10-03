@@ -34,6 +34,8 @@ public sealed class LoginProfileService(
         if (string.IsNullOrWhiteSpace(email))
             return;
 
+        email = EmailAddress.Normalize(email);
+
         try
         {
             await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -41,7 +43,8 @@ public sealed class LoginProfileService(
             // OAuth OnCreatingTicket event, Program.cs, runs with no tenant)
             var user = await context.Users
                 .IgnoreQueryFilters(["Tenant"])
-                .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+                .WhereEmailMatches(email)
+                .SingleIdentityOrDefaultAsync(logger, email, cancellationToken);
             if (user is null)
                 return;
 

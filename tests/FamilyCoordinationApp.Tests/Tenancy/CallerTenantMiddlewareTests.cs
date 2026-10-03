@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace FamilyCoordinationApp.Tests.Tenancy;
@@ -82,7 +83,7 @@ public sealed class CallerTenantMiddlewareTests
             h.NextCalled = true;
             return Task.CompletedTask;
         });
-        return middleware.InvokeAsync(h.Http, h.Tenant, h.DbFactory);
+        return middleware.InvokeAsync(h.Http, h.Tenant, h.DbFactory, NullLogger<CallerTenantMiddleware>.Instance);
     }
 
     private static async Task<string?> ReadMessageAsync(HttpResponse response)

@@ -64,6 +64,17 @@ public sealed class HouseholdRequestService(
             return new ApproveResult(ReviewOutcome.AlreadyReviewed, null);
         }
 
+        // A user row written before quest 3642dbb8 may hold this email in another case, which the case-sensitive
+        // unique index lets a lowercase insert sit beside. Refuse here instead of creating that case-duplicate.
+        // TENANT-SCOPE-OK: cross-tenant email uniqueness, returning only a boolean; gated by RequireSiteAdmin at
+        // Endpoints/SettingsAdminEndpoints.cs:91 (ApproveRequest)
+        var emailInUse = await context.Users.IgnoreQueryFilters(["Tenant"]).WhereEmailMatches(request.Email).AnyAsync(cancellationToken);
+        if (emailInUse)
+        {
+            logger.LogWarning("Approve {RequestId} refused: email {Email} already belongs to a user", requestId, request.Email);
+            return new ApproveResult(ReviewOutcome.EmailInUse, null);
+        }
+
         var now = DateTime.UtcNow;
 
         var household = new Household
@@ -81,7 +92,7 @@ public sealed class HouseholdRequestService(
         context.Users.Add(new User
         {
             HouseholdId = household.Id,
-            Email = request.Email,
+            Email = EmailAddress.Normalize(request.Email),
             DisplayName = request.DisplayName,
             GoogleId = request.GoogleId,
             IsWhitelisted = true,
@@ -91,7 +102,7 @@ public sealed class HouseholdRequestService(
 
         request.Status = HouseholdRequestStatus.Approved;
         request.ReviewedAt = now;
-        request.ReviewedBy = reviewerEmail;
+        request.ReviewedBy = EmailAddress.Normalize(reviewerEmail);
 
         // Seed the nine default categories on THIS context, inside the same transaction (R-C2) — not the old
         // separate-context SeedDefaultCategoriesAsync, which committed independently.
@@ -155,7 +166,7 @@ public sealed class HouseholdRequestService(
 
         request.Status = HouseholdRequestStatus.Rejected;
         request.ReviewedAt = DateTime.UtcNow;
-        request.ReviewedBy = reviewerEmail;
+        request.ReviewedBy = EmailAddress.Normalize(reviewerEmail);
         request.RejectionReason = reason; // OPTIONAL — null/empty is allowed (R-C7)
         await context.SaveChangesAsync(cancellationToken);
 
@@ -171,7 +182,7 @@ public sealed class HouseholdRequestService(
         CancellationToken cancellationToken = default)
     {
         var name = householdName?.Trim() ?? "";
-        var email = ownerEmail?.Trim().ToLowerInvariant() ?? "";
+        var email = EmailAddress.Normalize(ownerEmail ?? "");
         if (name.Length == 0 || email.Length == 0)
         {
             return new CreateHouseholdResult(CreateHouseholdOutcome.InvalidInput, null);
@@ -184,7 +195,7 @@ public sealed class HouseholdRequestService(
         // Cheap pre-check for a clean 409 before opening the transaction.
         // TENANT-SCOPE-OK: deliberate cross-tenant uniqueness check — Users.Email is globally unique (comment above);
         // gated by RequireSiteAdmin at SettingsAdminEndpoints.cs:150, and it returns only a boolean
-        var emailTaken = await context.Users.IgnoreQueryFilters(["Tenant"]).AnyAsync(u => u.Email == email, cancellationToken);
+        var emailTaken = await context.Users.IgnoreQueryFilters(["Tenant"]).WhereEmailMatches(email).AnyAsync(cancellationToken);
         if (emailTaken)
         {
             return new CreateHouseholdResult(CreateHouseholdOutcome.EmailInUse, null);

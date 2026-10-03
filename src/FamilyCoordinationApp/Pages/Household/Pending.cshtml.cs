@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
+using FamilyCoordinationApp.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -16,8 +17,13 @@ namespace FamilyCoordinationApp.Pages.Household;
 public class PendingModel : PageModel
 {
     private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
+    private readonly ILogger<PendingModel> _logger;
 
-    public PendingModel(IDbContextFactory<ApplicationDbContext> dbFactory) => _dbFactory = dbFactory;
+    public PendingModel(IDbContextFactory<ApplicationDbContext> dbFactory, ILogger<PendingModel> logger)
+    {
+        _dbFactory = dbFactory;
+        _logger = logger;
+    }
 
     public bool IsAuthenticated { get; private set; }
     public HouseholdRequest? RequestRecord { get; private set; }
@@ -30,22 +36,22 @@ public class PendingModel : PageModel
             return Page();
         }
 
-        var email = User.FindFirst(ClaimTypes.Email)?.Value ?? "";
+        var email = EmailAddress.Normalize(User.FindFirst(ClaimTypes.Email)?.Value ?? "");
 
         await using var db = await _dbFactory.CreateDbContextAsync();
 
         // Already provisioned into a household → into the app.
         // TENANT-SCOPE-OK: identity lookup by the caller's own authenticated email — pre-household onboarding surface
         // (an unmarked page: no tenant exists here, D3)
-        var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).FirstOrDefaultAsync(u => u.Email == email);
+        var existingUser = await db.Users.IgnoreQueryFilters(["Tenant"]).WhereEmailMatches(email).FirstOrDefaultAsync();
         if (existingUser != null)
         {
             return Redirect("/");
         }
 
         RequestRecord = await db.HouseholdRequests
-            .OrderByDescending(r => r.RequestedAt)
-            .FirstOrDefaultAsync(r => r.Email == email);
+            .WhereEmailMatches(email)
+            .NewestRequestOrDefaultAsync(_logger, email);
 
         // Approved (but not yet provisioned) → still send them in.
         if (RequestRecord?.Status == HouseholdRequestStatus.Approved)

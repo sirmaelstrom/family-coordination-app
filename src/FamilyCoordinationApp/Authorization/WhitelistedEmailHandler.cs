@@ -44,7 +44,7 @@ public class WhitelistedEmailHandler(
             return; // Fail authorization silently
         }
 
-        var email = emailClaim.Value;
+        var email = EmailAddress.Normalize(emailClaim.Value);
 
         try
         {
@@ -52,10 +52,13 @@ public class WhitelistedEmailHandler(
             await using var dbContext = await dbFactory.CreateDbContextAsync();
             // TENANT-SCOPE-OK: global whitelist check at the auth boundary — no household is resolved yet (runs in
             // UseAuthorization, before CallerTenantMiddleware sets a tenant); returns a boolean only
-            var whitelisted = await dbContext.Users
+            var user = await dbContext.Users
                 .IgnoreQueryFilters(["Tenant"])
                 .AsNoTracking()
-                .AnyAsync(u => u.Email == email && u.IsWhitelisted);
+                .WhereEmailMatches(email)
+                .Select(u => new { u.IsWhitelisted })
+                .SingleIdentityOrDefaultAsync(logger, email);
+            var whitelisted = user?.IsWhitelisted == true;
 
             if (whitelisted)
             {

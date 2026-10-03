@@ -65,13 +65,15 @@ public sealed class LoginProfileServiceTests
         CreatedAt = DateTime.UtcNow
     };
 
-    [Fact]
-    public async Task Refresh_CopiesTheGoogleClaimsOntoTheUserRow()
+    [Theory]
+    [InlineData("alice@a.test")]
+    [InlineData("  Alice@A.Test  ")]
+    public async Task Refresh_CopiesTheGoogleClaimsOntoTheUserRow(string email)
     {
         var (service, options) = Build(Seeded());
 
         await service.RefreshAsync(Principal(
-            "alice@a.test", "Alice Anderson", "https://pic.test/a.jpg", subject: "google-sub-1"));
+            email, "Alice Anderson", "https://pic.test/a.jpg", subject: "google-sub-1"));
 
         await using var db = new ApplicationDbContext(options);
         var user = await db.Users.SingleAsync();
