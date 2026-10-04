@@ -91,7 +91,25 @@ log "Fetching secrets from Bitwarden..."
 export BWS_ACCESS_TOKEN
 BWS_ACCESS_TOKEN=$(cat "$BWS_TOKEN_FILE")
 
-SECRETS_JSON=$("$BWS" secret list --output json) || die "BWS secret fetch failed"
+# Retry the fetch: one transient Bitwarden 5xx must not fail a production deploy.
+# 3 attempts, BWS_RETRY_DELAYS seconds between them. Only stderr is logged, never stdout (the secrets).
+BWS_RETRY_DELAYS=(5 15)
+fetch_secrets() {
+  local attempt=1 err_file err
+  err_file=$(mktemp)
+  until SECRETS_JSON=$("$BWS" secret list --output json 2>"$err_file"); do
+    err=$(<"$err_file")
+    if (( attempt > ${#BWS_RETRY_DELAYS[@]} )); then
+      rm -f "$err_file"
+      die "BWS secret fetch failed after $attempt attempts: ${err:-no stderr}"
+    fi
+    log "BWS secret fetch attempt $attempt failed: ${err:-no stderr} — retrying in ${BWS_RETRY_DELAYS[attempt-1]}s"
+    sleep "${BWS_RETRY_DELAYS[attempt-1]}"
+    attempt=$((attempt + 1))
+  done
+  rm -f "$err_file"
+}
+fetch_secrets
 
 # Helper to extract a secret value by key
 get_secret() {
