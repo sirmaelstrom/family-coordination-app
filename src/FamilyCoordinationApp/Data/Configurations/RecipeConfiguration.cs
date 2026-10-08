@@ -19,19 +19,19 @@ public class RecipeConfiguration : IEntityTypeConfiguration<Recipe>
         // Properties
         builder.Property(r => r.Name)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(FieldLengths.Recipe.Name);
 
         builder.Property(r => r.Description)
-            .HasMaxLength(1000);
+            .HasMaxLength(FieldLengths.Recipe.Description);
 
         builder.Property(r => r.Instructions)
-            .HasMaxLength(10000);
+            .HasMaxLength(FieldLengths.Recipe.Instructions);
 
         builder.Property(r => r.ImagePath)
-            .HasMaxLength(500);
+            .HasMaxLength(FieldLengths.Recipe.ImagePath);
 
         builder.Property(r => r.SourceUrl)
-            .HasMaxLength(2000);
+            .HasMaxLength(FieldLengths.Recipe.SourceUrl);
 
         builder.Property(r => r.IsDeleted)
             .IsRequired()
@@ -67,7 +67,7 @@ public class RecipeConfiguration : IEntityTypeConfiguration<Recipe>
 
         // Attribution fields for cross-household recipe sharing
         builder.Property(r => r.SharedFromHouseholdName)
-            .HasMaxLength(200);
+            .HasMaxLength(FieldLengths.Recipe.SharedFromHouseholdName);
 
         builder.HasOne(r => r.SharedFromHousehold)
             .WithMany()

@@ -17,7 +17,7 @@ public class ChoreParticipationEventConfiguration : IEntityTypeConfiguration<Cho
         builder.Property(pe => pe.Type)
             .IsRequired()
             .HasConversion<string>()
-            .HasMaxLength(20);
+            .HasMaxLength(FieldLengths.ChoreParticipationEvent.Type);
 
         builder.Property(pe => pe.At)
             .IsRequired();

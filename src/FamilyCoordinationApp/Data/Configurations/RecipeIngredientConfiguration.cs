@@ -16,14 +16,14 @@ public class RecipeIngredientConfiguration : IEntityTypeConfiguration<RecipeIngr
 
         builder.Property(ri => ri.Name)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(FieldLengths.RecipeIngredient.Name);
 
         builder.Property(ri => ri.Unit)
-            .HasMaxLength(50);
+            .HasMaxLength(FieldLengths.RecipeIngredient.Unit);
 
         builder.Property(ri => ri.Category)
             .IsRequired()
-            .HasMaxLength(50);
+            .HasMaxLength(FieldLengths.RecipeIngredient.Category);
 
         builder.Property(ri => ri.Quantity)
             .HasPrecision(10, 2);

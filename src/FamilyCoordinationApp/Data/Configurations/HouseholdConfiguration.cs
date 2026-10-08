@@ -15,7 +15,7 @@ public class HouseholdConfiguration : IEntityTypeConfiguration<Household>
 
         builder.Property(h => h.Name)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(FieldLengths.Household.Name);
 
         builder.Property(h => h.CreatedAt)
             .IsRequired();

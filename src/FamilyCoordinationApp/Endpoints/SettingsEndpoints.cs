@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services.Dtos;
 using FamilyCoordinationApp.Services.Interfaces;
@@ -66,11 +68,7 @@ public static class SettingsEndpoints
         ICategoryService categoryService,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Name))
-        {
-            return Results.BadRequest(new { message = "Category name is required." });
-        }
-
+        // Name required + name/icon/color length: CategoryWriteRequest's attributes, checked by the validation filter.
         var created = await categoryService.CreateCategoryAsync(new Category
         {
             HouseholdId = caller.HouseholdId,
@@ -90,11 +88,6 @@ public static class SettingsEndpoints
         ICategoryService categoryService,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Name))
-        {
-            return Results.BadRequest(new { message = "Category name is required." });
-        }
-
         var existing = await categoryService.GetCategoryAsync(caller.HouseholdId, categoryId, ct);
         if (existing is null) return Results.NotFound(new { message = "Category not found." });
 
@@ -174,11 +167,7 @@ public static class SettingsEndpoints
         IHouseholdMemberService memberService,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Email))
-        {
-            return Results.BadRequest(new { message = "Email is required." });
-        }
-
+        // Email required + length: AddMemberRequest's attributes, checked by the validation filter.
         var result = await memberService.AddMemberAsync(caller.HouseholdId, req.Email, ct);
         return result.Outcome switch
         {
@@ -250,7 +239,11 @@ public static class SettingsEndpoints
 
 // ─── Request DTOs ───────────────────────────────────────────────────────────────
 
-public sealed record CategoryWriteRequest(string Name, string? IconEmoji, string Color);
+public sealed record CategoryWriteRequest(
+    [Display(Name = "Category name"), RequiredText, MaxTextLength(FieldLengths.Category.Name)] string Name,
+    [Display(Name = "Category icon"), MaxTextLength(FieldLengths.Category.IconEmoji)] string? IconEmoji,
+    [Display(Name = "Category color"), MaxTextLength(FieldLengths.Category.Color)] string Color);
 public sealed record SortOrderRequest(IReadOnlyList<int> OrderedIds);
-public sealed record AddMemberRequest(string Email);
+public sealed record AddMemberRequest(
+    [Display(Name = "Email"), RequiredText, MaxTextLength(FieldLengths.User.Email)] string Email);
 public sealed record SetWhitelistRequest(bool IsWhitelisted);

@@ -21,10 +21,10 @@ public class ChoreCompletionConfiguration : IEntityTypeConfiguration<ChoreComple
             .IsRequired();
 
         builder.Property(cc => cc.Note)
-            .HasMaxLength(2000);
+            .HasMaxLength(FieldLengths.ChoreCompletion.Note);
 
         builder.Property(cc => cc.PhotoPath)
-            .HasMaxLength(500);
+            .HasMaxLength(FieldLengths.ChoreCompletion.PhotoPath);
 
         // FK to Chore (composite). Cascade on Chore delete (household-scoped teardown).
         builder.HasOne(cc => cc.Chore)

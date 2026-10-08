@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text;
 using FamilyCoordinationApp.Data;
@@ -983,7 +984,11 @@ public static class ChoresEndpoints
 
     public sealed record HandOffRequest(int? TargetUserId, uint Version);
 
-    public sealed record CompleteRequest(string? Note, string? PhotoPath, uint Version, IReadOnlyList<int>? ParticipantUserIds = null);
+    public sealed record CompleteRequest(
+        [Display(Name = "Note"), MaxTextLength(FieldLengths.ChoreCompletion.Note)] string? Note,
+        string? PhotoPath,
+        uint Version,
+        IReadOnlyList<int>? ParticipantUserIds = null);
 
     /// <summary>
     /// PATCH /{id}/snooze body. Supply EXACTLY one of <see cref="Days"/> / <see cref="Until"/> — or NEITHER to
@@ -1054,8 +1059,8 @@ public static class ChoresEndpoints
     }
 
     public sealed record CreateChoreRequest(
-        string Name,
-        string? Description,
+        [Display(Name = "Chore name"), RequiredText, MaxTextLength(FieldLengths.Chore.Name)] string Name,
+        [Display(Name = "Description"), MaxTextLength(FieldLengths.Chore.Description)] string? Description,
         RecurrenceMode RecurrenceMode,
         int? IntervalDays,
         DateOnly? AnchorDate,
@@ -1065,7 +1070,7 @@ public static class ChoresEndpoints
         int? OwnerUserId,
         int? AssigneeUserId,
         string? PhotoPath,
-        string? Icon = null,
+        [Display(Name = "Icon"), MaxTextLength(FieldLengths.Chore.Icon)] string? Icon = null,
         int RequiredCount = 1,
         IReadOnlyList<int>? AssignedUserIds = null,
         DateOnly? SnoozedUntil = null,
@@ -1093,8 +1098,8 @@ public static class ChoresEndpoints
     }
 
     public sealed record UpdateChoreRequest(
-        string Name,
-        string? Description,
+        [Display(Name = "Chore name"), RequiredText, MaxTextLength(FieldLengths.Chore.Name)] string Name,
+        [Display(Name = "Description"), MaxTextLength(FieldLengths.Chore.Description)] string? Description,
         RecurrenceMode RecurrenceMode,
         int? IntervalDays,
         DateOnly? AnchorDate,
@@ -1104,7 +1109,7 @@ public static class ChoresEndpoints
         int? OwnerUserId,
         string? PhotoPath,
         uint Version,
-        string? Icon = null,
+        [Display(Name = "Icon"), MaxTextLength(FieldLengths.Chore.Icon)] string? Icon = null,
         int RequiredCount = 1,
         DateOnly? SnoozedUntil = null,
         // Multi-room membership set (Phase 13) — the sole room input (legacy single roomId removed in WP-08).

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Claims;
+using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Dtos;
@@ -117,9 +118,11 @@ public static class SettingsAdminEndpoints
 
         // Reason is optional (R-C7): a missing body / empty reason is fine. But guard the column's 500-char limit
         // server-side so an oversized direct-API reason is a clean 400, not a varchar-overflow 500 (council R4).
-        if (req?.Reason is { Length: > 500 })
+        // Hand-written, not an attribute: the site-admin 403 above must answer first, and the validation filter
+        // would run before this handler (quest ec7a7331).
+        if (req?.Reason is { Length: > FieldLengths.HouseholdRequest.RejectionReason })
         {
-            return Results.BadRequest(new { message = "Rejection reason must be 500 characters or fewer." });
+            return Results.BadRequest(new { message = $"Rejection reason must be {FieldLengths.HouseholdRequest.RejectionReason} characters or fewer." });
         }
 
         var reviewerEmail = principal.FindFirst(ClaimTypes.Email)?.Value ?? "";
@@ -153,17 +156,19 @@ public static class SettingsAdminEndpoints
         {
             return Results.BadRequest(new { message = "Household name and owner email are required." });
         }
-        if (name.Length > 200)
+        // Hand-written, not attributes: the site-admin 403 must answer first, and these limits apply to the TRIMMED
+        // values the service stores (quest ec7a7331).
+        if (name.Length > FieldLengths.Household.Name)
         {
-            return Results.BadRequest(new { message = "Household name must be 200 characters or fewer." });
+            return Results.BadRequest(new { message = $"Household name must be {FieldLengths.Household.Name} characters or fewer." });
         }
-        if (email.Length > 256)
+        if (email.Length > FieldLengths.User.Email)
         {
-            return Results.BadRequest(new { message = "Owner email must be 256 characters or fewer." });
+            return Results.BadRequest(new { message = $"Owner email must be {FieldLengths.User.Email} characters or fewer." });
         }
-        if (req?.OwnerDisplayName is { Length: > 200 })
+        if (req?.OwnerDisplayName is { Length: > FieldLengths.User.DisplayName })
         {
-            return Results.BadRequest(new { message = "Owner display name must be 200 characters or fewer." });
+            return Results.BadRequest(new { message = $"Owner display name must be {FieldLengths.User.DisplayName} characters or fewer." });
         }
 
         var createdBy = principal.FindFirst(ClaimTypes.Email)?.Value ?? "";
@@ -204,9 +209,10 @@ public static class SettingsAdminEndpoints
             return Results.BadRequest(new { message = "Feedback message is required." });
         }
         // Clean 400 rather than a varchar-overflow 500 (parity: RejectRequest's 500-char guard).
-        if (message.Length > FeedbackService.MessageMaxLength)
+        // Hand-written, not an attribute: the limit applies to the TRIMMED message the service stores.
+        if (message.Length > FieldLengths.Feedback.Message)
         {
-            return Results.BadRequest(new { message = $"Feedback message must be {FeedbackService.MessageMaxLength} characters or fewer." });
+            return Results.BadRequest(new { message = $"Feedback message must be {FieldLengths.Feedback.Message} characters or fewer." });
         }
         if (!TryParseFeedbackType(req?.Type, out var type))
         {

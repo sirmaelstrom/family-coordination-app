@@ -16,7 +16,7 @@ public class HouseholdChoreDigestSettingsConfiguration : IEntityTypeConfiguratio
         builder.Property(s => s.HouseholdId).ValueGeneratedNever();
 
         builder.Property(s => s.WebhookUrlProtected)
-            .HasMaxLength(2000);
+            .HasMaxLength(FieldLengths.HouseholdChoreDigestSettings.WebhookUrlProtected);
 
         builder.Property(s => s.Enabled)
             .IsRequired()
@@ -26,7 +26,7 @@ public class HouseholdChoreDigestSettingsConfiguration : IEntityTypeConfiguratio
         builder.Property(s => s.Cadence)
             .IsRequired()
             .HasConversion<string>()
-            .HasMaxLength(20)
+            .HasMaxLength(FieldLengths.HouseholdChoreDigestSettings.Cadence)
             .HasDefaultValue(DigestCadence.Weekly);
 
         // DayOfWeek stored as int by EF default (BCL enum → underlying int) — intentional per WP-01.

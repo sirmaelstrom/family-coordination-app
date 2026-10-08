@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using FamilyCoordinationApp.Constants;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
@@ -69,11 +70,7 @@ public static class ShoppingListEndpoints
         IShoppingListService svc,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Name))
-        {
-            return Results.BadRequest(new { message = "Name is required" });
-        }
-
+        // Name required + length: CreateListRequest's attributes, checked by the validation filter.
         var list = await svc.CreateShoppingListAsync(caller.HouseholdId, req.Name.Trim(), null, ct);
         return Results.Created(
             $"/api/shopping-lists/{list.ShoppingListId}",
@@ -278,11 +275,6 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Name))
-        {
-            return Results.BadRequest(new { message = "Name is required" });
-        }
-
         var archived = await IsListArchivedAsync(dbFactory, caller.HouseholdId, listId, ct);
         if (archived is null) return Results.NotFound();
         if (archived == true) return ArchivedListConflict;
@@ -410,11 +402,6 @@ public static class ShoppingListEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Name))
-        {
-            return Results.BadRequest(new { message = "Name is required" });
-        }
-
         var list = await svc.GetShoppingListAsync(caller.HouseholdId, listId, ct);
         if (list is null) return Results.NotFound();
         if (list.IsArchived) return ArchivedListConflict;
@@ -538,25 +525,31 @@ public static class ShoppingListEndpoints
     public sealed record PatchItemRequest(
         bool? IsChecked,
         decimal? Quantity,
-        string? Unit,
-        string? Name,
-        string? Category);
+        [Display(Name = "Unit"), MaxTextLength(FieldLengths.ShoppingListItem.Unit)] string? Unit,
+        [Display(Name = "Item name"), MaxTextLength(FieldLengths.ShoppingListItem.Name)] string? Name,
+        [Display(Name = "Category"), MaxTextLength(FieldLengths.ShoppingListItem.Category)] string? Category);
 
     public sealed record AddItemRequest(
-        string Name,
+        [Display(Name = "Item name"), RequiredText, MaxTextLength(FieldLengths.ShoppingListItem.Name)] string Name,
         decimal? Quantity,
-        string? Unit,
-        string? Category);
+        [Display(Name = "Unit"), MaxTextLength(FieldLengths.ShoppingListItem.Unit)] string? Unit,
+        [Display(Name = "Category"), MaxTextLength(FieldLengths.ShoppingListItem.Category)] string? Category);
 
-    public sealed record CreateListRequest(string Name);
-    public sealed record RenameListRequest(string Name);
+    public sealed record CreateListRequest(
+        [Display(Name = "List name"), RequiredText, MaxTextLength(FieldLengths.ShoppingList.Name)] string Name);
+
+    public sealed record RenameListRequest(
+        [Display(Name = "List name"), RequiredText, MaxTextLength(FieldLengths.ShoppingList.Name)] string Name);
 
     public sealed record GenerateRequest(
         DateOnly StartDate,
         DateOnly EndDate,
-        string? Name);
+        [Display(Name = "List name"), MaxTextLength(FieldLengths.ShoppingList.Name)] string? Name);
 
-    public sealed record SortOrderUpdate(int ItemId, int SortOrder, string Category);
+    public sealed record SortOrderUpdate(
+        int ItemId,
+        int SortOrder,
+        [Display(Name = "Category"), MaxTextLength(FieldLengths.ShoppingListItem.Category)] string Category);
     public sealed record UpdateSortOrdersRequest(List<SortOrderUpdate> Updates);
 
     public sealed record ShoppingListDto(

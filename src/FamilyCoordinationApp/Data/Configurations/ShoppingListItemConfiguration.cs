@@ -16,14 +16,14 @@ public class ShoppingListItemConfiguration : IEntityTypeConfiguration<ShoppingLi
 
         builder.Property(sli => sli.Name)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(FieldLengths.ShoppingListItem.Name);
 
         builder.Property(sli => sli.Unit)
-            .HasMaxLength(50);
+            .HasMaxLength(FieldLengths.ShoppingListItem.Unit);
 
         builder.Property(sli => sli.Category)
             .IsRequired()
-            .HasMaxLength(50);
+            .HasMaxLength(FieldLengths.ShoppingListItem.Category);
 
         builder.Property(sli => sli.Quantity)
             .HasPrecision(10, 2);
@@ -37,10 +37,10 @@ public class ShoppingListItemConfiguration : IEntityTypeConfiguration<ShoppingLi
 
         // Consolidation tracking fields
         builder.Property(sli => sli.SourceRecipes)
-            .HasMaxLength(500);
+            .HasMaxLength(FieldLengths.ShoppingListItem.SourceRecipes);
 
         builder.Property(sli => sli.OriginalUnits)
-            .HasMaxLength(200);
+            .HasMaxLength(FieldLengths.ShoppingListItem.OriginalUnits);
 
         builder.Property(sli => sli.IsManuallyAdded)
             .IsRequired()
@@ -50,7 +50,7 @@ public class ShoppingListItemConfiguration : IEntityTypeConfiguration<ShoppingLi
             .HasPrecision(10, 2);
 
         builder.Property(sli => sli.RecipeIngredientIds)
-            .HasMaxLength(500);
+            .HasMaxLength(FieldLengths.ShoppingListItem.RecipeIngredientIds);
 
         builder.Property(sli => sli.SortOrder)
             .IsRequired()

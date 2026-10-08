@@ -239,6 +239,65 @@ public sealed class InputValidationEndpointTests(PostgresContainerFixture postgr
         message.Should().Be(expected);
     }
 
+    [Fact]
+    public async Task BlankCategoryName_KeepsItsMessage()
+    {
+        var resp = await ClientA.PostAsJsonAsync("/api/settings/categories/",
+            new { name = "", iconEmoji = (string?)null, color = "#123456" }, Json);
+        var message = await AssertValidation400(resp, "required");
+        message.Should().Be("Category name is required.", "the hand-written check this replaced said exactly this");
+    }
+
+    [Fact]
+    public async Task MissingEmail_KeepsItsMessage()
+    {
+        var resp = await ClientA.PostAsJsonAsync("/api/settings/members/", new { }, Json);
+        var message = await AssertValidation400(resp, "required");
+        message.Should().Be("Email is required.", "the hand-written check this replaced said exactly this");
+    }
+
+    // ── The 400 body shape (pinned) ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Pins the validation failure's wire shape: an <c>application/problem+json</c> body with the standard
+    /// <c>status</c> + <c>errors</c>, plus the <c>message</c> the SPA reads, equal to the first error's text.
+    /// </summary>
+    [Fact]
+    public async Task ValidationFailure_BodyShape_IsProblemJsonWithMessageAndErrors()
+    {
+        var resp = await ClientA.PostAsJsonAsync("/api/rooms/", new { name = Over(100), icon = Over(30) }, Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        resp.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+        root.GetProperty("status").GetInt32().Should().Be(400);
+        root.GetProperty("message").GetString().Should().Be("Room name must be 100 characters or fewer.");
+
+        var errors = root.GetProperty("errors");
+        errors.GetProperty("Name")[0].GetString().Should().Be("Room name must be 100 characters or fewer.");
+        errors.GetProperty("Icon")[0].GetString().Should().Be("Room icon must be 30 characters or fewer.");
+    }
+
+    /// <summary>
+    /// The default problem-details writer refuses a request whose <c>Accept</c> excludes JSON, and the validation
+    /// filter then falls back to a body with no <c>message</c>. The /api writer accepts every /api request.
+    /// </summary>
+    [Fact]
+    public async Task ValidationFailure_WithNonJsonAccept_StillCarriesMessage()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/rooms/")
+        {
+            Content = JsonContent.Create(new { name = Over(100) }, options: Json),
+        };
+        request.Headers.Accept.ParseAdd("text/html");
+
+        var resp = await ClientA.SendAsync(request);
+
+        await AssertValidation400(resp, "100");
+    }
+
     // ── Controls: the limit is the column's, not one character less ────────────────────────────
 
     [Fact]

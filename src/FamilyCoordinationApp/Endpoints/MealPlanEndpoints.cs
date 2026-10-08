@@ -1,4 +1,6 @@
+using System.ComponentModel.DataAnnotations;
 using System.Globalization;
+using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Dtos;
@@ -228,11 +230,7 @@ public static class MealPlanEndpoints
         IHouseholdClock clock,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Name))
-        {
-            return Results.BadRequest(new { message = "Recipe name is required." });
-        }
-
+        // Name required + length: QuickCreateRecipeRequest's attributes, checked by the validation filter.
         var recipe = new Recipe
         {
             HouseholdId = caller.HouseholdId,
@@ -273,8 +271,8 @@ public static class MealPlanEndpoints
         DateOnly Date,
         MealType MealType,
         int? RecipeId,
-        string? CustomMealName,
-        string? Notes);
+        [Display(Name = "Meal name"), MaxTextLength(FieldLengths.MealPlanEntry.CustomMealName)] string? CustomMealName,
+        [Display(Name = "Notes"), MaxTextLength(FieldLengths.MealPlanEntry.Notes)] string? Notes);
 
     /// <summary>
     /// Move an entry to another slot in the SAME week (drag-to-assign). <see cref="Date"/> must fall inside
@@ -295,5 +293,7 @@ public static class MealPlanEndpoints
     public sealed record SetEntryServingsRequest(int? Servings, uint Version);
 
     /// <summary>Quick-create a bare recipe from the picker's "New Recipe" tab (details added later).</summary>
-    public sealed record QuickCreateRecipeRequest(string Name, RecipeType RecipeType);
+    public sealed record QuickCreateRecipeRequest(
+        [Display(Name = "Recipe name"), RequiredText, MaxTextLength(FieldLengths.Recipe.Name)] string Name,
+        RecipeType RecipeType);
 }

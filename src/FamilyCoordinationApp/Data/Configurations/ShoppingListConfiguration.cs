@@ -16,7 +16,7 @@ public class ShoppingListConfiguration : IEntityTypeConfiguration<ShoppingList>
 
         builder.Property(sl => sl.Name)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(FieldLengths.ShoppingList.Name);
 
         builder.Property(sl => sl.CreatedAt)
             .IsRequired();

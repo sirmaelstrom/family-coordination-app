@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
@@ -116,12 +117,7 @@ public static class RecipesEndpoints
         IHouseholdClock clock,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Name))
-        {
-            return Results.BadRequest(new { message = "Recipe name is required." });
-        }
-
-
+        // Name required + every string's length: RecipeWriteRequest's attributes, checked by the validation filter.
         if (!ImagePathPolicy.TryNormalize(req.ImagePath, caller.HouseholdId, out var imagePath))
         {
             return Results.BadRequest(new { message = "Image path is not valid." });
@@ -146,12 +142,6 @@ public static class RecipesEndpoints
         IRecipeProjectionService projection,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Name))
-        {
-            return Results.BadRequest(new { message = "Recipe name is required." });
-        }
-
-
         if (!ImagePathPolicy.TryNormalize(req.ImagePath, caller.HouseholdId, out var imagePath))
         {
             return Results.BadRequest(new { message = "Image path is not valid." });
@@ -463,11 +453,6 @@ public static class RecipesEndpoints
         IDraftService draftService,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Name))
-        {
-            return Results.BadRequest(new { message = "Draft name is required." });
-        }
-
         if (!ImagePathPolicy.TryNormalize(req.ImagePath, caller.HouseholdId, out var imagePath))
         {
             return Results.BadRequest(new { message = "Image path is not valid." });
@@ -576,10 +561,10 @@ public static class RecipesEndpoints
     /// skipped when null (a client without a token keeps last-write-wins).
     /// </summary>
     public sealed record RecipeWriteRequest(
-        string Name,
-        string? Description,
-        string? Instructions,
-        string? SourceUrl,
+        [Display(Name = "Recipe name"), RequiredText, MaxTextLength(FieldLengths.Recipe.Name)] string Name,
+        [Display(Name = "Description"), MaxTextLength(FieldLengths.Recipe.Description)] string? Description,
+        [Display(Name = "Instructions"), MaxTextLength(FieldLengths.Recipe.Instructions)] string? Instructions,
+        [Display(Name = "Source URL"), MaxTextLength(FieldLengths.Recipe.SourceUrl)] string? SourceUrl,
         int? Servings,
         int? PrepTimeMinutes,
         int? CookTimeMinutes,
@@ -589,10 +574,10 @@ public static class RecipesEndpoints
         uint? Version = null);
 
     public sealed record RecipeIngredientWrite(
-        string Name,
+        [Display(Name = "Ingredient name"), MaxTextLength(FieldLengths.RecipeIngredient.Name)] string Name,
         decimal? Quantity,
-        string? Unit,
-        string Category,
+        [Display(Name = "Ingredient unit"), MaxTextLength(FieldLengths.RecipeIngredient.Unit)] string? Unit,
+        [Display(Name = "Ingredient category"), MaxTextLength(FieldLengths.RecipeIngredient.Category)] string Category,
         string? Notes,
         string? GroupName,
         int SortOrder);
@@ -611,7 +596,7 @@ public static class RecipesEndpoints
     /// </summary>
     public sealed record SaveDraftRequest(
         int? RecipeId,
-        string Name,
+        [Display(Name = "Draft name"), RequiredText] string Name,
         string? Description,
         string? Instructions,
         string? ImagePath,
