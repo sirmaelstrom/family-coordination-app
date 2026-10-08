@@ -23,7 +23,7 @@ public class ChoreSubtaskConfiguration : IEntityTypeConfiguration<ChoreSubtask>
 
         builder.Property(s => s.Title)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(FieldLengths.ChoreSubtask.Title);
 
         builder.Property(s => s.IsDone)
             .IsRequired()

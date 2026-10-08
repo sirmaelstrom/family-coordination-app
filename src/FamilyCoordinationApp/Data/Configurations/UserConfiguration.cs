@@ -15,14 +15,14 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
 
         builder.Property(u => u.Email)
             .IsRequired()
-            .HasMaxLength(256);
+            .HasMaxLength(FieldLengths.User.Email);
 
         builder.Property(u => u.DisplayName)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(FieldLengths.User.DisplayName);
 
         builder.Property(u => u.GoogleId)
-            .HasMaxLength(200);
+            .HasMaxLength(FieldLengths.User.GoogleId);
 
         // Unique index on email
         builder.HasIndex(u => u.Email)

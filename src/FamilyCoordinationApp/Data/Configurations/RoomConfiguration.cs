@@ -16,14 +16,14 @@ public class RoomConfiguration : IEntityTypeConfiguration<Room>
 
         builder.Property(r => r.Name)
             .IsRequired()
-            .HasMaxLength(100);
+            .HasMaxLength(FieldLengths.Room.Name);
 
         builder.Property(r => r.Icon)
             .IsRequired()
-            .HasMaxLength(30);
+            .HasMaxLength(FieldLengths.Room.Icon);
 
         builder.Property(r => r.PhotoPath)
-            .HasMaxLength(500);
+            .HasMaxLength(FieldLengths.Room.PhotoPath);
 
         builder.Property(r => r.SortOrder)
             .IsRequired()

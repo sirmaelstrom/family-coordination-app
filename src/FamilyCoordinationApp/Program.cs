@@ -157,6 +157,14 @@ builder.Services.AddScoped<IChoreRecapService, ChoreRecapService>();
 // and the evolved recap. One computation, two projections (D3) — must NOT depend on IChoreRecapService.
 builder.Services.AddScoped<IChoreHistoryService, ChoreHistoryService>();
 
+// Request validation (quest ec7a7331): the attributes on the /api request records run before each handler, against
+// the column limits in Data/FieldLengths. A failure is a 400 problem body written through IProblemDetailsService;
+// the /api writer goes FIRST (writers are asked in registration order) so the body always carries the `message`
+// the SPA shows, whatever the request's Accept header. AddProblemDetails supplies the service + the default writer.
+builder.Services.AddValidation();
+builder.Services.AddSingleton<Microsoft.AspNetCore.Http.IProblemDetailsWriter, ApiProblemDetailsWriter>();
+builder.Services.AddProblemDetails();
+
 // Chore/Room HTTP endpoints serialize enum DTOs (colorTier/dueState/assignmentKind/rollup status) as
 // camelCase strings so responses match the island TS unions + the WP-05 board.json fixture (council M5/M11).
 // Additive to the Minimal-API JSON options only.

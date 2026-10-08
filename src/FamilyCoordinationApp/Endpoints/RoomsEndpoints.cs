@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Interfaces;
@@ -57,7 +59,7 @@ public static class RoomsEndpoints
         IRoomService svc,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Name)) return Results.BadRequest(new { message = "Name is required" });
+        // Name required + length: RoomRequest's attributes, checked by the validation filter before this runs.
         if (!ImagePathPolicy.TryNormalize(req.PhotoPath, caller.HouseholdId, out var photoPath))
         {
             return Results.BadRequest(new { message = "Photo path is not valid." });
@@ -75,7 +77,6 @@ public static class RoomsEndpoints
         IRoomService svc,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Name)) return Results.BadRequest(new { message = "Name is required" });
         if (!ImagePathPolicy.TryNormalize(req.PhotoPath, caller.HouseholdId, out var photoPath))
         {
             return Results.BadRequest(new { message = "Photo path is not valid." });
@@ -152,7 +153,10 @@ public static class RoomsEndpoints
         r.PhotoPath,
         r.SortOrder);
 
-    public sealed record RoomRequest(string Name, string? Icon, string? PhotoPath);
+    public sealed record RoomRequest(
+        [Display(Name = "Room name"), RequiredText, MaxTextLength(FieldLengths.Room.Name)] string Name,
+        [Display(Name = "Room icon"), MaxTextLength(FieldLengths.Room.Icon)] string? Icon,
+        string? PhotoPath);
     public sealed record ReorderRequest(List<int> OrderedRoomIds);
 
     public sealed record RoomDto(

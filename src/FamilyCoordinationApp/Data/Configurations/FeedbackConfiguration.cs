@@ -19,16 +19,16 @@ public class FeedbackConfiguration : IEntityTypeConfiguration<Feedback>
 
         builder.Property(f => f.Message)
             .IsRequired()
-            .HasMaxLength(4000);
+            .HasMaxLength(FieldLengths.Feedback.Message);
 
         builder.Property(f => f.CurrentPage)
-            .HasMaxLength(500);
+            .HasMaxLength(FieldLengths.Feedback.CurrentPage);
 
         builder.Property(f => f.UserAgent)
-            .HasMaxLength(500);
+            .HasMaxLength(FieldLengths.Feedback.UserAgent);
 
         builder.Property(f => f.AdminNotes)
-            .HasMaxLength(2000);
+            .HasMaxLength(FieldLengths.Feedback.AdminNotes);
 
         builder.Property(f => f.CreatedAt)
             .IsRequired();

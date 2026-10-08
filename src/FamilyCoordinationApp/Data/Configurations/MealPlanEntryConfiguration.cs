@@ -22,10 +22,10 @@ public class MealPlanEntryConfiguration : IEntityTypeConfiguration<MealPlanEntry
             .HasConversion<string>();
 
         builder.Property(e => e.CustomMealName)
-            .HasMaxLength(200);
+            .HasMaxLength(FieldLengths.MealPlanEntry.CustomMealName);
 
         builder.Property(e => e.Notes)
-            .HasMaxLength(500);
+            .HasMaxLength(FieldLengths.MealPlanEntry.Notes);
 
         // FK to MealPlan (composite)
         builder.HasOne(e => e.MealPlan)

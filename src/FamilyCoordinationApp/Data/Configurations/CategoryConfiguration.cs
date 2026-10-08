@@ -12,13 +12,13 @@ public class CategoryConfiguration : IEntityTypeConfiguration<Category>
 
         builder.Property(c => c.Name)
             .IsRequired()
-            .HasMaxLength(50);
+            .HasMaxLength(FieldLengths.Category.Name);
 
         builder.Property(c => c.IconEmoji)
-            .HasMaxLength(30);  // Emoji shortcode names like "cup_with_straw"
+            .HasMaxLength(FieldLengths.Category.IconEmoji);  // Emoji shortcode names like "cup_with_straw"
 
         builder.Property(c => c.Color)
-            .HasMaxLength(7);  // #FFFFFF format
+            .HasMaxLength(FieldLengths.Category.Color);  // #FFFFFF format
 
         // Named, so ignoring soft delete keeps the "Tenant" filter (fca-household-scope D5).
         builder.HasQueryFilter("SoftDelete", c => !c.IsDeleted);

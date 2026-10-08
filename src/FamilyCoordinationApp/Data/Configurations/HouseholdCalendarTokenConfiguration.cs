@@ -12,7 +12,7 @@ public class HouseholdCalendarTokenConfiguration : IEntityTypeConfiguration<Hous
 
         builder.HasKey(token => token.Id);
         builder.Property(token => token.Id).ValueGeneratedOnAdd();
-        builder.Property(token => token.TokenHash).IsRequired().HasMaxLength(64);
+        builder.Property(token => token.TokenHash).IsRequired().HasMaxLength(FieldLengths.HouseholdCalendarToken.TokenHash);
         builder.Property(token => token.CreatedAt).IsRequired();
         builder.Property(token => token.Version).IsRowVersion();
 

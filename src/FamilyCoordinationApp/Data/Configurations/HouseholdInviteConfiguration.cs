@@ -16,7 +16,7 @@ public class HouseholdInviteConfiguration : IEntityTypeConfiguration<HouseholdIn
         // Properties
         builder.Property(i => i.InviteCode)
             .IsRequired()
-            .HasMaxLength(6)
+            .HasMaxLength(FieldLengths.HouseholdInvite.InviteCode)
             .IsFixedLength();
 
         builder.Property(i => i.CreatedAt)

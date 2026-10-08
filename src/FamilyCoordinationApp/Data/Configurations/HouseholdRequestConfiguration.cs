@@ -15,32 +15,32 @@ public class HouseholdRequestConfiguration : IEntityTypeConfiguration<HouseholdR
 
         builder.Property(r => r.Email)
             .IsRequired()
-            .HasMaxLength(256);
+            .HasMaxLength(FieldLengths.HouseholdRequest.Email);
 
         builder.Property(r => r.DisplayName)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(FieldLengths.HouseholdRequest.DisplayName);
 
         builder.Property(r => r.GoogleId)
-            .HasMaxLength(200);
+            .HasMaxLength(FieldLengths.HouseholdRequest.GoogleId);
 
         builder.Property(r => r.HouseholdName)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(FieldLengths.HouseholdRequest.HouseholdName);
 
         builder.Property(r => r.Status)
             .IsRequired()
             .HasConversion<string>()
-            .HasMaxLength(50);
+            .HasMaxLength(FieldLengths.HouseholdRequest.Status);
 
         builder.Property(r => r.RequestedAt)
             .IsRequired();
 
         builder.Property(r => r.ReviewedBy)
-            .HasMaxLength(256);
+            .HasMaxLength(FieldLengths.HouseholdRequest.ReviewedBy);
 
         builder.Property(r => r.RejectionReason)
-            .HasMaxLength(500);
+            .HasMaxLength(FieldLengths.HouseholdRequest.RejectionReason);
 
         // Index for efficient lookups by email
         builder.HasIndex(r => r.Email);

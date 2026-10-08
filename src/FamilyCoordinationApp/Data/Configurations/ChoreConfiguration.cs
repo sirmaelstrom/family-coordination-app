@@ -16,31 +16,31 @@ public class ChoreConfiguration : IEntityTypeConfiguration<Chore>
 
         builder.Property(c => c.Name)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(FieldLengths.Chore.Name);
 
         builder.Property(c => c.Description)
-            .HasMaxLength(2000);
+            .HasMaxLength(FieldLengths.Chore.Description);
 
         // Optional emoji/short-code icon (parity with Room.Icon, ~line 21). Non-null;
         // existing rows backfill to "" via the additive migration's default.
         builder.Property(c => c.Icon)
             .IsRequired()
-            .HasMaxLength(30);
+            .HasMaxLength(FieldLengths.Chore.Icon);
 
         // Enums stored as strings (codebase convention).
         builder.Property(c => c.RecurrenceMode)
             .IsRequired()
             .HasConversion<string>()
-            .HasMaxLength(20);
+            .HasMaxLength(FieldLengths.Chore.RecurrenceMode);
 
         builder.Property(c => c.DaysOfWeek)
             .HasConversion<string>()
-            .HasMaxLength(60);
+            .HasMaxLength(FieldLengths.Chore.DaysOfWeek);
 
         builder.Property(c => c.EffortTier)
             .IsRequired()
             .HasConversion<string>()
-            .HasMaxLength(20);
+            .HasMaxLength(FieldLengths.Chore.EffortTier);
 
         builder.Property(c => c.EffortPoints)
             .IsRequired()
@@ -56,16 +56,16 @@ public class ChoreConfiguration : IEntityTypeConfiguration<Chore>
         builder.Property(c => c.Status)
             .IsRequired()
             .HasConversion<string>()
-            .HasMaxLength(20);
+            .HasMaxLength(FieldLengths.Chore.Status);
 
         builder.Property(c => c.AssignmentKind)
             .IsRequired()
             .HasConversion<string>()
-            .HasMaxLength(20)
+            .HasMaxLength(FieldLengths.Chore.AssignmentKind)
             .HasDefaultValue(AssignmentKind.None);
 
         builder.Property(c => c.PhotoPath)
-            .HasMaxLength(500);
+            .HasMaxLength(FieldLengths.Chore.PhotoPath);
 
         builder.Property(c => c.CreatedAt)
             .IsRequired();

@@ -1,4 +1,7 @@
+using System.ComponentModel.DataAnnotations;
+using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
+using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Dtos;
 using FamilyCoordinationApp.Services.Interfaces;
 using FamilyCoordinationApp.Tenancy;
@@ -66,11 +69,7 @@ public static class SettingsEndpoints
         ICategoryService categoryService,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Name))
-        {
-            return Results.BadRequest(new { message = "Category name is required." });
-        }
-
+        // Name required + name/icon/color length: CategoryWriteRequest's attributes, checked by the validation filter.
         var created = await categoryService.CreateCategoryAsync(new Category
         {
             HouseholdId = caller.HouseholdId,
@@ -90,11 +89,6 @@ public static class SettingsEndpoints
         ICategoryService categoryService,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Name))
-        {
-            return Results.BadRequest(new { message = "Category name is required." });
-        }
-
         var existing = await categoryService.GetCategoryAsync(caller.HouseholdId, categoryId, ct);
         if (existing is null) return Results.NotFound(new { message = "Category not found." });
 
@@ -174,9 +168,15 @@ public static class SettingsEndpoints
         IHouseholdMemberService memberService,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Email))
+        // Email required + length: AddMemberRequest's attributes, checked by the validation filter. The service stores
+        // the part before the @ as a new user's display name (200 chars, against a 256-char email), so check that
+        // derived value too. Rejected, never truncated: truncation would change the stored, user-visible name.
+        if (MemberDisplayNameFor(req.Email).Length > FieldLengths.User.DisplayName)
         {
-            return Results.BadRequest(new { message = "Email is required." });
+            return Results.BadRequest(new
+            {
+                message = $"The name taken from this email (the part before the @) must be {FieldLengths.User.DisplayName} characters or fewer.",
+            });
         }
 
         var result = await memberService.AddMemberAsync(caller.HouseholdId, req.Email, ct);
@@ -230,6 +230,13 @@ public static class SettingsEndpoints
         };
     }
 
+    /// <summary>
+    /// The display name <c>HouseholdMemberService.AddMemberAsync</c> gives a new user: the normalized email's part
+    /// before the first <c>@</c>, or the whole string when there is none. A copy of the service's derivation, held to
+    /// it by <c>HouseholdMemberServiceTests.AddMember_DisplayName_MatchesTheEndpointsDerivation</c>.
+    /// </summary>
+    internal static string MemberDisplayNameFor(string email) => EmailAddress.Normalize(email).Split('@')[0];
+
     // ─── Projection ───────────────────────────────────────────────────────────────
 
     private static SettingsCategoryDto ToDto(Category c) => new(
@@ -250,7 +257,11 @@ public static class SettingsEndpoints
 
 // ─── Request DTOs ───────────────────────────────────────────────────────────────
 
-public sealed record CategoryWriteRequest(string Name, string? IconEmoji, string Color);
+public sealed record CategoryWriteRequest(
+    [Display(Name = "Category name"), RequiredText, MaxTextLength(FieldLengths.Category.Name)] string Name,
+    [Display(Name = "Category icon"), MaxTextLength(FieldLengths.Category.IconEmoji)] string? IconEmoji,
+    [Display(Name = "Category color"), MaxTextLength(FieldLengths.Category.Color)] string Color);
 public sealed record SortOrderRequest(IReadOnlyList<int> OrderedIds);
-public sealed record AddMemberRequest(string Email);
+public sealed record AddMemberRequest(
+    [Display(Name = "Email"), RequiredText, MaxTextLength(FieldLengths.User.Email)] string Email);
 public sealed record SetWhitelistRequest(bool IsWhitelisted);
