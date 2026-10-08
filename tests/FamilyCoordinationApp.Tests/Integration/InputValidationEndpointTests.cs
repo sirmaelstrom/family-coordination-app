@@ -256,6 +256,34 @@ public sealed class InputValidationEndpointTests(PostgresContainerFixture postgr
         message.Should().Be("Email is required.", "the hand-written check this replaced said exactly this");
     }
 
+    /// <summary>
+    /// AddMember stores the email's part before the <c>@</c> as the new user's display name (200-char column), while
+    /// the email itself may be 256. Both a long local part and a long string with no <c>@</c> (the whole string becomes
+    /// the name) must be refused with a 400 before the write, not reach Postgres as a 500 (amendment 1, item 1).
+    /// </summary>
+    [Theory]
+    [InlineData("long-local-part")]
+    [InlineData("no-at-sign")]
+    public async Task AddMember_DerivedDisplayNameTooLong_Returns400WithMessage(string shape)
+    {
+        var email = shape == "no-at-sign"
+            ? new string('n', 201)
+            : new string('a', 201) + "@x.test";
+
+        var resp = await ClientA.PostAsJsonAsync("/api/settings/members/", new { email }, Json);
+
+        var message = await AssertValidation400(resp, "200");
+        message.Should().Be("The name taken from this email (the part before the @) must be 200 characters or fewer.");
+    }
+
+    [Fact]
+    public async Task AddMember_DerivedDisplayNameAtTheLimit_Succeeds()
+    {
+        var resp = await ClientA.PostAsJsonAsync("/api/settings/members/",
+            new { email = new string('m', 200) + "@x.test" }, Json);
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     // ── The 400 body shape (pinned) ────────────────────────────────────────────────────────────
 
     /// <summary>
