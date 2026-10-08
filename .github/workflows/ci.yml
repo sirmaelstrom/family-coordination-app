@@ -96,7 +96,24 @@ jobs:
       - name: Check formatting
         # No || fallback: a swallowed failure here let 38 violations accumulate under a green check.
         run: dotnet format src/FamilyCoordinationApp/FamilyCoordinationApp.csproj --verify-no-changes
-        
+
+  deploy-script:
+    name: Deploy Script Harnesses
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Syntax check
+        run: bash -n deploy.sh
+
+      - name: BWS fetch retry
+        run: bash scripts/test-deploy-bws-retry.sh
+
+      - name: Missing secret stops the deploy
+        run: bash scripts/test-deploy-secrets.sh
+
   secrets-scan:
     name: Secrets Scan
     runs-on: ubuntu-latest

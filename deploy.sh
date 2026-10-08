@@ -35,7 +35,7 @@ BWS_TOKEN_FILE="$HOME/.bws-token"
 # ── Logging ─────────────────────────────────────────────────────────
 mkdir -p "$LOG_DIR"
 log() { echo "[$(date -Iseconds)] $*" | tee -a "$LOG"; }
-die() { log "ERROR: $*"; exit 1; }
+die() { log "ERROR: $*" >&2; exit 1; }  # stderr, so a "$(...)" caller never captures the message as a value
 
 # ── Parse flags ─────────────────────────────────────────────────────
 DO_BUILD=false
@@ -120,21 +120,30 @@ get_secret() {
   echo "$val"
 }
 
+# Read every secret before writing anything. get_secret's die inside "$(...)" exits only that
+# subshell, so `echo "K=$(get_secret K)"` carried on with a bad value. A plain assignment returns
+# the substitution's status, so set -e stops the deploy here and the old .env stays in place.
+GOOGLE_CLIENT_ID=$(get_secret GOOGLE_CLIENT_ID)
+GOOGLE_CLIENT_SECRET=$(get_secret GOOGLE_CLIENT_SECRET)
+DATAPROTECTION_CERT=$(get_secret DATAPROTECTION_CERT)
+GEMINI_API_KEY=$(get_secret GEMINI_API_KEY)
+POSTGRES_PASSWORD_PROD=$(get_secret POSTGRES_PASSWORD_PROD)
+
 # Start .env from non-secret template
 [[ -f .env.local ]] || die ".env.local template not found"
 cp .env.local .env
 echo "" >> .env
 
 # Append BWS secrets to .env
-echo "GOOGLE_CLIENT_ID=$(get_secret GOOGLE_CLIENT_ID)" >> .env
-echo "GOOGLE_CLIENT_SECRET=$(get_secret GOOGLE_CLIENT_SECRET)" >> .env
-echo "DATAPROTECTION_CERT=$(get_secret DATAPROTECTION_CERT)" >> .env
-echo "GEMINI_API_KEY=$(get_secret GEMINI_API_KEY)" >> .env
+echo "GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID" >> .env
+echo "GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET" >> .env
+echo "DATAPROTECTION_CERT=$DATAPROTECTION_CERT" >> .env
+echo "GEMINI_API_KEY=$GEMINI_API_KEY" >> .env
 chmod 600 .env
 
 # Write Postgres password as Docker secret file
 mkdir -p secrets
-get_secret POSTGRES_PASSWORD_PROD > secrets/postgres_password
+echo "$POSTGRES_PASSWORD_PROD" > secrets/postgres_password
 chmod 600 secrets/postgres_password
 
 log "Secrets generated (.env + secrets/postgres_password)"
