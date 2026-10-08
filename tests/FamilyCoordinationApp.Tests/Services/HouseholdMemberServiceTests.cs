@@ -77,6 +77,23 @@ public class HouseholdMemberServiceTests : IDisposable
         result.User.Initials.Should().Be("N", "a user must be born with Initials — nothing backfills them");
     }
 
+    /// <summary>
+    /// The AddMember endpoint checks the derived display name's length with its own copy of the derivation
+    /// (<c>SettingsEndpoints.MemberDisplayNameFor</c>). This holds the copy to the service, so a change to how the
+    /// service names a new member fails here instead of re-opening the 500 (quest ec7a7331, amendment 1).
+    /// </summary>
+    [Theory]
+    [InlineData("  Mixed.Case@A.test ")]
+    [InlineData("no-at-sign-at-all")]
+    [InlineData("two@at@signs.test")]
+    public async Task AddMember_DisplayName_MatchesTheEndpointsDerivation(string email)
+    {
+        var result = await _service.AddMemberAsync(HhA, email);
+
+        result.Outcome.Should().Be(AddMemberOutcome.Created);
+        result.User!.DisplayName.Should().Be(FamilyCoordinationApp.Endpoints.SettingsEndpoints.MemberDisplayNameFor(email));
+    }
+
     [Fact]
     public async Task AddMember_ExistingDisabled_ReenablesThem()
     {

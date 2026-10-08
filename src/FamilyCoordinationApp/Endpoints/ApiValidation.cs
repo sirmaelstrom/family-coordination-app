@@ -47,8 +47,11 @@ public sealed class RequiredTextAttribute : RequiredAttribute
 }
 
 /// <summary>
-/// <c>[StringLength(max)]</c> with the house message: "Room name must be 100 characters or fewer." It measures the
-/// value as sent, before any trimming the handler does, so it never lets through a value the column can't hold.
+/// <c>[StringLength(max)]</c> with the house message: "Room name must be 100 characters or fewer." It checks the
+/// annotated field against its own column's limit, on the raw value as sent (before any trimming the handler does),
+/// counted in UTF-16 code units, which is stricter than Postgres <c>varchar</c> for supplementary characters. A value
+/// the handler or service DERIVES from the field (a display name taken from an email) is outside it and needs its
+/// own check.
 /// </summary>
 public sealed class MaxTextLengthAttribute : StringLengthAttribute
 {
@@ -59,7 +62,9 @@ public sealed class MaxTextLengthAttribute : StringLengthAttribute
 /// The <see cref="IProblemDetailsWriter"/> for <c>/api</c>, registered ahead of the default writer (the
 /// <see cref="IProblemDetailsService"/> asks writers in registration order). Unlike the default writer it does not
 /// depend on the request's <c>Accept</c> header, so an <c>/api</c> problem body always reaches the caller as JSON, and
-/// it adds the <c>message</c> the SPA reads. Non-<c>/api</c> paths fall through to the default writer unchanged.
+/// it adds the <c>message</c> the SPA reads. Its scope is the path prefix alone: EVERY problem body written through
+/// the service on <c>/api</c> gets this shape, a future <c>Results.Problem</c> included, not only validation failures.
+/// Non-<c>/api</c> paths fall through to the default writer.
 /// </summary>
 public sealed class ApiProblemDetailsWriter(IOptions<HttpJsonOptions> jsonOptions) : IProblemDetailsWriter
 {

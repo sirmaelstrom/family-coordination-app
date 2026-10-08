@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
+using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Dtos;
 using FamilyCoordinationApp.Services.Interfaces;
 using FamilyCoordinationApp.Tenancy;
@@ -167,7 +168,17 @@ public static class SettingsEndpoints
         IHouseholdMemberService memberService,
         CancellationToken ct)
     {
-        // Email required + length: AddMemberRequest's attributes, checked by the validation filter.
+        // Email required + length: AddMemberRequest's attributes, checked by the validation filter. The service stores
+        // the part before the @ as a new user's display name (200 chars, against a 256-char email), so check that
+        // derived value too. Rejected, never truncated: truncation would change the stored, user-visible name.
+        if (MemberDisplayNameFor(req.Email).Length > FieldLengths.User.DisplayName)
+        {
+            return Results.BadRequest(new
+            {
+                message = $"The name taken from this email (the part before the @) must be {FieldLengths.User.DisplayName} characters or fewer.",
+            });
+        }
+
         var result = await memberService.AddMemberAsync(caller.HouseholdId, req.Email, ct);
         return result.Outcome switch
         {
@@ -218,6 +229,13 @@ public static class SettingsEndpoints
             _ => Results.NotFound(new { message = "Member not found." }),
         };
     }
+
+    /// <summary>
+    /// The display name <c>HouseholdMemberService.AddMemberAsync</c> gives a new user: the normalized email's part
+    /// before the first <c>@</c>, or the whole string when there is none. A copy of the service's derivation, held to
+    /// it by <c>HouseholdMemberServiceTests.AddMember_DisplayName_MatchesTheEndpointsDerivation</c>.
+    /// </summary>
+    internal static string MemberDisplayNameFor(string email) => EmailAddress.Normalize(email).Split('@')[0];
 
     // ─── Projection ───────────────────────────────────────────────────────────────
 
