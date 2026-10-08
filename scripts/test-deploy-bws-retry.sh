@@ -3,7 +3,7 @@
 # Extracts the "Generate secrets from BWS" block from deploy.sh (up to the get_secret helper),
 # runs it with stub log/die/sleep, and checks call counts, sleeps, exit status and log content.
 # Usage: scripts/test-deploy-bws-retry.sh [path/to/deploy.sh]   (default: ../deploy.sh)
-# Not run by CI. `sleep` is stubbed, so the production schedule (5s, 15s) runs in milliseconds.
+# Run by CI (ci.yml, deploy-script job). `sleep` is stubbed, so the production schedule (5s, 15s) runs in milliseconds.
 
 set -uo pipefail
 
