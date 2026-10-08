@@ -17,11 +17,51 @@ namespace FamilyCoordinationApp.Tests.Architecture;
 /// <c>FieldLengths.</c>, reported as file:line. <b>Stated limit:</b> an argument that names a <c>FieldLengths</c>
 /// constant and then does arithmetic on it (<c>FieldLengths.X.Y + 1</c>) passes; none exist:
 /// <c>grep -rnE "(HasMaxLength|MaxTextLength)\(FieldLengths\.[A-Za-z.]+ *[-+*/]" src</c> returns nothing.</para>
+/// <para><b>Column coverage</b> (<see cref="Every_FieldLengths_constant_declares_exactly_one_column"/>): the
+/// <c>HasMaxLength(FieldLengths.X.Y)</c> calls in <c>Data/Configurations</c> name each <see cref="FieldLengths"/>
+/// constant exactly once, so a removed call (its constant now names no column) or a duplicated one fails. EF does not
+/// catch a removed call either: <c>PendingModelChangesWarning</c> is suppressed (<c>Program.cs</c>, the
+/// <c>ConfigureWarnings</c> call), so the startup migrator does not refuse a model that drifted from the snapshot.</para>
+/// <para><b>Not covered:</b> a call that names the WRONG constant (<c>Room.Name</c> on the chore name column) passes
+/// both facts; a request record missing its attribute is not detected (no rule says which fields must carry one);
+/// and a limit declared some other way (<c>[StringLength]</c>/<c>[MaxLength]</c> on an entity,
+/// <c>HasColumnType("varchar(n)")</c>) is invisible to the scan.</para>
 /// </summary>
 public sealed class FieldLengthArchitectureTests
 {
     private static readonly Regex LimitCall = new(@"\b(HasMaxLength|MaxTextLength)\s*\(\s*(?!FieldLengths\.)", RegexOptions.Compiled);
     private static readonly Regex AnyLimitCall = new(@"\b(HasMaxLength|MaxTextLength)\s*\(", RegexOptions.Compiled);
+    private static readonly Regex ColumnLimitCall = new(@"\bHasMaxLength\s*\(\s*FieldLengths\.(\w+)\.(\w+)", RegexOptions.Compiled);
+
+    /// <summary>Every <c>FieldLengths.Entity.Field</c> constant, by name.</summary>
+    internal static List<string> FieldLengthConstants() =>
+        typeof(FieldLengths).GetNestedTypes()
+            .SelectMany(t => t.GetFields(BindingFlags.Public | BindingFlags.Static)
+                .Where(f => f.IsLiteral)
+                .Select(f => $"{t.Name}.{f.Name}"))
+            .ToList();
+
+    [Fact]
+    public void Every_FieldLengths_constant_declares_exactly_one_column()
+    {
+        var used = TenantScopeArchitectureTests.AppSources()
+            .Where(f => f.RelativePath.StartsWith("Data/Configurations/", StringComparison.Ordinal))
+            .SelectMany(f => ColumnLimitNames(f.Source))
+            .ToList();
+        var constants = FieldLengthConstants();
+
+        using (new AssertionScope())
+        {
+            constants.Should().HaveCount(57, "FieldLengths holds the 57 column limits (re-count it if a column is added)");
+            used.Should().BeEquivalentTo(constants,
+                "each column constant must be declared by exactly one HasMaxLength call in Data/Configurations; a " +
+                "missing name means its column lost its limit, a repeated one means two columns share a constant");
+        }
+    }
+
+    private static IEnumerable<string> ColumnLimitNames(string source) =>
+        ColumnLimitCall.Matches(TenantScopeArchitectureTests.StripCommentsAndStrings(source))
+            .Select(m => $"{m.Groups[1].Value}.{m.Groups[2].Value}");
 
     [Fact]
     public void Every_column_limit_and_request_limit_reads_FieldLengths()
@@ -40,7 +80,7 @@ public sealed class FieldLengthArchitectureTests
     }
 
     /// <summary>
-    /// The services keep three limits of their own (their files are outside the validation change's boundary). Pin
+    /// The services keep four limits of their own (their files are outside the validation change's boundary). Pin
     /// them to the column constant so a change to either side fails here instead of in production.
     /// </summary>
     [Fact]
@@ -49,6 +89,11 @@ public sealed class FieldLengthArchitectureTests
         using (new AssertionScope())
         {
             FeedbackService.MessageMaxLength.Should().Be(FieldLengths.Feedback.Message);
+
+            // FeedbackService truncates the diagnostic fields to this before storing them.
+            var diagnosticMax = PrivateConst(typeof(FeedbackService), "DiagnosticMaxLength");
+            diagnosticMax.Should().Be(FieldLengths.Feedback.CurrentPage);
+            diagnosticMax.Should().Be(FieldLengths.Feedback.UserAgent);
             PrivateConst(typeof(ChoreSubtaskService), "MaxTitleLength").Should().Be(FieldLengths.ChoreSubtask.Title);
 
             var imagePathMax = PrivateConst(typeof(ImagePathPolicy), "MaxLength");
