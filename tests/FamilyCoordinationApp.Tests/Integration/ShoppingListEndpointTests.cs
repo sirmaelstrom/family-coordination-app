@@ -185,6 +185,21 @@ public sealed class ShoppingListEndpointTests(PostgresContainerFixture postgres)
         (await uncheck.Content.ReadFromJsonAsync<Item>(Json))!.checkedAt.Should().BeNull();
     }
 
+    // ── Generate commits the list with its items (quest b942b943) ──
+
+    [Fact]
+    public async Task Generate_answers_with_the_item_count_it_committed()
+    {
+        // The list and its items are one SaveChanges on one context, so the created list carries its items. When
+        // the items were saved one by one on other contexts, the 201 reported itemCount 0 for every generate.
+        var summary = await GenerateLinkedListAsync(ClientA, "Count week", "count rice");
+        var list = await GetListAsync(ClientA, summary.id);
+
+        list.items.Should().Contain(i => i.name == "count rice");
+        summary.itemCount.Should().Be(list.items.Count);
+        summary.uncheckedCount.Should().Be(list.items.Count, "a freshly generated list has nothing checked");
+    }
+
     // ── The generated-item delta path at the HTTP boundary (PR #101 council debt) ──
 
     [Fact]

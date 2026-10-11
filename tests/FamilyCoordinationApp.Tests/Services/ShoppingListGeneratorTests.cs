@@ -27,8 +27,10 @@ public class ShoppingListGeneratorTests : IDisposable
 
         _context = new ApplicationDbContext(_options);
         _dbFactoryMock = new Mock<IDbContextFactory<ApplicationDbContext>>();
+        // The generator writes the list and its items itself (one SaveChanges, quest b942b943), so it reads and
+        // writes as household 1, the way the /api caller scope runs it: the write step stamps HouseholdId.
         _dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(_options));
+            .ReturnsAsync(() => TestTenancy.Context(_options, TestTenancy.Caller(1)));
         _shoppingListServiceMock = new Mock<IShoppingListService>();
         _loggerMock = new Mock<ILogger<ShoppingListGenerator>>();
         _unitConverter = new UnitConverter();
@@ -383,33 +385,24 @@ public class ShoppingListGeneratorTests : IDisposable
         results.Should().HaveCount(2);
     }
 
+    /// <summary>The rows the generator committed for <paramref name="list"/>, read back on a fresh context.</summary>
+    private async Task<List<ShoppingListItem>> CommittedItemsAsync(ShoppingList list)
+    {
+        await using var verify = new ApplicationDbContext(_options);
+        return await verify.ShoppingListItems
+            .Where(i => i.HouseholdId == list.HouseholdId && i.ShoppingListId == list.ShoppingListId)
+            .ToListAsync();
+    }
+
     [Fact]
     public async Task GenerateFromMealPlanAsync_RespectsHouseholdIsolation()
     {
-        // Arrange
-        var shoppingListId = 1;
-        var capturedItems = new List<ShoppingListItem>();
-
-        _shoppingListServiceMock
-            .Setup(s => s.CreateShoppingListAsync(1, It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ShoppingList
-            {
-                HouseholdId = 1,
-                ShoppingListId = shoppingListId,
-                Name = "Test List",
-                MealPlanId = 1
-            });
-
-        _shoppingListServiceMock
-            .Setup(s => s.AddManualItemAsync(It.IsAny<ShoppingListItem>(), It.IsAny<CancellationToken>()))
-            .Callback<ShoppingListItem, CancellationToken>((item, _) => capturedItems.Add(item))
-            .ReturnsAsync((ShoppingListItem item, CancellationToken _) => item);
-
         // Act
         var result = await _generator.GenerateFromMealPlanAsync(
             householdId: 1,
             mealPlanId: 1,
             listName: "Week 1 Shopping");
+        var capturedItems = await CommittedItemsAsync(result);
 
         // Assert
         result.HouseholdId.Should().Be(1);
@@ -426,29 +419,12 @@ public class ShoppingListGeneratorTests : IDisposable
     [Fact]
     public async Task GenerateFromMealPlanAsync_ConsolidatesAcrossMultipleRecipes()
     {
-        // Arrange
-        var capturedItems = new List<ShoppingListItem>();
-
-        _shoppingListServiceMock
-            .Setup(s => s.CreateShoppingListAsync(1, It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ShoppingList
-            {
-                HouseholdId = 1,
-                ShoppingListId = 1,
-                Name = "Test List",
-                MealPlanId = 1
-            });
-
-        _shoppingListServiceMock
-            .Setup(s => s.AddManualItemAsync(It.IsAny<ShoppingListItem>(), It.IsAny<CancellationToken>()))
-            .Callback<ShoppingListItem, CancellationToken>((item, _) => capturedItems.Add(item))
-            .ReturnsAsync((ShoppingListItem item, CancellationToken _) => item);
-
         // Act
-        await _generator.GenerateFromMealPlanAsync(
+        var list = await _generator.GenerateFromMealPlanAsync(
             householdId: 1,
             mealPlanId: 1,
             listName: "Week 1 Shopping");
+        var capturedItems = await CommittedItemsAsync(list);
 
         // Assert
         // Verify items were captured from the meal plan
@@ -468,29 +444,12 @@ public class ShoppingListGeneratorTests : IDisposable
     [Fact]
     public async Task GenerateFromMealPlanAsync_TracksSourceRecipes()
     {
-        // Arrange
-        var capturedItems = new List<ShoppingListItem>();
-
-        _shoppingListServiceMock
-            .Setup(s => s.CreateShoppingListAsync(1, It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ShoppingList
-            {
-                HouseholdId = 1,
-                ShoppingListId = 1,
-                Name = "Test List",
-                MealPlanId = 1
-            });
-
-        _shoppingListServiceMock
-            .Setup(s => s.AddManualItemAsync(It.IsAny<ShoppingListItem>(), It.IsAny<CancellationToken>()))
-            .Callback<ShoppingListItem, CancellationToken>((item, _) => capturedItems.Add(item))
-            .ReturnsAsync((ShoppingListItem item, CancellationToken _) => item);
-
         // Act
-        await _generator.GenerateFromMealPlanAsync(
+        var list = await _generator.GenerateFromMealPlanAsync(
             householdId: 1,
             mealPlanId: 1,
             listName: "Week 1 Shopping");
+        var capturedItems = await CommittedItemsAsync(list);
 
         // Assert
         // Flour is only in Pancakes
@@ -522,31 +481,14 @@ public class ShoppingListGeneratorTests : IDisposable
     [Fact]
     public async Task GenerateFromMealPlanAsync_FiltersByDateRange()
     {
-        // Arrange
-        var capturedItems = new List<ShoppingListItem>();
-
-        _shoppingListServiceMock
-            .Setup(s => s.CreateShoppingListAsync(1, It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ShoppingList
-            {
-                HouseholdId = 1,
-                ShoppingListId = 1,
-                Name = "Test List",
-                MealPlanId = 1
-            });
-
-        _shoppingListServiceMock
-            .Setup(s => s.AddManualItemAsync(It.IsAny<ShoppingListItem>(), It.IsAny<CancellationToken>()))
-            .Callback<ShoppingListItem, CancellationToken>((item, _) => capturedItems.Add(item))
-            .ReturnsAsync((ShoppingListItem item, CancellationToken _) => item);
-
         // Act - Only include today (Pancakes)
-        await _generator.GenerateFromMealPlanAsync(
+        var list = await _generator.GenerateFromMealPlanAsync(
             householdId: 1,
             mealPlanId: 1,
             listName: "Today Only",
             startDate: DateOnly.FromDateTime(DateTime.Today),
             endDate: DateOnly.FromDateTime(DateTime.Today));
+        var capturedItems = await CommittedItemsAsync(list);
 
         // Assert
         // Should only have Pancake ingredients, not French Toast or Steak
@@ -834,17 +776,8 @@ public class ShoppingListGeneratorTests : IDisposable
             });
         await _context.SaveChangesAsync();
 
-        var created = new ShoppingList { HouseholdId = 1, ShoppingListId = 77, Name = "Week" };
-        _shoppingListServiceMock
-            .Setup(s => s.CreateShoppingListAsync(1, "Week", 900, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(created);
-        var added = new List<ShoppingListItem>();
-        _shoppingListServiceMock
-            .Setup(s => s.AddManualItemAsync(It.IsAny<ShoppingListItem>(), It.IsAny<CancellationToken>()))
-            .Callback<ShoppingListItem, CancellationToken>((i, _) => added.Add(i))
-            .ReturnsAsync((ShoppingListItem i, CancellationToken _) => i);
-
-        await _generator.GenerateFromMealPlanAsync(1, 900, "Week");
+        var created = await _generator.GenerateFromMealPlanAsync(1, 900, "Week");
+        var added = await CommittedItemsAsync(created);
 
         added.Single(i => i.Name == "rice").Quantity.Should().Be(6m, "12 servings of a recipe that yields 4");
         added.Single(i => i.Name == "stock").Quantity.Should().Be(2m, "no override — exactly as before this feature");
@@ -890,17 +823,8 @@ public class ShoppingListGeneratorTests : IDisposable
             });
         await _context.SaveChangesAsync();
 
-        var created = new ShoppingList { HouseholdId = 1, ShoppingListId = 78, Name = "Tacos week" };
-        _shoppingListServiceMock
-            .Setup(s => s.CreateShoppingListAsync(1, "Tacos week", 901, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(created);
-        var added = new List<ShoppingListItem>();
-        _shoppingListServiceMock
-            .Setup(s => s.AddManualItemAsync(It.IsAny<ShoppingListItem>(), It.IsAny<CancellationToken>()))
-            .Callback<ShoppingListItem, CancellationToken>((i, _) => added.Add(i))
-            .ReturnsAsync((ShoppingListItem i, CancellationToken _) => i);
-
-        await _generator.GenerateFromMealPlanAsync(1, 901, "Tacos week");
+        var created = await _generator.GenerateFromMealPlanAsync(1, 901, "Tacos week");
+        var added = await CommittedItemsAsync(created);
 
         var salsa = added.Single(i => i.Name == "salsa");
         salsa.Quantity.Should().Be(2m, "two dinners of the same recipe need twice the salsa");

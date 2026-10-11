@@ -81,12 +81,28 @@ public class MealPlanService(
         }
 
         var weekStart = GetWeekStartDate(date);
-        var mealPlan = await GetOrCreateMealPlanAsync(householdId, weekStart, cancellationToken);
 
         return await IdGenerationHelper.ExecuteWithRetryAsync(
             async (attempt) =>
             {
                 await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+                // The week's plan is found or STAGED on this context, never committed on its own (quest b942b943):
+                // a new week's plan and its first entry share the one SaveChanges below, so an entry insert that
+                // fails (a bad recipe id's FK, say) leaves no empty plan behind. A concurrent add that creates the
+                // same plan first collides on the plan id; the retry re-reads and finds it.
+                var mealPlan = await context.MealPlans
+                    .FirstOrDefaultAsync(mp => mp.WeekStartDate == weekStart, cancellationToken);
+                if (mealPlan == null)
+                {
+                    mealPlan = new MealPlan
+                    {
+                        MealPlanId = await GetNextMealPlanIdAsync(context, householdId, cancellationToken),
+                        WeekStartDate = weekStart,
+                        CreatedAt = clock.UtcNow
+                    };
+                    context.MealPlans.Add(mealPlan);
+                }
 
                 // Check for duplicate entry (same date/mealType AND same recipe or custom meal)
                 // This prevents adding the exact same recipe twice, but allows multiple different recipes
@@ -113,8 +129,8 @@ public class MealPlanService(
                     duplicateEntry.UpdatedAt = clock.UtcNow;
                     duplicateEntry.UpdatedByUserId = userId;
 
-                    // Update parent MealPlan timestamp for polling
-                    await UpdateMealPlanTimestampAsync(context, householdId, mealPlan.MealPlanId, cancellationToken);
+                    // Update parent MealPlan timestamp for polling (the plan is tracked on this context).
+                    mealPlan.UpdatedAt = clock.UtcNow;
 
                     await context.SaveChangesAsync(cancellationToken);
 
@@ -140,8 +156,9 @@ public class MealPlanService(
 
                 context.MealPlanEntries.Add(entry);
 
-                // Update parent MealPlan timestamp for polling
-                await UpdateMealPlanTimestampAsync(context, householdId, mealPlan.MealPlanId, cancellationToken);
+                // Update parent MealPlan timestamp for polling. Set on the tracked plan rather than re-queried: a
+                // plan staged above is not in the database yet, so a query would miss it.
+                mealPlan.UpdatedAt = clock.UtcNow;
 
                 await context.SaveChangesAsync(cancellationToken);
 

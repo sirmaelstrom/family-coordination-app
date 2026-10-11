@@ -51,6 +51,12 @@ public class SetupService(
 
         await using var context = await dbFactory.CreateDbContextAsync();
 
+        // One transaction for the whole command (quest b942b943): the household, its owner, the default categories
+        // and the chore/room library commit together or not at all. Before, each step committed on its own, so a
+        // failure after the household save left an orphan household, and IsSetupCompleteAsync then answered true.
+        // A bare BeginTransactionAsync is allowed: Program.cs's UseNpgsql configures no EnableRetryOnFailure.
+        await using var transaction = await context.Database.BeginTransactionAsync();
+
         // Check if user already exists
         // TENANT-SCOPE-OK: first-run setup — the household is being created; identity is the authenticated email;
         // gated by IsSetupCompleteAsync at FirstRunSetup.cshtml.cs:52 (setup refuses once any household exists)
@@ -67,12 +73,11 @@ public class SetupService(
             CreatedAt = clock.UtcNow
         };
         context.Households.Add(household);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(); // inside the transaction: assigns household.Id for RunAs and the user FK
 
-        logger.LogInformation("Created household ID {HouseholdId}", household.Id);
+        logger.LogInformation("Staged household ID {HouseholdId}", household.Id);
 
-        // Everything from here is for the new household (D11): the user save and both seed helpers, whose own
-        // contexts come from the same scoped factory and so share this RunAs.
+        // Everything from here is for the new household (D11): the user save and both seeds, all on this context.
         using var asNewHousehold = context.Tenant.RunAs(household.Id);
 
         var user = new User
@@ -86,19 +91,21 @@ public class SetupService(
             Initials = UserProfile.ComputeInitials(displayName)
         };
         context.Users.Add(user);
+
+        // The household is brand new, so the nine default categories are staged without the "already seeded?"
+        // read (parity HouseholdRequestService's approval transaction).
+        SeedData.AddDefaultCategories(context, household.Id);
         await context.SaveChangesAsync();
 
+        // Seed the curated chore/room library (idempotent; OQ3 — seed at household creation). It reads the owner
+        // saved above, which this transaction can see.
+        await SeedData.SeedChoresAndRoomsAsync(context, household.Id);
+
+        await transaction.CommitAsync();
+
         logger.LogInformation(
-            "Created household '{HouseholdName}' (ID {HouseholdId}) with initial user {Email} (ID {UserId})",
+            "Created household '{HouseholdName}' (ID {HouseholdId}) with initial user {Email} (ID {UserId}), default categories, chores and rooms",
             householdName, household.Id, userEmail, user.Id);
-
-        // Seed default categories for the new household
-        await SeedData.SeedDefaultCategoriesAsync(dbFactory, household.Id);
-        logger.LogInformation("Seeded default categories for household {HouseholdId}", household.Id);
-
-        // Seed the curated chore/room library (idempotent; OQ3 — seed at household creation).
-        await SeedData.SeedChoresAndRoomsAsync(dbFactory, household.Id);
-        logger.LogInformation("Seeded default chores and rooms for household {HouseholdId}", household.Id);
 
         return (household, user);
     }
