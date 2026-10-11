@@ -149,10 +149,44 @@ public sealed class CentralAuthorizationTests(PostgresContainerFixture postgres)
     [Fact]
     public async Task Every_api_route_refuses_an_anonymous_caller_except_the_pinned_public_ones()
     {
+        using var client = _factory.CreateAnonymousClient();
+
+        var admitted = await SweepAsync(client, HttpStatusCode.Unauthorized);
+
+        admitted.Should().BeEmpty("every /api route but the pinned public ones must answer an anonymous caller 401");
+    }
+
+    /// <summary>
+    /// A disabled member (signed in, a real user row, <c>IsWhitelisted = false</c>) is the caller the gate's whitelist
+    /// half exists for. <c>RequireTenant()</c>'s middleware answers 401 for a caller it can't resolve, which covers the
+    /// anonymous case on tenant groups by itself, but it resolves a disabled member; only the gate refuses them.
+    /// </summary>
+    [Fact]
+    public async Task Every_api_route_refuses_a_disabled_member_except_the_pinned_public_ones()
+    {
+        using (_factory.Services.GetRequiredService<FamilyCoordinationApp.Tenancy.ITenantContext>().RunAs(ChoresWebAppFactory.HouseholdAId))
+        {
+            await using var db = await _factory.Services
+                .GetRequiredService<IDbContextFactory<ApplicationDbContext>>().CreateDbContextAsync();
+            var amy = await db.Users.SingleAsync(u => u.Id == ChoresWebAppFactory.UserA2Id);
+            amy.IsWhitelisted = false;
+            await db.SaveChangesAsync();
+        }
+
+        using var client = _factory.CreateClientAs(ChoresWebAppFactory.UserA2Email);
+
+        var admitted = await SweepAsync(client, HttpStatusCode.Forbidden);
+
+        admitted.Should().BeEmpty("every /api route but the pinned public ones must answer a disabled member 403");
+    }
+
+    /// <summary>Sends one request per (route, method) outside the pinned public routes and returns every response
+    /// whose status isn't <paramref name="refusal"/>.</summary>
+    private async Task<List<string>> SweepAsync(HttpClient client, HttpStatusCode refusal)
+    {
         var endpoints = ApiEndpoints();
         endpoints.Count.Should().BeGreaterThan(80, "guard the guard: the /api population was 114 routes at quest 82fc7f54");
 
-        using var client = _factory.CreateAnonymousClient();
         var admitted = new List<string>();
         foreach (var endpoint in endpoints.Where(e => !PinnedAnonymousApiRoutes.Contains(RouteOf(e))))
         {
@@ -170,14 +204,14 @@ public sealed class CentralAuthorizationTests(PostgresContainerFixture postgres)
                 }
 
                 using var resp = await client.SendAsync(request);
-                if (resp.StatusCode != HttpStatusCode.Unauthorized)
+                if (resp.StatusCode != refusal)
                 {
                     admitted.Add($"{method} {RouteOf(endpoint)} -> {(int)resp.StatusCode}");
                 }
             }
         }
 
-        admitted.Should().BeEmpty("every /api route but the pinned public ones must answer an anonymous caller 401");
+        return admitted;
     }
 
     [Fact]
