@@ -1,6 +1,7 @@
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
+using FamilyCoordinationApp.Tenancy;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -78,7 +79,7 @@ public sealed class ChoreServiceConcurrencyTests(PostgresContainerFixture postgr
         }
 
         _service = new ChoreService(
-            _dbFactory,
+            _dbFactory.WithTenant(TestTenancy.Caller(HouseholdId)),
             new ChoreStatusCalculator(),
             Mock.Of<IImageService>(),
             new FamilyCoordinationApp.Tests.Services.FixedTimeProvider(Now),
@@ -109,7 +110,7 @@ public sealed class ChoreServiceConcurrencyTests(PostgresContainerFixture postgr
         version.Should().NotBe(0u, "real Postgres assigns a non-zero xmin to a committed row");
 
         var barrier = new SaveBarrier(participants: 2);
-        var gatedFactory = new GatedPostgresDbContextFactory(_connectionString, barrier);
+        var gatedFactory = new GatedPostgresDbContextFactory(_connectionString, barrier, TestTenancy.Caller(HouseholdId));
         var racingService = new ChoreService(
             gatedFactory,
             new ChoreStatusCalculator(),
@@ -217,20 +218,14 @@ public sealed class SaveBarrier(int participants)
 /// instances sharing one <see cref="SaveBarrier"/>, so the first <c>SaveChangesAsync</c> on each context
 /// rendezvouses before committing.
 /// </summary>
-public sealed class GatedPostgresDbContextFactory(string connectionString, SaveBarrier barrier)
+public sealed class GatedPostgresDbContextFactory(string connectionString, SaveBarrier barrier, ITenantContext tenant)
     : IDbContextFactory<ApplicationDbContext>
 {
-    private DbContextOptions<ApplicationDbContext> BuildOptions() =>
-        new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(connectionString)
-            .ConfigureWarnings(w => w.Ignore(
-                Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning))
-            .Options;
-
-    public ApplicationDbContext CreateDbContext() => new GatedApplicationDbContext(BuildOptions(), barrier);
+    public ApplicationDbContext CreateDbContext() =>
+        new GatedApplicationDbContext(PostgresDbContextFactory.BuildOptions(connectionString), barrier, tenant);
 
     public Task<ApplicationDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult<ApplicationDbContext>(new GatedApplicationDbContext(BuildOptions(), barrier));
+        Task.FromResult(CreateDbContext());
 }
 
 /// <summary>
@@ -238,8 +233,8 @@ public sealed class GatedPostgresDbContextFactory(string connectionString, SaveB
 /// on a shared <see cref="SaveBarrier"/> before delegating to the real save — forcing two concurrent claims to
 /// both reach the write after both have read the unclaimed row at the same xmin version.
 /// </summary>
-public sealed class GatedApplicationDbContext(DbContextOptions<ApplicationDbContext> options, SaveBarrier barrier)
-    : ApplicationDbContext(options)
+public sealed class GatedApplicationDbContext(DbContextOptions<ApplicationDbContext> options, SaveBarrier barrier, ITenantContext tenant)
+    : ApplicationDbContext(options, tenant, new TenancyOptions())
 {
     private bool _gated;
 

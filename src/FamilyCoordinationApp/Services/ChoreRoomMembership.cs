@@ -11,7 +11,8 @@ namespace FamilyCoordinationApp.Services;
 ///
 /// Load-bearing invariants (council review-1):
 /// <list type="bullet">
-///   <item>Every query filters by <c>HouseholdId</c> (M1 — multi-tenant security boundary).</item>
+///   <item>Every query is scoped to one household (M1 — multi-tenant security boundary) by the "Tenant" query
+///   filter on the caller's context (WP-05 removed the hand-written <c>HouseholdId</c> predicates).</item>
 ///   <item>Reads return roomIds sorted ascending so the board's <c>roomIds[]</c> wire is
 ///   deterministic (otherwise the byte-equality contract fixture is flaky).</item>
 ///   <item>Writes <c>.Distinct()</c>-normalize the desired set (a duplicate id would violate the
@@ -29,7 +30,6 @@ public static class ChoreRoomMembership
         ApplicationDbContext context, int householdId, CancellationToken ct = default)
     {
         var rows = await context.ChoreRooms
-            .Where(cr => cr.HouseholdId == householdId)
             .OrderBy(cr => cr.RoomId)
             .Select(cr => new { cr.ChoreId, cr.RoomId })
             .ToListAsync(ct);
@@ -51,7 +51,7 @@ public static class ChoreRoomMembership
         ApplicationDbContext context, int householdId, int choreId, CancellationToken ct = default)
     {
         return await context.ChoreRooms
-            .Where(cr => cr.HouseholdId == householdId && cr.ChoreId == choreId)
+            .Where(cr => cr.ChoreId == choreId)
             .OrderBy(cr => cr.RoomId)
             .Select(cr => cr.RoomId)
             .ToListAsync(ct);
@@ -69,7 +69,7 @@ public static class ChoreRoomMembership
         var desired = desiredRoomIds.Distinct().ToHashSet();
 
         var current = await context.ChoreRooms
-            .Where(cr => cr.HouseholdId == householdId && cr.ChoreId == choreId)
+            .Where(cr => cr.ChoreId == choreId)
             .ToListAsync(ct);
 
         var currentIds = current.Select(cr => cr.RoomId).ToHashSet();
@@ -82,7 +82,6 @@ public static class ChoreRoomMembership
         foreach (var roomId in desired.Where(id => !currentIds.Contains(id)))
             context.ChoreRooms.Add(new ChoreRoom
             {
-                HouseholdId = householdId,
                 ChoreId = choreId,
                 RoomId = roomId
             });

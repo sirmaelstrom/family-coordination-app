@@ -29,6 +29,7 @@ public class MealPlanServiceMoveTests : IDisposable
 
     private readonly ApplicationDbContext _context;
     private readonly DbContextOptions<ApplicationDbContext> _options;
+    private readonly FamilyCoordinationApp.Tenancy.TenantContext _tenant = TestTenancy.Caller(1);
     private readonly MealPlanService _service;
 
     public MealPlanServiceMoveTests()
@@ -41,7 +42,7 @@ public class MealPlanServiceMoveTests : IDisposable
 
         var dbFactoryMock = new Mock<IDbContextFactory<ApplicationDbContext>>();
         dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(_options));
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
 
         _service = new MealPlanService(dbFactoryMock.Object, new Mock<ILogger<MealPlanService>>().Object, TestClocks.System);
 
@@ -147,7 +148,7 @@ public class MealPlanServiceMoveTests : IDisposable
     public async Task MoveMeal_CrossHousehold_IsNotFound()
     {
         // Household 2 asking for household 1's entry — the scoped lookup must not see it (M1).
-        var act = () => _service.MoveMealAsync(2, 1, 1, WeekStart, MealType.Breakfast, NoConcurrencyCheck);
+        var act = () => _tenant.As(2, () => _service.MoveMealAsync(2, 1, 1, WeekStart, MealType.Breakfast, NoConcurrencyCheck));
         await act.Should().ThrowAsync<InvalidOperationException>();
 
         await using var verify = new ApplicationDbContext(_options);

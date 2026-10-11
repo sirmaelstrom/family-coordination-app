@@ -11,6 +11,7 @@ namespace FamilyCoordinationApp.Tests.Services;
 public class CategoryServiceTests : IDisposable
 {
     private readonly ApplicationDbContext _context;
+    private readonly FamilyCoordinationApp.Tenancy.TenantContext _tenant = TestTenancy.Caller(1);
     private readonly Mock<IDbContextFactory<ApplicationDbContext>> _dbFactoryMock;
     private readonly Mock<ILogger<CategoryService>> _loggerMock;
     private readonly CategoryService _service;
@@ -24,7 +25,7 @@ public class CategoryServiceTests : IDisposable
         _context = new ApplicationDbContext(options);
         _dbFactoryMock = new Mock<IDbContextFactory<ApplicationDbContext>>();
         _dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(options));
+            .ReturnsAsync(() => TestTenancy.Context(options, _tenant));
         _loggerMock = new Mock<ILogger<CategoryService>>();
 
         _service = new CategoryService(_dbFactoryMock.Object, _loggerMock.Object, TestClocks.System);
@@ -107,7 +108,7 @@ public class CategoryServiceTests : IDisposable
     {
         // Act
         var household1Categories = await _service.GetCategoriesAsync(householdId: 1);
-        var household2Categories = await _service.GetCategoriesAsync(householdId: 2);
+        var household2Categories = await _tenant.As(2, () => _service.GetCategoriesAsync(householdId: 2));
 
         // Assert
         household1Categories.Should().HaveCount(2); // Excludes deleted by default
@@ -175,7 +176,7 @@ public class CategoryServiceTests : IDisposable
         result.Color.Should().Be("#32CD32");
 
         // Verify household 2's category with same ID is unchanged
-        var household2Category = await _service.GetCategoryAsync(householdId: 2, categoryId: 1);
+        var household2Category = await _tenant.As(2, () => _service.GetCategoryAsync(householdId: 2, categoryId: 1));
         household2Category!.Name.Should().Be("Meat"); // Original name unchanged
     }
 
@@ -216,14 +217,14 @@ public class CategoryServiceTests : IDisposable
     public async Task DeleteCategoryAsync_DoesNotAffectOtherHouseholds()
     {
         // Arrange - Both households have category ID 2
-        var household2CategoryBefore = await _service.GetCategoryAsync(householdId: 2, categoryId: 2);
+        var household2CategoryBefore = await _tenant.As(2, () => _service.GetCategoryAsync(householdId: 2, categoryId: 2));
         household2CategoryBefore!.Name.Should().Be("Bakery");
 
         // Act - Delete from household 1
         await _service.DeleteCategoryAsync(householdId: 1, categoryId: 2);
 
         // Assert - Household 2's category should be unaffected
-        var household2CategoryAfter = await _service.GetCategoryAsync(householdId: 2, categoryId: 2);
+        var household2CategoryAfter = await _tenant.As(2, () => _service.GetCategoryAsync(householdId: 2, categoryId: 2));
         household2CategoryAfter.Should().NotBeNull();
         household2CategoryAfter!.IsDeleted.Should().BeFalse();
         household2CategoryAfter.Name.Should().Be("Bakery");

@@ -34,7 +34,7 @@ public sealed class MultiPersonRosterTests(PostgresContainerFixture postgres)
         await SeedAsync(dbFactory, hh, choreId, RecurrenceMode.Flexible, requiredCount: 2, alice, bob, carol);
 
         var clock = new FixedTimeProvider(T0);
-        var svc = NewService(dbFactory, clock);
+        var svc = NewService(dbFactory.WithTenant(TestTenancy.Caller(hh)), clock);
 
         // Alice assigns Bob; Carol opts in (commits herself); Bob completes his part (partial — 1 of 2).
         var v0 = await ReadVersionAsync(dbFactory, hh, choreId);
@@ -62,7 +62,7 @@ public sealed class MultiPersonRosterTests(PostgresContainerFixture postgres)
         await SeedAsync(dbFactory, hh, choreId, RecurrenceMode.Flexible, requiredCount: 2, alice, amy, kai);
 
         var clock = new FixedTimeProvider(T0);
-        var svc = NewService(dbFactory, clock);
+        var svc = NewService(dbFactory.WithTenant(TestTenancy.Caller(hh)), clock);
 
         // Occurrence 1: Alice (partial) then Amy (satisfying) → advances (Flexible stays Active).
         var v0 = await ReadVersionAsync(dbFactory, hh, choreId);
@@ -94,7 +94,7 @@ public sealed class MultiPersonRosterTests(PostgresContainerFixture postgres)
 
         // Both commits load the chore at `version`, block at SaveChanges, then race to commit.
         var barrier = new SaveBarrier(participants: 2);
-        var gated = new GatedPostgresDbContextFactory(connectionString, barrier);
+        var gated = new GatedPostgresDbContextFactory(connectionString, barrier, TestTenancy.Caller(hh));
         var svc = NewService(gated, new FixedTimeProvider(T0.AddSeconds(1)));
 
         var a = AttemptCommitAsync(svc, hh, choreId, alice, version);

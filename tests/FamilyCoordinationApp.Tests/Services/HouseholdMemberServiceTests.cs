@@ -21,6 +21,7 @@ public class HouseholdMemberServiceTests : IDisposable
     private const int HhA = 1;
     private const int HhB = 2;
     private readonly ApplicationDbContext _seedContext;
+    private readonly FamilyCoordinationApp.Tenancy.TenantContext _tenant = TestTenancy.Caller(HhA);
     private readonly HouseholdMemberService _service;
 
     public HouseholdMemberServiceTests()
@@ -32,7 +33,7 @@ public class HouseholdMemberServiceTests : IDisposable
         _seedContext = new ApplicationDbContext(options);
         var factory = new Mock<IDbContextFactory<ApplicationDbContext>>();
         factory.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(options));
+            .ReturnsAsync(() => TestTenancy.Context(options, _tenant));
         _service = new HouseholdMemberService(factory.Object, Mock.Of<ILogger<HouseholdMemberService>>(), TestClocks.System);
 
         Seed();
@@ -227,7 +228,7 @@ public class HouseholdMemberServiceTests : IDisposable
     public async Task DeleteMember_LastUser_IsForbidden()
     {
         // HhB has a single user (bob). A non-self caller deleting him would empty the household.
-        var result = await _service.DeleteMemberAsync(HhB, currentUserId: 999, targetUserId: 9);
+        var result = await _tenant.As(HhB, () => _service.DeleteMemberAsync(HhB, currentUserId: 999, targetUserId: 9));
         result.Should().Be(MemberMutationResult.LastUserForbidden);
     }
 

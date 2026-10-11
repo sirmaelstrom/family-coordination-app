@@ -25,6 +25,7 @@ public class HouseholdRequestServiceTests : IDisposable
     private const int ExistingHh = 1;
     private readonly DbContextOptions<ApplicationDbContext> _options;
     private readonly ApplicationDbContext _seedContext;
+    private readonly FamilyCoordinationApp.Tenancy.TenantContext _tenant = TestTenancy.Caller(ExistingHh);
     private readonly HouseholdRequestService _service;
 
     public HouseholdRequestServiceTests()
@@ -37,7 +38,7 @@ public class HouseholdRequestServiceTests : IDisposable
         _seedContext = new ApplicationDbContext(_options);
         var factory = new Mock<IDbContextFactory<ApplicationDbContext>>();
         factory.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(_options));
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
         _service = new HouseholdRequestService(factory.Object, Mock.Of<ILogger<HouseholdRequestService>>(), TestClocks.System);
 
         // One existing household + member, so the email-collision guard has something to collide with.

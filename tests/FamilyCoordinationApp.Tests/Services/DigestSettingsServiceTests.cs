@@ -31,6 +31,7 @@ public class DigestSettingsServiceTests : IDisposable
 
     private readonly DbContextOptions<ApplicationDbContext> _options;
     private readonly ApplicationDbContext _seedCtx;
+    private readonly FamilyCoordinationApp.Tenancy.TenantContext _tenant = TestTenancy.Caller(H1);
     private readonly DigestSettingsService _service;
     private readonly IDataProtectionProvider _dpProvider;
 
@@ -54,7 +55,7 @@ public class DigestSettingsServiceTests : IDisposable
         var dbFactoryMock = new Mock<IDbContextFactory<ApplicationDbContext>>();
         dbFactoryMock
             .Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(_options));
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
 
         _service = new DigestSettingsService(
             dbFactoryMock.Object,
@@ -318,14 +319,14 @@ public class DigestSettingsServiceTests : IDisposable
     public async Task UpdateAsync_IsolatesSettingsByHousehold()
     {
         await _service.UpdateAsync(H1, MakeUpdate(webhookUrl: TestWebhookUrl, enabled: true, hour: 9));
-        await _service.UpdateAsync(H2, new DigestSettingsUpdate(
+        await _tenant.As(H2, () => _service.UpdateAsync(H2, new DigestSettingsUpdate(
             Enabled: false,
             Cadence: DigestCadence.Weekly,
             SendDayOfWeek: DayOfWeek.Tuesday,
-            SendHourLocal: 20));
+            SendHourLocal: 20)));
 
         var h1 = await _service.GetAsync(H1);
-        var h2 = await _service.GetAsync(H2);
+        var h2 = await _tenant.As(H2, () => _service.GetAsync(H2));
 
         h1.Enabled.Should().BeTrue("H1 was enabled");
         h1.SendHourLocal.Should().Be(9);
@@ -342,7 +343,7 @@ public class DigestSettingsServiceTests : IDisposable
         await _service.UpdateAsync(H1, MakeUpdate(webhookUrl: TestWebhookUrl));
 
         // H2 was never given a webhook.
-        var h2Decrypted = await _service.GetDecryptedWebhookAsync(H2);
+        var h2Decrypted = await _tenant.As(H2, () => _service.GetDecryptedWebhookAsync(H2));
         h2Decrypted.Should().BeNull("H2 has no webhook — must not see H1's");
     }
 
@@ -375,7 +376,7 @@ public class DigestSettingsServiceTests : IDisposable
         var dbFactoryMock = new Mock<IDbContextFactory<ApplicationDbContext>>();
         dbFactoryMock
             .Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(_options));
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
 
         var laterService = new DigestSettingsService(
             dbFactoryMock.Object,

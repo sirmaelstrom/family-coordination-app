@@ -328,7 +328,11 @@ public sealed class EmailIdentityTests(PostgresContainerFixture postgres)
             requestId = request.Id;
         }
 
-        var service = new HouseholdRequestService(dbFactory, NullLogger<HouseholdRequestService>.Instance, Services.TestClocks.System);
+        // The admin caller's tenant (household 1, which this database never holds): ApproveAsync's RunAs moves the
+        // writes to the new household.
+        var service = new HouseholdRequestService(
+            ((PostgresDbContextFactory)dbFactory).WithTenant(TestTenancy.Caller(1)),
+            NullLogger<HouseholdRequestService>.Instance, Services.TestClocks.System);
         var result = await service.ApproveAsync(requestId, "  Admin@Site.Test  ");
         result.Outcome.Should().Be(ReviewOutcome.Ok);
 

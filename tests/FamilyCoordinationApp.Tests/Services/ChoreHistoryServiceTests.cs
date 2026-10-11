@@ -38,6 +38,7 @@ public class ChoreHistoryServiceTests
         new(y, m, d, h, min, 0, DateTimeKind.Utc);
 
     private readonly DbContextOptions<ApplicationDbContext> _options;
+    private readonly FamilyCoordinationApp.Tenancy.TenantContext _tenant = TestTenancy.Caller(H1);
 
     public ChoreHistoryServiceTests()
     {
@@ -60,7 +61,7 @@ public class ChoreHistoryServiceTests
     {
         var dbFactory = new Mock<IDbContextFactory<ApplicationDbContext>>();
         dbFactory.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(_options));
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
 
         return new ChoreHistoryService(
             dbFactory.Object,
@@ -73,7 +74,7 @@ public class ChoreHistoryServiceTests
     {
         var dbFactory = new Mock<IDbContextFactory<ApplicationDbContext>>();
         dbFactory.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(_options));
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
 
         var equity = new ChoreEquityCalculator();
         var history = new ChoreHistoryService(dbFactory.Object, equity, tz, TimeProvider.System);

@@ -5,6 +5,7 @@ using Moq;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
+using FamilyCoordinationApp.Tenancy;
 
 namespace FamilyCoordinationApp.Tests.Services;
 
@@ -27,6 +28,7 @@ public class ChoreServiceTests : IDisposable
 
     private readonly DbContextOptions<ApplicationDbContext> _options;
     private readonly ApplicationDbContext _seedContext;
+    private readonly TenantContext _tenant = TestTenancy.Caller(HouseholdId);
     private readonly FixedTimeProvider _clock = new(NowBase);
     private readonly ChoreService _service;
 
@@ -40,7 +42,7 @@ public class ChoreServiceTests : IDisposable
 
         var dbFactoryMock = new Mock<IDbContextFactory<ApplicationDbContext>>();
         dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(_options));
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
 
         _service = new ChoreService(
             dbFactoryMock.Object,
@@ -159,7 +161,7 @@ public class ChoreServiceTests : IDisposable
 
         // Other household starts its own sequence at 1.
         var otherCmd = FlexibleCmd() with { };
-        var other = await _service.CreateChoreAsync(OtherHouseholdId, Carol, otherCmd);
+        var other = await _tenant.As(OtherHouseholdId, () => _service.CreateChoreAsync(OtherHouseholdId, Carol, otherCmd));
         other.ChoreId.Should().Be(1);
     }
 

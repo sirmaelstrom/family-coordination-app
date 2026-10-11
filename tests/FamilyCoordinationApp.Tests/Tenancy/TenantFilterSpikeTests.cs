@@ -43,8 +43,8 @@ public abstract class TenantFilterSpikeCases
         return tenant;
     }
 
-    internal SpikeContext NewContext(ITenantContext tenant, bool enforceFilter = true) =>
-        new(Options, tenant, new TenancyOptions { EnforceFilter = enforceFilter });
+    internal SpikeContext NewContext(ITenantContext tenant) =>
+        new(Options, tenant, new TenancyOptions());
 
     internal static void Seed(SpikeContext db)
     {
@@ -109,14 +109,6 @@ public abstract class TenantFilterSpikeCases
             (await db.Rooms.CountAsync()).Should().Be(H2LiveRooms, "RunAs(2) takes effect on the next execution");
         }
         (await db.Rooms.CountAsync()).Should().Be(H1LiveRooms, "disposing RunAs restores Caller(1)");
-    }
-
-    [Fact]
-    public async Task A_kill_switch_off_with_the_tenant_Unset_returns_everything_and_does_not_throw()
-    {
-        await using var db = NewContext(InRequest(), enforceFilter: false);
-
-        (await db.Rooms.CountAsync()).Should().Be(H1LiveRooms + H2LiveRooms);
     }
 
     [Fact]

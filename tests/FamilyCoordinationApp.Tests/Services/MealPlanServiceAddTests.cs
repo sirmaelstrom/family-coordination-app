@@ -21,6 +21,7 @@ public class MealPlanServiceAddTests : IDisposable
 
     private readonly ApplicationDbContext _context;
     private readonly DbContextOptions<ApplicationDbContext> _options;
+    private readonly FamilyCoordinationApp.Tenancy.TenantContext _tenant = TestTenancy.Caller(1);
     private readonly MealPlanService _service;
 
     public MealPlanServiceAddTests()
@@ -33,7 +34,7 @@ public class MealPlanServiceAddTests : IDisposable
 
         var dbFactoryMock = new Mock<IDbContextFactory<ApplicationDbContext>>();
         dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(_options));
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
 
         _service = new MealPlanService(dbFactoryMock.Object, new Mock<ILogger<MealPlanService>>().Object, TestClocks.System);
 

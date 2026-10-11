@@ -13,7 +13,8 @@ namespace FamilyCoordinationApp.Services;
 /// <see cref="IChoreBoardService.GetHomeStatsAsync"/> read (equivalence-locked to the full board +
 /// <see cref="ChoreHomeStats"/> reducer) rather than building the whole board just to count.
 /// Read-only — never creates a plan/list/board row (an empty household yields zero counts / empty meals). All
-/// reads create short-lived contexts via the factory and filter by <c>HouseholdId</c> (M1).
+/// reads create short-lived contexts via the factory, whose "Tenant" query filter scopes them to the caller's
+/// household (M1).
 /// </summary>
 public class DashboardService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
@@ -57,12 +58,12 @@ public class DashboardService(
     private async Task<string> GetHouseholdNameAsync(int userId, int householdId, CancellationToken ct)
     {
         await using var context = await dbFactory.CreateDbContextAsync(ct);
-        // Both predicates on purpose: userId comes from the resolver, but the tenant
-        // boundary is enforced per query, not inherited from the caller (A5 lesson —
-        // one copy-paste away from a cross-tenant read).
+        // The tenant boundary is the "Tenant" query filter (WP-05 removed the household predicate here): it
+        // scopes this read to the caller's household, so a userId from another household finds nothing. Don't
+        // add a HouseholdId predicate back; the filter states it once for every query.
         var name = await context.Users
             .AsNoTracking()
-            .Where(u => u.Id == userId && u.HouseholdId == householdId)
+            .Where(u => u.Id == userId)
             .Select(u => u.Household != null ? u.Household.Name : null)
             .FirstOrDefaultAsync(ct);
         return string.IsNullOrWhiteSpace(name) ? "Your Household" : name;
@@ -76,7 +77,7 @@ public class DashboardService(
         await using var context = await dbFactory.CreateDbContextAsync(ct);
         var plan = await context.MealPlans
             .AsNoTracking()
-            .Where(mp => mp.HouseholdId == householdId && mp.WeekStartDate == weekStart)
+            .Where(mp => mp.WeekStartDate == weekStart)
             .Include(mp => mp.Entries.Where(e => e.Date == today))
                 .ThenInclude(e => e.Recipe)
             .FirstOrDefaultAsync(ct);

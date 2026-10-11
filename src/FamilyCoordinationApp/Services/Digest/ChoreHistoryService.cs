@@ -147,7 +147,6 @@ public class ChoreHistoryService(
         // Members — HouseholdId-scoped, alphabetical (M1), exactly as ChoreRecapService reads them.
         var members = await context.Users
             .AsNoTracking()
-            .Where(u => u.HouseholdId == householdId)
             .OrderBy(u => u.DisplayName)
             .Select(u => new MemberDto(u.Id, u.DisplayName, u.Initials, u.PictureUrl))
             .ToListAsync(ct);
@@ -155,14 +154,13 @@ public class ChoreHistoryService(
         // In-window completions — the feed/weeks/distribution substrate. Window-bounded (M2), AsNoTracking.
         var completions = await context.ChoreCompletions
             .AsNoTracking()
-            .Where(c => c.HouseholdId == householdId && c.CompletedAt >= oldestWeekStartUtc)
+            .Where(c => c.CompletedAt >= oldestWeekStartUtc)
             .ToListAsync(ct);
 
         // Chore name/room lookup for ALL household chores (O(chores)). An in-window completion always has a live
         // chore row (delete cascades/restricts completions), so every referenced ChoreId resolves.
         var choreLookup = await context.Chores
             .AsNoTracking()
-            .Where(c => c.HouseholdId == householdId)
             .Select(c => new { c.ChoreId, c.Name })
             .ToListAsync(ct);
         // choreId → name (Phase 13: the room lives in ChoreRoom now, not Chore.RoomId; the per-room tally
@@ -172,7 +170,6 @@ public class ChoreHistoryService(
         // Room names for the what-got-tended tally (O(rooms)); roomless → the virtual "General" group.
         var roomNameById = await context.Rooms
             .AsNoTracking()
-            .Where(r => r.HouseholdId == householdId)
             .ToDictionaryAsync(r => r.RoomId, r => r.Name, ct);
 
         // Chore→room memberships for the per-room what-got-tended fan-out (Phase 13, D6). One household-scoped
@@ -185,7 +182,6 @@ public class ChoreHistoryService(
         // anonymous projection into concrete tuples so it crosses into the pure helper cleanly.
         var firstEverRows = await context.ChoreCompletions
             .AsNoTracking()
-            .Where(c => c.HouseholdId == householdId)
             .GroupBy(c => c.ChoreId)
             .Select(g => new { ChoreId = g.Key, FirstCompletedAt = g.Min(c => c.CompletedAt) })
             .ToListAsync(ct);
@@ -197,7 +193,7 @@ public class ChoreHistoryService(
         // SnoozedUntil + CreatedAt + LastCompletedAt) — O(active chores), scoped to the household (M1).
         var activeChores = await context.Chores
             .AsNoTracking()
-            .Where(c => c.HouseholdId == householdId && c.Status == ChoreStatus.Active)
+            .Where(c => c.Status == ChoreStatus.Active)
             .ToListAsync(ct);
 
         // Completion dates for matching. Read back a small margin before the window (MaxBackToleranceDays) so a
@@ -207,7 +203,7 @@ public class ChoreHistoryService(
         var projectionReadStartUtc = oldestWeekStartUtc.AddDays(-MaxBackToleranceDays);
         var projectionCompletionRows = await context.ChoreCompletions
             .AsNoTracking()
-            .Where(c => c.HouseholdId == householdId && c.CompletedAt >= projectionReadStartUtc)
+            .Where(c => c.CompletedAt >= projectionReadStartUtc)
             .Select(c => new { c.ChoreId, c.CompletedAt })
             .ToListAsync(ct);
         var doneDatesByChore = projectionCompletionRows
@@ -224,13 +220,13 @@ public class ChoreHistoryService(
         //       snooze isn't mislabeled.
         var snoozeEventRows = await context.ChoreSnoozeEvents
             .AsNoTracking()
-            .Where(e => e.HouseholdId == householdId && e.SetAt >= oldestWeekStartUtc)
+            .Where(e => e.SetAt >= oldestWeekStartUtc)
             .Select(e => new SnoozeRow(e.ChoreId, e.SetAt, e.SnoozedUntil))
             .ToListAsync(ct);
 
         var seedMaxes = await context.ChoreSnoozeEvents
             .AsNoTracking()
-            .Where(e => e.HouseholdId == householdId && e.SetAt < oldestWeekStartUtc)
+            .Where(e => e.SetAt < oldestWeekStartUtc)
             .GroupBy(e => e.ChoreId)
             .Select(g => new { ChoreId = g.Key, MaxSetAt = g.Max(e => e.SetAt) })
             .ToListAsync(ct);
@@ -241,7 +237,7 @@ public class ChoreHistoryService(
             var maxSetAts = seedMaxes.Select(s => s.MaxSetAt).Distinct().ToList();
             var candidates = await context.ChoreSnoozeEvents
                 .AsNoTracking()
-                .Where(e => e.HouseholdId == householdId && e.SetAt < oldestWeekStartUtc && maxSetAts.Contains(e.SetAt))
+                .Where(e => e.SetAt < oldestWeekStartUtc && maxSetAts.Contains(e.SetAt))
                 .Select(e => new SnoozeRow(e.ChoreId, e.SetAt, e.SnoozedUntil))
                 .ToListAsync(ct);
             // Keep exactly the (ChoreId, MaxSetAt) rows — guards against a rare cross-chore SetAt collision.

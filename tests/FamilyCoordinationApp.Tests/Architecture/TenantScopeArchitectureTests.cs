@@ -11,19 +11,29 @@ namespace FamilyCoordinationApp.Tests.Architecture;
 /// The tenant-boundary architecture guard (quest ec788d69, WP-1 — guard first;
 /// the HouseholdScope refactor itself waits for its spec sitting).
 ///
-/// THE INVARIANT (CLAUDE.md, "Multi-tenant isolation"): every query against a
-/// tenant entity — an entity carrying a HouseholdId — filters by HouseholdId.
-/// It is a security boundary, not a convention. This test makes the convention
-/// mechanical: it scans every app source file for DbSet accesses on tenant
-/// entities and fails when a QUERY statement neither carries a HouseholdId
-/// COMPARISON nor an explicit <c>// TENANT-SCOPE-OK: reason</c> pragma.
+/// SINCE fca-household-scope WP-05 the comparison rule covers ONLY the
+/// household-carrying sets the "Tenant" query filter does not cover (D5): the
+/// entities with a HouseholdId-family property that are not ITenantEntity
+/// (today Feedbacks and HouseholdConnections, pinned exactly below). Every
+/// ITenantEntity set is scoped by the filter, so a hand-written predicate on it
+/// is redundant and WP-05 removed them; the filter's own facts live in
+/// TenantFilterArchitectureTests. The rule below, its pragma clause and its
+/// scanner are otherwise unchanged.
+///
+/// THE INVARIANT (CLAUDE.md, "Multi-tenant isolation"): every query against an
+/// unfiltered household entity filters by HouseholdId. It is a security
+/// boundary, not a convention. This test makes the convention mechanical: it
+/// scans every app source file for DbSet accesses on those entities and fails
+/// when a QUERY statement neither carries a HouseholdId COMPARISON nor an
+/// explicit <c>// TENANT-SCOPE-OK: reason</c> pragma.
 ///
 /// What counts, and what deliberately does not:
-///  - The tenant-entity list is DERIVED from ApplicationDbContext by reflection
-///    (every DbSet whose entity type has a property whose NAME CONTAINS
-///    "HouseholdId" — HouseholdConnection scopes via HouseholdId1/2) — a new
-///    tenant DbSet is guarded from birth, with no list to forget to update,
-///    and the unguarded complement is pinned exactly by its own fact below.
+///  - The household-entity list is DERIVED from ApplicationDbContext by
+///    reflection (every DbSet whose entity type has a property whose NAME
+///    CONTAINS "HouseholdId" — HouseholdConnection scopes via HouseholdId1/2),
+///    and the rule's sets are that list minus the ITenantEntity types. A new
+///    household DbSet that is not a tenant entity is guarded from birth, and
+///    both complements are pinned exactly by their own facts below.
 ///  - Scope means a COMPARISON on a HouseholdId-family column (==/!=/Contains),
 ///    never a mention — a projection like `.Select(r => r.HouseholdId)` is a
 ///    cross-tenant read wearing the right word (council r1).
@@ -49,6 +59,11 @@ namespace FamilyCoordinationApp.Tests.Architecture;
 /// which is cross-household by design, dual-mode site-admin queries scoped
 /// conditionally, and the digest cron's all-households sweep — and one fix
 /// (DashboardService.GetHouseholdNameAsync gained the household predicate).
+/// The same command gives 28 after WP-02 (its Tenant bypasses, each with a
+/// pragma naming its gate) and 31 at WP-05's base (WP-03's write-step bypasses
+/// and the calendar-token advisory lock). Since WP-05 only the pragmas on
+/// Feedbacks/HouseholdConnections statements matter to this rule; the rest
+/// annotate Tenant bypasses for TenantFilterArchitectureTests fact 2.
 /// </summary>
 public class TenantScopeArchitectureTests
 {
@@ -189,6 +204,21 @@ public class TenantScopeArchitectureTests
             .ToList();
     }
 
+    /// <summary>
+    /// The comparison rule's sets since WP-05: the household-carrying sets whose entity is NOT an
+    /// <see cref="FamilyCoordinationApp.Tenancy.ITenantEntity"/>, so the "Tenant" filter doesn't scope them (D5).
+    /// </summary>
+    internal static IReadOnlyCollection<string> ComparisonRuleDbSets()
+    {
+        var tenantSets = TenantDbSets();
+        return typeof(ApplicationDbContext)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => tenantSets.Contains(p.Name)
+                        && !typeof(FamilyCoordinationApp.Tenancy.ITenantEntity).IsAssignableFrom(p.PropertyType.GetGenericArguments()[0]))
+            .Select(p => p.Name)
+            .ToList();
+    }
+
     internal static string AppSourceRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -213,9 +243,9 @@ public class TenantScopeArchitectureTests
     // ── The invariant ────────────────────────────────────────────────────────
 
     [Fact]
-    public void Every_tenant_entity_query_is_household_scoped_or_carries_a_reasoned_pragma()
+    public void Every_unfiltered_household_entity_query_is_household_scoped_or_carries_a_reasoned_pragma()
     {
-        var tenantSets = TenantDbSets();
+        var tenantSets = ComparisonRuleDbSets();
         var root = AppSourceRoot();
         var violations = new List<Violation>();
 
@@ -226,7 +256,7 @@ public class TenantScopeArchitectureTests
         }
 
         violations.Should().BeEmpty(
-            "every query against a tenant DbSet must filter by HouseholdId within its statement, " +
+            "every query against a household DbSet the Tenant filter doesn't cover must filter by HouseholdId within its statement, " +
             "or carry `// TENANT-SCOPE-OK: <reason>` naming why it is legitimately unscoped. Violations:\n" +
             string.Join("\n", violations.Select(v => $"  {v.File}:{v.Line}  {v.Snippet}")));
     }
@@ -245,6 +275,15 @@ public class TenantScopeArchitectureTests
         sets.Should().Contain(["Recipes", "Chores", "ShoppingLists", "Users", "HouseholdConnections"]);
         // Household itself is NOT a tenant entity — it IS the tenant.
         sets.Should().NotContain("Households");
+    }
+
+    // The narrowing is pinned EXACTLY (WP-05): a new household-carrying DbSet that is not an ITenantEntity lands in
+    // the rule's sets by derivation, and this list makes that a deliberate, reviewed edit. Excluded from the Tenant
+    // filter by D5: Feedback is dual-mode (site admin sees every household), HouseholdConnection is a pair.
+    [Fact]
+    public void The_comparison_rule_covers_exactly_the_household_sets_the_filter_does_not()
+    {
+        ComparisonRuleDbSets().OrderBy(n => n).Should().Equal("Feedbacks", "HouseholdConnections");
     }
 
     // The complement is pinned EXACTLY (council r1, opus #2 — "a universal
@@ -1101,20 +1140,30 @@ public class TenantScopeArchitectureTests
     [Fact]
     public void The_scan_visits_a_substantial_occurrence_population()
     {
-        var tenantSets = TenantDbSets();
+        // Over every household-carrying set, not just the rule's: this measures that receiver and occurrence
+        // detection still sees the codebase, which the narrowed rule's handful of sites can't show alone.
+        var total = OccurrenceCount(TenantDbSets());
+        // 216 measured at adoption (2026-08-29), before the derivation widened.
+        // Shrinking dramatically below that means the scan stopped seeing the
+        // codebase, not that the codebase stopped querying.
+        total.Should().BeGreaterThan(150);
+
+        // The rule's own sets (WP-05): 9 occurrences measured at d33b3ca (FeedbackService 4, HouseholdConnectionService 5).
+        OccurrenceCount(ComparisonRuleDbSets()).Should().BeGreaterThanOrEqualTo(6);
+    }
+
+    private static int OccurrenceCount(IReadOnlyCollection<string> sets)
+    {
         var total = 0;
         foreach (var file in AppSourceFiles())
         {
             var source = File.ReadAllText(file);
             var receivers = Receivers(source); // the SAME detection Scan uses — the two cannot diverge
             if (receivers.Count == 0) continue;
-            var re = new Regex($@"\b(?:{string.Join("|", receivers)})\s*\.\s*(?:{string.Join("|", tenantSets)})\b");
+            var re = new Regex($@"\b(?:{string.Join("|", receivers)})\s*\.\s*(?:{string.Join("|", sets)})\b");
             total += re.Matches(source).Count;
         }
-        // 216 measured at adoption (2026-08-29), before the derivation widened.
-        // Shrinking dramatically below that means the scan stopped seeing the
-        // codebase, not that the codebase stopped querying.
-        total.Should().BeGreaterThan(150);
+        return total;
     }
 
     // ── The scanner's structural blind spots are banned patterns ────────────

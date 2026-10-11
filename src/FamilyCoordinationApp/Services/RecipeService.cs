@@ -17,7 +17,6 @@ public class RecipeService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var query = context.Recipes
-            .Where(r => r.HouseholdId == householdId)
             .Include(r => r.Ingredients.OrderBy(i => i.SortOrder))
             .Include(r => r.CreatedBy)
             .AsQueryable();
@@ -42,7 +41,7 @@ public class RecipeService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await context.Recipes
-            .Where(r => r.HouseholdId == householdId && r.RecipeId == recipeId)
+            .Where(r => r.RecipeId == recipeId)
             .Include(r => r.Ingredients.OrderBy(i => i.SortOrder))
             .Include(r => r.CreatedBy)
             .FirstOrDefaultAsync(cancellationToken);
@@ -86,7 +85,7 @@ public class RecipeService(
         // Load existing recipe with ingredients
         var existing = await context.Recipes
             .Include(r => r.Ingredients)
-            .FirstOrDefaultAsync(r => r.HouseholdId == recipe.HouseholdId && r.RecipeId == recipe.RecipeId, cancellationToken);
+            .FirstOrDefaultAsync(r => r.RecipeId == recipe.RecipeId, cancellationToken);
 
         if (existing == null)
         {
@@ -158,7 +157,7 @@ public class RecipeService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var recipe = await context.Recipes
-            .FirstOrDefaultAsync(r => r.HouseholdId == householdId && r.RecipeId == recipeId, cancellationToken);
+            .FirstOrDefaultAsync(r => r.RecipeId == recipeId, cancellationToken);
 
         if (recipe == null)
         {
@@ -178,7 +177,6 @@ public class RecipeService(
     {
         var maxId = await context.Recipes
             .IgnoreQueryFilters(["SoftDelete"]) // Include soft-deleted
-            .Where(r => r.HouseholdId == householdId)
             .MaxAsync(r => (int?)r.RecipeId, cancellationToken) ?? 0;
 
         return maxId + 1;
@@ -192,7 +190,7 @@ public class RecipeService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await context.RecipeIngredients
-            .Where(i => i.HouseholdId == householdId && i.Name.StartsWith(prefix))
+            .Where(i => i.Name.StartsWith(prefix))
             .Select(i => i.Name)
             .Distinct()
             .Take(20)
@@ -205,14 +203,14 @@ public class RecipeService(
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         return await context.UserFavorites
-            .AnyAsync(f => f.UserId == userId && f.HouseholdId == householdId && f.RecipeId == recipeId, cancellationToken);
+            .AnyAsync(f => f.UserId == userId && f.RecipeId == recipeId, cancellationToken);
     }
 
     public async Task<HashSet<int>> GetFavoriteRecipeIdsAsync(int userId, int householdId, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         var ids = await context.UserFavorites
-            .Where(f => f.UserId == userId && f.HouseholdId == householdId)
+            .Where(f => f.UserId == userId)
             .Select(f => f.RecipeId)
             .ToListAsync(cancellationToken);
         return ids.ToHashSet();
@@ -223,7 +221,7 @@ public class RecipeService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var existing = await context.UserFavorites
-            .FirstOrDefaultAsync(f => f.UserId == userId && f.HouseholdId == householdId && f.RecipeId == recipeId, cancellationToken);
+            .FirstOrDefaultAsync(f => f.UserId == userId && f.RecipeId == recipeId, cancellationToken);
 
         if (existing != null)
         {
@@ -235,7 +233,6 @@ public class RecipeService(
             context.UserFavorites.Add(new UserFavorite
             {
                 UserId = userId,
-                HouseholdId = householdId,
                 RecipeId = recipeId,
                 CreatedAt = clock.UtcNow
             });
@@ -254,7 +251,7 @@ public class RecipeService(
 
         // PRIVACY: Do NOT include CreatedBy — connected households should not see individual user details
         // TENANT-SCOPE-OK: a connected household's recipes; gated by AreHouseholdsConnectedAsync at
-        // RecipesEndpoints.cs:453 (ListConnectedRecipes, the only caller). Soft delete stays in force.
+        // RecipesEndpoints.cs:382 (ListConnectedRecipes, the only caller). Soft delete stays in force.
         var query = context.Recipes
             .IgnoreQueryFilters(["Tenant"])
             .Where(r => r.HouseholdId == connectedHouseholdId)
@@ -281,7 +278,7 @@ public class RecipeService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         // TENANT-SCOPE-OK: one recipe of a connected household; gated by AreHouseholdsConnectedAsync at
-        // RecipesEndpoints.cs:477 and RecipesEndpoints.cs:502 (its only callers). The ordinary GetRecipeAsync stays filtered.
+        // RecipesEndpoints.cs:402 and RecipesEndpoints.cs:423 (its only callers). The ordinary GetRecipeAsync stays filtered.
         return await context.Recipes
             .IgnoreQueryFilters(["Tenant"])
             .Where(r => r.HouseholdId == connectedHouseholdId && r.RecipeId == recipeId)
@@ -337,7 +334,7 @@ public class RecipeService(
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         // TENANT-SCOPE-OK: the copy source lives in a connected household; gated by AreHouseholdsConnectedAsync at
-        // RecipesEndpoints.cs:502 (CopyConnectedRecipe, the only caller of the copy)
+        // RecipesEndpoints.cs:423 (CopyConnectedRecipe, the only caller of the copy)
         return await context.Recipes
             .IgnoreQueryFilters(["Tenant"])
             .Where(r => r.HouseholdId == sourceHouseholdId && r.RecipeId == sourceRecipeId)
@@ -356,7 +353,7 @@ public class RecipeService(
 
                 // Load source recipe with ingredients
                 // TENANT-SCOPE-OK: the copy source lives in a connected household; gated by AreHouseholdsConnectedAsync
-                // at RecipesEndpoints.cs:502 (CopyConnectedRecipe). The write below targets the caller's household.
+                // at RecipesEndpoints.cs:423 (CopyConnectedRecipe). The write below targets the caller's household.
                 var sourceRecipe = await context.Recipes
                     .IgnoreQueryFilters(["Tenant"])
                     .Where(r => r.HouseholdId == sourceHouseholdId && r.RecipeId == sourceRecipeId)
@@ -375,7 +372,6 @@ public class RecipeService(
 
                 var copiedRecipe = new Recipe
                 {
-                    HouseholdId = targetHouseholdId,
                     RecipeId = newRecipeId,
                     Name = sourceRecipe.Name,
                     Description = sourceRecipe.Description,
@@ -399,7 +395,6 @@ public class RecipeService(
                 {
                     copiedRecipe.Ingredients.Add(new RecipeIngredient
                     {
-                        HouseholdId = targetHouseholdId,
                         RecipeId = newRecipeId,
                         IngredientId = ingredientId++,
                         Name = sourceIngredient.Name,

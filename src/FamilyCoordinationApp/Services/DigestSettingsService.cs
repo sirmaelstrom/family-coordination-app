@@ -38,7 +38,7 @@ public class DigestSettingsService(
         await using var ctx = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var row = await ctx.ChoreDigestSettings
-            .FirstOrDefaultAsync(s => s.HouseholdId == householdId, cancellationToken);
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (row is null)
         {
@@ -69,13 +69,12 @@ public class DigestSettingsService(
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
         var row = await ctx.ChoreDigestSettings
-            .FirstOrDefaultAsync(s => s.HouseholdId == householdId, cancellationToken);
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (row is null)
         {
             row = new HouseholdChoreDigestSettings
             {
-                HouseholdId = householdId,
                 CreatedAt = now,
                 UpdatedAt = now,
             };
@@ -127,7 +126,7 @@ public class DigestSettingsService(
         await using var ctx = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var row = await ctx.ChoreDigestSettings
-            .FirstOrDefaultAsync(s => s.HouseholdId == householdId, cancellationToken);
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (row is null || string.IsNullOrEmpty(row.WebhookUrlProtected))
         {

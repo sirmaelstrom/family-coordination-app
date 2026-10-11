@@ -7,8 +7,8 @@ namespace FamilyCoordinationApp.Services;
 
 /// <summary>
 /// Writes + the claim state machine for chores (WP-04). One short-lived <see cref="ApplicationDbContext"/>
-/// per op (M2); every query/mutation is filtered by the caller-supplied <c>householdId</c> (M1, never
-/// client-supplied). Timestamps are written as UTC <see cref="DateTime"/> (Kind=Utc, M10) from the injected
+/// per op (M2); every query/mutation is scoped to the caller's household by the "Tenant" query filter and the
+/// central write step (M1; WP-05 removed the predicates on the <c>householdId</c> argument). Timestamps are written as UTC <see cref="DateTime"/> (Kind=Utc, M10) from the injected
 /// <see cref="TimeProvider"/>. Staleness math is delegated to <see cref="ChoreStatusCalculator"/> (WP-02) —
 /// this service computes no decay colors of its own. No <c>BackgroundService</c>: auto-release is lazy
 /// compute + materialize, triggered on the next mutation that touches a chore (MN1/D7).
@@ -62,7 +62,6 @@ public class ChoreService(
                 await EnsureRoomsExistAsync(context, householdId, desiredRoomIds, cancellationToken);
 
                 var maxId = await context.Chores
-                    .Where(c => c.HouseholdId == householdId)
                     .MaxAsync(c => (int?)c.ChoreId, cancellationToken) ?? 0;
 
                 var chore = new Chore
@@ -210,7 +209,7 @@ public class ChoreService(
         // so Postgres will NOT cascade; without this, deleting any chore that ever had a room membership
         // throws FK 23503 → 500. The WP-01 backfill makes this live immediately.
         var memberships = await context.ChoreRooms
-            .Where(cr => cr.HouseholdId == householdId && cr.ChoreId == choreId)
+            .Where(cr => cr.ChoreId == choreId)
             .ToListAsync(cancellationToken);
         context.ChoreRooms.RemoveRange(memberships);
 
@@ -350,9 +349,9 @@ public class ChoreService(
         }
 
         // Prior distinct contributors toward the CURRENT open occurrence (rows after LastCompletedAt, M7 —
-        // filtered by HouseholdId AND ChoreId). The count is derived, never stored (M5/MN6).
+        // filtered by ChoreId; the Tenant filter scopes the household). The count is derived, never stored (M5/MN6).
         var priorCompletions = await context.ChoreCompletions
-            .Where(cc => cc.HouseholdId == householdId && cc.ChoreId == choreId)
+            .Where(cc => cc.ChoreId == choreId)
             .ToListAsync(cancellationToken);
         var priorSet = ChoreCompletionProgress.DistinctContributorsSince(priorCompletions, chore.LastCompletedAt);
 
@@ -373,7 +372,6 @@ public class ChoreService(
             var attachActorPayload = contributorId == actorUserId;
             context.ChoreCompletions.Add(new ChoreCompletion
             {
-                HouseholdId = householdId,
                 ChoreId = choreId,
                 CompletedByUserId = contributorId,   // council M8 — the completer, even if a different user held it
                 CompletedAt = now,
@@ -431,7 +429,7 @@ public class ChoreService(
             if (chore.RecurrenceMode != RecurrenceMode.OneOff)
             {
                 var doneSubtasks = await context.ChoreSubtasks
-                    .Where(s => s.HouseholdId == householdId && s.ChoreId == choreId && s.IsDone)
+                    .Where(s => s.ChoreId == choreId && s.IsDone)
                     .ToListAsync(cancellationToken);
                 foreach (var subtask in doneSubtasks)
                 {
@@ -601,7 +599,6 @@ public class ChoreService(
     {
         context.ChoreEvents.Add(new ChoreEvent
         {
-            HouseholdId = chore.HouseholdId,
             ChoreId = chore.ChoreId,
             Type = type,
             ActorUserId = actorUserId,
@@ -619,7 +616,6 @@ public class ChoreService(
     {
         context.ChoreSnoozeEvents.Add(new ChoreSnoozeEvent
         {
-            HouseholdId = chore.HouseholdId,
             ChoreId = chore.ChoreId,
             SetByUserId = actorUserId,
             SetAt = now,
@@ -632,7 +628,6 @@ public class ChoreService(
     {
         context.ChoreParticipationEvents.Add(new ChoreParticipationEvent
         {
-            HouseholdId = chore.HouseholdId,
             ChoreId = chore.ChoreId,
             Type = type,
             SubjectUserId = subjectUserId,
@@ -671,14 +666,14 @@ public class ChoreService(
         // completion response reflects the unchecked state.
         return await context.Chores
             .Include(c => c.Subtasks)
-            .FirstOrDefaultAsync(c => c.HouseholdId == householdId && c.ChoreId == choreId, cancellationToken)
+            .FirstOrDefaultAsync(c => c.ChoreId == choreId, cancellationToken)
             ?? throw new ChoreNotFoundException($"Chore {choreId} not found for household {householdId}.");
     }
 
     private static async Task EnsureHouseholdMemberAsync(ApplicationDbContext context, int householdId, int userId, CancellationToken cancellationToken)
     {
         var isMember = await context.Users
-            .AnyAsync(u => u.Id == userId && u.HouseholdId == householdId, cancellationToken);
+            .AnyAsync(u => u.Id == userId, cancellationToken);
 
         if (!isMember)
         {
@@ -708,7 +703,7 @@ public class ChoreService(
 
         var distinct = roomIds.Distinct().ToList();
         var existing = await context.Rooms
-            .Where(room => room.HouseholdId == householdId && distinct.Contains(room.RoomId))
+            .Where(room => distinct.Contains(room.RoomId))
             .Select(room => room.RoomId)
             .ToListAsync(cancellationToken);
 

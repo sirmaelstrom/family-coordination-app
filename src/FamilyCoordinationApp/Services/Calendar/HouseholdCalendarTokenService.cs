@@ -31,12 +31,11 @@ public sealed class HouseholdCalendarTokenService(
             await context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({householdId})", ct);
 
             await context.HouseholdCalendarTokens
-                .Where(calendarToken => calendarToken.HouseholdId == householdId && calendarToken.RevokedAt == null)
+                .Where(calendarToken => calendarToken.RevokedAt == null)
                 .ExecuteUpdateAsync(update => update.SetProperty(calendarToken => calendarToken.RevokedAt, now), ct);
 
             context.HouseholdCalendarTokens.Add(new HouseholdCalendarToken
             {
-                HouseholdId = householdId,
                 TokenHash = Hash(token),
                 CreatedAt = now,
             });
@@ -57,7 +56,7 @@ public sealed class HouseholdCalendarTokenService(
         var now = clock.UtcNow;
         await using var context = await dbFactory.CreateDbContextAsync(ct);
         var active = await context.HouseholdCalendarTokens
-            .Where(calendarToken => calendarToken.HouseholdId == householdId && calendarToken.RevokedAt == null)
+            .Where(calendarToken => calendarToken.RevokedAt == null)
             .ToListAsync(ct);
         foreach (var token in active)
         {
@@ -85,7 +84,7 @@ public sealed class HouseholdCalendarTokenService(
         await using var context = await dbFactory.CreateDbContextAsync(ct);
         return await context.HouseholdCalendarTokens
             .AsNoTracking()
-            .Where(calendarToken => calendarToken.HouseholdId == householdId && calendarToken.RevokedAt == null)
+            .Where(calendarToken => calendarToken.RevokedAt == null)
             .OrderByDescending(calendarToken => calendarToken.CreatedAt)
             .FirstOrDefaultAsync(ct);
     }

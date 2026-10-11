@@ -22,7 +22,7 @@ public class MealPlanBoardService(IDbContextFactory<ApplicationDbContext> dbFact
         // include orders the entries (Date, then MealType) the same way MealPlanService does.
         var plan = await context.MealPlans
             .AsNoTracking()
-            .Where(mp => mp.HouseholdId == householdId && mp.WeekStartDate == weekStart)
+            .Where(mp => mp.WeekStartDate == weekStart)
             .Include(mp => mp.Entries.OrderBy(e => e.Date).ThenBy(e => e.MealType))
                 .ThenInclude(e => e.Recipe)
             .FirstOrDefaultAsync(ct);

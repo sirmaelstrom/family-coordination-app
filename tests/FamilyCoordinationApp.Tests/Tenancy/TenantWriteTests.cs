@@ -317,7 +317,7 @@ public class TenantWriteTests
         (await RoomsInStoreAsync()).Select(r => (r.HouseholdId, r.RoomId)).Should().Equal((2, 10));
     }
 
-    // ── AllowCrossTenantWrite and the kill switch ───────────────────────────
+    // ── AllowCrossTenantWrite ───────────────────────────────────────────────
 
     [Fact]
     public async Task Inside_AllowCrossTenantWrite_a_modified_invite_of_household_2_saves_under_Caller_1()
@@ -343,30 +343,6 @@ public class TenantWriteTests
 
         await using var check = Unfiltered();
         (await check.HouseholdInvites.AsNoTracking().SingleAsync()).UsedByHouseholdId.Should().Be(1);
-    }
-
-    [Fact]
-    public async Task With_EnforceWrites_false_a_mismatch_saves()
-    {
-        await using (var db = Context(Caller(1), new TenancyOptions { EnforceWrites = false }))
-        {
-            db.Rooms.Add(Room(2, 10));
-            await db.SaveChangesAsync();
-        }
-
-        (await RoomsInStoreAsync()).Select(r => r.HouseholdId).Should().Equal(2);
-    }
-
-    [Fact]
-    public async Task With_EnforceWrites_false_an_Unset_tenant_add_saves()
-    {
-        await using (var db = Context(InRequest(), new TenancyOptions { EnforceWrites = false }))
-        {
-            db.Rooms.Add(Room(1, 10));
-            await db.SaveChangesAsync();
-        }
-
-        (await RoomsInStoreAsync()).Should().ContainSingle();
     }
 
     // ── The surrogate-key ownership check ───────────────────────────────────
@@ -478,14 +454,14 @@ public class TenantWriteTests
     }
 
     [Fact]
-    public async Task Audit_stamping_runs_in_the_bypass_state_and_with_the_kill_switch_off()
+    public async Task Audit_stamping_runs_in_the_bypass_state_and_under_a_tenant()
     {
         await using (var db = Context(OutOfRequest(OutOfRequestMode.Unfiltered)))
         {
             db.Rooms.Add(Room(1, 10));
             await db.SaveChangesAsync();
         }
-        await using (var db = Context(Caller(1), new TenancyOptions { EnforceWrites = false }))
+        await using (var db = Context(Caller(1)))
         {
             db.Rooms.Add(Room(1, 11));
             await db.SaveChangesAsync();

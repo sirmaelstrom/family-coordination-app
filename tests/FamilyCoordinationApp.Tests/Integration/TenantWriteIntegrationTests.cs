@@ -158,28 +158,6 @@ public sealed class TenantWriteIntegrationTests(PostgresContainerFixture postgre
         (await InviteExistsAsync(aInvite)).Should().BeFalse();
     }
 
-    [Fact]
-    public async Task With_the_read_kill_switch_off_a_forged_surrogate_key_update_still_throws()
-    {
-        var before = await BobAsync();
-
-        // EnforceFilter=false turns the Tenant filter off (D14), so the ownership query names the household itself.
-        await using var host = _factory.WithWebHostBuilder(b => b.UseSetting("Tenancy:EnforceFilter", "false"));
-        var (scope, factory) = AsCaller(host, A, ChoresWebAppFactory.UserAId);
-        using (scope)
-        {
-            await using var db = await factory.CreateDbContextAsync();
-            var forged = new User { Id = ChoresWebAppFactory.UserBId, HouseholdId = A, DisplayName = "x" };
-            db.Users.Attach(forged);
-            db.Entry(forged).Property(u => u.DisplayName).IsModified = true;
-
-            await db.Invoking(d => d.SaveChangesAsync()).Should().ThrowExactlyAsync<CrossTenantWriteException>();
-        }
-        LeaveRequest();
-
-        (await BobAsync()).Should().BeEquivalentTo(before);
-    }
-
     // ── Stamping, with Npgsql's temporary keys ──────────────────────────────
 
     [Fact]

@@ -228,7 +228,7 @@ public sealed class MultiPersonChoreTests(PostgresContainerFixture postgres) : I
         // The gated racing service: both contributions block at SaveChanges until both have arrived (after
         // both loaded the chore at `version`), then commit — a genuine write-write race at the same version.
         var barrier = new SaveBarrier(participants: 2);
-        var gatedFactory = new GatedPostgresDbContextFactory(connectionString, barrier);
+        var gatedFactory = new GatedPostgresDbContextFactory(connectionString, barrier, TestTenancy.Caller(householdId));
         var racingService = NewService(gatedFactory, clock);
 
         clock.SetUtcNow(t0.AddSeconds(1)); // advance the clock for the racing contributions (realism only)
@@ -258,7 +258,7 @@ public sealed class MultiPersonChoreTests(PostgresContainerFixture postgres) : I
         var loser = results.Single(r => r.Conflicted);
         var refreshed = await ReadVersionAsync(dbFactory, householdId, choreId);
         clock.SetUtcNow(t0.AddSeconds(2)); // advance again before the re-submit (realism only)
-        var nonRacingService = NewService(dbFactory, clock);
+        var nonRacingService = NewService(dbFactory.WithTenant(TestTenancy.Caller(householdId)), clock);
         var resubmit = await AttemptContributeAsync(nonRacingService, householdId, choreId, loser.UserId, refreshed);
         resubmit.Won.Should().BeTrue("the loser's re-submit against the refreshed version must succeed");
 

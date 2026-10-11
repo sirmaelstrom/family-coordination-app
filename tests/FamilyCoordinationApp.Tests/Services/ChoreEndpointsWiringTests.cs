@@ -187,9 +187,10 @@ public class ChoreDefaultViewSetterTests
             .Options;
 
         var captured = options;
+        var tenant = TestTenancy.Caller(1); // every call here acts as household 1
         var mock = new Mock<IDbContextFactory<ApplicationDbContext>>();
         mock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(captured));
+            .ReturnsAsync(() => TestTenancy.Context(captured, tenant));
         return (mock.Object, options);
     }
 

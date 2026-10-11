@@ -15,8 +15,9 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// The read switch through the real host (fca-household-scope WP-02 step 7b; verification V3/V4/V5). Every query here
 /// is written with NO household predicate, from a real-host DI scope whose tenant is set exactly as the middleware
 /// sets it, against real Postgres. This is what "isolated by default" means: the filter scopes it.
-/// <para>Negative controls (scratch, in the PR body): <c>Tenancy:EnforceFilter=false</c> makes the Alice/Bob cases
-/// see both households; the household getter returning 0 turns the Unset throw into an empty result.</para>
+/// <para>Negative controls (scratch, in the PR bodies): the filter lambda set to <c>true</c> makes the Alice/Bob
+/// cases see both households (WP-05, which removed the <c>EnforceFilter</c> kill switch WP-02's control used); the
+/// household getter returning 0 turns the Unset throw into an empty result.</para>
 /// </summary>
 [Collection(IntegrationCollection.Name)]
 [Trait("kind", "integration")]
@@ -171,19 +172,6 @@ public sealed class TenantFilterTests(PostgresContainerFixture postgres) : IAsyn
         (await db.Rooms.CountAsync()).Should().Be(3);
     }
 
-    [Fact]
-    public async Task The_kill_switch_off_with_the_tenant_Unset_in_request_sees_everything()
-    {
-        await using var host = _factory.WithWebHostBuilder(b => b.UseSetting("Tenancy:EnforceFilter", "false"));
-        var (scope, factory) = InRequest(host, caller: null);
-        using (scope)
-        {
-            await using var db = await factory.CreateDbContextAsync();
-            (await db.Rooms.CountAsync()).Should().Be(3, "D14: the switch restores today's behavior, predicates and all");
-        }
-        LeaveRequest();
-    }
-
     // ── V5: a named soft-delete ignore keeps the Tenant filter ──────────────
 
     [Fact]
@@ -196,7 +184,7 @@ public sealed class TenantFilterTests(PostgresContainerFixture postgres) : IAsyn
             (await db.Categories.IgnoreQueryFilters(["SoftDelete"]).Where(c => c.IsDeleted).Select(c => c.Name).ToListAsync())
                 .Should().Equal("A gone");
 
-            // A former bare site, through the real service: its own predicate plus the filter, one row.
+            // A former bare site, through the real service: since WP-05 the filter alone scopes it.
             var categories = await scope.ServiceProvider.GetRequiredService<ICategoryService>()
                 .GetCategoriesAsync(A, includeDeleted: true);
             categories.Select(c => c.Name).Should().BeEquivalentTo(["A live", "A gone"]);

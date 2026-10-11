@@ -51,7 +51,7 @@ public class DigestService(
             tenant = context.Tenant;
 
             // TENANT-SCOPE-OK: cron all-households sweep — M1: HouseholdId comes from these rows, never a client;
-            // gated by the trigger-token check at ChoresEndpoints.cs:1011
+            // gated by the trigger-token check at ChoresEndpoints.cs:917
             candidates = await context.ChoreDigestSettings
                 .IgnoreQueryFilters(["Tenant"])
                 .Where(s => s.Enabled && s.WebhookUrlProtected != null)
@@ -108,7 +108,7 @@ public class DigestService(
         await using (var claimContext = await dbFactory.CreateDbContextAsync(ct))
         {
             var claimed = await claimContext.ChoreDigestSettings
-                .Where(s => s.HouseholdId == h && s.Enabled && s.WebhookUrlProtected != null
+                .Where(s => s.Enabled && s.WebhookUrlProtected != null
                             && (s.LastSentAt == null || s.LastSentAt < windowStart))
                 .ExecuteUpdateAsync(u => u.SetProperty(s => s.LastSentAt, now), ct);
 
@@ -149,7 +149,8 @@ public class DigestService(
 
     /// <summary>
     /// Assemble the household's digest model from its own members, this-week completions, and active chores
-    /// (M1 — every query is scoped to <paramref name="householdId"/>). Mirrors the read/projection shape of
+    /// (M1 — every query is scoped to <paramref name="householdId"/> by the Tenant filter: the caller runs inside
+    /// <c>RunAs(householdId)</c>, see <see cref="RunDueAsync"/>). Mirrors the read/projection shape of
     /// <c>ChoreBoardService</c> so dueness/staleness are computed exactly as the board/lens compute them.
     /// </summary>
     private async Task<DigestModel> BuildModelAsync(int householdId, DateTime now, CancellationToken ct)
@@ -162,7 +163,6 @@ public class DigestService(
             .FirstOrDefaultAsync(ct) ?? string.Empty;
 
         var members = await context.Users
-            .Where(u => u.HouseholdId == householdId)
             .OrderBy(u => u.DisplayName)
             .Select(u => new MemberDto(u.Id, u.DisplayName, u.Initials, u.PictureUrl))
             .ToListAsync(ct);
@@ -170,11 +170,10 @@ public class DigestService(
         // The calculator windows completions to the local Mon–Sun week itself; fetch the household's
         // completions and let it filter (M1 scoping is ours, windowing is the calculator's).
         var completions = await context.ChoreCompletions
-            .Where(c => c.HouseholdId == householdId)
             .ToListAsync(ct);
 
         var chores = await context.Chores
-            .Where(c => c.HouseholdId == householdId && c.Status == ChoreStatus.Active)
+            .Where(c => c.Status == ChoreStatus.Active)
             .ToListAsync(ct);
 
         var equityResult = equity.Compute(completions, members, EquityWindow.Week, now, tz);
@@ -214,7 +213,6 @@ public class DigestService(
     {
         await using var context = await dbFactory.CreateDbContextAsync(ct);
         await context.ChoreDigestSettings
-            .Where(s => s.HouseholdId == householdId)
             .ExecuteUpdateAsync(u => u.SetProperty(s => s.LastSentAt, priorLastSentAt), ct);
     }
 

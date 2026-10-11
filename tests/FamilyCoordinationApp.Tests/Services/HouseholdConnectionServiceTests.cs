@@ -16,6 +16,7 @@ public class HouseholdConnectionServiceTests : IDisposable
 
     private readonly DbContextOptions<ApplicationDbContext> _options;
     private readonly ApplicationDbContext _context;
+    private readonly FamilyCoordinationApp.Tenancy.TenantContext _tenant = TestTenancy.Caller(1);
     private readonly Mock<IDbContextFactory<ApplicationDbContext>> _dbFactoryMock;
     private readonly Mock<ILogger<HouseholdConnectionService>> _connectionLoggerMock;
     private readonly Mock<ILogger<RecipeService>> _recipeLoggerMock;
@@ -33,7 +34,7 @@ public class HouseholdConnectionServiceTests : IDisposable
         _context = new ApplicationDbContext(_options);
         _dbFactoryMock = new Mock<IDbContextFactory<ApplicationDbContext>>();
         _dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(_options));
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
 
         _connectionLoggerMock = new Mock<ILogger<HouseholdConnectionService>>();
         _recipeLoggerMock = new Mock<ILogger<RecipeService>>();
@@ -167,13 +168,13 @@ public class HouseholdConnectionServiceTests : IDisposable
     {
         // Arrange — connect households 1 and 2
         var invite = await _connectionService.GenerateInviteAsync(1, 1);
-        await _connectionService.AcceptInviteAsync(invite.InviteCode, 2, 2);
+        await _tenant.As(2, () => _connectionService.AcceptInviteAsync(invite.InviteCode, 2, 2));
 
         // Generate a new invite from household 1
         var newInvite = await _connectionService.GenerateInviteAsync(1, 1);
 
         // Act — household 2 tries to connect again
-        var (isValid, _, error) = await _connectionService.ValidateInviteCodeAsync(newInvite.InviteCode, 2);
+        var (isValid, _, error) = await _tenant.As(2, () => _connectionService.ValidateInviteCodeAsync(newInvite.InviteCode, 2));
 
         // Assert
         isValid.Should().BeFalse();
@@ -198,7 +199,7 @@ public class HouseholdConnectionServiceTests : IDisposable
         await setupContext.SaveChangesAsync();
 
         // Act
-        var (isValid, _, error) = await _connectionService.ValidateInviteCodeAsync("EXPRD1", 2);
+        var (isValid, _, error) = await _tenant.As(2, () => _connectionService.ValidateInviteCodeAsync("EXPRD1", 2));
 
         // Assert
         isValid.Should().BeFalse();
@@ -226,7 +227,7 @@ public class HouseholdConnectionServiceTests : IDisposable
         await setupContext.SaveChangesAsync();
 
         // Act
-        var (isValid, _, error) = await _connectionService.ValidateInviteCodeAsync("USED01", 2);
+        var (isValid, _, error) = await _tenant.As(2, () => _connectionService.ValidateInviteCodeAsync("USED01", 2));
 
         // Assert
         isValid.Should().BeFalse();
@@ -237,7 +238,7 @@ public class HouseholdConnectionServiceTests : IDisposable
     public async Task ValidateCode_RejectsInvalidCode()
     {
         // Act
-        var (isValid, _, error) = await _connectionService.ValidateInviteCodeAsync("XXXXXX", 2);
+        var (isValid, _, error) = await _tenant.As(2, () => _connectionService.ValidateInviteCodeAsync("XXXXXX", 2));
 
         // Assert
         isValid.Should().BeFalse();
@@ -250,7 +251,7 @@ public class HouseholdConnectionServiceTests : IDisposable
     public async Task AcceptInvite_CreatesConnection_WithOrderedIds()
     {
         // Arrange — household 2 invites, household 1 accepts (higher invites lower)
-        var invite = await _connectionService.GenerateInviteAsync(2, 2);
+        var invite = await _tenant.As(2, () => _connectionService.GenerateInviteAsync(2, 2));
 
         // Act
         var (success, _, _) = await _connectionService.AcceptInviteAsync(invite.InviteCode, 1, 1);
@@ -272,7 +273,7 @@ public class HouseholdConnectionServiceTests : IDisposable
         var invite = await _connectionService.GenerateInviteAsync(1, 1);
 
         // Act
-        await _connectionService.AcceptInviteAsync(invite.InviteCode, 2, 2);
+        await _tenant.As(2, () => _connectionService.AcceptInviteAsync(invite.InviteCode, 2, 2));
 
         // Assert
         await using var verifyContext = new ApplicationDbContext(_options);
@@ -291,7 +292,7 @@ public class HouseholdConnectionServiceTests : IDisposable
         var invite = await _connectionService.GenerateInviteAsync(1, 1);
 
         // Act
-        var (success, connectedName, error) = await _connectionService.AcceptInviteAsync(invite.InviteCode, 2, 2);
+        var (success, connectedName, error) = await _tenant.As(2, () => _connectionService.AcceptInviteAsync(invite.InviteCode, 2, 2));
 
         // Assert
         success.Should().BeTrue();
@@ -306,11 +307,11 @@ public class HouseholdConnectionServiceTests : IDisposable
     {
         // Arrange — connect households 1 and 2
         var invite = await _connectionService.GenerateInviteAsync(1, 1);
-        await _connectionService.AcceptInviteAsync(invite.InviteCode, 2, 2);
+        await _tenant.As(2, () => _connectionService.AcceptInviteAsync(invite.InviteCode, 2, 2));
 
         // Act — query from both sides
         var fromHousehold1 = await _connectionService.GetConnectedHouseholdsAsync(1);
-        var fromHousehold2 = await _connectionService.GetConnectedHouseholdsAsync(2);
+        var fromHousehold2 = await _tenant.As(2, () => _connectionService.GetConnectedHouseholdsAsync(2));
 
         // Assert
         fromHousehold1.Should().HaveCount(1);
@@ -329,11 +330,11 @@ public class HouseholdConnectionServiceTests : IDisposable
     {
         // Arrange — connect households 1 and 3
         var invite = await _connectionService.GenerateInviteAsync(1, 1);
-        await _connectionService.AcceptInviteAsync(invite.InviteCode, 3, 3);
+        await _tenant.As(3, () => _connectionService.AcceptInviteAsync(invite.InviteCode, 3, 3));
 
         // Act — check both orderings
         var forward = await _connectionService.AreHouseholdsConnectedAsync(1, 3);
-        var reverse = await _connectionService.AreHouseholdsConnectedAsync(3, 1);
+        var reverse = await _tenant.As(3, () => _connectionService.AreHouseholdsConnectedAsync(3, 1));
 
         // Assert
         forward.Should().BeTrue();
@@ -347,7 +348,7 @@ public class HouseholdConnectionServiceTests : IDisposable
     {
         // Arrange — connect then disconnect
         var invite = await _connectionService.GenerateInviteAsync(1, 1);
-        await _connectionService.AcceptInviteAsync(invite.InviteCode, 2, 2);
+        await _tenant.As(2, () => _connectionService.AcceptInviteAsync(invite.InviteCode, 2, 2));
         (await _connectionService.AreHouseholdsConnectedAsync(1, 2)).Should().BeTrue();
 
         // Act
@@ -362,10 +363,10 @@ public class HouseholdConnectionServiceTests : IDisposable
     {
         // Arrange — connect, copy a recipe, then disconnect
         var invite = await _connectionService.GenerateInviteAsync(1, 1);
-        await _connectionService.AcceptInviteAsync(invite.InviteCode, 2, 2);
+        await _tenant.As(2, () => _connectionService.AcceptInviteAsync(invite.InviteCode, 2, 2));
 
         // Copy a recipe from household 1 to household 2
-        var copiedRecipe = await _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2);
+        var copiedRecipe = await _tenant.As(2, () => _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2));
 
         // Act — disconnect the households
         await _connectionService.DisconnectHouseholdsAsync(1, 2);
@@ -386,10 +387,10 @@ public class HouseholdConnectionServiceTests : IDisposable
     {
         // Arrange — connect households 1 and 2
         var invite = await _connectionService.GenerateInviteAsync(1, 1);
-        await _connectionService.AcceptInviteAsync(invite.InviteCode, 2, 2);
+        await _tenant.As(2, () => _connectionService.AcceptInviteAsync(invite.InviteCode, 2, 2));
 
         // Act — household 2 browses household 1's recipes
-        var recipes = await _recipeService.GetRecipesFromConnectedHouseholdAsync(2, 1);
+        var recipes = await _tenant.As(2, () => _recipeService.GetRecipesFromConnectedHouseholdAsync(2, 1));
 
         // Assert
         recipes.Should().HaveCount(1);
@@ -414,7 +415,7 @@ public class HouseholdConnectionServiceTests : IDisposable
             .Setup(s => s.CopyImageAsync("/uploads/1/chili.jpg", 1, 2, It.IsAny<CancellationToken>()))
             .ReturnsAsync("/uploads/2/new-guid.jpg");
 
-        var copied = await _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2);
+        var copied = await _tenant.As(2, () => _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2));
 
         copied.ImagePath.Should().Be("/uploads/2/new-guid.jpg");
     }
@@ -432,7 +433,7 @@ public class HouseholdConnectionServiceTests : IDisposable
             .Setup(s => s.CopyImageAsync(It.IsAny<string>(), 1, 2, It.IsAny<CancellationToken>()))
             .ReturnsAsync((string?)null);
 
-        var copied = await _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2);
+        var copied = await _tenant.As(2, () => _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2));
 
         copied.ImagePath.Should().BeNull("a dangling cross-household reference is worse than no image");
     }
@@ -450,7 +451,7 @@ public class HouseholdConnectionServiceTests : IDisposable
             await ctx.SaveChangesAsync();
         }
 
-        var copied = await _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2);
+        var copied = await _tenant.As(2, () => _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2));
 
         copied.ImagePath.Should().BeNull();
         _imageServiceMock.Verify(
@@ -468,7 +469,7 @@ public class HouseholdConnectionServiceTests : IDisposable
             await ctx.SaveChangesAsync();
         }
 
-        var copied = await _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2);
+        var copied = await _tenant.As(2, () => _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2));
 
         copied.ImagePath.Should().Be("https://example.test/chili.jpg");
         _imageServiceMock.Verify(
@@ -480,7 +481,7 @@ public class HouseholdConnectionServiceTests : IDisposable
     public async Task CopyRecipe_SetsAttribution()
     {
         // Act
-        var copied = await _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2);
+        var copied = await _tenant.As(2, () => _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2));
 
         // Assert
         copied.SharedFromHouseholdId.Should().Be(1);
@@ -495,7 +496,7 @@ public class HouseholdConnectionServiceTests : IDisposable
     public async Task CopyRecipe_DeepCopiesIngredients()
     {
         // Act
-        var copied = await _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2);
+        var copied = await _tenant.As(2, () => _recipeService.CopyRecipeFromConnectedHouseholdAsync(1, 1, 2, 2));
 
         // Assert — verify ingredients were deep copied
         await using var verifyContext = new ApplicationDbContext(_options);

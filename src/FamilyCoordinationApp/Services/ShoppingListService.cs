@@ -20,12 +20,10 @@ public class ShoppingListService(
                 await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
                 var maxId = await context.ShoppingLists
-                    .Where(sl => sl.HouseholdId == householdId)
                     .MaxAsync(sl => (int?)sl.ShoppingListId, cancellationToken) ?? 0;
 
                 var shoppingList = new ShoppingList
                 {
-                    HouseholdId = householdId,
                     ShoppingListId = maxId + 1,
                     Name = name,
                     MealPlanId = mealPlanId,
@@ -50,7 +48,7 @@ public class ShoppingListService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await context.ShoppingLists
-            .Where(sl => sl.HouseholdId == householdId && sl.ShoppingListId == shoppingListId)
+            .Where(sl => sl.ShoppingListId == shoppingListId)
             .Include(sl => sl.Items)
                 .ThenInclude(i => i.AddedBy)
             .Include(sl => sl.MealPlan)
@@ -62,7 +60,7 @@ public class ShoppingListService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await context.ShoppingLists
-            .Where(sl => sl.HouseholdId == householdId && !sl.IsArchived)
+            .Where(sl => !sl.IsArchived)
             .OrderByDescending(sl => sl.CreatedAt)
             .Include(sl => sl.Items)
                 .ThenInclude(i => i.AddedBy)
@@ -74,7 +72,7 @@ public class ShoppingListService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var query = context.ShoppingLists
-            .Where(sl => sl.HouseholdId == householdId && sl.IsArchived);
+            .Where(sl => sl.IsArchived);
 
         if (favoritesOnly == true)
         {
@@ -93,7 +91,7 @@ public class ShoppingListService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var shoppingList = await context.ShoppingLists
-            .FirstOrDefaultAsync(sl => sl.HouseholdId == householdId && sl.ShoppingListId == shoppingListId, cancellationToken)
+            .FirstOrDefaultAsync(sl => sl.ShoppingListId == shoppingListId, cancellationToken)
             ?? throw new KeyNotFoundException($"Shopping list {shoppingListId} not found");
 
         shoppingList.IsArchived = false;
@@ -109,7 +107,7 @@ public class ShoppingListService(
 
         var shoppingList = await context.ShoppingLists
             .Include(sl => sl.Items)
-            .FirstOrDefaultAsync(sl => sl.HouseholdId == householdId && sl.ShoppingListId == shoppingListId, cancellationToken)
+            .FirstOrDefaultAsync(sl => sl.ShoppingListId == shoppingListId, cancellationToken)
             ?? throw new KeyNotFoundException($"Shopping list {shoppingListId} not found");
 
         // Remove all items first
@@ -129,7 +127,7 @@ public class ShoppingListService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var shoppingList = await context.ShoppingLists
-            .FirstOrDefaultAsync(sl => sl.HouseholdId == householdId && sl.ShoppingListId == shoppingListId, cancellationToken)
+            .FirstOrDefaultAsync(sl => sl.ShoppingListId == shoppingListId, cancellationToken)
             ?? throw new KeyNotFoundException($"Shopping list {shoppingListId} not found");
 
         shoppingList.Name = newName.Trim();
@@ -149,7 +147,7 @@ public class ShoppingListService(
                 await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
                 var maxItemId = await context.ShoppingListItems
-                    .Where(i => i.HouseholdId == item.HouseholdId && i.ShoppingListId == item.ShoppingListId)
+                    .Where(i => i.ShoppingListId == item.ShoppingListId)
                     .MaxAsync(i => (int?)i.ItemId, cancellationToken) ?? 0;
 
                 item.ItemId = maxItemId + 1;
@@ -190,7 +188,6 @@ public class ShoppingListService(
         // Fetch fresh entity from this context to avoid disposed context error
         var existing = await context.ShoppingListItems
             .FirstOrDefaultAsync(i =>
-                i.HouseholdId == item.HouseholdId &&
                 i.ShoppingListId == item.ShoppingListId &&
                 i.ItemId == item.ItemId, cancellationToken);
 
@@ -308,7 +305,6 @@ public class ShoppingListService(
 
         var item = await context.ShoppingListItems
             .FirstOrDefaultAsync(i =>
-                i.HouseholdId == householdId &&
                 i.ShoppingListId == shoppingListId &&
                 i.ItemId == itemId, cancellationToken);
 
@@ -330,7 +326,6 @@ public class ShoppingListService(
 
         var shoppingList = await context.ShoppingLists
             .FirstOrDefaultAsync(sl =>
-                sl.HouseholdId == householdId &&
                 sl.ShoppingListId == shoppingListId, cancellationToken);
 
         if (shoppingList == null)
@@ -357,7 +352,7 @@ public class ShoppingListService(
         // Search ALL shopping list items (including archived lists) for autocomplete
         // Prioritize StartsWith matches, fallback to Contains
         var startsWithMatches = await context.ShoppingListItems
-            .Where(i => i.HouseholdId == householdId && i.Name.ToLower().StartsWith(lower))
+            .Where(i => i.Name.ToLower().StartsWith(lower))
             .GroupBy(i => i.Name)
             .Select(g => new { Name = g.Key, Count = g.Count() })
             .OrderByDescending(x => x.Count)
@@ -372,8 +367,7 @@ public class ShoppingListService(
 
         // Fallback to Contains for additional matches
         var containsMatches = await context.ShoppingListItems
-            .Where(i => i.HouseholdId == householdId
-                     && i.Name.ToLower().Contains(lower)
+            .Where(i => i.Name.ToLower().Contains(lower)
                      && !i.Name.ToLower().StartsWith(lower))
             .GroupBy(i => i.Name)
             .Select(g => new { Name = g.Key, Count = g.Count() })
@@ -391,7 +385,6 @@ public class ShoppingListService(
 
         var shoppingList = await context.ShoppingLists
             .FirstOrDefaultAsync(sl =>
-                sl.HouseholdId == householdId &&
                 sl.ShoppingListId == shoppingListId, cancellationToken);
 
         if (shoppingList == null)
@@ -412,7 +405,6 @@ public class ShoppingListService(
 
         var checkedItems = await context.ShoppingListItems
             .Where(i =>
-                i.HouseholdId == householdId &&
                 i.ShoppingListId == shoppingListId &&
                 i.IsChecked)
             .ToListAsync(cancellationToken);
@@ -435,7 +427,6 @@ public class ShoppingListService(
         var itemIds = updates.Select(u => u.ItemId).ToList();
         var items = await context.ShoppingListItems
             .Where(i =>
-                i.HouseholdId == householdId &&
                 i.ShoppingListId == shoppingListId &&
                 itemIds.Contains(i.ItemId))
             .ToListAsync(cancellationToken);
