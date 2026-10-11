@@ -22,18 +22,22 @@ public interface IChoreService
     /// <summary>
     /// Creates a chore for the household, authored by <paramref name="actorUserId"/>. Validates the name and
     /// recurrence (a <c>DayOfMonth</c>-only recurrence is rejected, D4-B). A non-null
-    /// <c>cmd.AssigneeUserId</c> seeds it as deliberately Assigned (target must be a household member);
-    /// otherwise it lands on the pile. Appends a <c>ChoreEvent{Created}</c>.
+    /// <c>cmd.AssigneeUserId</c> seeds it as deliberately Assigned (target must be an enabled household member);
+    /// otherwise it lands on the pile. The owner and every <c>cmd.AssignedUserIds</c> roster seed must be enabled
+    /// members too. Appends a <c>ChoreEvent{Created}</c>.
     /// </summary>
-    /// <exception cref="ChoreValidationException">Invalid name / recurrence, or an out-of-household assignee.</exception>
+    /// <exception cref="ChoreValidationException">Invalid name / recurrence.</exception>
+    /// <exception cref="HouseholdMembershipException">The assignee, owner or a roster seed is outside the household or disabled.</exception>
     Task<Chore> CreateChoreAsync(int householdId, int actorUserId, CreateChoreCommand cmd, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Updates a chore's editable fields (does NOT touch the assignment trio). Optimistic-concurrency checked
-    /// against <paramref name="version"/>.
+    /// against <paramref name="version"/>. A non-null owner must be a household member; a CHANGED owner must also be
+    /// enabled (an unchanged one is not re-judged, so a since-disabled owner doesn't block edits).
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore in the household.</exception>
     /// <exception cref="ChoreValidationException">Invalid name / recurrence.</exception>
+    /// <exception cref="HouseholdMembershipException">The owner is outside the household, or a new owner is disabled.</exception>
     /// <exception cref="ConcurrencyConflictException">The client <paramref name="version"/> is stale.</exception>
     Task<Chore> UpdateChoreAsync(int householdId, int choreId, UpdateChoreCommand cmd, uint version, CancellationToken cancellationToken = default);
 
@@ -80,13 +84,13 @@ public interface IChoreService
     Task<Chore> DropAsync(int householdId, int choreId, int actorUserId, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Hands a chore off. <paramref name="targetUserId"/> = a household member → assigns it to them
+    /// Hands a chore off. <paramref name="targetUserId"/> = an enabled household member → assigns it to them
     /// (<c>(target, Assigned, now)</c>); <c>null</c> → returns it to the pile (<c>(null, None, null)</c>) — the
     /// escape hatch for a stuck Assigned chore (council M9, collaborative/non-punitive, no roles). Appends a
     /// <c>ChoreEvent{HandedOff}</c> (TargetUserId = the new assignee, or null for return-to-pile).
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore in the household.</exception>
-    /// <exception cref="ChoreValidationException">The target is outside the household (illegal transition, MN8).</exception>
+    /// <exception cref="HouseholdMembershipException">The target is outside the household or disabled.</exception>
     /// <exception cref="ConcurrencyConflictException">The client <paramref name="version"/> is stale.</exception>
     Task<Chore> HandOffAsync(int householdId, int choreId, int actorUserId, int? targetUserId, uint version, CancellationToken cancellationToken = default);
 
@@ -108,7 +112,8 @@ public interface IChoreService
     /// returns to the pile; an Assigned chore keeps its sticky assignee.</para>
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore in the household.</exception>
-    /// <exception cref="ChoreValidationException">A named participant is outside the household, or nothing new would be recorded (the actor already contributed, D6).</exception>
+    /// <exception cref="ChoreValidationException">Nothing new would be recorded (the actor already contributed, D6).</exception>
+    /// <exception cref="HouseholdMembershipException">A named participant is outside the household (a disabled member may still be credited).</exception>
     /// <exception cref="ConcurrencyConflictException">The client <paramref name="version"/> is stale.</exception>
     Task<Chore> CompleteAsync(int householdId, int choreId, int actorUserId, string? note, string? photoPath, IReadOnlyList<int>? participantUserIds, uint version, CancellationToken cancellationToken = default);
 
@@ -128,7 +133,8 @@ public interface IChoreService
     /// <c>ChoreParticipationEvent{Assigned}</c> and forces the xmin touch (M3). X=1 ⇒ rejected.
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore.</exception>
-    /// <exception cref="ChoreValidationException">Single-person chore, or subject outside the household.</exception>
+    /// <exception cref="ChoreValidationException">Single-person chore.</exception>
+    /// <exception cref="HouseholdMembershipException">The subject is outside the household or disabled.</exception>
     /// <exception cref="ConcurrencyConflictException">Stale <paramref name="version"/>.</exception>
     Task<Chore> AssignToRosterAsync(int householdId, int choreId, int actorUserId, int subjectUserId, uint version, CancellationToken cancellationToken = default);
 
@@ -150,6 +156,7 @@ public interface IChoreService
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore.</exception>
     /// <exception cref="ChoreValidationException">Single-person chore, or removing another without authority.</exception>
+    /// <exception cref="HouseholdMembershipException">The subject is outside the household (a disabled member can still be removed).</exception>
     /// <exception cref="ConcurrencyConflictException">Stale <paramref name="version"/>.</exception>
     Task<Chore> LeaveRosterAsync(int householdId, int choreId, int actorUserId, int? subjectUserId, uint version, CancellationToken cancellationToken = default);
 }

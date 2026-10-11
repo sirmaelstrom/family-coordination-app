@@ -68,8 +68,27 @@ public sealed class CentralAuthorizationTests(PostgresContainerFixture postgres)
 
     private static string RouteOf(RouteEndpoint e) => e.RoutePattern.RawText ?? "";
 
-    /// <summary>A concrete URL for a route template: every parameter becomes <c>1</c>.</summary>
-    private static string UrlFor(RouteEndpoint e) => Regex.Replace(RouteOf(e), @"\{[^}]+\}", "1");
+    /// <summary>
+    /// A concrete URL that routes to <paramref name="e"/>: every parameter becomes <c>1</c>. That value matches only an
+    /// <c>{name:int}</c> parameter, so any other kind throws. This matters because the fallback policy also guards a
+    /// request that matches NO endpoint: a URL that routed nowhere would still be refused, and the sweep would pass
+    /// without testing the route it names.
+    /// </summary>
+    private static string UrlFor(RouteEndpoint e) =>
+        UnfillableParameters(e.RoutePattern) is { Count: > 0 } bad
+            ? throw new InvalidOperationException(
+                $"The sweep can't build a matching URL for {RouteOf(e)}: unsupported parameter(s) {string.Join(", ", bad)}. " +
+                "Teach UrlFor a value for that constraint.")
+            : Regex.Replace(RouteOf(e), @"\{[^}]+\}", "1");
+
+    /// <summary>The route parameters for which <c>1</c> is not a matching value (anything but a required
+    /// <c>:int</c>).</summary>
+    internal static List<string> UnfillableParameters(RoutePattern pattern) =>
+        pattern.Parameters
+            .Where(p => p.IsCatchAll || p.IsOptional || p.Default is not null
+                || p.ParameterPolicies.Count != 1 || p.ParameterPolicies[0].Content != "int")
+            .Select(p => p.Name)
+            .ToList();
 
     private static IEnumerable<string> MethodsOf(RouteEndpoint e) =>
         e.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods ?? ["GET"];
@@ -225,7 +244,63 @@ public sealed class CentralAuthorizationTests(PostgresContainerFixture postgres)
             "an anonymous /api route says so explicitly; it is never anonymous by omission");
     }
 
+    [Fact]
+    public void Every_api_route_parameter_is_one_the_sweep_can_fill()
+    {
+        var unfillable = ApiEndpoints()
+            .Where(e => UnfillableParameters(e.RoutePattern).Count > 0)
+            .Select(RouteOf);
+
+        unfillable.Should().BeEmpty("the sweep must reach the route it names, not the no-endpoint fallback");
+    }
+
+    [Fact]
+    public void NC_the_parameter_guard_flags_what_1_cannot_fill()
+    {
+        UnfillableParameters(RoutePatternFactory.Parse("/api/x/{id:int}")).Should().BeEmpty();
+        UnfillableParameters(RoutePatternFactory.Parse("/api/x/{id:guid}")).Should().Equal("id");
+        UnfillableParameters(RoutePatternFactory.Parse("/api/x/{name}")).Should().Equal("name");
+        UnfillableParameters(RoutePatternFactory.Parse("/api/x/{id:int?}")).Should().Equal("id");
+        UnfillableParameters(RoutePatternFactory.Parse("/api/x/{**rest}")).Should().Equal("rest");
+    }
+
     // ── The site-admin policy ──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The SiteAdmin routes carry their own policy, so the fallback gate never runs for them: SiteAdmin must be built
+    /// FROM <c>DefaultPolicy</c>, not from a copy of its requirements, or a requirement later added to the login
+    /// policy would not reach the admin routes. Checked by reference: <c>Combine</c> carries the default policy's own
+    /// requirement instances, while a hand-written copy creates new ones.
+    /// </summary>
+    [Fact]
+    public async Task The_SiteAdmin_policy_is_composed_from_the_DefaultPolicy()
+    {
+        var options = _factory.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthorizationOptions>>().Value;
+        var siteAdmin = await _factory.Services.GetRequiredService<IAuthorizationPolicyProvider>().GetPolicyAsync(SiteAdminPolicy);
+
+        siteAdmin.Should().NotBeNull();
+        options.DefaultPolicy.Requirements.Should().NotBeEmpty();
+        foreach (var requirement in options.DefaultPolicy.Requirements)
+        {
+            siteAdmin!.Requirements.Should().Contain(r => ReferenceEquals(r, requirement),
+                $"SiteAdmin must carry DefaultPolicy's own {requirement.GetType().Name}, not a copy");
+        }
+
+        siteAdmin!.Requirements.Should().ContainSingle(r => r is FamilyCoordinationApp.Authorization.SiteAdminRequirement);
+    }
+
+    /// <summary>
+    /// The /api gate evaluates <c>DefaultPolicy</c>'s requirements, not its authentication schemes (it can't
+    /// authenticate them). That is sound only while the default policy names no schemes.
+    /// </summary>
+    [Fact]
+    public void The_DefaultPolicy_names_no_authentication_schemes()
+    {
+        var options = _factory.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthorizationOptions>>().Value;
+
+        options.DefaultPolicy.AuthenticationSchemes.Should().BeEmpty(
+            "ApiLoginGateHandler would not authenticate a scheme listed here");
+    }
 
     [Fact]
     public void The_site_admin_routes_are_exactly_the_routes_carrying_the_SiteAdmin_policy()
@@ -284,8 +359,10 @@ public sealed class CentralAuthorizationTests(PostgresContainerFixture postgres)
     // ── The anonymous surface still answers as before ──────────────────────────────────────────
 
     /// <summary>
-    /// Anonymous routes off /api, with the status each returned on the pre-change tree (base d79f663, measured by this
-    /// fact before the gate landed).
+    /// The anonymous surface, with the status each returned on the pre-change tree (base d79f663, measured by this
+    /// fact before the gate landed), EXCEPT the two unknown-/api rows at the end: the deliberate behavior change. The
+    /// gate also guards a request that matches no endpoint, so an anonymous unknown /api path answers 401 where it
+    /// answered 404, and a wrong method 401 where it answered 405 (routing's 405 endpoint carries no auth metadata).
     /// </summary>
     public static TheoryData<string, string, HttpStatusCode> AnonymousSurface() => new()
     {
@@ -301,11 +378,14 @@ public sealed class CentralAuthorizationTests(PostgresContainerFixture postgres)
         { "GET", "/no-such-page", HttpStatusCode.NotFound },
         { "GET", "/api/calendar/meal-plan.ics?token=not-a-real-token", HttpStatusCode.NotFound },
         { "POST", "/api/chores/digest/run", HttpStatusCode.Unauthorized },
+        // Changed by the gate (base: 404 and 405).
+        { "GET", "/api/no-such-route", HttpStatusCode.Unauthorized },
+        { "POST", "/api/dashboard/", HttpStatusCode.Unauthorized },
     };
 
     [Theory]
     [MemberData(nameof(AnonymousSurface))]
-    public async Task An_anonymous_route_answers_as_it_did_before_the_gate(string method, string url, HttpStatusCode expected)
+    public async Task An_anonymous_route_answers_with_its_pinned_status(string method, string url, HttpStatusCode expected)
     {
         using var client = _factory.CreateAnonymousClient();
 

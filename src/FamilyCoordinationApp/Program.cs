@@ -346,10 +346,13 @@ builder.Services.AddAuthorization(options =>
         .AddRequirements(new WhitelistedEmailRequirement())
         .Build();
 
-    // The one site-admin access gate (quest 82fc7f54): the default policy plus the SITE_ADMIN_EMAILS check.
+    // The one site-admin access gate (quest 82fc7f54): the default policy plus the SITE_ADMIN_EMAILS check. Composed
+    // from DefaultPolicy, not a copy of its requirements, so a requirement added to the login policy also guards the
+    // admin routes (which carry their own metadata, so the fallback gate never runs for them). AddPolicy builds the
+    // policy immediately, so DefaultPolicy must be assigned above this line.
     options.AddPolicy(AuthorizationPolicies.SiteAdmin, policy => policy
-        .RequireAuthenticatedUser()
-        .AddRequirements(new WhitelistedEmailRequirement(), new SiteAdminRequirement()));
+        .Combine(options.DefaultPolicy)
+        .AddRequirements(new SiteAdminRequirement()));
 
     // The one login gate for /api (quest 82fc7f54). The fallback policy applies to every endpoint with no
     // authorization metadata, so an /api group needs no RequireAuthorization() of its own and one that omits it is

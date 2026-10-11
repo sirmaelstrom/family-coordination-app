@@ -17,6 +17,10 @@ public sealed class ApiLoginGateRequirement : IAuthorizationRequirement;
 /// app's <c>DefaultPolicy</c> (signed in + whitelisted, the policy a bare <c>RequireAuthorization()</c> applies) does.
 /// <para>When the resource isn't the request's <see cref="HttpContext"/> it cannot tell the path, so it fails closed.
 /// The authorization middleware always passes the <see cref="HttpContext"/>.</para>
+/// <para><b>Requirements, not schemes:</b> it evaluates <c>DefaultPolicy</c>'s requirements against the principal
+/// the request already authenticated with. It does not authenticate <c>DefaultPolicy.AuthenticationSchemes</c>,
+/// which are empty today (pinned by <c>CentralAuthorizationTests</c>); a scheme added there would need this handler
+/// to authenticate it first.</para>
 /// </summary>
 public sealed class ApiLoginGateHandler : AuthorizationHandler<ApiLoginGateRequirement>
 {

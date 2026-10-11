@@ -23,6 +23,7 @@ namespace FamilyCoordinationApp.Endpoints;
 /// branch (<see cref="ApiExceptionResponse"/>, quest 940b4022), not here:
 /// <see cref="ConcurrencyConflictException"/> → 409 (xmin conflict, M7/M12),
 /// <see cref="ChoreValidationException"/> → 400 (illegal transition / bad input, MN8),
+/// <see cref="HouseholdMembershipException"/> → 400 (a user id outside the household, or a disabled member newly assigned),
 /// <see cref="ChoreNotFoundException"/> → 404 (also covers cross-household access, M1).
 /// </summary>
 public static class ChoresEndpoints
@@ -117,8 +118,8 @@ public static class ChoresEndpoints
         }
         req = req with { PhotoPath = photoPath };
 
-        // A ChoreValidationException (400) / ChoreNotFoundException (404) / ConcurrencyConflictException (409) from any
-        // chore service call is answered by the /api exception branch (ApiExceptionResponse), not caught here.
+        // A ChoreValidationException or HouseholdMembershipException (400) / ChoreNotFoundException (404) /
+        // ConcurrencyConflictException (409) from any chore service call is answered by the /api exception branch.
         var chore = await svc.CreateChoreAsync(caller.HouseholdId, caller.UserId, req.ToCommand(), ct);
         return Results.Created($"/api/chores/{chore.ChoreId}", await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
     }
