@@ -169,7 +169,7 @@ public class RoomServiceTests : IDisposable
     {
         var act = async () => await _service.UpdateRoomAsync(householdId: 1, roomId: 999, name: "X", icon: "?", photoPath: null);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
+        await act.Should().ThrowAsync<NotFoundException>()
             .WithMessage("*999*not found*");
     }
 
@@ -308,7 +308,7 @@ public class RoomServiceTests : IDisposable
     {
         var act = async () => await _service.DeleteRoomAsync(householdId: 1, roomId: 999);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
+        await act.Should().ThrowAsync<NotFoundException>()
             .WithMessage("*999*not found*");
     }
 

@@ -3,7 +3,7 @@ using FamilyCoordinationApp.Constants;
 
 namespace FamilyCoordinationApp.Data.Entities;
 
-public class ShoppingListItem : Tenancy.ITenantEntity
+public class ShoppingListItem : Tenancy.ITenantEntity, IVersioned
 {
     public int HouseholdId { get; set; }
     public int ShoppingListId { get; set; }

@@ -168,8 +168,8 @@ public class ChoreSubtaskService(
     {
         return await context.ChoreSubtasks
             .FirstOrDefaultAsync(s => s.ChoreId == choreId && s.SubtaskId == subtaskId, ct)
-            ?? throw new ChoreNotFoundException(
-                $"Subtask {subtaskId} not found for chore {choreId} in household {householdId}.");
+            ?? throw new NotFoundException(
+                "Checklist item not found.", $"Subtask {subtaskId} not found for chore {choreId} in household {householdId}.");
     }
 
     private static string ValidateTitle(string? title)

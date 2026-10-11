@@ -6,9 +6,9 @@ namespace FamilyCoordinationApp.Services;
 /// a <c>DayOfMonth</c>-only recurrence (D4-B, monthly-on-day deferred), claiming a chore already held by
 /// someone else, dropping a chore the actor does not hold, dropping a deliberately-Assigned chore (drop is
 /// Claimed-only), or handing off to a user outside the household.
-/// <para>The endpoint layer (WP-06) maps this to <c>400 Bad Request</c>.</para>
+/// <para>The /api exception branch maps it to <c>400 Bad Request</c>; the message is client-facing.</para>
 /// </summary>
-public class ChoreValidationException : Exception
+public class ChoreValidationException : DomainValidationException
 {
     public ChoreValidationException(string message) : base(message)
     {
@@ -17,30 +17,15 @@ public class ChoreValidationException : Exception
 
 /// <summary>
 /// Thrown when a referenced chore does not exist for the household.
-/// <para>The endpoint layer (WP-06) maps this to <c>404 Not Found</c>.</para>
+/// <para>The /api exception branch maps it to <c>404 Not Found</c> with a fixed message; the constructor's
+/// message (which names ids) is log detail only.</para>
 /// </summary>
-public class ChoreNotFoundException : Exception
+public class ChoreNotFoundException : NotFoundException
 {
-    public ChoreNotFoundException(string message) : base(message)
+    public ChoreNotFoundException(string logDetail) : base("Chore not found.", logDetail)
     {
     }
 }
 
-/// <summary>
-/// Thrown when an optimistic-concurrency conflict is detected on the <c>Chore.Version</c> (xmin) token —
-/// another writer modified the row after the client read it (council M7/M12, C1). The service sets the
-/// client-supplied <c>version</c> as the EF <c>OriginalValue</c> before saving so a stale token surfaces a
-/// <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/>, which is rethrown as this type.
-/// <para>The endpoint layer (WP-06) maps this to <c>409 Conflict</c>. The real two-writer race is verified
-/// against Postgres in WP-08 — the InMemory provider never raises the underlying concurrency exception.</para>
-/// </summary>
-public class ChoreConflictException : Exception
-{
-    public ChoreConflictException(string message) : base(message)
-    {
-    }
-
-    public ChoreConflictException(string message, Exception innerException) : base(message, innerException)
-    {
-    }
-}
+// The optimistic-concurrency conflict on Chore.Version is ConcurrencyConflictException, raised by
+// Data.ConcurrencySave (quest 8cf3c806); the per-entity ChoreConflictException is gone.

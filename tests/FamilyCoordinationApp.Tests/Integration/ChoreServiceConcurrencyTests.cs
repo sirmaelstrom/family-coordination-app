@@ -12,7 +12,7 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// <summary>
 /// THE operator-mandated centerpiece (VG1 / M7 / M12), verified against REAL PostgreSQL at the service layer:
 /// the <c>xmin</c> optimistic-concurrency token on <c>Chore</c> surfaces a two-writer race as a
-/// <see cref="ChoreConflictException"/> (which WP-06 maps to HTTP 409) — exactly one writer wins, the other is
+/// <see cref="ConcurrencyConflictException"/> (which WP-06 maps to HTTP 409) — exactly one writer wins, the other is
 /// rejected; never last-write-wins. This is the seam the InMemory provider CANNOT exercise: InMemory has no
 /// <c>xmin</c> system column and silently ignores the rowversion, so both racers would "win" (the latent bug).
 /// <para>This drives the REAL production <see cref="ChoreService"/> + <see cref="ApplicationDbContext"/>
@@ -104,7 +104,7 @@ public sealed class ChoreServiceConcurrencyTests(PostgresContainerFixture postgr
         // post-commit state and be rejected by the "already held" validation guard instead of exercising the
         // xmin token. A save barrier forces the genuine write-write race: both ClaimAsync calls reach
         // SaveChanges before either commits, so exactly one wins on xmin and the other gets a real
-        // DbUpdateConcurrencyException -> ChoreConflictException (the 409 path). This is precisely the seam
+        // DbUpdateConcurrencyException -> ConcurrencyConflictException (the 409 path). This is precisely the seam
         // InMemory cannot test (it ignores the rowversion and would let BOTH win).
         var version = await ReadVersionAsync();
         version.Should().NotBe(0u, "real Postgres assigns a non-zero xmin to a committed row");
@@ -127,7 +127,7 @@ public sealed class ChoreServiceConcurrencyTests(PostgresContainerFixture postgr
         var conflicts = results.Count(r => r.Conflict);
 
         wins.Should().Be(1, "exactly one concurrent claim must win — two wins would mean xmin is not enforced (last-write-wins, the bug this verifies against)");
-        conflicts.Should().Be(1, "exactly one concurrent claim must lose with a ChoreConflictException (the xmin 409 path)");
+        conflicts.Should().Be(1, "exactly one concurrent claim must lose with a ConcurrencyConflictException (the xmin 409 path)");
         results.Should().NotContain(r => r.OtherError, "the loser must be an xmin conflict, not the 'already held' validation guard");
 
         // The loser did NOT overwrite the winner: real DB state shows exactly one claimer with an advanced xmin.
@@ -157,9 +157,9 @@ public sealed class ChoreServiceConcurrencyTests(PostgresContainerFixture postgr
 
         await _service.DropAsync(HouseholdId, PileChoreId, Alice, afterClaim.Version);
 
-        // Re-using the stale version must throw ChoreConflictException (→ HTTP 409), not silently succeed.
+        // Re-using the stale version must throw ConcurrencyConflictException (→ HTTP 409), not silently succeed.
         var act = async () => await _service.ClaimAsync(HouseholdId, PileChoreId, Bob, staleVersion);
-        await act.Should().ThrowAsync<ChoreConflictException>();
+        await act.Should().ThrowAsync<ConcurrencyConflictException>();
     }
 
     private static async Task<ClaimResult> Attempt(Func<Task<Chore>> claim)
@@ -169,7 +169,7 @@ public sealed class ChoreServiceConcurrencyTests(PostgresContainerFixture postgr
             await claim();
             return new ClaimResult(Success: true, Conflict: false, OtherError: false);
         }
-        catch (ChoreConflictException)
+        catch (ConcurrencyConflictException)
         {
             return new ClaimResult(Success: false, Conflict: true, OtherError: false);
         }

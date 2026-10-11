@@ -70,7 +70,7 @@ public class RoomService(
 
         var room = await context.Rooms
             .FirstOrDefaultAsync(r => r.RoomId == roomId, cancellationToken)
-            ?? throw new InvalidOperationException($"Room {roomId} not found for household {householdId}");
+            ?? throw new NotFoundException("Room not found.", $"Room {roomId} not found for household {householdId}");
 
         // Delete-on-replace (M8): if the photo path changed and there was an old image, remove the old
         // file from disk. EF does not touch the filesystem. Done before SaveChanges so a failed save does
@@ -98,7 +98,7 @@ public class RoomService(
 
         var room = await context.Rooms
             .FirstOrDefaultAsync(r => r.RoomId == roomId, cancellationToken)
-            ?? throw new InvalidOperationException($"Room {roomId} not found for household {householdId}");
+            ?? throw new NotFoundException("Room not found.", $"Room {roomId} not found for household {householdId}");
 
         // Phase 13 (M:N): remove this room's ChoreRoom membership rows BEFORE the room row, in the SAME
         // SaveChanges (M1, M4 — explicit delete, never DB cascade; the ChoreRoom→Room FK is ClientNoAction).

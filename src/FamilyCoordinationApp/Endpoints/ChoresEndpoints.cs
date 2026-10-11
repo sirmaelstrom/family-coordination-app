@@ -19,8 +19,9 @@ namespace FamilyCoordinationApp.Endpoints;
 /// taking the HouseholdId/UserId of the authenticated caller (M1, never client-supplied) as the
 /// <see cref="CallerScope"/> that <see cref="CallerTenantMiddleware"/> resolved. Writes delegate to <see cref="IChoreService"/>; the board read +
 /// the per-mutation response projection delegate to <see cref="IChoreBoardService"/> (ONE projection — no
-/// card/mutation-response drift, M9). The service's typed exceptions map to HTTP status:
-/// <see cref="ChoreConflictException"/> → 409 (xmin conflict, M7/M12),
+/// card/mutation-response drift, M9). The service's typed exceptions map to HTTP status at the /api exception
+/// branch (<see cref="ApiExceptionResponse"/>, quest 940b4022), not here:
+/// <see cref="ConcurrencyConflictException"/> → 409 (xmin conflict, M7/M12),
 /// <see cref="ChoreValidationException"/> → 400 (illegal transition / bad input, MN8),
 /// <see cref="ChoreNotFoundException"/> → 404 (also covers cross-household access, M1).
 /// </summary>
@@ -116,15 +117,10 @@ public static class ChoresEndpoints
         }
         req = req with { PhotoPath = photoPath };
 
-        try
-        {
-            var chore = await svc.CreateChoreAsync(caller.HouseholdId, caller.UserId, req.ToCommand(), ct);
-            return Results.Created($"/api/chores/{chore.ChoreId}", await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
-        }
-        catch (ChoreValidationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
+        // A ChoreValidationException (400) / ChoreNotFoundException (404) / ConcurrencyConflictException (409) from any
+        // chore service call is answered by the /api exception branch (ApiExceptionResponse), not caught here.
+        var chore = await svc.CreateChoreAsync(caller.HouseholdId, caller.UserId, req.ToCommand(), ct);
+        return Results.Created($"/api/chores/{chore.ChoreId}", await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
     }
 
     private static async Task<IResult> UpdateChore(
@@ -151,14 +147,8 @@ public static class ChoresEndpoints
         }
         req = req with { PhotoPath = photoPath };
 
-        try
-        {
-            var chore = await svc.UpdateChoreAsync(caller.HouseholdId, choreId, req.ToCommand(), req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
-        }
-        catch (ChoreNotFoundException) { return Results.NotFound(); }
-        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
-        catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+        var chore = await svc.UpdateChoreAsync(caller.HouseholdId, choreId, req.ToCommand(), req.Version, ct);
+        return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
     }
 
     private static async Task<IResult> DeleteChore(
@@ -168,13 +158,8 @@ public static class ChoresEndpoints
         IChoreService svc,
         CancellationToken ct)
     {
-        try
-        {
-            await svc.DeleteChoreAsync(caller.HouseholdId, choreId, req.Version, ct);
-            return Results.NoContent();
-        }
-        catch (ChoreNotFoundException) { return Results.NotFound(); }
-        catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+        await svc.DeleteChoreAsync(caller.HouseholdId, choreId, req.Version, ct);
+        return Results.NoContent();
     }
 
     // ─── Claim state machine ──────────────────────────────────────────────────────
@@ -190,14 +175,8 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        try
-        {
-            var chore = await svc.ClaimAsync(caller.HouseholdId, choreId, caller.UserId, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
-        }
-        catch (ChoreNotFoundException) { return Results.NotFound(); }
-        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
-        catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+        var chore = await svc.ClaimAsync(caller.HouseholdId, choreId, caller.UserId, req.Version, ct);
+        return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
     }
 
     private static async Task<IResult> TakeChore(
@@ -211,14 +190,8 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        try
-        {
-            var chore = await svc.TakeAsync(caller.HouseholdId, choreId, caller.UserId, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
-        }
-        catch (ChoreNotFoundException) { return Results.NotFound(); }
-        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
-        catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+        var chore = await svc.TakeAsync(caller.HouseholdId, choreId, caller.UserId, req.Version, ct);
+        return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
     }
 
     private static async Task<IResult> DropChore(
@@ -232,14 +205,8 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        try
-        {
-            var chore = await svc.DropAsync(caller.HouseholdId, choreId, caller.UserId, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
-        }
-        catch (ChoreNotFoundException) { return Results.NotFound(); }
-        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
-        catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+        var chore = await svc.DropAsync(caller.HouseholdId, choreId, caller.UserId, req.Version, ct);
+        return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
     }
 
     private static async Task<IResult> HandOffChore(
@@ -253,14 +220,8 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        try
-        {
-            var chore = await svc.HandOffAsync(caller.HouseholdId, choreId, caller.UserId, req.TargetUserId, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
-        }
-        catch (ChoreNotFoundException) { return Results.NotFound(); }
-        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
-        catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+        var chore = await svc.HandOffAsync(caller.HouseholdId, choreId, caller.UserId, req.TargetUserId, req.Version, ct);
+        return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
     }
 
     private static async Task<IResult> CompleteChore(
@@ -279,15 +240,9 @@ public static class ChoresEndpoints
             return Results.BadRequest(new { message = "Photo path is not valid." });
         }
 
-        try
-        {
-            var chore = await svc.CompleteAsync(
-                caller.HouseholdId, choreId, caller.UserId, req.Note, photoPath, req.ParticipantUserIds, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
-        }
-        catch (ChoreNotFoundException) { return Results.NotFound(); }
-        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
-        catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+        var chore = await svc.CompleteAsync(
+            caller.HouseholdId, choreId, caller.UserId, req.Note, photoPath, req.ParticipantUserIds, req.Version, ct);
+        return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
     }
 
     // ─── Snooze / set-next-due (the board quick-snooze path) ────────────────────────
@@ -319,14 +274,8 @@ public static class ChoresEndpoints
             return Results.BadRequest(new { message = error });
         }
 
-        try
-        {
-            var chore = await svc.SnoozeAsync(caller.HouseholdId, choreId, caller.UserId, until, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
-        }
-        catch (ChoreNotFoundException) { return Results.NotFound(); }
-        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
-        catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+        var chore = await svc.SnoozeAsync(caller.HouseholdId, choreId, caller.UserId, until, req.Version, ct);
+        return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
     }
 
     /// <summary>
@@ -395,14 +344,8 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        try
-        {
-            var chore = await svc.AssignToRosterAsync(caller.HouseholdId, choreId, caller.UserId, req.SubjectUserId, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
-        }
-        catch (ChoreNotFoundException) { return Results.NotFound(); }
-        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
-        catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+        var chore = await svc.AssignToRosterAsync(caller.HouseholdId, choreId, caller.UserId, req.SubjectUserId, req.Version, ct);
+        return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
     }
 
     private static async Task<IResult> CommitRoster(
@@ -416,14 +359,8 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        try
-        {
-            var chore = await svc.CommitToRosterAsync(caller.HouseholdId, choreId, caller.UserId, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
-        }
-        catch (ChoreNotFoundException) { return Results.NotFound(); }
-        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
-        catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+        var chore = await svc.CommitToRosterAsync(caller.HouseholdId, choreId, caller.UserId, req.Version, ct);
+        return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
     }
 
     private static async Task<IResult> LeaveRoster(
@@ -437,14 +374,8 @@ public static class ChoresEndpoints
         IDbContextFactory<ApplicationDbContext> dbFactory,
         CancellationToken ct)
     {
-        try
-        {
-            var chore = await svc.LeaveRosterAsync(caller.HouseholdId, choreId, caller.UserId, req.SubjectUserId, req.Version, ct);
-            return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
-        }
-        catch (ChoreNotFoundException) { return Results.NotFound(); }
-        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
-        catch (ChoreConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+        var chore = await svc.LeaveRosterAsync(caller.HouseholdId, choreId, caller.UserId, req.SubjectUserId, req.Version, ct);
+        return Results.Ok(await Project(boardService, chore, timeProvider, timeZone, dbFactory, caller.HouseholdId, ct));
     }
 
     // ─── Photo upload (dedicated multipart route, council C2) ───────────────────────
@@ -458,15 +389,9 @@ public static class ChoresEndpoints
     {
         if (file is null || file.Length == 0) return Results.BadRequest(new { message = "File is required" });
 
-        try
-        {
-            var path = await imageService.SaveImageAsync(file, caller.HouseholdId, ct);
-            return Results.Ok(new { photoPath = path });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
+        // Size / extension / content-type refusals are DomainValidationException → 400 at the /api branch.
+        var path = await imageService.SaveImageAsync(file, caller.HouseholdId, ct);
+        return Results.Ok(new { photoPath = path });
     }
 
     // ─── Checklist / subtasks (Phase 14 — versionless, last-write-wins) ─────────────
@@ -478,13 +403,8 @@ public static class ChoresEndpoints
         IChoreSubtaskService svc,
         CancellationToken ct)
     {
-        try
-        {
-            var dto = await svc.CreateAsync(caller.HouseholdId, choreId, req.Title, ct);
-            return Results.Ok(dto);
-        }
-        catch (ChoreNotFoundException) { return Results.NotFound(); }
-        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
+        var dto = await svc.CreateAsync(caller.HouseholdId, choreId, req.Title, ct);
+        return Results.Ok(dto);
     }
 
     private static async Task<IResult> UpdateSubtask(
@@ -495,14 +415,9 @@ public static class ChoresEndpoints
         IChoreSubtaskService svc,
         CancellationToken ct)
     {
-        try
-        {
-            // caller.UserId is the "who ticked it" actor captured when this flips the item to done (M1).
-            var dto = await svc.UpdateAsync(caller.HouseholdId, choreId, subtaskId, caller.UserId, req.Title, req.IsDone, req.SortOrder, ct);
-            return Results.Ok(dto);
-        }
-        catch (ChoreNotFoundException) { return Results.NotFound(); }
-        catch (ChoreValidationException ex) { return Results.BadRequest(new { message = ex.Message }); }
+        // caller.UserId is the "who ticked it" actor captured when this flips the item to done (M1).
+        var dto = await svc.UpdateAsync(caller.HouseholdId, choreId, subtaskId, caller.UserId, req.Title, req.IsDone, req.SortOrder, ct);
+        return Results.Ok(dto);
     }
 
     private static async Task<IResult> ReorderSubtasks(
@@ -533,12 +448,8 @@ public static class ChoresEndpoints
         IChoreSubtaskService svc,
         CancellationToken ct)
     {
-        try
-        {
-            await svc.DeleteAsync(caller.HouseholdId, choreId, subtaskId, ct);
-            return Results.NoContent();
-        }
-        catch (ChoreNotFoundException) { return Results.NotFound(); }
+        await svc.DeleteAsync(caller.HouseholdId, choreId, subtaskId, ct);
+        return Results.NoContent();
     }
 
     // ─── Per-user default lens (D18, council M7 pinned route) ───────────────────────
@@ -858,16 +769,10 @@ public static class ChoresEndpoints
         IDigestSettingsService settingsService,
         CancellationToken ct)
     {
-        try
-        {
-            await settingsService.UpdateAsync(caller.HouseholdId, req.ToUpdate(), ct);
-            var view = await settingsService.GetAsync(caller.HouseholdId, ct);
-            return Results.Ok(view);
-        }
-        catch (DigestSettingsValidationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
+        // DigestSettingsValidationException → 400 at the /api exception branch.
+        await settingsService.UpdateAsync(caller.HouseholdId, req.ToUpdate(), ct);
+        var view = await settingsService.GetAsync(caller.HouseholdId, ct);
+        return Results.Ok(view);
     }
 
     // ─── Dev backfill (v1.1 WP-06, E15) ──────────────────────────────────────────────

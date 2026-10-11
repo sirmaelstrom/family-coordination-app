@@ -775,11 +775,11 @@ public class ChoreServiceTests : IDisposable
     // ---- CONCURRENCY MAPPING (not the xmin detection — that's WP-08) -------
 
     [Fact]
-    public async Task Mutation_WhenSaveRaisesConcurrencyException_SurfacesChoreConflictException()
+    public async Task Mutation_WhenSaveRaisesConcurrencyException_SurfacesConcurrencyConflictException()
     {
         // The InMemory provider never raises DbUpdateConcurrencyException, so we cannot trigger a REAL xmin
         // race here (that is WP-08's Postgres job). Instead we verify the MAPPING in isolation: a context
-        // whose SaveChangesAsync throws DbUpdateConcurrencyException must surface as ChoreConflictException so
+        // whose SaveChangesAsync throws DbUpdateConcurrencyException must surface as ConcurrencyConflictException so
         // the endpoint (WP-06) maps it to 409.
         var dbName = Guid.NewGuid().ToString();
         var throwingOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -821,7 +821,7 @@ public class ChoreServiceTests : IDisposable
 
         var act = async () => await service.ClaimAsync(HouseholdId, choreId: 1, Alice, version: 0);
 
-        (await act.Should().ThrowAsync<ChoreConflictException>())
+        (await act.Should().ThrowAsync<ConcurrencyConflictException>())
             .WithInnerException(typeof(DbUpdateConcurrencyException));
     }
 

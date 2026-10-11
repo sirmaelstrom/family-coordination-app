@@ -101,7 +101,7 @@ public class HouseholdConnectionService(
 
         if (activeInvites.Count > 0)
         {
-            await context.SaveChangesAsync(cancellationToken);
+            await context.SaveChangesOrConflictAsync(cancellationToken);
             logger.LogInformation("Invalidated {Count} active invite(s) for household {HouseholdId}",
                 activeInvites.Count, householdId);
         }
@@ -222,7 +222,8 @@ public class HouseholdConnectionService(
             // write (D9). Inert until WP-03's write step.
             using (context.Tenant.AllowCrossTenantWrite("invite accept writes UsedByHouseholdId on the inviting household's row"))
             {
-                await context.SaveChangesAsync(cancellationToken);
+                // Checked against the invite's loaded xmin: a concurrent accept of the same code is a 409, not a 500.
+                await context.SaveChangesOrConflictAsync(cancellationToken);
             }
             await transaction.CommitAsync(cancellationToken);
 
@@ -238,7 +239,15 @@ public class HouseholdConnectionService(
         catch (Exception ex)
         {
             await transaction.RollbackAsync(cancellationToken);
-            logger.LogError(ex, "Failed to accept invite code for household {HouseholdId}", acceptingHouseholdId);
+            if (ex is DomainException)
+            {
+                // An expected refusal (a concurrent accept's ConcurrencyConflictException → 409), not a fault: no Error line.
+                logger.LogInformation("Invite accept for household {HouseholdId} refused: {Reason}", acceptingHouseholdId, ex.Message);
+            }
+            else
+            {
+                logger.LogError(ex, "Failed to accept invite code for household {HouseholdId}", acceptingHouseholdId);
+            }
             throw;
         }
     }

@@ -138,14 +138,14 @@ public sealed class ChoreServiceSnoozeTests(PostgresContainerFixture postgres) :
     [Fact]
     public async Task SnoozeAsync_StaleVersion_Throws_OnRealPostgres()
     {
-        // V8. A stale xmin token must surface as ChoreConflictException (→ 409), never last-write-wins.
+        // V8. A stale xmin token must surface as ConcurrencyConflictException (→ 409), never last-write-wins.
         var staleVersion = (await ReloadAsync(FixedWeeklyChoreId)).Version;
 
         var first = await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, Alice, new DateOnly(2026, 6, 20), staleVersion);
         first.Version.Should().NotBe(staleVersion);
 
         var act = async () => await _service.SnoozeAsync(HouseholdId, FixedWeeklyChoreId, Alice, new DateOnly(2026, 6, 22), staleVersion);
-        await act.Should().ThrowAsync<ChoreConflictException>();
+        await act.Should().ThrowAsync<ConcurrencyConflictException>();
     }
 
     [Fact]

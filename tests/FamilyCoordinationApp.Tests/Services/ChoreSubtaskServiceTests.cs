@@ -279,7 +279,8 @@ public class ChoreSubtaskServiceTests : IDisposable
     public async Task Update_MissingSubtask_ThrowsNotFound()
     {
         var act = async () => await _service.UpdateAsync(HouseholdId, _choreInHouseholdId, subtaskId: 9999, actingUserId: Alice, title: "X", isDone: null, sortOrder: null);
-        await act.Should().ThrowAsync<ChoreNotFoundException>();
+        // The chore exists; the checklist item doesn't. The message must name the item, not the chore.
+        (await act.Should().ThrowAsync<NotFoundException>()).Which.ClientMessage.Should().Be("Checklist item not found.");
     }
 
     // ---- REORDER ------------------------------------------------------------
@@ -351,6 +352,6 @@ public class ChoreSubtaskServiceTests : IDisposable
     public async Task Delete_MissingSubtask_ThrowsNotFound()
     {
         var act = async () => await _service.DeleteAsync(HouseholdId, _choreInHouseholdId, subtaskId: 9999);
-        await act.Should().ThrowAsync<ChoreNotFoundException>();
+        (await act.Should().ThrowAsync<NotFoundException>()).Which.ClientMessage.Should().Be("Checklist item not found.");
     }
 }

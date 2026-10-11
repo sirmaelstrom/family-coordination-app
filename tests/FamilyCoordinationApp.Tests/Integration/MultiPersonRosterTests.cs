@@ -104,7 +104,7 @@ public sealed class MultiPersonRosterTests(PostgresContainerFixture postgres)
         results.Count(r => r.Won).Should().Be(1,
             "exactly one commit succeeds at the shared version — two wins would mean xmin did NOT serialize the roster writes");
         results.Count(r => r.Conflicted).Should().Be(1,
-            "the loser MUST get a ChoreConflictException once the winner bumped xmin (M3/E1)");
+            "the loser MUST get a ConcurrencyConflictException once the winner bumped xmin (M3/E1)");
 
         // Exactly one participation event landed (the winner's); the loser would re-submit against the refreshed version.
         await using var ctx = dbFactory.CreateDbContext();
@@ -176,7 +176,7 @@ public sealed class MultiPersonRosterTests(PostgresContainerFixture postgres)
             await svc.CommitToRosterAsync(hh, choreId, actor, version);
             return new RosterAttempt(Won: true, Conflicted: false);
         }
-        catch (ChoreConflictException)
+        catch (ConcurrencyConflictException)
         {
             return new RosterAttempt(Won: false, Conflicted: true);
         }

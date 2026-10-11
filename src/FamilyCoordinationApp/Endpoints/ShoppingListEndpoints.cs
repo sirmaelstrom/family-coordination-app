@@ -220,17 +220,10 @@ public static class ShoppingListEndpoints
             return Results.Conflict(new { message = "This list is not linked to a meal plan." });
         }
 
-        try
-        {
-            var updated = await generator.RegenerateShoppingListAsync(caller.HouseholdId, listId, ct);
-            return Results.Ok(ToListDto(updated));
-        }
-        catch (InvalidOperationException)
-        {
-            // The MealPlanId pre-check passed but the plan row itself is gone (deleted since) —
-            // a client-resolvable state, not a server fault.
-            return Results.Conflict(new { message = "The linked meal plan no longer exists." });
-        }
+        // The MealPlanId pre-check passed but the plan row itself is gone (deleted since): the generator throws a
+        // ConflictException ("The linked meal plan no longer exists.") → 409 at the /api exception branch.
+        var updated = await generator.RegenerateShoppingListAsync(caller.HouseholdId, listId, ct);
+        return Results.Ok(ToListDto(updated));
     }
 
     private static async Task<IResult> ToggleFavorite(
@@ -239,15 +232,9 @@ public static class ShoppingListEndpoints
         IShoppingListService svc,
         CancellationToken ct)
     {
-        try
-        {
-            var updated = await svc.ToggleFavoriteAsync(caller.HouseholdId, listId, ct);
-            return Results.Ok(new { id = updated.ShoppingListId, isFavorite = updated.IsFavorite });
-        }
-        catch (KeyNotFoundException)
-        {
-            return Results.NotFound();
-        }
+        // A missing list is NotFoundException → 404 at the /api exception branch.
+        var updated = await svc.ToggleFavoriteAsync(caller.HouseholdId, listId, ct);
+        return Results.Ok(new { id = updated.ShoppingListId, isFavorite = updated.IsFavorite });
     }
 
     private static async Task<IResult> ArchiveList(
@@ -256,15 +243,8 @@ public static class ShoppingListEndpoints
         IShoppingListService svc,
         CancellationToken ct)
     {
-        try
-        {
-            await svc.ArchiveShoppingListAsync(caller.HouseholdId, listId, ct);
-            return Results.NoContent();
-        }
-        catch (KeyNotFoundException)
-        {
-            return Results.NotFound();
-        }
+        await svc.ArchiveShoppingListAsync(caller.HouseholdId, listId, ct);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> RenameList(
@@ -279,15 +259,8 @@ public static class ShoppingListEndpoints
         if (archived is null) return Results.NotFound();
         if (archived == true) return ArchivedListConflict;
 
-        try
-        {
-            var updated = await svc.RenameShoppingListAsync(caller.HouseholdId, listId, req.Name.Trim(), ct);
-            return Results.Ok(new { id = updated.ShoppingListId, name = updated.Name });
-        }
-        catch (KeyNotFoundException)
-        {
-            return Results.NotFound();
-        }
+        var updated = await svc.RenameShoppingListAsync(caller.HouseholdId, listId, req.Name.Trim(), ct);
+        return Results.Ok(new { id = updated.ShoppingListId, name = updated.Name });
     }
 
     private static async Task<IResult> ClearChecked(
@@ -446,15 +419,8 @@ public static class ShoppingListEndpoints
         if (archived is null) return Results.NotFound();
         if (archived == true) return ArchivedListConflict;
 
-        try
-        {
-            await svc.DeleteItemAsync(caller.HouseholdId, listId, itemId, ct);
-            return Results.NoContent();
-        }
-        catch (KeyNotFoundException)
-        {
-            return Results.NotFound();
-        }
+        await svc.DeleteItemAsync(caller.HouseholdId, listId, itemId, ct);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> UpdateSortOrders(

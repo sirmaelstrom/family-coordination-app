@@ -11,7 +11,7 @@ namespace FamilyCoordinationApp.Services.Interfaces;
 /// <c>ChoreDto</c> via the WP-05 projection — keeping the DTO definition entirely in WP-05's file
 /// (the two are disjoint same-wave packages).</para>
 /// <para><b>Concurrency:</b> mutating methods take the client's <paramref name="version"/> (xmin) token and
-/// surface a stale token as <see cref="ChoreConflictException"/> (→ 409). Illegal transitions /
+/// surface a stale token as <see cref="ConcurrencyConflictException"/> (→ 409). Illegal transitions /
 /// validation failures throw <see cref="ChoreValidationException"/> (→ 400); a missing chore throws
 /// <see cref="ChoreNotFoundException"/> (→ 404).</para>
 /// <para><b>HouseholdId</b> is always supplied by the caller from <c>ResolveUserAsync</c> (M1) — never
@@ -34,7 +34,7 @@ public interface IChoreService
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore in the household.</exception>
     /// <exception cref="ChoreValidationException">Invalid name / recurrence.</exception>
-    /// <exception cref="ChoreConflictException">The client <paramref name="version"/> is stale.</exception>
+    /// <exception cref="ConcurrencyConflictException">The client <paramref name="version"/> is stale.</exception>
     Task<Chore> UpdateChoreAsync(int householdId, int choreId, UpdateChoreCommand cmd, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -42,7 +42,7 @@ public interface IChoreService
     /// concurrency checked against <paramref name="version"/>.
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore in the household.</exception>
-    /// <exception cref="ChoreConflictException">The client <paramref name="version"/> is stale.</exception>
+    /// <exception cref="ConcurrencyConflictException">The client <paramref name="version"/> is stale.</exception>
     Task DeleteChoreAsync(int householdId, int choreId, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -52,7 +52,7 @@ public interface IChoreService
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore in the household.</exception>
     /// <exception cref="ChoreValidationException">The chore is already held (illegal transition, MN8).</exception>
-    /// <exception cref="ChoreConflictException">The client <paramref name="version"/> is stale.</exception>
+    /// <exception cref="ConcurrencyConflictException">The client <paramref name="version"/> is stale.</exception>
     Task<Chore> ClaimAsync(int householdId, int choreId, int actorUserId, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -65,7 +65,7 @@ public interface IChoreService
     /// and appends a <c>ChoreEvent{Claimed}</c>.
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore in the household.</exception>
-    /// <exception cref="ChoreConflictException">The client <paramref name="version"/> is stale.</exception>
+    /// <exception cref="ConcurrencyConflictException">The client <paramref name="version"/> is stale.</exception>
     Task<Chore> TakeAsync(int householdId, int choreId, int actorUserId, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -76,7 +76,7 @@ public interface IChoreService
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore in the household.</exception>
     /// <exception cref="ChoreValidationException">Actor does not hold it, or the hold is Assigned (illegal transition, MN8).</exception>
-    /// <exception cref="ChoreConflictException">The client <paramref name="version"/> is stale.</exception>
+    /// <exception cref="ConcurrencyConflictException">The client <paramref name="version"/> is stale.</exception>
     Task<Chore> DropAsync(int householdId, int choreId, int actorUserId, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -87,7 +87,7 @@ public interface IChoreService
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore in the household.</exception>
     /// <exception cref="ChoreValidationException">The target is outside the household (illegal transition, MN8).</exception>
-    /// <exception cref="ChoreConflictException">The client <paramref name="version"/> is stale.</exception>
+    /// <exception cref="ConcurrencyConflictException">The client <paramref name="version"/> is stale.</exception>
     Task<Chore> HandOffAsync(int householdId, int choreId, int actorUserId, int? targetUserId, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -109,7 +109,7 @@ public interface IChoreService
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore in the household.</exception>
     /// <exception cref="ChoreValidationException">A named participant is outside the household, or nothing new would be recorded (the actor already contributed, D6).</exception>
-    /// <exception cref="ChoreConflictException">The client <paramref name="version"/> is stale.</exception>
+    /// <exception cref="ConcurrencyConflictException">The client <paramref name="version"/> is stale.</exception>
     Task<Chore> CompleteAsync(int householdId, int choreId, int actorUserId, string? note, string? photoPath, IReadOnlyList<int>? participantUserIds, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -119,7 +119,7 @@ public interface IChoreService
     /// <c>LastCompletedAt</c> (M6 — a snooze is not a completion).
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore in the household.</exception>
-    /// <exception cref="ChoreConflictException">The client <paramref name="version"/> is stale.</exception>
+    /// <exception cref="ConcurrencyConflictException">The client <paramref name="version"/> is stale.</exception>
     Task<Chore> SnoozeAsync(int householdId, int choreId, int actorUserId, DateOnly? until, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -129,7 +129,7 @@ public interface IChoreService
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore.</exception>
     /// <exception cref="ChoreValidationException">Single-person chore, or subject outside the household.</exception>
-    /// <exception cref="ChoreConflictException">Stale <paramref name="version"/>.</exception>
+    /// <exception cref="ConcurrencyConflictException">Stale <paramref name="version"/>.</exception>
     Task<Chore> AssignToRosterAsync(int householdId, int choreId, int actorUserId, int subjectUserId, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -139,7 +139,7 @@ public interface IChoreService
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore.</exception>
     /// <exception cref="ChoreValidationException">Single-person chore.</exception>
-    /// <exception cref="ChoreConflictException">Stale <paramref name="version"/>.</exception>
+    /// <exception cref="ConcurrencyConflictException">Stale <paramref name="version"/>.</exception>
     Task<Chore> CommitToRosterAsync(int householdId, int choreId, int actorUserId, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -150,6 +150,6 @@ public interface IChoreService
     /// </summary>
     /// <exception cref="ChoreNotFoundException">No such chore.</exception>
     /// <exception cref="ChoreValidationException">Single-person chore, or removing another without authority.</exception>
-    /// <exception cref="ChoreConflictException">Stale <paramref name="version"/>.</exception>
+    /// <exception cref="ConcurrencyConflictException">Stale <paramref name="version"/>.</exception>
     Task<Chore> LeaveRosterAsync(int householdId, int choreId, int actorUserId, int? subjectUserId, uint version, CancellationToken cancellationToken = default);
 }

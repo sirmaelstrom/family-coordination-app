@@ -72,7 +72,7 @@ public class ShoppingListGenerator(
 
         if (mealPlan == null)
         {
-            throw new InvalidOperationException($"MealPlan {mealPlanId} not found for household {householdId}");
+            throw new NotFoundException("Meal plan not found.", $"MealPlan {mealPlanId} not found for household {householdId}");
         }
 
         // Filter entries by date range if provided
@@ -159,12 +159,13 @@ public class ShoppingListGenerator(
             .Where(sl => sl.ShoppingListId == shoppingListId)
             .Include(sl => sl.Items)
             .FirstOrDefaultAsync(cancellationToken)
-            ?? throw new InvalidOperationException(
-                $"ShoppingList {shoppingListId} not found for household {householdId}");
+            ?? throw new NotFoundException(
+                "Shopping list not found.", $"ShoppingList {shoppingListId} not found for household {householdId}");
 
         if (existingList.MealPlanId == null)
         {
-            throw new InvalidOperationException($"ShoppingList {shoppingListId} is not linked to a meal plan");
+            throw new ConflictException(
+                "This list is not linked to a meal plan.", $"ShoppingList {shoppingListId} is not linked to a meal plan");
         }
 
         // Outgoing generated rows keyed by the CONSOLIDATOR'S identity — (normalized name, category),
@@ -182,8 +183,9 @@ public class ShoppingListGenerator(
                 .ThenInclude(e => e.Recipe)
                     .ThenInclude(r => r!.Ingredients)
             .FirstOrDefaultAsync(cancellationToken)
-            ?? throw new InvalidOperationException(
-                $"MealPlan {existingList.MealPlanId} not found for household {householdId}");
+            // The list's link survives but the plan row is gone (deleted since): a client-resolvable state (409).
+            ?? throw new ConflictException(
+                "The linked meal plan no longer exists.", $"MealPlan {existingList.MealPlanId} not found for household {householdId}");
 
         // Generate fresh consolidation from meal plan, honouring each entry's servings the same way generation
         // does — so a regenerate after changing an entry's servings reflects the change.

@@ -19,7 +19,7 @@ namespace FamilyCoordinationApp.Endpoints;
 /// card/response drift, M9).
 ///
 /// <para>Entry mutations carry the row's xmin token and answer <b>409</b> on a stale one (PR #95, the house
-/// pattern — see <see cref="FamilyCoordinationApp.Services.MealPlanConflictException"/>): move, set-servings
+/// pattern — see <see cref="FamilyCoordinationApp.Services.ConcurrencyConflictException"/>): move, set-servings
 /// and remove all take a <c>version</c>, remove carrying it in the DELETE body as the chores DELETE does.
 /// <b>Add is the exception</b>, and only because it creates the row — there is no prior version to be stale.
 /// A remove of a missing entry → 404 (the island treats any 4xx as a non-retryable refetch).</para>
@@ -82,8 +82,8 @@ public static class MealPlanEndpoints
         IRecipeService recipeService,
         CancellationToken ct)
     {
-        // XOR: exactly one of recipeId / customMealName. The service also guards (throws
-        // InvalidOperationException), but validate here for a clean 400 rather than a 500.
+        // XOR: exactly one of recipeId / customMealName. The service also guards (DomainValidationException → 400);
+        // validating here keeps the message specific to this request's field names.
         var hasRecipe = req.RecipeId.HasValue;
         var hasCustom = !string.IsNullOrWhiteSpace(req.CustomMealName);
         if (hasRecipe == hasCustom)
@@ -129,28 +129,12 @@ public static class MealPlanEndpoints
         IMealPlanBoardService boardService,
         CancellationToken ct)
     {
-        try
-        {
-            // Household-scoped move to another same-week slot (drag-to-assign). The service loads the
-            // Recipe nav, so the response reuses the ONE board projection (M9) with no extra query.
-            var entry = await mealPlanService.MoveMealAsync(
-                caller.HouseholdId, mealPlanId, entryId, req.Date, req.MealType, req.Version, caller.UserId, ct);
-            return Results.Ok(boardService.ProjectEntry(entry, entry.Recipe));
-        }
-        catch (MealPlanConflictException ex)
-        {
-            return Results.Conflict(new { message = ex.Message });
-        }
-        catch (InvalidOperationException)
-        {
-            // Non-empty body — see RemoveEntry (a specific message beats the generic /api backfill).
-            return Results.NotFound(new { message = "Meal entry not found." });
-        }
-        catch (ArgumentException ex)
-        {
-            // Cross-week target / duplicate-in-slot — clean 400 with the reason (messages are ours).
-            return Results.BadRequest(new { message = ex.Message });
-        }
+        // Household-scoped move to another same-week slot (drag-to-assign). The service loads the
+        // Recipe nav, so the response reuses the ONE board projection (M9) with no extra query. Missing entry (404),
+        // cross-week target / duplicate-in-slot (400) and a stale version (409) are answered by the /api exception branch.
+        var entry = await mealPlanService.MoveMealAsync(
+            caller.HouseholdId, mealPlanId, entryId, req.Date, req.MealType, req.Version, caller.UserId, ct);
+        return Results.Ok(boardService.ProjectEntry(entry, entry.Recipe));
     }
 
     private static async Task<IResult> SetEntryServings(
@@ -162,25 +146,10 @@ public static class MealPlanEndpoints
         IMealPlanBoardService boardService,
         CancellationToken ct)
     {
-        try
-        {
-            // The service loads the Recipe nav, so the response reuses the ONE board projection (M9).
-            var entry = await mealPlanService.SetMealServingsAsync(
-                caller.HouseholdId, mealPlanId, entryId, req.Servings, req.Version, caller.UserId, ct);
-            return Results.Ok(boardService.ProjectEntry(entry, entry.Recipe));
-        }
-        catch (MealPlanConflictException ex)
-        {
-            return Results.Conflict(new { message = ex.Message });
-        }
-        catch (InvalidOperationException)
-        {
-            return Results.NotFound(new { message = "Meal entry not found." });
-        }
-        catch (ArgumentException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
+        // The service loads the Recipe nav, so the response reuses the ONE board projection (M9).
+        var entry = await mealPlanService.SetMealServingsAsync(
+            caller.HouseholdId, mealPlanId, entryId, req.Servings, req.Version, caller.UserId, ct);
+        return Results.Ok(boardService.ProjectEntry(entry, entry.Recipe));
     }
 
     private static async Task<IResult> RemoveEntry(
@@ -191,21 +160,9 @@ public static class MealPlanEndpoints
         IMealPlanService mealPlanService,
         CancellationToken ct)
     {
-        try
-        {
-            // Household-scoped — a cross-household id finds nothing ⇒ throws ⇒ 404 (M1).
-            await mealPlanService.RemoveMealAsync(caller.HouseholdId, mealPlanId, entryId, req.Version, ct);
-            return Results.NoContent();
-        }
-        catch (MealPlanConflictException ex)
-        {
-            return Results.Conflict(new { message = ex.Message });
-        }
-        catch (InvalidOperationException)
-        {
-            // Non-empty body so callers receive a specific message instead of the generic /api backfill.
-            return Results.NotFound(new { message = "Meal entry not found." });
-        }
+        // Household-scoped — a cross-household id finds nothing ⇒ NotFoundException ⇒ 404 (M1).
+        await mealPlanService.RemoveMealAsync(caller.HouseholdId, mealPlanId, entryId, req.Version, ct);
+        return Results.NoContent();
     }
 
     // ─── Recipes (picker search / quick-create / detail) ─────────────────────────

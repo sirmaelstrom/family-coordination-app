@@ -50,7 +50,7 @@ public class ImageServiceFormFileTests : IDisposable
 
         var act = () => _imageService.SaveImageAsync(file, householdId: 1);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not allowed*");
+        await act.Should().ThrowAsync<DomainValidationException>().WithMessage("*not allowed*");
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public class ImageServiceFormFileTests : IDisposable
 
         var act = () => _imageService.SaveImageAsync(file, householdId: 1);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Content type*not allowed*");
+        await act.Should().ThrowAsync<DomainValidationException>().WithMessage("*Content type*not allowed*");
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public class ImageServiceFormFileTests : IDisposable
 
         var act = () => _imageService.SaveImageAsync(file, householdId: 1);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*exceeds maximum*");
+        await act.Should().ThrowAsync<DomainValidationException>().WithMessage("*exceeds maximum*");
     }
 
     private static FormFile MakeFormFile(string fileName, string contentType, byte[] content)

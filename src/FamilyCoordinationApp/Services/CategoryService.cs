@@ -74,7 +74,7 @@ public class CategoryService(
 
         if (existing == null)
         {
-            throw new InvalidOperationException($"Category {category.CategoryId} not found");
+            throw new NotFoundException("Category not found.", $"Category {category.CategoryId} not found");
         }
 
         existing.Name = category.Name;
@@ -98,7 +98,7 @@ public class CategoryService(
 
         if (category == null)
         {
-            throw new InvalidOperationException($"Category {categoryId} not found");
+            throw new NotFoundException("Category not found.", $"Category {categoryId} not found");
         }
 
         // Soft delete
@@ -120,7 +120,7 @@ public class CategoryService(
 
         if (category == null)
         {
-            throw new InvalidOperationException($"Deleted category {categoryId} not found");
+            throw new NotFoundException("Category not found.", $"Deleted category {categoryId} not found");
         }
 
         category.IsDeleted = false;

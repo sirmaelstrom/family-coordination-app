@@ -22,7 +22,7 @@ namespace FamilyCoordinationApp.Services.Dtos;
 // directly (no draft DTO here) — they already serialize camelCase via the web defaults.
 //
 // Optimistic concurrency: RecipeFullDto carries the xmin token (Version) so the
-// edit form can send it back on PUT; a stale token → 409 (RecipeConflictException).
+// edit form can send it back on PUT; a stale token → 409 (ConcurrencyConflictException).
 // ─────────────────────────────────────────────────────────────────────────
 
 // ── List ──────────────────────────────────────────────────────────────────

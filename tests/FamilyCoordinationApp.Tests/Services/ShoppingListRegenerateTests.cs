@@ -203,7 +203,7 @@ public class ShoppingListRegenerateTests : IDisposable
     {
         var act = () => _generator.RegenerateShoppingListAsync(1, 51);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not linked*");
+        await act.Should().ThrowAsync<ConflictException>().WithMessage("*not linked*");
     }
 
     [Fact]
@@ -211,7 +211,7 @@ public class ShoppingListRegenerateTests : IDisposable
     {
         var act = () => _tenant.As(2, () => _generator.RegenerateShoppingListAsync(2, 50));
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not found*");
+        await act.Should().ThrowAsync<NotFoundException>().WithMessage("*not found*");
     }
 
     /// <summary>
