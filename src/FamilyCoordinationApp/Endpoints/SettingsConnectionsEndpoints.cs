@@ -6,7 +6,7 @@ namespace FamilyCoordinationApp.Endpoints;
 
 /// <summary>
 /// Minimal-API surface for Settings island B (Connections, strangler — mirrors <see cref="SettingsEndpoints"/>):
-/// an <c>/api/settings/connections</c> group behind <c>.RequireAuthorization().DisableAntiforgery()</c>, every
+/// an <c>/api/settings/connections</c> group behind the /api login gate and <c>.DisableAntiforgery()</c>, every
 /// handler taking the HouseholdId/UserId of the authenticated caller (M1, never client-supplied) as a
 /// <see cref="CallerScope"/>. Thin over the existing <see cref="IHouseholdConnectionService"/> — the real
 /// work is the island's client-side invite state machine, not this surface.
@@ -31,7 +31,7 @@ public static class SettingsConnectionsEndpoints
     public static IEndpointRouteBuilder MapSettingsConnectionsEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/settings/connections")
-            .RequireAuthorization()
+            // Login: the /api gate (the FallbackPolicy in Program.cs), not a per-group RequireAuthorization().
             .RequireTenant()
             .DisableAntiforgery();
 

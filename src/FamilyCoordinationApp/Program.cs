@@ -331,16 +331,35 @@ builder.Services.AddAuthentication(options =>
 
 // Authorization
 builder.Services.AddScoped<IAuthorizationHandler, WhitelistedEmailHandler>();
+builder.Services.AddSingleton<IAuthorizationHandler, SiteAdminHandler>();
+builder.Services.AddSingleton<IAuthorizationHandler, ApiLoginGateHandler>();
+// Writes a failing handler's reason (the site-admin 403's message) on /api; everything else is the default handler.
+builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationMiddlewareResultHandler, ApiAuthorizationResultHandler>();
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("WhitelistedOnly", policy =>
         policy.Requirements.Add(new WhitelistedEmailRequirement()));
 
-    // Use default policy requiring authentication + whitelist
-    // (Applied via [Authorize] on individual pages, not as FallbackPolicy to avoid blocking static assets)
+    // Signed in + whitelisted: what a bare RequireAuthorization() applies, and what the /api gate below evaluates.
     options.DefaultPolicy = new AuthorizationPolicyBuilder()
         .RequireAuthenticatedUser()
         .AddRequirements(new WhitelistedEmailRequirement())
+        .Build();
+
+    // The one site-admin access gate (quest 82fc7f54): the default policy plus the SITE_ADMIN_EMAILS check. Composed
+    // from DefaultPolicy, not a copy of its requirements, so a requirement added to the login policy also guards the
+    // admin routes (which carry their own metadata, so the fallback gate never runs for them). AddPolicy builds the
+    // policy immediately, so DefaultPolicy must be assigned above this line.
+    options.AddPolicy(AuthorizationPolicies.SiteAdmin, policy => policy
+        .Combine(options.DefaultPolicy)
+        .AddRequirements(new SiteAdminRequirement()));
+
+    // The one login gate for /api (quest 82fc7f54). The fallback policy applies to every endpoint with no
+    // authorization metadata, so an /api group needs no RequireAuthorization() of its own and one that omits it is
+    // not anonymous. The gate's handler is /api-scoped: off /api it succeeds, so Razor Pages, static assets and the
+    // SPA fallbacks are unaffected. A public /api route carries AllowAnonymous() (the calendar feed, the digest cron).
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .AddRequirements(new ApiLoginGateRequirement())
         .Build();
 });
 

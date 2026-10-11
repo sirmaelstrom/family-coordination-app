@@ -41,18 +41,18 @@ public class ChoreService(
             {
                 await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-                // A non-null assignee at creation must be a member (M1). X=1 only — a multi-person chore
+                // A non-null assignee at creation must be an enabled member (M1). X=1 only — a multi-person chore
                 // (RequiredCount>1) ignores AssigneeUserId and seeds its named roster from AssignedUserIds.
                 if (cmd.RequiredCount == 1 && cmd.AssigneeUserId is { } assigneeId)
                 {
-                    await EnsureHouseholdMemberAsync(context, householdId, assigneeId, cancellationToken);
+                    await HouseholdMembership.EnsureAssignableAsync(context, householdId, assigneeId, cancellationToken);
                 }
 
-                // A non-null owner must be a member too (M1). The write step checks HouseholdId only, not user
-                // references, so without this another household's user id would be stored as the owner.
+                // A non-null owner must be an enabled member too (M1). The write step checks HouseholdId only, not
+                // user references, so without this another household's user id would be stored as the owner.
                 if (cmd.OwnerUserId is { } ownerId)
                 {
-                    await EnsureHouseholdMemberAsync(context, householdId, ownerId, cancellationToken);
+                    await HouseholdMembership.EnsureAssignableAsync(context, householdId, ownerId, cancellationToken);
                 }
 
                 // Resolve the desired room membership set (Phase 13). On create: the roomIds set, or General
@@ -108,7 +108,7 @@ public class ChoreService(
                 {
                     foreach (var memberId in assignedUserIds.Distinct())
                     {
-                        await EnsureHouseholdMemberAsync(context, householdId, memberId, cancellationToken);
+                        await HouseholdMembership.EnsureAssignableAsync(context, householdId, memberId, cancellationToken);
                         AppendParticipation(context, chore, ChoreParticipationType.Assigned, memberId, actorUserId, now);
                     }
                 }
@@ -137,10 +137,19 @@ public class ChoreService(
         var previousRequiredCount = chore.RequiredCount;
 
         // A non-null owner must be a member (M1), checked before the photo delete below so a rejected edit
-        // leaves the chore's photo on disk.
+        // leaves the chore's photo on disk. A NEW owner must also be enabled; an unchanged one is not re-judged,
+        // because the edit sheet re-sends the current owner on every save and a member disabled since must not make
+        // the chore uneditable.
         if (cmd.OwnerUserId is { } ownerId)
         {
-            await EnsureHouseholdMemberAsync(context, householdId, ownerId, cancellationToken);
+            if (ownerId == chore.OwnerUserId)
+            {
+                await HouseholdMembership.EnsureMemberAsync(context, householdId, ownerId, cancellationToken);
+            }
+            else
+            {
+                await HouseholdMembership.EnsureAssignableAsync(context, householdId, ownerId, cancellationToken);
+            }
         }
 
         // Delete-on-replace for the photo (M8) — drop the old file when the path changes.
@@ -302,8 +311,8 @@ public class ChoreService(
 
         if (targetUserId is { } target)
         {
-            // Hand to a household member => deliberate Assigned (council M9; anyone can reassign, no roles).
-            await EnsureHouseholdMemberAsync(context, householdId, target, cancellationToken);
+            // Hand to an enabled household member => deliberate Assigned (council M9; anyone can reassign, no roles).
+            await HouseholdMembership.EnsureAssignableAsync(context, householdId, target, cancellationToken);
             SetAssigned(chore, target, now);
         }
         else
@@ -332,8 +341,9 @@ public class ChoreService(
         MaterializeAutoReleaseIfStale(context, chore, now);
 
         // Resolve the contributor set for THIS call: the actor plus any named participants (D7 name-others).
-        // Each named member is validated for household membership (reusing EnsureHouseholdMemberAsync, M1);
-        // the set dedupes within the call.
+        // Each named member is validated for household membership (HouseholdMembership, M1); a disabled member
+        // may still be credited, since crediting records work done rather than assigning new work. The set dedupes
+        // within the call.
         var candidates = new HashSet<int> { actorUserId };
         if (participantUserIds is not null)
         {
@@ -345,7 +355,7 @@ public class ChoreService(
 
         foreach (var candidateId in candidates)
         {
-            await EnsureHouseholdMemberAsync(context, householdId, candidateId, cancellationToken);
+            await HouseholdMembership.EnsureMemberAsync(context, householdId, candidateId, cancellationToken);
         }
 
         // Prior distinct contributors toward the CURRENT open occurrence (rows after LastCompletedAt, M7 —
@@ -484,7 +494,7 @@ public class ChoreService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         var chore = await LoadChoreAsync(context, householdId, choreId, cancellationToken);
         EnsureMultiPerson(chore);
-        await EnsureHouseholdMemberAsync(context, householdId, subjectUserId, cancellationToken);
+        await HouseholdMembership.EnsureAssignableAsync(context, householdId, subjectUserId, cancellationToken);
 
         var now = UtcNow();
         AppendParticipation(context, chore, ChoreParticipationType.Assigned, subjectUserId, actorUserId, now);
@@ -502,7 +512,7 @@ public class ChoreService(
         var chore = await LoadChoreAsync(context, householdId, choreId, cancellationToken);
         EnsureMultiPerson(chore);
         // The caller is a resolved household member; assert defensively (M1).
-        await EnsureHouseholdMemberAsync(context, householdId, actorUserId, cancellationToken);
+        await HouseholdMembership.EnsureMemberAsync(context, householdId, actorUserId, cancellationToken);
 
         var now = UtcNow();
         AppendParticipation(context, chore, ChoreParticipationType.Committed, actorUserId, actorUserId, now);
@@ -531,7 +541,8 @@ public class ChoreService(
                     $"User {actorUserId} cannot remove user {subject} from chore {choreId}'s roster " +
                     "(only the creator or owner may remove others).");
             }
-            await EnsureHouseholdMemberAsync(context, householdId, subject, cancellationToken);
+            // Membership only: removing a member disabled since they joined the roster must still work.
+            await HouseholdMembership.EnsureMemberAsync(context, householdId, subject, cancellationToken);
         }
 
         var now = UtcNow();
@@ -668,17 +679,6 @@ public class ChoreService(
             .Include(c => c.Subtasks)
             .FirstOrDefaultAsync(c => c.ChoreId == choreId, cancellationToken)
             ?? throw new ChoreNotFoundException($"Chore {choreId} not found for household {householdId}.");
-    }
-
-    private static async Task EnsureHouseholdMemberAsync(ApplicationDbContext context, int householdId, int userId, CancellationToken cancellationToken)
-    {
-        var isMember = await context.Users
-            .AnyAsync(u => u.Id == userId, cancellationToken);
-
-        if (!isMember)
-        {
-            throw new ChoreValidationException($"User {userId} is not a member of household {householdId}.");
-        }
     }
 
     /// <summary>

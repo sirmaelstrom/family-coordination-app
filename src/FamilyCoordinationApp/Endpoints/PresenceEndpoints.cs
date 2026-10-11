@@ -23,10 +23,10 @@ public static class PresenceEndpoints
 {
     public static IEndpointRouteBuilder MapPresenceEndpoints(this IEndpointRouteBuilder app)
     {
-        // Same group posture as the other island endpoint groups: cookie auth + no antiforgery token
-        // (the SPA calls these with credentials: 'include' and no CSRF token — same-origin cookie only, M2).
+        // Same group posture as the other island endpoint groups: cookie auth (the /api login gate) + no antiforgery
+        // token (the SPA calls these with credentials: 'include' and no CSRF token — same-origin cookie only, M2).
         var group = app.MapGroup("/api/presence")
-            .RequireAuthorization()
+            // Login: the /api gate (the FallbackPolicy in Program.cs), not a per-group RequireAuthorization().
             .RequireTenant()
             .DisableAntiforgery();
 

@@ -75,7 +75,11 @@ public sealed class ConcurrencyConflictException : ConflictException
     }
 }
 
-/// <summary>The caller is authenticated but may not do this (403). Reserved for the authorization work (quest 82fc7f54).</summary>
+/// <summary>
+/// The caller is authenticated but may not do this (403), decided inside a service. It has no thrower today: route-level
+/// access (the /api login gate, the SiteAdmin policy) is refused by the authorization middleware before any service
+/// runs (quest 82fc7f54).
+/// </summary>
 public class ForbiddenException : DomainException
 {
     public ForbiddenException(string clientMessage, string? logDetail = null) : base(clientMessage, logDetail)

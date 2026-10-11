@@ -6,7 +6,7 @@ namespace FamilyCoordinationApp.Endpoints;
 
 /// <summary>
 /// Minimal-API surface for the dashboard island (strangler — mirrors <see cref="MealPlanEndpoints"/>): a
-/// <c>/api/dashboard</c> group behind <c>.RequireAuthorization().DisableAntiforgery()</c>. ONE read route —
+/// <c>/api/dashboard</c> group behind the /api login gate and <c>.DisableAntiforgery()</c>. ONE read route —
 /// the dashboard is a pure read-aggregate (D1). The handler takes the HouseholdId/UserId of the
 /// authenticated caller (M1, never client-supplied) as a <see cref="CallerScope"/>, resolves the
 /// greeting name from the caller's claims, and delegates the whole <c>DashboardDto</c> assembly to
@@ -20,7 +20,7 @@ public static class DashboardEndpoints
     public static IEndpointRouteBuilder MapDashboardEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/dashboard")
-            .RequireAuthorization()
+            // Login: the /api gate (the FallbackPolicy in Program.cs), not a per-group RequireAuthorization().
             .RequireTenant()
             // Kept consistent with the other island endpoint groups (the island calls this with same-origin
             // credentialed fetch; there are no writes here, so antiforgery is moot either way).

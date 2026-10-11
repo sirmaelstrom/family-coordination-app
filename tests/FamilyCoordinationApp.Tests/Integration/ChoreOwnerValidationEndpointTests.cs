@@ -11,7 +11,7 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// <summary>
 /// A chore's owner must be a member of the caller's household (quest 65e625ad). The create
 /// (<c>POST /api/chores/</c>) and update (<c>PUT /api/chores/{id}</c>) paths stored <c>OwnerUserId</c> unchecked,
-/// while the assignee and roster went through <c>EnsureHouseholdMemberAsync</c>; the tenancy write step checks
+/// while the assignee and roster were membership-checked (now <c>HouseholdMembership</c>, quest 82fc7f54); the tenancy write step checks
 /// <c>HouseholdId</c> only, not user references. Household A's caller naming household B's user as the owner must
 /// get a 400 with a body and change nothing; a same-household owner still succeeds.
 /// </summary>

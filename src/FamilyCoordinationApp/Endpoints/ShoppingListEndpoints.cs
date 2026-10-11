@@ -14,7 +14,7 @@ public static class ShoppingListEndpoints
     public static IEndpointRouteBuilder MapShoppingListEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/shopping-lists")
-            .RequireAuthorization()
+            // Login: the /api gate (the FallbackPolicy in Program.cs), not a per-group RequireAuthorization().
             .RequireTenant()
             .DisableAntiforgery();
 

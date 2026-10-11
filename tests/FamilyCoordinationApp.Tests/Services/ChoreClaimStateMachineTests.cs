@@ -61,9 +61,10 @@ public class ChoreClaimStateMachineTests : IDisposable
             new Household { Id = OtherHouseholdId, Name = "Jones" });
 
         _seedContext.Users.AddRange(
-            new User { Id = Alice, HouseholdId = HouseholdId, Email = "a@x.com", DisplayName = "Alice" },
-            new User { Id = Bob, HouseholdId = HouseholdId, Email = "b@x.com", DisplayName = "Bob" },
-            new User { Id = Carol, HouseholdId = OtherHouseholdId, Email = "c@x.com", DisplayName = "Carol" });
+            // Active members, as every app path creates them; a disabled member can't be newly assigned.
+            new User { Id = Alice, HouseholdId = HouseholdId, Email = "a@x.com", DisplayName = "Alice", IsWhitelisted = true },
+            new User { Id = Bob, HouseholdId = HouseholdId, Email = "b@x.com", DisplayName = "Bob", IsWhitelisted = true },
+            new User { Id = Carol, HouseholdId = OtherHouseholdId, Email = "c@x.com", DisplayName = "Carol", IsWhitelisted = true });
 
         _seedContext.SaveChanges();
     }
@@ -433,7 +434,7 @@ public class ChoreClaimStateMachineTests : IDisposable
         // Carol belongs to the OTHER household — handing off to her must be rejected (M1 isolation, MN8).
         var act = async () => await _service.HandOffAsync(HouseholdId, ChoreId, Alice, Carol, chore.Version);
 
-        await act.Should().ThrowAsync<ChoreValidationException>();
+        await act.Should().ThrowAsync<HouseholdMembershipException>().WithMessage("*not a member*");
 
         var reloaded = await ReloadAsync();
         reloaded.AssigneeUserId.Should().Be(Alice);  // unchanged

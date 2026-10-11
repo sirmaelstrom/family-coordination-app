@@ -1,0 +1,413 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Security.Claims;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using FamilyCoordinationApp.Data;
+using FluentAssertions;
+using FluentAssertions.Execution;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace FamilyCoordinationApp.Tests.Integration;
+
+/// <summary>
+/// Authorization beyond login, stated once (quest 82fc7f54).
+/// <list type="bullet">
+/// <item><b>The /api login gate.</b> An /api endpoint that carries no authorization metadata of its own is refused for
+/// an anonymous caller. The probe facts run a synthetic, unguarded endpoint through the app's real
+/// <see cref="AuthorizationMiddleware"/> and DI, which is the "a new group that forgets
+/// <c>RequireAuthorization()</c>" case; the sweep fact sends a real anonymous request to every mapped /api route.</item>
+/// <item><b>The site-admin policy.</b> Every site-admin route carries the one <c>SiteAdmin</c> policy, and a
+/// non-admin gets a 403 with the policy's message on each.</item>
+/// <item><b>The anonymous surface.</b> The routes that must stay public still answer as they did before the gate.</item>
+/// </list>
+/// </summary>
+[Collection(IntegrationCollection.Name)]
+[Trait("kind", "integration")]
+public sealed class CentralAuthorizationTests(PostgresContainerFixture postgres) : IAsyncLifetime
+{
+    private readonly ChoresWebAppFactory _factory = new(postgres);
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    public async Task InitializeAsync() => await _factory.EnsureSeededAsync();
+
+    public async Task DisposeAsync() => await _factory.DisposeAsync();
+
+    private const string SiteAdminPolicy = "SiteAdmin";
+
+    /// <summary>The only /api routes an anonymous caller may reach: the shared-secret digest cron and the
+    /// capability-token calendar feed. Each must say so with an explicit <c>AllowAnonymous()</c>.</summary>
+    internal static readonly string[] PinnedAnonymousApiRoutes =
+    [
+        "/api/chores/digest/run",
+        "/api/calendar/meal-plan.ics",
+    ];
+
+    /// <summary>The site-admin routes: global reads/writes across households.</summary>
+    internal static readonly string[] SiteAdminRoutes =
+    [
+        "/api/settings/household-requests/",
+        "/api/settings/household-requests/{id:int}/approve",
+        "/api/settings/household-requests/{id:int}/reject",
+        "/api/settings/households/",
+    ];
+
+    private sealed record ErrorBody(string message);
+
+    private List<RouteEndpoint> ApiEndpoints() =>
+        _factory.Services.GetRequiredService<EndpointDataSource>().Endpoints
+            .OfType<RouteEndpoint>()
+            .Where(e => (e.RoutePattern.RawText ?? "").StartsWith("/api", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+    private static string RouteOf(RouteEndpoint e) => e.RoutePattern.RawText ?? "";
+
+    /// <summary>
+    /// A concrete URL that routes to <paramref name="e"/>: every parameter becomes <c>1</c>. That value matches only an
+    /// <c>{name:int}</c> parameter, so any other kind throws. This matters because the fallback policy also guards a
+    /// request that matches NO endpoint: a URL that routed nowhere would still be refused, and the sweep would pass
+    /// without testing the route it names.
+    /// </summary>
+    private static string UrlFor(RouteEndpoint e) =>
+        UnfillableParameters(e.RoutePattern) is { Count: > 0 } bad
+            ? throw new InvalidOperationException(
+                $"The sweep can't build a matching URL for {RouteOf(e)}: unsupported parameter(s) {string.Join(", ", bad)}. " +
+                "Teach UrlFor a value for that constraint.")
+            : Regex.Replace(RouteOf(e), @"\{[^}]+\}", "1");
+
+    /// <summary>The route parameters for which <c>1</c> is not a matching value (anything but a required
+    /// <c>:int</c>).</summary>
+    internal static List<string> UnfillableParameters(RoutePattern pattern) =>
+        pattern.Parameters
+            .Where(p => p.IsCatchAll || p.IsOptional || p.Default is not null
+                || p.ParameterPolicies.Count != 1 || p.ParameterPolicies[0].Content != "int")
+            .Select(p => p.Name)
+            .ToList();
+
+    private static IEnumerable<string> MethodsOf(RouteEndpoint e) =>
+        e.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods ?? ["GET"];
+
+    // ── The /api login gate ────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Runs one request through the app's real <see cref="AuthorizationMiddleware"/>, resolved from the booted host,
+    /// against a synthetic endpoint that carries NO authorization metadata. Returns whether the endpoint ran and the
+    /// status the auth pipeline left.
+    /// </summary>
+    private async Task<(bool EndpointRan, int Status)> ProbeUnguardedEndpointAsync(string path, ClaimsPrincipal user)
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var http = new DefaultHttpContext { RequestServices = scope.ServiceProvider, User = user };
+        http.Request.Method = HttpMethods.Get;
+        http.Request.Path = path;
+        http.Response.Body = new MemoryStream();
+
+        var endpointRan = false;
+        var endpoint = new RouteEndpointBuilder(
+            _ => Task.CompletedTask, RoutePatternFactory.Parse(path), order: 0).Build();
+        http.SetEndpoint(endpoint);
+
+        var middleware = new AuthorizationMiddleware(
+            _ =>
+            {
+                endpointRan = true;
+                return Task.CompletedTask;
+            },
+            scope.ServiceProvider.GetRequiredService<IAuthorizationPolicyProvider>(),
+            scope.ServiceProvider);
+        await middleware.Invoke(http);
+
+        return (endpointRan, http.Response.StatusCode);
+    }
+
+    private static ClaimsPrincipal Anonymous() => new(new ClaimsIdentity());
+
+    private static ClaimsPrincipal SignedIn(string email) => new(new ClaimsIdentity(
+        [new Claim(ClaimTypes.Email, email), new Claim(ClaimTypes.Name, email)], ChoresWebAppFactory.TestAuthScheme));
+
+    [Fact]
+    public async Task An_api_endpoint_without_its_own_RequireAuthorization_refuses_an_anonymous_caller()
+    {
+        var (ran, status) = await ProbeUnguardedEndpointAsync("/api/probe/unguarded", Anonymous());
+
+        ran.Should().BeFalse("an /api endpoint that forgets RequireAuthorization() must not be anonymous");
+        status.Should().Be(StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public async Task An_api_endpoint_without_its_own_RequireAuthorization_admits_a_whitelisted_member()
+    {
+        var (ran, _) = await ProbeUnguardedEndpointAsync("/api/probe/unguarded", SignedIn(ChoresWebAppFactory.UserAEmail));
+
+        ran.Should().BeTrue("the gate is the default policy (signed in + whitelisted), not a blanket refusal");
+    }
+
+    [Fact]
+    public async Task An_api_endpoint_without_its_own_RequireAuthorization_refuses_a_non_whitelisted_caller()
+    {
+        var (ran, status) = await ProbeUnguardedEndpointAsync("/api/probe/unguarded", SignedIn("stranger@nowhere.test"));
+
+        ran.Should().BeFalse("the gate carries the whitelist requirement, like the default policy");
+        status.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task A_non_api_endpoint_without_authorization_metadata_stays_anonymous()
+    {
+        var (ran, _) = await ProbeUnguardedEndpointAsync("/probe/unguarded", Anonymous());
+
+        ran.Should().BeTrue("the gate is scoped to /api: Razor Pages, static files and the SPA fallback are untouched");
+    }
+
+    [Fact]
+    public async Task Every_api_route_refuses_an_anonymous_caller_except_the_pinned_public_ones()
+    {
+        using var client = _factory.CreateAnonymousClient();
+
+        var admitted = await SweepAsync(client, HttpStatusCode.Unauthorized);
+
+        admitted.Should().BeEmpty("every /api route but the pinned public ones must answer an anonymous caller 401");
+    }
+
+    /// <summary>
+    /// A disabled member (signed in, a real user row, <c>IsWhitelisted = false</c>) is the caller the gate's whitelist
+    /// half exists for. <c>RequireTenant()</c>'s middleware answers 401 for a caller it can't resolve, which covers the
+    /// anonymous case on tenant groups by itself, but it resolves a disabled member; only the gate refuses them.
+    /// </summary>
+    [Fact]
+    public async Task Every_api_route_refuses_a_disabled_member_except_the_pinned_public_ones()
+    {
+        using (_factory.Services.GetRequiredService<FamilyCoordinationApp.Tenancy.ITenantContext>().RunAs(ChoresWebAppFactory.HouseholdAId))
+        {
+            await using var db = await _factory.Services
+                .GetRequiredService<IDbContextFactory<ApplicationDbContext>>().CreateDbContextAsync();
+            var amy = await db.Users.SingleAsync(u => u.Id == ChoresWebAppFactory.UserA2Id);
+            amy.IsWhitelisted = false;
+            await db.SaveChangesAsync();
+        }
+
+        using var client = _factory.CreateClientAs(ChoresWebAppFactory.UserA2Email);
+
+        var admitted = await SweepAsync(client, HttpStatusCode.Forbidden);
+
+        admitted.Should().BeEmpty("every /api route but the pinned public ones must answer a disabled member 403");
+    }
+
+    /// <summary>Sends one request per (route, method) outside the pinned public routes and returns every response
+    /// whose status isn't <paramref name="refusal"/>.</summary>
+    private async Task<List<string>> SweepAsync(HttpClient client, HttpStatusCode refusal)
+    {
+        var endpoints = ApiEndpoints();
+        endpoints.Count.Should().BeGreaterThan(80, "guard the guard: the /api population was 114 routes at quest 82fc7f54");
+
+        var admitted = new List<string>();
+        foreach (var endpoint in endpoints.Where(e => !PinnedAnonymousApiRoutes.Contains(RouteOf(e))))
+        {
+            foreach (var method in MethodsOf(endpoint))
+            {
+                using var request = new HttpRequestMessage(new HttpMethod(method), UrlFor(endpoint));
+                if (method is "POST" or "PUT" or "PATCH")
+                {
+                    // The content type the route accepts (an upload route takes multipart), so routing's 415 for a
+                    // wrong media type can't answer before the auth pipeline does.
+                    var mediaType = endpoint.Metadata.GetMetadata<IAcceptsMetadata>()?.ContentTypes.FirstOrDefault()
+                        ?? "application/json";
+                    request.Content = new StringContent("{}", System.Text.Encoding.UTF8);
+                    request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mediaType);
+                }
+
+                using var resp = await client.SendAsync(request);
+                if (resp.StatusCode != refusal)
+                {
+                    admitted.Add($"{method} {RouteOf(endpoint)} -> {(int)resp.StatusCode}");
+                }
+            }
+        }
+
+        return admitted;
+    }
+
+    [Fact]
+    public void The_pinned_public_api_routes_are_exactly_the_ones_marked_AllowAnonymous()
+    {
+        var allowAnonymous = ApiEndpoints()
+            .Where(e => e.Metadata.GetMetadata<IAllowAnonymous>() is not null)
+            .Select(RouteOf);
+
+        allowAnonymous.Should().BeEquivalentTo(PinnedAnonymousApiRoutes,
+            "an anonymous /api route says so explicitly; it is never anonymous by omission");
+    }
+
+    [Fact]
+    public void Every_api_route_parameter_is_one_the_sweep_can_fill()
+    {
+        var unfillable = ApiEndpoints()
+            .Where(e => UnfillableParameters(e.RoutePattern).Count > 0)
+            .Select(RouteOf);
+
+        unfillable.Should().BeEmpty("the sweep must reach the route it names, not the no-endpoint fallback");
+    }
+
+    [Fact]
+    public void NC_the_parameter_guard_flags_what_1_cannot_fill()
+    {
+        UnfillableParameters(RoutePatternFactory.Parse("/api/x/{id:int}")).Should().BeEmpty();
+        UnfillableParameters(RoutePatternFactory.Parse("/api/x/{id:guid}")).Should().Equal("id");
+        UnfillableParameters(RoutePatternFactory.Parse("/api/x/{name}")).Should().Equal("name");
+        UnfillableParameters(RoutePatternFactory.Parse("/api/x/{id:int?}")).Should().Equal("id");
+        UnfillableParameters(RoutePatternFactory.Parse("/api/x/{**rest}")).Should().Equal("rest");
+    }
+
+    // ── The site-admin policy ──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The SiteAdmin routes carry their own policy, so the fallback gate never runs for them: SiteAdmin must be built
+    /// FROM <c>DefaultPolicy</c>, not from a copy of its requirements, or a requirement later added to the login
+    /// policy would not reach the admin routes. Checked by reference: <c>Combine</c> carries the default policy's own
+    /// requirement instances, while a hand-written copy creates new ones.
+    /// </summary>
+    [Fact]
+    public async Task The_SiteAdmin_policy_is_composed_from_the_DefaultPolicy()
+    {
+        var options = _factory.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthorizationOptions>>().Value;
+        var siteAdmin = await _factory.Services.GetRequiredService<IAuthorizationPolicyProvider>().GetPolicyAsync(SiteAdminPolicy);
+
+        siteAdmin.Should().NotBeNull();
+        options.DefaultPolicy.Requirements.Should().NotBeEmpty();
+        foreach (var requirement in options.DefaultPolicy.Requirements)
+        {
+            siteAdmin!.Requirements.Should().Contain(r => ReferenceEquals(r, requirement),
+                $"SiteAdmin must carry DefaultPolicy's own {requirement.GetType().Name}, not a copy");
+        }
+
+        siteAdmin!.Requirements.Should().ContainSingle(r => r is FamilyCoordinationApp.Authorization.SiteAdminRequirement);
+    }
+
+    /// <summary>
+    /// The /api gate evaluates <c>DefaultPolicy</c>'s requirements, not its authentication schemes (it can't
+    /// authenticate them). That is sound only while the default policy names no schemes.
+    /// </summary>
+    [Fact]
+    public void The_DefaultPolicy_names_no_authentication_schemes()
+    {
+        var options = _factory.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthorizationOptions>>().Value;
+
+        options.DefaultPolicy.AuthenticationSchemes.Should().BeEmpty(
+            "ApiLoginGateHandler would not authenticate a scheme listed here");
+    }
+
+    [Fact]
+    public void The_site_admin_routes_are_exactly_the_routes_carrying_the_SiteAdmin_policy()
+    {
+        var withPolicy = ApiEndpoints()
+            .Where(e => e.Metadata.GetOrderedMetadata<IAuthorizeData>().Any(a => a.Policy == SiteAdminPolicy))
+            .Select(RouteOf);
+
+        withPolicy.Should().BeEquivalentTo(SiteAdminRoutes);
+    }
+
+    public static TheoryData<string, string, string?> SiteAdminRequests() => new()
+    {
+        { "GET", "/api/settings/household-requests/", null },
+        { "POST", "/api/settings/household-requests/1/approve", null },
+        { "POST", "/api/settings/household-requests/1/reject", """{"reason":"no"}""" },
+        { "POST", "/api/settings/households/", """{"householdName":"Rogue","ownerEmail":"rogue@example.com"}""" },
+    };
+
+    [Theory]
+    [MemberData(nameof(SiteAdminRequests))]
+    public async Task A_non_admin_is_refused_on_every_site_admin_route_with_403_and_a_message(
+        string method, string url, string? body)
+    {
+        using var client = _factory.CreateClientAs(ChoresWebAppFactory.UserBEmail);
+        using var request = new HttpRequestMessage(new HttpMethod(method), url);
+        if (body is not null)
+        {
+            request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+        }
+
+        using var resp = await client.SendAsync(request);
+
+        using (new AssertionScope())
+        {
+            resp.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            var error = await resp.Content.ReadFromJsonAsync<ErrorBody>(Json);
+            error!.message.Should().Be("Site admin access required.");
+        }
+
+        await using var db = await _factory.Services
+            .GetRequiredService<IDbContextFactory<ApplicationDbContext>>().CreateDbContextAsync();
+        (await db.Households.CountAsync()).Should().Be(2, "a refused admin write creates nothing");
+    }
+
+    [Fact]
+    public async Task The_site_admin_passes_the_policy()
+    {
+        using var client = _factory.CreateClientAs(ChoresWebAppFactory.UserAEmail);
+
+        using var resp = await client.GetAsync("/api/settings/household-requests/");
+
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // ── The anonymous surface still answers as before ──────────────────────────────────────────
+
+    /// <summary>
+    /// The anonymous surface, with the status each returned on the pre-change tree (base d79f663, measured by this
+    /// fact before the gate landed), EXCEPT the two unknown-/api rows at the end: the deliberate behavior change. The
+    /// gate also guards a request that matches no endpoint, so an anonymous unknown /api path answers 401 where it
+    /// answered 404, and a wrong method 401 where it answered 405 (routing's 405 endpoint carries no auth metadata).
+    /// </summary>
+    public static TheoryData<string, string, HttpStatusCode> AnonymousSurface() => new()
+    {
+        { "GET", "/health", HttpStatusCode.OK },
+        { "GET", "/account/login", HttpStatusCode.OK },
+        { "GET", "/account/access-denied", HttpStatusCode.OK },
+        { "GET", "/privacy", HttpStatusCode.OK },
+        { "GET", "/terms", HttpStatusCode.OK },
+        { "GET", "/household/request", HttpStatusCode.OK },
+        { "GET", "/account/logout", HttpStatusCode.Redirect },
+        { "GET", "/favicon-16x16.png", HttpStatusCode.OK },
+        { "GET", "/uploads/1/photo.jpg", HttpStatusCode.Unauthorized },
+        { "GET", "/no-such-page", HttpStatusCode.NotFound },
+        { "GET", "/api/calendar/meal-plan.ics?token=not-a-real-token", HttpStatusCode.NotFound },
+        { "POST", "/api/chores/digest/run", HttpStatusCode.Unauthorized },
+        // Changed by the gate (base: 404 and 405).
+        { "GET", "/api/no-such-route", HttpStatusCode.Unauthorized },
+        { "POST", "/api/dashboard/", HttpStatusCode.Unauthorized },
+    };
+
+    [Theory]
+    [MemberData(nameof(AnonymousSurface))]
+    public async Task An_anonymous_route_answers_with_its_pinned_status(string method, string url, HttpStatusCode expected)
+    {
+        using var client = _factory.CreateAnonymousClient();
+
+        using var resp = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), url));
+
+        resp.StatusCode.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("/")]
+    [InlineData("/dashboard")]
+    [InlineData("/chores/today")]
+    public async Task The_SPA_fallback_is_not_challenged_for_an_anonymous_caller(string url)
+    {
+        // The SPA shell boots anonymously and then calls /api/me. Whether wwwroot/index.html exists depends on whether
+        // the SPA was built, so the fact is the absence of a challenge, not a specific status.
+        using var client = _factory.CreateAnonymousClient();
+
+        using var resp = await client.GetAsync(url);
+
+        resp.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+        resp.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
+        resp.Headers.Location.Should().BeNull("an anonymous page load is never redirected to sign-in by the gate");
+    }
+}

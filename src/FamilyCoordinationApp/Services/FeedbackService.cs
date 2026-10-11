@@ -79,7 +79,7 @@ public sealed class FeedbackService(
 
         // Read-only projection ⇒ AsNoTracking (council R6).
         // TENANT-SCOPE-OK: dual-mode (R-C1) — site admin sees all households; non-admin scope applied conditionally below.
-        // The Tenant bypass is the site admin's arm only, gated by IsSiteAdmin at SettingsAdminEndpoints.cs:338: it keeps
+        // The Tenant bypass is the site admin's arm only, gated by IsSiteAdmin at SettingsAdminEndpoints.cs:315: it keeps
         // OTHER households' authors (User is a tenant entity). A non-admin's User include stays under the Tenant filter.
         // The gate sits in this one statement so the bypass's site id (TenantFilterArchitectureTests fact 2) covers it.
         IQueryable<Feedback> query = (isSiteAdmin ? context.Feedbacks.IgnoreQueryFilters(["Tenant"]) : context.Feedbacks)

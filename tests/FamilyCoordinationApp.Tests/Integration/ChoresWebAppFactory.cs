@@ -30,7 +30,7 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// production <c>UserContextResolver.ResolveUserAsync</c> + <c>WhitelistedEmailHandler</c> then resolve the
 /// real <c>{HouseholdId, UserId}</c> from the seeded user row (M1 invariant preserved — HouseholdId is never
 /// client-supplied, it comes from the resolved principal). A request with no header is unauthenticated → the
-/// endpoints' <c>.RequireAuthorization()</c> yields 401.</para>
+/// /api login gate (the FallbackPolicy, quest 82fc7f54) yields 401.</para>
 /// <para><b>Config:</b> dummy Google ClientId/ClientSecret are injected so the real <c>Program.cs</c> startup
 /// (which throws without them) boots; the environment is set to <c>Testing</c> (not Production → no
 /// DataProtection cert required; not Development → the dev seed path does not fire).</para>

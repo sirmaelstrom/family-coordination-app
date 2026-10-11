@@ -12,7 +12,7 @@ namespace FamilyCoordinationApp.Endpoints;
 
 /// <summary>
 /// Minimal-API surface for the recipes island (strangler — mirrors <see cref="MealPlanEndpoints"/>): a
-/// <c>/api/recipes</c> group behind <c>.RequireAuthorization().DisableAntiforgery()</c>, every handler taking
+/// <c>/api/recipes</c> group behind the /api login gate and <c>.DisableAntiforgery()</c>, every handler taking
 /// the HouseholdId/UserId of the authenticated caller (M1, never client-supplied) as the <see cref="CallerScope"/>
 /// that <see cref="CallerTenantMiddleware"/> resolved. Writes delegate to <see cref="IRecipeService"/> / <see cref="IImageService"/>
 /// / <see cref="IDraftService"/> / <see cref="IRecipeImportService"/>; recipe→DTO shaping goes through the ONE
@@ -30,7 +30,7 @@ public static class RecipesEndpoints
     public static IEndpointRouteBuilder MapRecipesEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/recipes")
-            .RequireAuthorization()
+            // Login: the /api gate (the FallbackPolicy in Program.cs), not a per-group RequireAuthorization().
             .RequireTenant()
             // Same rationale as the other island groups: same-origin credentialed fetch + JSON/multipart bodies,
             // SameSite auth cookie — the antiforgery token the SPA can't readily supply is not the CSRF control.

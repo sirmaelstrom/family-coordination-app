@@ -225,7 +225,7 @@ public sealed class EquityEndpointIntegrationTests(PostgresContainerFixture post
 
         var resp = await client.GetAsync("/api/chores/equity?window=week");
 
-        // 4xx (401 challenge from RequireAuthorization) — the load-bearing property is it is NOT a 200 and leaks
+        // 4xx (401 challenge from the /api login gate) — the load-bearing property is it is NOT a 200 and leaks
         // no equity data.
         ((int)resp.StatusCode).Should().BeInRange(400, 499, "an anonymous caller must be rejected");
         resp.StatusCode.Should().NotBe(HttpStatusCode.OK);

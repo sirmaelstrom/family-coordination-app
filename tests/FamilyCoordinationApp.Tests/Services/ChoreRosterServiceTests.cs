@@ -53,9 +53,10 @@ public class ChoreRosterServiceTests : IDisposable
             new Household { Id = HouseholdId, Name = "Smith" },
             new Household { Id = OtherHouseholdId, Name = "Jones" });
         _seedContext.Users.AddRange(
-            new User { Id = Alice, HouseholdId = HouseholdId, Email = "a@x.com", DisplayName = "Alice" },
-            new User { Id = Bob, HouseholdId = HouseholdId, Email = "b@x.com", DisplayName = "Bob" },
-            new User { Id = Carol, HouseholdId = OtherHouseholdId, Email = "c@x.com", DisplayName = "Carol" });
+            // Active members, as every app path creates them; a disabled member can't be newly assigned.
+            new User { Id = Alice, HouseholdId = HouseholdId, Email = "a@x.com", DisplayName = "Alice", IsWhitelisted = true },
+            new User { Id = Bob, HouseholdId = HouseholdId, Email = "b@x.com", DisplayName = "Bob", IsWhitelisted = true },
+            new User { Id = Carol, HouseholdId = OtherHouseholdId, Email = "c@x.com", DisplayName = "Carol", IsWhitelisted = true });
         _seedContext.SaveChanges();
     }
 
@@ -128,7 +129,7 @@ public class ChoreRosterServiceTests : IDisposable
     {
         SeedChore(1, requiredCount: 2);
         var act = () => _service.AssignToRosterAsync(HouseholdId, 1, Alice, Carol, version: 0);
-        await act.Should().ThrowAsync<ChoreValidationException>();
+        await act.Should().ThrowAsync<HouseholdMembershipException>().WithMessage("*not a member*");
     }
 
     [Fact]
