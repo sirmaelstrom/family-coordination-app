@@ -7,8 +7,8 @@ namespace FamilyCoordinationApp.Services;
 
 /// <summary>
 /// Writes + the claim state machine for chores (WP-04). One short-lived <see cref="ApplicationDbContext"/>
-/// per op (M2); every query/mutation is filtered by the caller-supplied <c>householdId</c> (M1, never
-/// client-supplied). Timestamps are written as UTC <see cref="DateTime"/> (Kind=Utc, M10) from the injected
+/// per op (M2); every query/mutation is scoped to the caller's household by the "Tenant" query filter and the
+/// central write step (M1; WP-05 removed the predicates on the <c>householdId</c> argument). Timestamps are written as UTC <see cref="DateTime"/> (Kind=Utc, M10) from the injected
 /// <see cref="TimeProvider"/>. Staleness math is delegated to <see cref="ChoreStatusCalculator"/> (WP-02) —
 /// this service computes no decay colors of its own. No <c>BackgroundService</c>: auto-release is lazy
 /// compute + materialize, triggered on the next mutation that touches a chore (MN1/D7).
@@ -349,7 +349,7 @@ public class ChoreService(
         }
 
         // Prior distinct contributors toward the CURRENT open occurrence (rows after LastCompletedAt, M7 —
-        // filtered by HouseholdId AND ChoreId). The count is derived, never stored (M5/MN6).
+        // filtered by ChoreId; the Tenant filter scopes the household). The count is derived, never stored (M5/MN6).
         var priorCompletions = await context.ChoreCompletions
             .Where(cc => cc.ChoreId == choreId)
             .ToListAsync(cancellationToken);

@@ -8,7 +8,8 @@ namespace FamilyCoordinationApp.Services;
 
 /// <summary>
 /// Read/projection side of the chore board (WP-05). One short-lived <see cref="ApplicationDbContext"/> per
-/// call (M2); every query is filtered by the caller-supplied <c>householdId</c> (M1, never client-supplied).
+/// call (M2); every query is scoped to the caller's household by the "Tenant" query filter (M1; the
+/// <c>householdId</c> argument is no longer read by the queries, WP-05).
 /// All dueness/freshness/staleness math is delegated to <see cref="ChoreStatusCalculator"/> (WP-02) using
 /// the injected <see cref="TimeZoneInfo"/> — there is no <see cref="DateTime.UtcNow"/> reached inside and no
 /// raw date-string parse (D14/M5). Read-only: no writes, no transitions (WP-04).
@@ -29,7 +30,7 @@ public class ChoreBoardService(
 
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        // Active chores only (M1 household filter). A completed OneOff (Status=Done) or Archived chore must
+        // Active chores only (M1: the Tenant filter scopes the household). A completed OneOff (Status=Done) or Archived chore must
         // not linger on the board or in the rollups (council) — recurring chores stay Active.
         var chores = await context.Chores
             .Where(c => c.Status == ChoreStatus.Active)
@@ -177,7 +178,7 @@ public class ChoreBoardService(
 
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        // EXACTLY GetBoardAsync's active set (M1 household filter + Status == Active), but projected down to
+        // EXACTLY GetBoardAsync's active set (M1 via the Tenant filter + Status == Active), but projected down to
         // the recurrence + assignment fields the two calculator calls read — no rooms, members, completions,
         // participation, subtasks, or ChoreRoom memberships are touched. One row per chore: room fan-out is a
         // rollup concern only, so a multi-room chore counts ONCE here, exactly like board.Chores (MN1).

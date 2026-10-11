@@ -149,7 +149,8 @@ public class DigestService(
 
     /// <summary>
     /// Assemble the household's digest model from its own members, this-week completions, and active chores
-    /// (M1 — every query is scoped to <paramref name="householdId"/>). Mirrors the read/projection shape of
+    /// (M1 — every query is scoped to <paramref name="householdId"/> by the Tenant filter: the caller runs inside
+    /// <c>RunAs(householdId)</c>, see <see cref="RunDueAsync"/>). Mirrors the read/projection shape of
     /// <c>ChoreBoardService</c> so dueness/staleness are computed exactly as the board/lens compute them.
     /// </summary>
     private async Task<DigestModel> BuildModelAsync(int householdId, DateTime now, CancellationToken ct)

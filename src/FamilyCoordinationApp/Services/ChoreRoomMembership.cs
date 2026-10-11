@@ -11,7 +11,8 @@ namespace FamilyCoordinationApp.Services;
 ///
 /// Load-bearing invariants (council review-1):
 /// <list type="bullet">
-///   <item>Every query filters by <c>HouseholdId</c> (M1 — multi-tenant security boundary).</item>
+///   <item>Every query is scoped to one household (M1 — multi-tenant security boundary) by the "Tenant" query
+///   filter on the caller's context (WP-05 removed the hand-written <c>HouseholdId</c> predicates).</item>
 ///   <item>Reads return roomIds sorted ascending so the board's <c>roomIds[]</c> wire is
 ///   deterministic (otherwise the byte-equality contract fixture is flaky).</item>
 ///   <item>Writes <c>.Distinct()</c>-normalize the desired set (a duplicate id would violate the

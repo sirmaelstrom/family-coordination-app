@@ -8,7 +8,7 @@ namespace FamilyCoordinationApp.Services;
 
 /// <summary>
 /// CRUD for a chore's lightweight checklist (Phase 14). One short-lived <see cref="ApplicationDbContext"/> per
-/// op (M2); every query is filtered by the caller-supplied <c>householdId</c> (M1, never client-supplied), so
+/// op (M2); every query is scoped to the caller's household by the "Tenant" query filter (M1; WP-05), so
 /// cross-household access naturally 404s. Timestamps are UTC from the injected <see cref="TimeProvider"/>.
 /// <para>Versionless / last-write-wins by design: there is NO xmin token on <see cref="ChoreSubtask"/>, and
 /// these writes deliberately touch ONLY the subtask row — never <c>Chore.Version</c>. Subtasks NEVER gate

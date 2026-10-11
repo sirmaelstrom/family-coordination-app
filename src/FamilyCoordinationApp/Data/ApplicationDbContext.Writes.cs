@@ -249,8 +249,12 @@ public partial class ApplicationDbContext
 
     /// <summary>
     /// Does the row with this <c>Id</c> exist in the tenant's household? It runs under the Tenant filter, and it
-    /// also names the household itself (kept by WP-05, which retired the read kill switch it was written for), so the
-    /// check doesn't rest on the filter alone. It ignores only <c>SoftDelete</c>, so an update to a soft-deleted
+    /// also names the household itself. <b>That household term is a deliberate duplicate</b>, kept by the WP-03 ruling
+    /// (yd3) through WP-05: WP-03 wrote it for the read kill switch, which WP-05 removed, and since then no reachable
+    /// state makes it the only check. This method runs only when <see cref="BypassesTenantWrites"/> is false, and
+    /// that is the same condition as the read filter's bypass (<c>ApplicationDbContext.BypassTenantFilterFor</c>), so
+    /// the filter always applies alongside it. No test isolates it, because none can.
+    /// It ignores only <c>SoftDelete</c>, so an update to a soft-deleted
     /// own row isn't taken for a foreign one. It materializes nothing and doesn't run <c>DetectChanges</c>.
     /// <para><c>false</c> means ABSENT or FOREIGN, and the two need opposite answers, so a <c>false</c> is followed by
     /// <see cref="ExistsInAnyHousehold{TEntity}"/>: a row that exists in another household is refused

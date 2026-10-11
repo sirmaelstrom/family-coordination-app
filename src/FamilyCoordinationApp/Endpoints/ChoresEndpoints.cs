@@ -566,8 +566,8 @@ public static class ChoresEndpoints
     /// (council M10). null/blank clears the preference to the default (Needs-attention); a non-null value MUST
     /// be a canonical lens id (council M6 — anything else is rejected, never coerced, MN8); the write is scoped
     /// to <paramref name="userId"/> WITHIN <paramref name="householdId"/> (the resolved caller, M1). Both come
-    /// from the resolver, never from client input — the household predicate makes the tenant boundary explicit
-    /// in the query rather than an invariant held only by the caller.
+    /// from the resolver, never from client input. The "Tenant" query filter scopes the user lookup to the
+    /// caller's household, so another household's user id finds nothing (WP-05 removed the household predicate).
     /// </summary>
     internal static async Task<(DefaultViewOutcome Outcome, string? Normalized)> ApplyDefaultViewAsync(
         IDbContextFactory<ApplicationDbContext> dbFactory,
@@ -617,8 +617,8 @@ public static class ChoresEndpoints
     /// <see cref="CapacityTier"/> value — anything else is rejected, never coerced (D2). <c>null</c> is the
     /// pre-migration default (treated as Full) and there is no client clear-to-null path. The write is scoped
     /// to <paramref name="userId"/> WITHIN <paramref name="householdId"/> (the resolved caller, MN5) — both come
-    /// from the resolver, never from client input, and the household predicate makes the tenant boundary
-    /// explicit in the query rather than an invariant held only by the caller.
+    /// from the resolver, never from client input. The "Tenant" query filter scopes the user lookup to the
+    /// caller's household, so another household's user id finds nothing (WP-05 removed the household predicate).
     /// </summary>
     internal static async Task<(CapacityOutcome Outcome, string? Normalized)> ApplyCapacityAsync(
         IDbContextFactory<ApplicationDbContext> dbFactory,

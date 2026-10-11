@@ -7,7 +7,7 @@ namespace FamilyCoordinationApp.Services.Interfaces;
 /// The ONE projection from <see cref="Recipe"/> (+ a parsed ingredient) to the recipes-island DTOs — so the
 /// list cards, the read drawer, and the edit form can't drift (M9, mirrors <see cref="IMealPlanBoardService"/>'s
 /// single-projection rule). Pure mapping; callers load the entity (with the navs the projection reads) and
-/// filter by HouseholdId (M1).
+/// load it under the caller's tenant, whose "Tenant" query filter scopes it to the household (M1).
 /// </summary>
 public interface IRecipeProjectionService
 {
