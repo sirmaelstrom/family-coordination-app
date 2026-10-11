@@ -9,10 +9,10 @@ public interface IRecipeService
     Task<Recipe> CreateRecipeAsync(Recipe recipe, CancellationToken cancellationToken = default);
     /// <summary>
     /// Full-form update (wholesale ingredient replace). When <paramref name="expectedVersion"/> is supplied it
-    /// is enforced as the xmin concurrency token — a stale value throws <see cref="RecipeConflictException"/>
+    /// is enforced as the xmin concurrency token — a stale value throws <see cref="ConcurrencyConflictException"/>
     /// (→ 409). <c>null</c> skips the check (legacy last-write-wins callers).
     /// </summary>
-    /// <exception cref="RecipeConflictException">The client <paramref name="expectedVersion"/> is stale.</exception>
+    /// <exception cref="ConcurrencyConflictException">The client <paramref name="expectedVersion"/> is stale.</exception>
     Task<Recipe> UpdateRecipeAsync(Recipe recipe, uint? expectedVersion = null, CancellationToken cancellationToken = default);
     Task DeleteRecipeAsync(int householdId, int recipeId, CancellationToken cancellationToken = default);
     Task<List<string>> GetIngredientSuggestionsAsync(int householdId, string prefix, CancellationToken cancellationToken = default);

@@ -72,12 +72,12 @@ public class MealPlanService(
     {
         if (recipeId.HasValue && !string.IsNullOrWhiteSpace(customMealName))
         {
-            throw new InvalidOperationException("Cannot specify both RecipeId and CustomMealName");
+            throw new DomainValidationException("Cannot specify both RecipeId and CustomMealName");
         }
 
         if (!recipeId.HasValue && string.IsNullOrWhiteSpace(customMealName))
         {
-            throw new InvalidOperationException("Must specify either RecipeId or CustomMealName");
+            throw new DomainValidationException("Must specify either RecipeId or CustomMealName");
         }
 
         var weekStart = GetWeekStartDate(date);
@@ -168,7 +168,7 @@ public class MealPlanService(
 
         if (entry == null)
         {
-            throw new InvalidOperationException($"Meal entry {entryId} not found in plan {mealPlanId} for household {householdId}");
+            throw new NotFoundException(MealEntryNotFound, $"Meal entry {entryId} not found in plan {mealPlanId} for household {householdId}");
         }
 
         // Same-week only: a MealPlan owns exactly one week, so a date in another week would need a
@@ -178,7 +178,7 @@ public class MealPlanService(
             .FirstOrDefaultAsync(mp => mp.MealPlanId == mealPlanId, cancellationToken);
         if (mealPlan == null || mealPlan.WeekStartDate != GetWeekStartDate(newDate))
         {
-            throw new ArgumentException("The target date is outside this meal plan's week.");
+            throw new DomainValidationException("The target date is outside this meal plan's week.");
         }
 
         // Mirror the AddMealAsync duplicate guard: the same recipe / custom meal can't sit twice in one slot.
@@ -191,7 +191,7 @@ public class MealPlanService(
              (entry.CustomMealName != null && e.CustomMealName == entry.CustomMealName)), cancellationToken);
         if (duplicateExists)
         {
-            throw new ArgumentException("That meal is already planned in the target slot.");
+            throw new DomainValidationException("That meal is already planned in the target slot.");
         }
 
         entry.Date = newDate;
@@ -202,7 +202,7 @@ public class MealPlanService(
         // Update parent MealPlan timestamp for polling
         mealPlan.UpdatedAt = clock.UtcNow;
 
-        await SaveWithConcurrencyAsync(context, entry, version, cancellationToken);
+        await context.SaveWithConcurrencyAsync(entry, version, cancellationToken);
 
         logger.LogInformation("Moved meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId} to {Date} {MealType}",
             entryId, mealPlanId, householdId, newDate, newMealType);
@@ -210,31 +210,10 @@ public class MealPlanService(
         return entry;
     }
 
+    private const string MealEntryNotFound = "Meal entry not found.";
+
     /// <summary>Upper bound on a per-entry servings override; mirrored client-side in lib/servings.ts.</summary>
     public const int MaxServings = 1000;
-
-    /// <summary>
-    /// Save an entry mutation under optimistic concurrency (mirrors <c>ChoreService.SaveWithConcurrencyAsync</c>).
-    /// Loading the row makes EF treat the LOADED Version as the original, so a stale client token would not
-    /// conflict on its own; setting the client token as the OriginalValue makes the statement run
-    /// <c>WHERE xmin = &lt;client version&gt;</c>, so a stale token surfaces as a conflict instead of a silent
-    /// overwrite. A missing token binds to 0, which matches no row — fail-safe, not last-write-wins.
-    /// </summary>
-    private async Task SaveWithConcurrencyAsync(
-        ApplicationDbContext context, MealPlanEntry entry, uint clientVersion, CancellationToken cancellationToken)
-    {
-        context.Entry(entry).Property(e => e.Version).OriginalValue = clientVersion;
-
-        try
-        {
-            await context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException ex)
-        {
-            throw new MealPlanConflictException(
-                $"Meal entry {entry.EntryId} was modified by another user; the supplied version is stale.", ex);
-        }
-    }
 
     public async Task<MealPlanEntry> SetMealServingsAsync(
         int householdId,
@@ -257,12 +236,12 @@ public class MealPlanService(
 
         if (entry == null)
         {
-            throw new InvalidOperationException($"Meal entry {entryId} not found in plan {mealPlanId} for household {householdId}");
+            throw new NotFoundException(MealEntryNotFound, $"Meal entry {entryId} not found in plan {mealPlanId} for household {householdId}");
         }
 
         if (servings is <= 0)
         {
-            throw new ArgumentException("Servings must be a positive number, or null to cook the recipe as written.");
+            throw new DomainValidationException("Servings must be a positive number, or null to cook the recipe as written.");
         }
 
         // Bounded because the value becomes a MULTIPLIER on every ingredient of that meal, and
@@ -270,7 +249,7 @@ public class MealPlanService(
         // numeric-overflow 500 rather than a silly list. 1000 is far past any real household.
         if (servings > MaxServings)
         {
-            throw new ArgumentException($"Servings must be {MaxServings} or fewer.");
+            throw new DomainValidationException($"Servings must be {MaxServings} or fewer.");
         }
 
         entry.Servings = servings;
@@ -285,7 +264,7 @@ public class MealPlanService(
             mealPlan.UpdatedAt = clock.UtcNow;
         }
 
-        await SaveWithConcurrencyAsync(context, entry, version, cancellationToken);
+        await context.SaveWithConcurrencyAsync(entry, version, cancellationToken);
 
         logger.LogInformation("Set servings to {Servings} on meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId}",
             servings, entryId, mealPlanId, householdId);
@@ -304,7 +283,7 @@ public class MealPlanService(
 
         if (entry == null)
         {
-            throw new InvalidOperationException($"Meal entry {entryId} not found in plan {mealPlanId} for household {householdId}");
+            throw new NotFoundException(MealEntryNotFound, $"Meal entry {entryId} not found in plan {mealPlanId} for household {householdId}");
         }
 
         // Hard delete
@@ -313,7 +292,7 @@ public class MealPlanService(
         // Update parent MealPlan timestamp for polling
         await UpdateMealPlanTimestampAsync(context, householdId, mealPlanId, cancellationToken);
 
-        await SaveWithConcurrencyAsync(context, entry, version, cancellationToken);
+        await context.SaveWithConcurrencyAsync(entry, version, cancellationToken);
 
         logger.LogInformation("Removed meal entry {EntryId} from plan {MealPlanId} for household {HouseholdId}",
             entryId, mealPlanId, householdId);

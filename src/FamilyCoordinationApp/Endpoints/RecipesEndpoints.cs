@@ -20,7 +20,7 @@ namespace FamilyCoordinationApp.Endpoints;
 /// <c>/api/meal-plan/recipes/*</c> (spec D11).
 ///
 /// <para>Full-form edits are optimistic-concurrency guarded: GET carries the xmin token (<c>version</c>),
-/// PUT echoes it back, and a stale token → 409 with a non-empty body (<see cref="RecipeConflictException"/>).
+/// PUT echoes it back, and a stale token → 409 with a non-empty body (<see cref="ConcurrencyConflictException"/>).
 /// A null token skips the check (legacy last-write-wins). Not-found responses carry a NON-EMPTY body so callers
 /// receive specific detail instead of the generic /api backfill. <c>Recipe</c> has an EF global query filter on <c>IsDeleted</c>
 /// (<c>RecipeConfiguration</c>), so soft-deleted recipes are auto-excluded — no explicit filter here.</para>
@@ -150,21 +150,9 @@ public static class RecipesEndpoints
         var recipe = MapToRecipe(req, caller.HouseholdId, recipeId, imagePath);
         recipe.UpdatedByUserId = caller.UserId;
 
-        try
-        {
-            // req.Version is the xmin token echoed from GET (null ⇒ legacy client ⇒ last-write-wins).
-            await recipeService.UpdateRecipeAsync(recipe, req.Version, ct);
-        }
-        catch (InvalidOperationException)
-        {
-            // Household-scoped load missed (missing / cross-household id) → clean 404 (non-empty body, M1).
-            return Results.NotFound(new { message = "Recipe not found." });
-        }
-        catch (RecipeConflictException)
-        {
-            // Stale xmin token — someone else saved since this client loaded the recipe. Non-empty body (M1).
-            return Results.Conflict(new { message = "This recipe was changed by someone else. Reload to see the latest." });
-        }
+        // req.Version is the xmin token echoed from GET (null ⇒ legacy client ⇒ last-write-wins). A missing /
+        // cross-household id (404) and a stale token (409) are answered by the /api exception branch.
+        await recipeService.UpdateRecipeAsync(recipe, req.Version, ct);
 
         // Project from a FRESH load, NOT the UpdateRecipeAsync return — its Ingredients nav is stale after the
         // RemoveRange/Add (spec §11.11 / council).
@@ -178,15 +166,8 @@ public static class RecipesEndpoints
         IRecipeService recipeService,
         CancellationToken ct)
     {
-        try
-        {
-            await recipeService.DeleteRecipeAsync(caller.HouseholdId, recipeId, ct);
-            return Results.NoContent();
-        }
-        catch (InvalidOperationException)
-        {
-            return Results.NotFound(new { message = "Recipe not found." });
-        }
+        await recipeService.DeleteRecipeAsync(caller.HouseholdId, recipeId, ct);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> ToggleFavorite(
@@ -276,16 +257,9 @@ public static class RecipesEndpoints
             return Results.BadRequest(new { message = "No file uploaded." });
         }
 
-        try
-        {
-            var path = await imageService.SaveImageAsync(file, caller.HouseholdId, ct);
-            return Results.Created(path, new { imagePath = path });
-        }
-        catch (InvalidOperationException ex)
-        {
-            // Size / extension / content-type validation failures throw InvalidOperationException → 400.
-            return Results.BadRequest(new { message = ex.Message });
-        }
+        // Size / extension / content-type refusals are DomainValidationException → 400 at the /api branch.
+        var path = await imageService.SaveImageAsync(file, caller.HouseholdId, ct);
+        return Results.Created(path, new { imagePath = path });
     }
 
     private static async Task<IResult> ListImages(

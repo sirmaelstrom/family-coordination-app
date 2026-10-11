@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace FamilyCoordinationApp.Data.Entities;
 
-public class Recipe : Tenancy.ITenantEntity, Tenancy.IAuditable
+public class Recipe : Tenancy.ITenantEntity, Tenancy.IAuditable, IVersioned
 {
     public int HouseholdId { get; set; }
     public int RecipeId { get; set; }

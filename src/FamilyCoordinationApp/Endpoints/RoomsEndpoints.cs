@@ -82,16 +82,10 @@ public static class RoomsEndpoints
             return Results.BadRequest(new { message = "Photo path is not valid." });
         }
 
-        try
-        {
-            var room = await svc.UpdateRoomAsync(
-                caller.HouseholdId, roomId, req.Name.Trim(), (req.Icon ?? string.Empty).Trim(), photoPath, ct);
-            return Results.Ok(ToDto(room));
-        }
-        catch (InvalidOperationException)
-        {
-            return Results.NotFound();
-        }
+        // A missing room is NotFoundException → 404 at the /api exception branch.
+        var room = await svc.UpdateRoomAsync(
+            caller.HouseholdId, roomId, req.Name.Trim(), (req.Icon ?? string.Empty).Trim(), photoPath, ct);
+        return Results.Ok(ToDto(room));
     }
 
     private static async Task<IResult> DeleteRoom(
@@ -100,15 +94,8 @@ public static class RoomsEndpoints
         IRoomService svc,
         CancellationToken ct)
     {
-        try
-        {
-            await svc.DeleteRoomAsync(caller.HouseholdId, roomId, ct);
-            return Results.NoContent();
-        }
-        catch (InvalidOperationException)
-        {
-            return Results.NotFound();
-        }
+        await svc.DeleteRoomAsync(caller.HouseholdId, roomId, ct);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> ReorderRooms(
@@ -135,15 +122,9 @@ public static class RoomsEndpoints
         var room = await svc.GetRoomAsync(caller.HouseholdId, roomId, ct);
         if (room is null) return Results.NotFound();
 
-        try
-        {
-            var path = await imageService.SaveImageAsync(file, caller.HouseholdId, ct);
-            return Results.Ok(new { photoPath = path });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.BadRequest(new { message = ex.Message });
-        }
+        // Size / extension / content-type refusals are DomainValidationException → 400 at the /api branch.
+        var path = await imageService.SaveImageAsync(file, caller.HouseholdId, ct);
+        return Results.Ok(new { photoPath = path });
     }
 
     private static RoomDto ToDto(Room r) => new(

@@ -195,7 +195,7 @@ public class CategoryServiceTests : IDisposable
         var act = async () => await _service.UpdateCategoryAsync(nonExistentCategory);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
+        await act.Should().ThrowAsync<NotFoundException>()
             .WithMessage("*999*not found*");
     }
 
@@ -237,7 +237,7 @@ public class CategoryServiceTests : IDisposable
         var act = async () => await _service.DeleteCategoryAsync(householdId: 1, categoryId: 999);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
+        await act.Should().ThrowAsync<NotFoundException>()
             .WithMessage("*999*not found*");
     }
 

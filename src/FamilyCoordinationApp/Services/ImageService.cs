@@ -74,18 +74,18 @@ public class ImageService(
         // Validate file
         if (size > MaxFileSize)
         {
-            throw new InvalidOperationException($"File size exceeds maximum allowed size of {MaxFileSize / 1024 / 1024} MB.");
+            throw new DomainValidationException($"File size exceeds maximum allowed size of {MaxFileSize / 1024 / 1024} MB.");
         }
 
         var extension = Path.GetExtension(fileName);
         if (!AllowedExtensions.Contains(extension))
         {
-            throw new InvalidOperationException($"File type '{extension}' is not allowed. Allowed types: {string.Join(", ", AllowedExtensions)}");
+            throw new DomainValidationException($"File type '{extension}' is not allowed. Allowed types: {string.Join(", ", AllowedExtensions)}");
         }
 
         if (!AllowedContentTypes.Contains(contentType))
         {
-            throw new InvalidOperationException($"Content type '{contentType}' is not allowed.");
+            throw new DomainValidationException($"Content type '{contentType}' is not allowed.");
         }
 
         // Generate unique filename

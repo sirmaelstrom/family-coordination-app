@@ -515,7 +515,7 @@ public class ShoppingListGeneratorTests : IDisposable
             listName: "Invalid Plan");
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
+        await act.Should().ThrowAsync<NotFoundException>()
             .WithMessage("*MealPlan 999 not found*");
     }
 

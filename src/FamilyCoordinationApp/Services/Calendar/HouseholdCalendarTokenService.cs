@@ -62,7 +62,8 @@ public sealed class HouseholdCalendarTokenService(
         {
             token.RevokedAt = now;
         }
-        await context.SaveChangesAsync(ct);
+        // Checked against the loaded xmin: a rotation landing between load and save is a 409, not a 500.
+        await context.SaveChangesOrConflictAsync(ct);
     }
 
     public async Task<HouseholdCalendarToken?> ResolveActiveAsync(string? token, CancellationToken ct = default)

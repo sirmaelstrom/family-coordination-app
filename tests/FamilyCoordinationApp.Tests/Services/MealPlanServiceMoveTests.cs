@@ -141,7 +141,7 @@ public class MealPlanServiceMoveTests : IDisposable
     public async Task MoveMeal_MissingEntry_Throws()
     {
         var act = () => _service.MoveMealAsync(1, 1, 999, WeekStart, MealType.Breakfast, NoConcurrencyCheck);
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await act.Should().ThrowAsync<NotFoundException>();
     }
 
     [Fact]
@@ -149,7 +149,7 @@ public class MealPlanServiceMoveTests : IDisposable
     {
         // Household 2 asking for household 1's entry — the scoped lookup must not see it (M1).
         var act = () => _tenant.As(2, () => _service.MoveMealAsync(2, 1, 1, WeekStart, MealType.Breakfast, NoConcurrencyCheck));
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await act.Should().ThrowAsync<NotFoundException>();
 
         await using var verify = new ApplicationDbContext(_options);
         var untouched = await verify.MealPlanEntries
@@ -163,7 +163,7 @@ public class MealPlanServiceMoveTests : IDisposable
     {
         var nextMonday = WeekStart.AddDays(7);
         var act = () => _service.MoveMealAsync(1, 1, 1, nextMonday, MealType.Dinner, NoConcurrencyCheck);
-        await act.Should().ThrowAsync<ArgumentException>()
+        await act.Should().ThrowAsync<DomainValidationException>()
             .WithMessage("*outside this meal plan's week*");
     }
 
@@ -172,7 +172,7 @@ public class MealPlanServiceMoveTests : IDisposable
     {
         // Entry 1 (Tacos) → Wednesday dinner, where entry 2 already plans Tacos.
         var act = () => _service.MoveMealAsync(1, 1, 1, WeekStart.AddDays(2), MealType.Dinner, NoConcurrencyCheck);
-        await act.Should().ThrowAsync<ArgumentException>()
+        await act.Should().ThrowAsync<DomainValidationException>()
             .WithMessage("*already planned*");
     }
 
@@ -192,7 +192,7 @@ public class MealPlanServiceMoveTests : IDisposable
         _context.SaveChanges();
 
         var act = () => _service.MoveMealAsync(1, 1, 3, WeekStart.AddDays(1), MealType.Dinner, NoConcurrencyCheck);
-        await act.Should().ThrowAsync<ArgumentException>()
+        await act.Should().ThrowAsync<DomainValidationException>()
             .WithMessage("*already planned*");
     }
 

@@ -11,6 +11,7 @@ public class RecipeService(
     ILogger<RecipeService> logger,
     IHouseholdClock clock) : IRecipeService
 {
+    private const string RecipeNotFound = "Recipe not found.";
 
     public async Task<List<Recipe>> GetRecipesAsync(int householdId, string? searchTerm = null, CancellationToken cancellationToken = default)
     {
@@ -89,17 +90,7 @@ public class RecipeService(
 
         if (existing == null)
         {
-            throw new InvalidOperationException($"Recipe {recipe.RecipeId} not found in household {recipe.HouseholdId}");
-        }
-
-        // Optimistic concurrency (mirrors ChoreService.SaveWithConcurrencyAsync): loading the row makes EF
-        // treat the LOADED Version as the original, so a stale client token would NOT conflict on its own.
-        // Setting the client token as the OriginalValue makes the UPDATE run WHERE xmin = <client version>,
-        // so a stale token surfaces as DbUpdateConcurrencyException → RecipeConflictException (→ 409).
-        // null ⇒ no token supplied ⇒ legacy last-write-wins (the check is skipped).
-        if (expectedVersion.HasValue)
-        {
-            context.Entry(existing).Property(r => r.Version).OriginalValue = expectedVersion.Value;
+            throw new NotFoundException(RecipeNotFound, $"Recipe {recipe.RecipeId} not found in household {recipe.HouseholdId}");
         }
 
         // Update scalar properties
@@ -137,15 +128,10 @@ public class RecipeService(
             context.RecipeIngredients.Add(newIngredient);
         }
 
-        try
-        {
-            await context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException ex)
-        {
-            throw new RecipeConflictException(
-                $"Recipe {recipe.RecipeId} was modified by another user; the supplied version is stale.", ex);
-        }
+        // Optimistic concurrency through the one path (ConcurrencySave): a stale token → ConcurrencyConflictException
+        // (→ 409). null ⇒ no token supplied ⇒ checked only against the version loaded above, the legacy
+        // last-write-wins semantic, kept pending the conductor's ruling (quest 8cf3c806).
+        await context.SaveWithConcurrencyAsync(existing, expectedVersion, cancellationToken);
 
         logger.LogInformation("Updated recipe {RecipeId} for household {HouseholdId}", recipe.RecipeId, recipe.HouseholdId);
 
@@ -161,7 +147,7 @@ public class RecipeService(
 
         if (recipe == null)
         {
-            throw new InvalidOperationException($"Recipe {recipeId} not found in household {householdId}");
+            throw new NotFoundException(RecipeNotFound, $"Recipe {recipeId} not found in household {householdId}");
         }
 
         // Soft delete
@@ -363,8 +349,8 @@ public class RecipeService(
 
                 if (sourceRecipe == null)
                 {
-                    throw new InvalidOperationException(
-                        $"Recipe {sourceRecipeId} not found in household {sourceHouseholdId}");
+                    throw new NotFoundException(
+                        RecipeNotFound, $"Recipe {sourceRecipeId} not found in household {sourceHouseholdId}");
                 }
 
                 // Get next recipe ID for the target household

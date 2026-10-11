@@ -11,6 +11,7 @@ public class ShoppingListService(
     ILogger<ShoppingListService> logger,
     IHouseholdClock clock) : IShoppingListService
 {
+    private const string ListNotFound = "Shopping list not found.";
 
     public async Task<ShoppingList> CreateShoppingListAsync(int householdId, string name, int? mealPlanId = null, CancellationToken cancellationToken = default)
     {
@@ -92,7 +93,7 @@ public class ShoppingListService(
 
         var shoppingList = await context.ShoppingLists
             .FirstOrDefaultAsync(sl => sl.ShoppingListId == shoppingListId, cancellationToken)
-            ?? throw new KeyNotFoundException($"Shopping list {shoppingListId} not found");
+            ?? throw new NotFoundException(ListNotFound, $"Shopping list {shoppingListId} not found");
 
         shoppingList.IsArchived = false;
         await context.SaveChangesAsync(cancellationToken);
@@ -108,7 +109,7 @@ public class ShoppingListService(
         var shoppingList = await context.ShoppingLists
             .Include(sl => sl.Items)
             .FirstOrDefaultAsync(sl => sl.ShoppingListId == shoppingListId, cancellationToken)
-            ?? throw new KeyNotFoundException($"Shopping list {shoppingListId} not found");
+            ?? throw new NotFoundException(ListNotFound, $"Shopping list {shoppingListId} not found");
 
         // Remove all items first
         context.ShoppingListItems.RemoveRange(shoppingList.Items);
@@ -128,7 +129,7 @@ public class ShoppingListService(
 
         var shoppingList = await context.ShoppingLists
             .FirstOrDefaultAsync(sl => sl.ShoppingListId == shoppingListId, cancellationToken)
-            ?? throw new KeyNotFoundException($"Shopping list {shoppingListId} not found");
+            ?? throw new NotFoundException(ListNotFound, $"Shopping list {shoppingListId} not found");
 
         shoppingList.Name = newName.Trim();
         await context.SaveChangesAsync(cancellationToken);
@@ -310,7 +311,7 @@ public class ShoppingListService(
 
         if (item == null)
         {
-            throw new KeyNotFoundException($"Item {itemId} not found in ShoppingList {shoppingListId} for household {householdId}");
+            throw new NotFoundException("Item not found.", $"Item {itemId} not found in ShoppingList {shoppingListId} for household {householdId}");
         }
 
         context.ShoppingListItems.Remove(item);
@@ -330,7 +331,7 @@ public class ShoppingListService(
 
         if (shoppingList == null)
         {
-            throw new KeyNotFoundException($"ShoppingList {shoppingListId} not found for household {householdId}");
+            throw new NotFoundException(ListNotFound, $"ShoppingList {shoppingListId} not found for household {householdId}");
         }
 
         shoppingList.IsFavorite = !shoppingList.IsFavorite;
@@ -389,7 +390,7 @@ public class ShoppingListService(
 
         if (shoppingList == null)
         {
-            throw new KeyNotFoundException($"ShoppingList {shoppingListId} not found for household {householdId}");
+            throw new NotFoundException(ListNotFound, $"ShoppingList {shoppingListId} not found for household {householdId}");
         }
 
         shoppingList.IsArchived = true;

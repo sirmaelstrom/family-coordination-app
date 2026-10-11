@@ -188,7 +188,7 @@ public class ChoreService(
             ClearToPile(chore);
         }
 
-        await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
+        await context.SaveWithConcurrencyAsync(chore, version, cancellationToken);
         logger.LogInformation("Updated Chore {ChoreId} for household {HouseholdId}", choreId, householdId);
         return chore;
     }
@@ -214,7 +214,7 @@ public class ChoreService(
         context.ChoreRooms.RemoveRange(memberships);
 
         context.Chores.Remove(chore);
-        await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
+        await context.SaveWithConcurrencyAsync(chore, version, cancellationToken);
         logger.LogInformation("Deleted Chore {ChoreId} for household {HouseholdId}", choreId, householdId);
     }
 
@@ -240,7 +240,7 @@ public class ChoreService(
         SetClaimed(chore, actorUserId, now);
         AppendEvent(context, chore, ChoreEventType.Claimed, actorUserId, targetUserId: null, now);
 
-        await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
+        await context.SaveWithConcurrencyAsync(chore, version, cancellationToken);
         logger.LogInformation("Chore {ChoreId} claimed by user {UserId} (household {HouseholdId})", choreId, actorUserId, householdId);
         return chore;
     }
@@ -262,7 +262,7 @@ public class ChoreService(
         SetClaimed(chore, actorUserId, now);
         AppendEvent(context, chore, ChoreEventType.Claimed, actorUserId, targetUserId: null, now);
 
-        await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
+        await context.SaveWithConcurrencyAsync(chore, version, cancellationToken);
         logger.LogInformation("Chore {ChoreId} taken (self-claim) by user {UserId} (household {HouseholdId})", choreId, actorUserId, householdId);
         return chore;
     }
@@ -287,7 +287,7 @@ public class ChoreService(
         ClearToPile(chore);
         AppendEvent(context, chore, ChoreEventType.Dropped, actorUserId, targetUserId: null, now);
 
-        await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
+        await context.SaveWithConcurrencyAsync(chore, version, cancellationToken);
         logger.LogInformation("Chore {ChoreId} dropped by user {UserId} (household {HouseholdId})", choreId, actorUserId, householdId);
         return chore;
     }
@@ -314,7 +314,7 @@ public class ChoreService(
 
         AppendEvent(context, chore, ChoreEventType.HandedOff, actorUserId, targetUserId, now);
 
-        await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
+        await context.SaveWithConcurrencyAsync(chore, version, cancellationToken);
         logger.LogInformation("Chore {ChoreId} handed off by user {ActorId} to {Target} (household {HouseholdId})",
             choreId, actorUserId, targetUserId?.ToString() ?? "pile", householdId);
         return chore;
@@ -444,7 +444,7 @@ public class ChoreService(
         // Else (partial): leave LastCompletedAt, Status, and the assignment trio untouched (D4) — only the
         // ChoreCompletion rows + LastContributionAt above were written.
 
-        await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
+        await context.SaveWithConcurrencyAsync(chore, version, cancellationToken);
         logger.LogInformation(
             "Chore {ChoreId} contribution by user {UserId} (+{New} contributor(s), {Distinct} of {Required}) (household {HouseholdId})",
             choreId, actorUserId, newContributors.Count, newDistinctCount, chore.RequiredCount, householdId);
@@ -471,7 +471,7 @@ public class ChoreService(
             AppendSnoozeEvent(context, chore, actorUserId, until, UtcNow());
         }
 
-        await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
+        await context.SaveWithConcurrencyAsync(chore, version, cancellationToken);
         logger.LogInformation("Chore {ChoreId} snooze {Action} (household {HouseholdId})",
             choreId, until is { } u ? $"set to {u:yyyy-MM-dd}" : "cleared", householdId);
         return chore;
@@ -490,7 +490,7 @@ public class ChoreService(
         AppendParticipation(context, chore, ChoreParticipationType.Assigned, subjectUserId, actorUserId, now);
         MarkChoreTouched(context, chore, now);
 
-        await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
+        await context.SaveWithConcurrencyAsync(chore, version, cancellationToken);
         logger.LogInformation("Chore {ChoreId} roster: user {Subject} assigned by {Actor} (household {HouseholdId})",
             choreId, subjectUserId, actorUserId, householdId);
         return chore;
@@ -508,7 +508,7 @@ public class ChoreService(
         AppendParticipation(context, chore, ChoreParticipationType.Committed, actorUserId, actorUserId, now);
         MarkChoreTouched(context, chore, now);
 
-        await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
+        await context.SaveWithConcurrencyAsync(chore, version, cancellationToken);
         logger.LogInformation("Chore {ChoreId} roster: user {UserId} committed (household {HouseholdId})",
             choreId, actorUserId, householdId);
         return chore;
@@ -538,7 +538,7 @@ public class ChoreService(
         AppendParticipation(context, chore, ChoreParticipationType.Left, subject, actorUserId, now);
         MarkChoreTouched(context, chore, now);
 
-        await SaveWithConcurrencyAsync(context, chore, version, cancellationToken);
+        await context.SaveWithConcurrencyAsync(chore, version, cancellationToken);
         logger.LogInformation("Chore {ChoreId} roster: user {Subject} left (by {Actor}, household {HouseholdId})",
             choreId, subject, actorUserId, householdId);
         return chore;
@@ -769,26 +769,6 @@ public class ChoreService(
         }
     }
 
-    /// <summary>
-    /// Saves, mapping an xmin optimistic-concurrency conflict to <see cref="ChoreConflictException"/> (→ 409).
-    /// <para>Council C1 — the actual mechanism: loading the row makes EF treat the LOADED <c>Version</c> as
-    /// the original, so a stale client token would NOT conflict. We set the client token as the
-    /// <c>OriginalValue</c> before saving so a concurrent write surfaces as
-    /// <see cref="DbUpdateConcurrencyException"/>, which we rethrow as a typed conflict. We do NOT swallow or
-    /// retry (MN — last-write-wins is the bug WP-08 catches against real Postgres).</para>
-    /// </summary>
-    private async Task SaveWithConcurrencyAsync(ApplicationDbContext context, Chore chore, uint clientVersion, CancellationToken cancellationToken)
-    {
-        context.Entry(chore).Property(c => c.Version).OriginalValue = clientVersion;
-
-        try
-        {
-            await context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException ex)
-        {
-            throw new ChoreConflictException(
-                $"Chore {chore.ChoreId} was modified by another user; the supplied version is stale.", ex);
-        }
-    }
+    // Every versioned mutation saves through ConcurrencySave.SaveWithConcurrencyAsync (council C1: the client token is
+    // set as the OriginalValue, so a stale token is a ConcurrencyConflictException → 409, never last-write-wins).
 }

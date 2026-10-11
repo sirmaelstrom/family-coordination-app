@@ -409,6 +409,7 @@ app.UseWhen(
     {
         ExceptionHandler = ApiExceptionResponse.Write,
         AllowStatusCode404Response = true,
+        SuppressDiagnosticsCallback = ApiExceptionResponse.IsExpected,
     }));
 // /api answers in JSON and is never re-executed through a page. UseStatusCodePagesWithReExecute re-runs the
 // request through the GET-only /not-found Razor Page, which changes the status a non-GET caller observes — a

@@ -27,7 +27,7 @@ namespace FamilyCoordinationApp.Tests.Integration;
 ///   calls as DIFFERENT users on the SAME loaded <c>version</c>, forced to race via the same
 ///   <see cref="SaveBarrier"/> / <see cref="GatedPostgresDbContextFactory"/> mechanism the claim-race uses
 ///   (<see cref="ChoreServiceConcurrencyTests"/>). Postgres bumps xmin on the first commit, so the loser MUST
-///   get a <see cref="ChoreConflictException"/>; the loser then RE-SUBMITS against the refreshed version (the
+///   get a <see cref="ConcurrencyConflictException"/>; the loser then RE-SUBMITS against the refreshed version (the
 ///   island does not auto-retry) and adds the 2nd distinct row → exactly TWO distinct contribution rows and
 ///   exactly ONE advance. The FORBIDDEN states are asserted absent: never "2 rows, not advanced" and never
 ///   "advanced twice".</description></item>
@@ -176,7 +176,7 @@ public sealed class MultiPersonChoreTests(PostgresContainerFixture postgres) : I
     // Reuses the EXACT mechanism from ChoreServiceConcurrencyTests: a SaveBarrier rendezvous +
     // GatedPostgresDbContextFactory so both CompleteAsync calls reach SaveChanges after both loaded the chore
     // at the SAME xmin version. Because each forces a Chore UPDATE (LastContributionAt), Postgres bumps xmin
-    // on the first commit → the second MUST throw ChoreConflictException. The loser re-submits against the
+    // on the first commit → the second MUST throw ConcurrencyConflictException. The loser re-submits against the
     // refreshed version. End state: exactly 2 distinct contribution rows, exactly one advance (Status=Done).
     // ──────────────────────────────────────────────────────────────────────────────────────────────
     [Fact]
@@ -242,7 +242,7 @@ public sealed class MultiPersonChoreTests(PostgresContainerFixture postgres) : I
             "exactly one racer commits at the shared version — two wins would mean xmin did NOT serialize the " +
             "partials (the 'both commit from the same version' state the spec forbids)");
         conflicts.Should().Be(1,
-            "the loser MUST get a ChoreConflictException once the winner bumped xmin (D3/V3)");
+            "the loser MUST get a ConcurrencyConflictException once the winner bumped xmin (D3/V3)");
         results.Should().NotContain(r => r.OtherError,
             "the loser must lose on the xmin token, not the 'nothing new' (D6) validation guard");
 
@@ -348,7 +348,7 @@ public sealed class MultiPersonChoreTests(PostgresContainerFixture postgres) : I
     /// <summary>
     /// One co-sign contribution attempt, classifying the outcome the same way
     /// <see cref="ChoreServiceConcurrencyTests"/> classifies a claim: a clean win, an xmin
-    /// <see cref="ChoreConflictException"/> (the loser), or the "nothing new" <see cref="ChoreValidationException"/>
+    /// <see cref="ConcurrencyConflictException"/> (the loser), or the "nothing new" <see cref="ChoreValidationException"/>
     /// guard (which here would mean the race did NOT serialize on xmin — surfaced so the assertion fails loudly).
     /// </summary>
     private static async Task<ContributeResult> AttemptContributeAsync(
@@ -360,7 +360,7 @@ public sealed class MultiPersonChoreTests(PostgresContainerFixture postgres) : I
                 note: null, photoPath: null, participantUserIds: null, version);
             return new ContributeResult(actorUserId, Won: true, Conflicted: false, OtherError: false);
         }
-        catch (ChoreConflictException)
+        catch (ConcurrencyConflictException)
         {
             return new ContributeResult(actorUserId, Won: false, Conflicted: true, OtherError: false);
         }
