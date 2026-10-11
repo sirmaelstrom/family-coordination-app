@@ -14,7 +14,7 @@ public static class CalendarTokenEndpoints
     public static IEndpointRouteBuilder MapCalendarTokenEndpoints(this IEndpointRouteBuilder app)
     {
         var management = app.MapGroup("/api/meal-plan/calendar-token")
-            .RequireAuthorization()
+            // Login: the /api gate (the FallbackPolicy in Program.cs), not a per-group RequireAuthorization().
             .RequireTenant()
             .DisableAntiforgery();
 

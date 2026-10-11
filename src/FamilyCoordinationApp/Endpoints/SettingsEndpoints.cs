@@ -10,7 +10,7 @@ namespace FamilyCoordinationApp.Endpoints;
 
 /// <summary>
 /// Minimal-API surface for Settings island A (Household settings, strangler — mirrors <see cref="RecipesEndpoints"/>):
-/// an <c>/api/settings</c> group behind <c>.RequireAuthorization().DisableAntiforgery()</c>, every handler taking the
+/// an <c>/api/settings</c> group behind the /api login gate and <c>.DisableAntiforgery()</c>, every handler taking the
 /// HouseholdId/UserId of the authenticated caller (M1, never client-supplied) as a <see cref="CallerScope"/>.
 /// Categories ride the existing <see cref="ICategoryService"/>; members go through the new
 /// <see cref="IHouseholdMemberService"/> (the safety rules live there, server-enforced — review R-A2).
@@ -25,7 +25,7 @@ public static class SettingsEndpoints
     public static IEndpointRouteBuilder MapSettingsEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/settings")
-            .RequireAuthorization()
+            // Login: the /api gate (the FallbackPolicy in Program.cs), not a per-group RequireAuthorization().
             .RequireTenant()
             .DisableAntiforgery();
 

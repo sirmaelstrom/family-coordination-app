@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Claims;
+using FamilyCoordinationApp.Authorization;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
@@ -11,22 +12,25 @@ namespace FamilyCoordinationApp.Endpoints;
 
 /// <summary>
 /// Minimal-API surface for Settings island C (Admin, strangler — the heaviest, most auth-sensitive cluster).
-/// Two groups under one file (review X2), both behind <c>.RequireAuthorization().DisableAntiforgery()</c>:
+/// Three groups under one file (review X2), all with <c>.DisableAntiforgery()</c>:
 /// <list type="bullet">
-/// <item><c>/api/settings/household-requests</c> — <b>SITE-ADMIN ONLY</b>. A per-handler 403 gate reads the
-/// caller's email from claims and checks <see cref="ISiteAdminService"/> (3 routes don't justify a filter, R-C5).
-/// These are GLOBAL reads/writes — no HouseholdId, gated by the 403, not by M1 (R-C8).</item>
-/// <item><c>/api/settings/feedback</c> — <b>DUAL-MODE</b>. A site admin sees/acts on all households' feedback; a
-/// regular user only their own household's (server-scoped, R-C1 — the circuit→REST lift would otherwise be an
-/// IDOR). The <c>isSiteAdmin</c> flag rides in the list payload for the island's affordances. <b>POST /</b> is the
-/// SUBMIT route — any authenticated caller, not just an admin.</item>
+/// <item><c>/api/settings/household-requests</c> and <c>/api/settings/households</c> — <b>SITE-ADMIN ONLY</b>.
+/// Gated by the <see cref="AuthorizationPolicies.SiteAdmin"/> policy (quest 82fc7f54), which refuses a non-admin with
+/// a 403 before the handler or the request validation runs. These are GLOBAL reads/writes — no HouseholdId, gated by
+/// the policy, not by M1 (R-C8).</item>
+/// <item><c>/api/settings/feedback</c> — <b>DUAL-MODE</b>, behind the /api login gate. A site admin sees/acts on all
+/// households' feedback; a regular user only their own household's (server-scoped, R-C1 — the circuit→REST lift
+/// would otherwise be an IDOR). Site-admin here is a DATA-SCOPE decision (which rows), never an access gate: every
+/// signed-in member may use these routes. The <c>isSiteAdmin</c> flag rides in the list payload for the island's
+/// affordances. <b>POST /</b> is the SUBMIT route — any authenticated caller, not just an admin.</item>
 /// </list>
 ///
 /// <para><b>Email plumbing (R-C5):</b> <see cref="CallerScope"/> carries no email (only HouseholdId/UserId),
-/// so the site-admin check reads <c>ClaimTypes.Email</c> from the principal DIRECTLY, and the feedback handlers
-/// take the <see cref="CallerScope"/> only for the household scope. <b>Non-empty 4xx (R-C5 / memory
-/// fca-empty-404-surfaces-as-405-on-delete):</b> the 403 and the IDOR 404 both carry a JSON body so callers get
-/// specific detail instead of the generic /api backfill.</para>
+/// so the site-admin check reads <c>ClaimTypes.Email</c> from the principal (<see cref="SiteAdminPrincipalExtensions"/>),
+/// and the feedback handlers take the <see cref="CallerScope"/> only for the household scope. <b>Non-empty 4xx
+/// (R-C5 / memory fca-empty-404-surfaces-as-405-on-delete):</b> the policy's 403
+/// (<see cref="ApiAuthorizationResultHandler"/>) and the IDOR 404 both carry a JSON body so callers get specific
+/// detail instead of the generic /api backfill.</para>
 ///
 /// <para><b>Dates (X5):</b> RequestedAt/ReviewedAt/CreatedAt are full UTC instants → projected to explicit
 /// ISO-8601 <c>Z</c> strings (<see cref="ToIso"/>) so the wire format is unambiguous and the island renders local
@@ -38,7 +42,7 @@ public static class SettingsAdminEndpoints
     {
         // ── Household requests (site-admin only) ──────────────────────────────────
         var requests = app.MapGroup("/api/settings/household-requests")
-            .RequireAuthorization()
+            .RequireAuthorization(AuthorizationPolicies.SiteAdmin)
             .DisableAntiforgery();
         requests.MapGet("/", GetHouseholdRequests);
         requests.MapPost("/{id:int}/approve", ApproveRequest);
@@ -46,13 +50,13 @@ public static class SettingsAdminEndpoints
 
         // ── Households (site-admin only) — admin-initiated create (the "push" invite) ──
         var households = app.MapGroup("/api/settings/households")
-            .RequireAuthorization()
+            .RequireAuthorization(AuthorizationPolicies.SiteAdmin)
             .DisableAntiforgery();
         households.MapPost("/", CreateHousehold);
 
         // ── Feedback (dual-mode) ──────────────────────────────────────────────────
         var feedback = app.MapGroup("/api/settings/feedback")
-            .RequireAuthorization()
+            // Login: the /api gate (the FallbackPolicy in Program.cs). Site-admin is a data scope here, not a gate.
             .RequireTenant()
             .DisableAntiforgery();
         feedback.MapPost("/", SubmitFeedback);
@@ -68,13 +72,9 @@ public static class SettingsAdminEndpoints
 
     /// <summary>#1 GET / — every request (pending-first) + every household with member count (403 if not site-admin).</summary>
     private static async Task<IResult> GetHouseholdRequests(
-        ClaimsPrincipal principal,
-        ISiteAdminService siteAdmin,
         IHouseholdRequestService requestService,
         CancellationToken ct)
     {
-        if (RequireSiteAdmin(principal, siteAdmin) is { } forbidden) return forbidden;
-
         var data = await requestService.GetDataAsync(ct);
         return Results.Ok(new HouseholdRequestsDto(
             data.Requests.Select(ToRequestDto).ToList(),
@@ -85,12 +85,9 @@ public static class SettingsAdminEndpoints
     private static async Task<IResult> ApproveRequest(
         int id,
         ClaimsPrincipal principal,
-        ISiteAdminService siteAdmin,
         IHouseholdRequestService requestService,
         CancellationToken ct)
     {
-        if (RequireSiteAdmin(principal, siteAdmin) is { } forbidden) return forbidden;
-
         var reviewerEmail = principal.FindFirst(ClaimTypes.Email)?.Value ?? "";
         var result = await requestService.ApproveAsync(id, reviewerEmail, ct);
         return result.Outcome switch
@@ -110,16 +107,13 @@ public static class SettingsAdminEndpoints
         int id,
         RejectReasonRequest? req,
         ClaimsPrincipal principal,
-        ISiteAdminService siteAdmin,
         IHouseholdRequestService requestService,
         CancellationToken ct)
     {
-        if (RequireSiteAdmin(principal, siteAdmin) is { } forbidden) return forbidden;
-
         // Reason is optional (R-C7): a missing body / empty reason is fine. But guard the column's 500-char limit
         // server-side so an oversized direct-API reason is a clean 400, not a varchar-overflow 500 (council R4).
-        // Hand-written, not an attribute: the site-admin 403 above must answer first, and the validation filter
-        // would run before this handler (quest ec7a7331).
+        // Hand-written, not an attribute (quest ec7a7331). The site-admin 403 now answers before either, from the
+        // SiteAdmin policy in the authorization middleware (quest 82fc7f54).
         if (req?.Reason is { Length: > FieldLengths.HouseholdRequest.RejectionReason })
         {
             return Results.BadRequest(new { message = $"Rejection reason must be {FieldLengths.HouseholdRequest.RejectionReason} characters or fewer." });
@@ -144,20 +138,16 @@ public static class SettingsAdminEndpoints
     private static async Task<IResult> CreateHousehold(
         CreateHouseholdRequest? req,
         ClaimsPrincipal principal,
-        ISiteAdminService siteAdmin,
         IHouseholdRequestService requestService,
         CancellationToken ct)
     {
-        if (RequireSiteAdmin(principal, siteAdmin) is { } forbidden) return forbidden;
-
         var name = req?.HouseholdName?.Trim() ?? "";
         var email = req?.OwnerEmail?.Trim() ?? "";
         if (name.Length == 0 || email.Length == 0)
         {
             return Results.BadRequest(new { message = "Household name and owner email are required." });
         }
-        // Hand-written, not attributes: the site-admin 403 must answer first, and these limits apply to the TRIMMED
-        // values the service stores (quest ec7a7331).
+        // Hand-written, not attributes: these limits apply to the TRIMMED values the service stores (quest ec7a7331).
         if (name.Length > FieldLengths.Household.Name)
         {
             return Results.BadRequest(new { message = $"Household name must be {FieldLengths.Household.Name} characters or fewer." });
@@ -310,33 +300,19 @@ public static class SettingsAdminEndpoints
             : NotFoundFeedback();
     }
 
-    // ─── Auth helpers ─────────────────────────────────────────────────────────────
+    // ─── Data scope ───────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The site-admin 403 gate (R-C5). Reads the email from claims directly (the resolver drops it) and returns a
-    /// NON-EMPTY-body 403 when the caller isn't a site admin, or null to proceed.
-    /// </summary>
-    private static IResult? RequireSiteAdmin(ClaimsPrincipal principal, ISiteAdminService siteAdmin)
-    {
-        var email = principal.FindFirst(ClaimTypes.Email)?.Value;
-        return siteAdmin.IsSiteAdmin(email)
-            ? null
-            : Results.Json(new { message = "Site admin access required." }, statusCode: StatusCodes.Status403Forbidden);
-    }
-
-    /// <summary>
-    /// The feedback caller's scope (R-C5): isSiteAdmin from the claim email DIRECTLY + userId/householdId from the
-    /// <see cref="CallerScope"/> (a non-admin's M1 read scope, and the submit attribution). The feedback group is
-    /// marked <c>RequireTenant()</c>, so an unresolvable caller has already had the middleware's 401 + JSON body.
+    /// The feedback caller's DATA scope (R-C5), not an access gate: isSiteAdmin picks which rows the caller sees and
+    /// may mark (all households vs. their own), and userId/householdId come from the <see cref="CallerScope"/> (a
+    /// non-admin's M1 read scope, and the submit attribution). The feedback group is marked <c>RequireTenant()</c>, so
+    /// an unresolvable caller has already had the middleware's 401 + JSON body.
     /// </summary>
     private static (bool IsSiteAdmin, int UserId, int HouseholdId) ResolveFeedbackScope(
         CallerScope caller,
         ClaimsPrincipal principal,
-        ISiteAdminService siteAdmin)
-    {
-        var email = principal.FindFirst(ClaimTypes.Email)?.Value;
-        return (siteAdmin.IsSiteAdmin(email), caller.UserId, caller.HouseholdId);
-    }
+        ISiteAdminService siteAdmin) =>
+        (siteAdmin.IsSiteAdmin(principal), caller.UserId, caller.HouseholdId);
 
     private static IResult NotFoundFeedback() => Results.NotFound(new { message = "Feedback not found." });
 

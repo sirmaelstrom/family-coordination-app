@@ -15,7 +15,7 @@ namespace FamilyCoordinationApp.Endpoints;
 
 /// <summary>
 /// Minimal-API surface for chores + the board (WP-06). Mirrors <c>ShoppingListEndpoints</c>: a
-/// <c>/api/chores</c> group behind <c>.RequireAuthorization().DisableAntiforgery()</c>, every handler
+/// <c>/api/chores</c> group behind the /api login gate and <c>.DisableAntiforgery()</c>, every handler
 /// taking the HouseholdId/UserId of the authenticated caller (M1, never client-supplied) as the
 /// <see cref="CallerScope"/> that <see cref="CallerTenantMiddleware"/> resolved. Writes delegate to <see cref="IChoreService"/>; the board read +
 /// the per-mutation response projection delegate to <see cref="IChoreBoardService"/> (ONE projection — no
@@ -30,7 +30,7 @@ public static class ChoresEndpoints
     public static IEndpointRouteBuilder MapChoresEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/chores")
-            .RequireAuthorization()
+            // Login: the /api gate (the FallbackPolicy in Program.cs), not a per-group RequireAuthorization().
             .RequireTenant()
             .DisableAntiforgery();
 
@@ -73,10 +73,10 @@ public static class ChoresEndpoints
         group.MapPost("/seed-starter", SeedStarter);
 
         // v1.1 (WP-06, E8/E9): the cron-triggered digest run endpoint. Mapped on the TOP-LEVEL app — NOT on
-        // `group` — because `group` carries `.RequireAuthorization()` (cookie auth) which would break the
-        // shared-secret cron design (council). No RequireAuthorization; shared-secret token via header only
-        // (MN10). Antiforgery disabled (no cookie/form).
-        app.MapPost("/api/chores/digest/run", RunDigests).DisableAntiforgery();
+        // `group` — because `group` is tenant-scoped to a signed-in caller, which would break the shared-secret cron
+        // design (council). AllowAnonymous opts it out of the /api login gate (the FallbackPolicy, quest 82fc7f54);
+        // the shared-secret token via header is its only gate (MN10). Antiforgery disabled (no cookie/form).
+        app.MapPost("/api/chores/digest/run", RunDigests).AllowAnonymous().DisableAntiforgery();
 
         return app;
     }

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using FamilyCoordinationApp.Authorization;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Tenancy;
@@ -19,7 +20,7 @@ public static class MeEndpoints
     public static IEndpointRouteBuilder MapMeEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/me", GetMe)
-            .RequireAuthorization()
+            // Login: the /api gate (the FallbackPolicy in Program.cs), not a per-route RequireAuthorization().
             .RequireTenant()
             .DisableAntiforgery();
 
@@ -65,7 +66,8 @@ public static class MeEndpoints
                 : user.DisplayName,
             user.Initials,
             user.PictureUrl,
-            siteAdmin.IsSiteAdmin(email)));
+            // A data signal (the header's site-admin chip), not an access gate: the SiteAdmin policy is the gate.
+            siteAdmin.IsSiteAdmin(principal)));
     }
 
     public sealed record MeDto(

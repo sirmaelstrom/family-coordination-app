@@ -10,7 +10,7 @@ namespace FamilyCoordinationApp.Endpoints;
 
 /// <summary>
 /// Minimal-API surface for rooms (WP-06). Mirrors <c>ShoppingListEndpoints</c>: a <c>/api/rooms</c> group
-/// behind <c>.RequireAuthorization().DisableAntiforgery()</c>, every handler taking the HouseholdId of the
+/// behind the /api login gate and <c>.DisableAntiforgery()</c>, every handler taking the HouseholdId of the
 /// authenticated caller (M1, never client-supplied) as a <see cref="CallerScope"/>. Room CRUD +
 /// reorder delegate to <see cref="IRoomService"/>; photo upload is a dedicated multipart route (council C2).
 /// </summary>
@@ -19,7 +19,7 @@ public static class RoomsEndpoints
     public static IEndpointRouteBuilder MapRoomsEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/rooms")
-            .RequireAuthorization()
+            // Login: the /api gate (the FallbackPolicy in Program.cs), not a per-group RequireAuthorization().
             .RequireTenant()
             .DisableAntiforgery();
 

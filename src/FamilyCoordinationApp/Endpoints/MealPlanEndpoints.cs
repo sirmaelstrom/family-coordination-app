@@ -12,7 +12,7 @@ namespace FamilyCoordinationApp.Endpoints;
 
 /// <summary>
 /// Minimal-API surface for the meal-plan island (strangler — mirrors <see cref="ChoresEndpoints"/>): a
-/// <c>/api/meal-plan</c> group behind <c>.RequireAuthorization().DisableAntiforgery()</c>, every handler
+/// <c>/api/meal-plan</c> group behind the /api login gate and <c>.DisableAntiforgery()</c>, every handler
 /// taking the HouseholdId/UserId of the authenticated caller (M1, never client-supplied) as a
 /// <see cref="CallerScope"/>. Writes delegate to <see cref="IMealPlanService"/> / <see cref="IRecipeService"/>;
 /// the board read + per-entry projection delegate to <see cref="IMealPlanBoardService"/> (ONE projection — no
@@ -29,7 +29,7 @@ public static class MealPlanEndpoints
     public static IEndpointRouteBuilder MapMealPlanEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/meal-plan")
-            .RequireAuthorization()
+            // Login: the /api gate (the FallbackPolicy in Program.cs), not a per-group RequireAuthorization().
             .RequireTenant()
             // Mirrors the shopping-list/chores island groups: the island calls these with same-origin
             // credentialed fetch + JSON bodies (never HTML form posts) and the auth cookie is SameSite, so the
