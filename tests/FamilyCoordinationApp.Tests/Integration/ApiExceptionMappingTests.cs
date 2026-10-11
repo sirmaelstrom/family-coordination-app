@@ -84,6 +84,8 @@ public sealed class ApiExceptionMappingTests(PostgresContainerFixture postgres) 
         { "POST", "/api/chores/999999/claim", """{"version":1}""", "Chore not found." },
         { "DELETE", "/api/meal-plan/entries/999999/1", """{"version":1}""", "Meal entry not found." },
         { "POST", "/api/shopping-lists/999999/actions/toggle-favorite", null, "Shopping list not found." },
+        // The chore exists; the checklist item doesn't (amendment 1, M1: this said "Chore not found." at de1442a).
+        { "DELETE", $"/api/chores/{ChoresWebAppFactory.PileChoreAId}/subtasks/999999", null, "Checklist item not found." },
     };
 
     [Theory]
@@ -125,7 +127,7 @@ public sealed class ApiExceptionMappingTests(PostgresContainerFixture postgres) 
         (await client.DeleteAsync("/api/rooms/999999")).StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         logs.Entries.Where(e => e.Exception is DomainException).Should().BeEmpty(
-            "an expected refusal is not an unhandled exception (SuppressDiagnosticsCallback); the endpoint catches it replaced never logged");
+            "an expected refusal is not an unhandled exception (SuppressDiagnosticsCallback); the endpoint catches this replaced did not log it either");
     }
 
     // ── Concurrency: one path, one 409, a fixed message ──────────────────────────────
@@ -185,11 +187,44 @@ public sealed class ApiExceptionMappingTests(PostgresContainerFixture postgres) 
             .WithInnerException<DbUpdateConcurrencyException>();
     }
 
+    /// <summary>
+    /// The mapper's backstop arm (amendment 1, C1): a lost update on a save that does NOT go through
+    /// <c>ConcurrencySave</c> answers 409 with the fixed message, and the middleware does not log it at Error. The decorator
+    /// runs a real two-context race on the versioned pile chore and saves the loser raw, inside the request.
+    /// </summary>
+    [Fact]
+    public async Task A_raw_save_lost_update_answers_409_with_the_fixed_message_and_is_not_logged_at_Error()
+    {
+        var logs = new CapturingLoggerProvider();
+        await using var host = _factory.WithWebHostBuilder(b =>
+        {
+            b.ConfigureLogging(l => l.AddProvider(logs));
+            b.ConfigureTestServices(services => services.AddScoped<IRoomService>(sp => new KeyChangingRoomService(
+                ActivatorUtilities.CreateInstance<RoomService>(sp),
+                sp.GetRequiredService<IDbContextFactory<ApplicationDbContext>>())));
+        });
+        using var client = host.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        client.DefaultRequestHeaders.Add(ChoresWebAppFactory.TestUserHeader, ChoresWebAppFactory.UserAEmail);
+
+        var created = await client.PostAsJsonAsync("/api/rooms/", new { name = "Raw race room", icon = "x", photoPath = (string?)null });
+        var room = (await created.Content.ReadFromJsonAsync<RoomDto>(Json))!;
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/rooms/{room.id}", new { name = KeyChangingRoomService.RaceARawSave, icon = "x", photoPath = (string?)null });
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict, "a raw save's lost update is the same 409. Body: {0}", body);
+        (await MessageOf(response)).Should().Be(ConcurrencyConflictException.FixedMessage);
+        logs.Entries.Where(e => e.Exception is DbUpdateConcurrencyException && e.Level >= LogLevel.Error).Should().BeEmpty(
+            "a lost update is an expected outcome (IsExpected), not an unhandled exception");
+    }
+
     /// <summary>For a marker name, changes the loaded room's <c>HouseholdId</c> and saves: EF refuses it as an
     /// <see cref="InvalidOperationException"/> from its key guard. Everything else is the real service.</summary>
     private sealed class KeyChangingRoomService(IRoomService inner, IDbContextFactory<ApplicationDbContext> dbFactory) : IRoomService
     {
         public const string ChangeHouseholdId = "change the household id";
+        public const string RaceARawSave = "race a raw save";
 
         public async Task<Room> UpdateRoomAsync(
             int householdId, int roomId, string name, string icon, string? photoPath, CancellationToken cancellationToken = default)
@@ -200,6 +235,20 @@ public sealed class ApiExceptionMappingTests(PostgresContainerFixture postgres) 
                 var room = await db.Rooms.SingleAsync(r => r.RoomId == roomId, cancellationToken);
                 room.HouseholdId = B;
                 await db.SaveChangesAsync(cancellationToken);
+            }
+            else if (name == RaceARawSave)
+            {
+                // Loser loads the versioned chore, the winner saves it (xmin moves), then the loser saves RAW.
+                await using var loser = await dbFactory.CreateDbContextAsync(cancellationToken);
+                var stale = await loser.Chores.SingleAsync(c => c.ChoreId == ChoresWebAppFactory.PileChoreAId, cancellationToken);
+                await using (var winner = await dbFactory.CreateDbContextAsync(cancellationToken))
+                {
+                    var fresh = await winner.Chores.SingleAsync(c => c.ChoreId == ChoresWebAppFactory.PileChoreAId, cancellationToken);
+                    winner.Entry(fresh).Property(c => c.Name).IsModified = true;
+                    await winner.SaveChangesAsync(cancellationToken);
+                }
+                loser.Entry(stale).Property(c => c.Name).IsModified = true;
+                await loser.SaveChangesAsync(cancellationToken);
             }
             return await inner.UpdateRoomAsync(householdId, roomId, name, icon, photoPath, cancellationToken);
         }

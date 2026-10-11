@@ -5,9 +5,13 @@ using Microsoft.EntityFrameworkCore;
 namespace FamilyCoordinationApp.Data;
 
 /// <summary>
-/// The one save-with-concurrency path for <see cref="IVersioned"/> entities (quest 8cf3c806). A
-/// <see cref="DbUpdateConcurrencyException"/> becomes <see cref="ConcurrencyConflictException"/>, which the /api
-/// exception branch answers as 409 with a fixed message. No swallowing and no retry: last-write-wins is the bug.
+/// The service-level save-with-concurrency path for <see cref="IVersioned"/> entities (quest 8cf3c806): the client's
+/// token is applied, and a <see cref="DbUpdateConcurrencyException"/> becomes <see cref="ConcurrencyConflictException"/>,
+/// which the /api exception branch answers as 409 with a fixed message. No swallowing and no retry: last-write-wins is
+/// the bug.
+/// <para>Not every save of a versioned row goes through here (a soft delete, a shopping item delete or reorder save
+/// raw). For those, the branch's own <c>DbUpdateConcurrencyException → 409</c> arm in <c>ApiExceptionResponse</c> is
+/// the backstop: any raw save's lost update answers the same 409 and fixed message.</para>
 /// <para>The one deliberate exception is <c>ShoppingListService.UpdateItemWithConcurrencyAsync</c>, which merges
 /// ("checked wins") and retries instead, because the shopping item PATCH carries no version.
 /// <c>ExceptionMappingArchitectureTests</c> pins those two as the only files with a <c>catch (DbUpdateConcurrencyException</c>.</para>

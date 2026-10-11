@@ -21,7 +21,7 @@ namespace FamilyCoordinationApp.Endpoints;
 ///
 /// <para>Full-form edits are optimistic-concurrency guarded: GET carries the xmin token (<c>version</c>),
 /// PUT echoes it back, and a stale token → 409 with a non-empty body (<see cref="ConcurrencyConflictException"/>).
-/// A null token skips the check (legacy last-write-wins). Not-found responses carry a NON-EMPTY body so callers
+/// A null token omits the client staleness check (legacy); EF still checks the version the save loaded. Not-found responses carry a NON-EMPTY body so callers
 /// receive specific detail instead of the generic /api backfill. <c>Recipe</c> has an EF global query filter on <c>IsDeleted</c>
 /// (<c>RecipeConfiguration</c>), so soft-deleted recipes are auto-excluded — no explicit filter here.</para>
 /// </summary>
@@ -150,7 +150,8 @@ public static class RecipesEndpoints
         var recipe = MapToRecipe(req, caller.HouseholdId, recipeId, imagePath);
         recipe.UpdatedByUserId = caller.UserId;
 
-        // req.Version is the xmin token echoed from GET (null ⇒ legacy client ⇒ last-write-wins). A missing /
+        // req.Version is the xmin token echoed from GET (null ⇒ legacy client ⇒ no client staleness check; EF still
+        // checks the version the save loaded). A missing /
         // cross-household id (404) and a stale token (409) are answered by the /api exception branch.
         await recipeService.UpdateRecipeAsync(recipe, req.Version, ct);
 
@@ -532,7 +533,7 @@ public static class RecipesEndpoints
     /// <summary>
     /// Create/update body. <see cref="ImagePath"/> is a path already returned by POST /images.
     /// <see cref="Version"/> is the xmin token from GET, enforced on PUT (stale ⇒ 409); ignored on POST and
-    /// skipped when null (a client without a token keeps last-write-wins).
+    /// when null the client staleness check is omitted (EF still checks the version the save loaded).
     /// </summary>
     public sealed record RecipeWriteRequest(
         [Display(Name = "Recipe name"), RequiredText, MaxTextLength(FieldLengths.Recipe.Name)] string Name,

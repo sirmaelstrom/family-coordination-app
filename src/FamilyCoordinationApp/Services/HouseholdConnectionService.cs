@@ -239,7 +239,15 @@ public class HouseholdConnectionService(
         catch (Exception ex)
         {
             await transaction.RollbackAsync(cancellationToken);
-            logger.LogError(ex, "Failed to accept invite code for household {HouseholdId}", acceptingHouseholdId);
+            if (ex is DomainException)
+            {
+                // An expected refusal (a concurrent accept's ConcurrencyConflictException → 409), not a fault: no Error line.
+                logger.LogInformation("Invite accept for household {HouseholdId} refused: {Reason}", acceptingHouseholdId, ex.Message);
+            }
+            else
+            {
+                logger.LogError(ex, "Failed to accept invite code for household {HouseholdId}", acceptingHouseholdId);
+            }
             throw;
         }
     }

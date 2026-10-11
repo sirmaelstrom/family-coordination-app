@@ -34,6 +34,14 @@ public class ApiExceptionResponseTests
     }
 
     [Fact]
+    public void A_raw_DbUpdateConcurrencyException_is_the_same_409_as_the_helper_path()
+    {
+        var raw = new Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException("xmin moved");
+        ApiExceptionResponse.StatusFor(raw).Should().Be(409);
+        ApiExceptionResponse.MessageFor(raw, 409).Should().Be(ConcurrencyConflictException.FixedMessage);
+    }
+
+    [Fact]
     public void A_DomainException_answers_its_own_status_with_its_client_message_never_its_log_detail()
     {
         var cases = new (DomainException Error, int Status, string Message)[]

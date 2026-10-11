@@ -10,7 +10,8 @@ public interface IRecipeService
     /// <summary>
     /// Full-form update (wholesale ingredient replace). When <paramref name="expectedVersion"/> is supplied it
     /// is enforced as the xmin concurrency token — a stale value throws <see cref="ConcurrencyConflictException"/>
-    /// (→ 409). <c>null</c> skips the check (legacy last-write-wins callers).
+    /// (→ 409). <c>null</c> omits the CLIENT staleness check (legacy callers): EF still checks the version this save
+    /// loaded, so only a write landing between that load and the save conflicts.
     /// </summary>
     /// <exception cref="ConcurrencyConflictException">The client <paramref name="expectedVersion"/> is stale.</exception>
     Task<Recipe> UpdateRecipeAsync(Recipe recipe, uint? expectedVersion = null, CancellationToken cancellationToken = default);

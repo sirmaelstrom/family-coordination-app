@@ -285,6 +285,36 @@ public class HouseholdConnectionServiceTests : IDisposable
         usedInvite.UsedByUserId.Should().Be(2);
     }
 
+    /// <summary>
+    /// A concurrent accept surfaces as a <see cref="ConcurrencyConflictException"/> (→ 409): an expected refusal, so the
+    /// accept's catch rolls back and rethrows without an Error line (PR #132 amendment 1, C2). The conflict is injected at
+    /// the save (a context whose <c>SaveChangesAsync</c> throws <see cref="DbUpdateConcurrencyException"/>); the InMemory
+    /// provider has no xmin, so a real race needs Postgres.
+    /// </summary>
+    [Fact]
+    public async Task AcceptInvite_ConcurrencyConflict_RethrowsWithoutAnErrorLog()
+    {
+        var invite = await _connectionService.GenerateInviteAsync(1, 1);
+        var logger = new Mock<ILogger<HouseholdConnectionService>>();
+        var conflictingFactory = new Mock<IDbContextFactory<ApplicationDbContext>>();
+        conflictingFactory.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => new ConflictOnSaveDbContext(_options, _tenant));
+        var service = new HouseholdConnectionService(conflictingFactory.Object, logger.Object, TestClocks.System);
+
+        var act = () => _tenant.As(2, () => service.AcceptInviteAsync(invite.InviteCode, 2, 2));
+
+        await act.Should().ThrowAsync<ConcurrencyConflictException>();
+        logger.Verify(l => l.Log(LogLevel.Error, It.IsAny<EventId>(), It.IsAny<It.IsAnyType>(), It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Never, "an expected conflict is not a server fault");
+    }
+
+    private sealed class ConflictOnSaveDbContext(DbContextOptions<ApplicationDbContext> options, FamilyCoordinationApp.Tenancy.ITenantContext tenant)
+        : ApplicationDbContext(options, tenant, new FamilyCoordinationApp.Tenancy.TenancyOptions())
+    {
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+            throw new DbUpdateConcurrencyException("simulated concurrent accept");
+    }
+
     [Fact]
     public async Task AcceptInvite_ReturnsConnectedHouseholdName()
     {

@@ -154,8 +154,7 @@ public sealed class ChoreSubtaskTests(PostgresContainerFixture postgres) : IAsyn
         var created = await createResp.Content.ReadFromJsonAsync<Subtask>(Json);
 
         // Household B must not be able to touch A's chore's subtask. The (householdId, choreId) filter finds
-        // nothing → ChoreNotFoundException → the handler returns 404; the /api branch preserves that status and
-        // backfills a generic JSON body only if the handler wrote none. The load-bearing assertion is that the
+        // nothing → ChoreNotFoundException → the /api exception branch answers 404 "Chore not found.". The load-bearing assertion is that the
         // write is REJECTED with a client error (never satisfied/2xx), not the exact code (same convention as
         // ChoreRoundTripTests.Claim_NonexistentChore_IsRejected).
         var clientB = ClientB;
