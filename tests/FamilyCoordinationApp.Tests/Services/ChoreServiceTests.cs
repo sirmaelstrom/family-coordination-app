@@ -60,9 +60,10 @@ public class ChoreServiceTests : IDisposable
             new Household { Id = HouseholdId, Name = "Smith" },
             new Household { Id = OtherHouseholdId, Name = "Jones" });
         _seedContext.Users.AddRange(
-            new User { Id = Alice, HouseholdId = HouseholdId, Email = "a@x.com", DisplayName = "Alice" },
-            new User { Id = Bob, HouseholdId = HouseholdId, Email = "b@x.com", DisplayName = "Bob" },
-            new User { Id = Carol, HouseholdId = OtherHouseholdId, Email = "c@x.com", DisplayName = "Carol" });
+            // Active members, as every app path creates them; a disabled member can't be newly assigned.
+            new User { Id = Alice, HouseholdId = HouseholdId, Email = "a@x.com", DisplayName = "Alice", IsWhitelisted = true },
+            new User { Id = Bob, HouseholdId = HouseholdId, Email = "b@x.com", DisplayName = "Bob", IsWhitelisted = true },
+            new User { Id = Carol, HouseholdId = OtherHouseholdId, Email = "c@x.com", DisplayName = "Carol", IsWhitelisted = true });
         // Rooms for the multi-room membership tests (Phase 13). Ids 10/11 exist in household 1.
         _seedContext.Rooms.AddRange(
             new Room { HouseholdId = HouseholdId, RoomId = Kitchen, Name = "Kitchen", Icon = "🍳", SortOrder = 1, CreatedAt = NowBase },
@@ -149,7 +150,7 @@ public class ChoreServiceTests : IDisposable
     {
         var act = async () => await _service.CreateChoreAsync(HouseholdId, Alice, FlexibleCmd(assignee: Carol));
 
-        await act.Should().ThrowAsync<ChoreValidationException>();
+        await act.Should().ThrowAsync<HouseholdMembershipException>().WithMessage("*not a member*");
     }
 
     [Fact]
@@ -680,7 +681,7 @@ public class ChoreServiceTests : IDisposable
         var act = async () => await _service.CompleteAsync(
             HouseholdId, created.ChoreId, Alice, null, null, participantUserIds: new[] { Carol }, current.Version);
 
-        await act.Should().ThrowAsync<ChoreValidationException>();
+        await act.Should().ThrowAsync<HouseholdMembershipException>().WithMessage("*not a member*");
         (await CompletionRowCountAsync(created.ChoreId)).Should().Be(0);
     }
 
@@ -790,7 +791,7 @@ public class ChoreServiceTests : IDisposable
         await using (var seed = new ApplicationDbContext(throwingOptions))
         {
             seed.Households.Add(new Household { Id = HouseholdId, Name = "Smith" });
-            seed.Users.Add(new User { Id = Alice, HouseholdId = HouseholdId, Email = "a@x.com", DisplayName = "Alice" });
+            seed.Users.Add(new User { Id = Alice, HouseholdId = HouseholdId, Email = "a@x.com", DisplayName = "Alice", IsWhitelisted = true });
             seed.Chores.Add(new Chore
             {
                 HouseholdId = HouseholdId,
