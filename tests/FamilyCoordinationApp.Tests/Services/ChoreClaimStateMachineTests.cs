@@ -28,6 +28,7 @@ public class ChoreClaimStateMachineTests : IDisposable
 
     private readonly DbContextOptions<ApplicationDbContext> _options;
     private readonly ApplicationDbContext _seedContext;
+    private readonly FamilyCoordinationApp.Tenancy.TenantContext _tenant = TestTenancy.Caller(HouseholdId);
     private readonly FixedTimeProvider _clock = new(NowBase);
     private readonly ChoreService _service;
 
@@ -41,7 +42,7 @@ public class ChoreClaimStateMachineTests : IDisposable
 
         var dbFactoryMock = new Mock<IDbContextFactory<ApplicationDbContext>>();
         dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(_options));
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
 
         _service = new ChoreService(
             dbFactoryMock.Object,
@@ -452,7 +453,7 @@ public class ChoreClaimStateMachineTests : IDisposable
         // A chore with the same ChoreId exists only in HouseholdId=1. The other household can't see it.
         SeedPileChore();
 
-        var act = async () => await _service.ClaimAsync(OtherHouseholdId, ChoreId, Carol, version: 0);
+        var act = async () => await _tenant.As(OtherHouseholdId, () => _service.ClaimAsync(OtherHouseholdId, ChoreId, Carol, version: 0));
 
         await act.Should().ThrowAsync<ChoreNotFoundException>();
     }

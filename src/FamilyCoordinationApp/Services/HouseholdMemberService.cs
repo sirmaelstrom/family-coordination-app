@@ -20,7 +20,6 @@ public sealed class HouseholdMemberService(
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         return await context.Users
-            .Where(u => u.HouseholdId == householdId)
             .OrderBy(u => u.Email)
             .ToListAsync(cancellationToken);
     }
@@ -45,7 +44,6 @@ public sealed class HouseholdMemberService(
 
         var existingRows = await context.Users
             .WhereEmailMatches(normalized)
-            .Where(u => u.HouseholdId == householdId)
             .Take(2)
             .ToListAsync(cancellationToken);
         if (existingRows.Count > 1)
@@ -73,7 +71,6 @@ public sealed class HouseholdMemberService(
 
         var created = new User
         {
-            HouseholdId = householdId,
             Email = normalized,
             DisplayName = normalized.Split('@')[0],
             GoogleId = null, // set when the user first logs in with Google (parity)
@@ -97,7 +94,7 @@ public sealed class HouseholdMemberService(
 
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         var target = await context.Users
-            .FirstOrDefaultAsync(u => u.HouseholdId == householdId && u.Id == targetUserId, cancellationToken);
+            .FirstOrDefaultAsync(u => u.Id == targetUserId, cancellationToken);
         if (target is null)
         {
             return (MemberMutationResult.NotFound, null);
@@ -108,7 +105,7 @@ public sealed class HouseholdMemberService(
         if (!isWhitelisted && target.IsWhitelisted)
         {
             var activeCount = await context.Users
-                .CountAsync(u => u.HouseholdId == householdId && u.IsWhitelisted, cancellationToken);
+                .CountAsync(u => u.IsWhitelisted, cancellationToken);
             if (activeCount <= 1)
             {
                 return (MemberMutationResult.LastActiveForbidden, null);
@@ -132,14 +129,14 @@ public sealed class HouseholdMemberService(
 
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         var target = await context.Users
-            .FirstOrDefaultAsync(u => u.HouseholdId == householdId && u.Id == targetUserId, cancellationToken);
+            .FirstOrDefaultAsync(u => u.Id == targetUserId, cancellationToken);
         if (target is null)
         {
             return MemberMutationResult.NotFound;
         }
 
         var totalCount = await context.Users
-            .CountAsync(u => u.HouseholdId == householdId, cancellationToken);
+            .CountAsync(cancellationToken);
         if (totalCount <= 1)
         {
             return MemberMutationResult.LastUserForbidden;

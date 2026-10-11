@@ -10,7 +10,7 @@ namespace FamilyCoordinationApp.Data;
 /// The central write step (fca-household-scope D9/D16, WP-03). Before every save it walks the change tracker once:
 /// <list type="bullet">
 /// <item>An Added <see cref="IAuditable"/> with a <c>default</c> <c>CreatedAt</c> gets <see cref="Clock"/>'s now. This
-/// runs in every tenant state and with the kill switch off: audit is independent of tenancy. Modified entries are
+/// runs in every tenant state, bypass states included: audit is independent of tenancy. Modified entries are
 /// never touched.</item>
 /// <item>Every Added, Modified or Deleted <see cref="ITenantEntity"/> is checked against the tenant: an Added row whose
 /// <c>HouseholdId</c> is unset (0, or EF's temporary key) is stamped, parents before children, except under a
@@ -26,9 +26,9 @@ namespace FamilyCoordinationApp.Data;
 /// that exists in ANOTHER household is refused; a row that exists nowhere (a concurrent delete) is left to base
 /// <c>SaveChanges</c>, which raises <c>DbUpdateConcurrencyException</c> as before (<see cref="Owned{TEntity}"/>).</item>
 /// </list>
-/// The tenant checks are skipped with <c>Tenancy:EnforceWrites=false</c> (the D14 kill switch) and in the bypass
-/// states (the options-only Unfiltered constructor, or out of request with <c>OutOfRequest=Unfiltered</c>), which
-/// production cannot reach.
+/// The tenant checks are skipped only in the bypass states (the options-only Unfiltered constructor, or out of
+/// request with <c>OutOfRequest=Unfiltered</c>), which production cannot reach. WP-05 removed the D14 kill switch
+/// (<c>Tenancy:EnforceWrites</c>).
 /// <para><b>What this step does NOT cover</b> (so don't rely on it for these):</para>
 /// <list type="bullet">
 /// <item>Non-tenant root writes: <c>Household</c>, <c>HouseholdConnection</c> and <c>Feedback</c> are not
@@ -98,7 +98,7 @@ public partial class ApplicationDbContext
 
         StampCreatedAt(entries);
 
-        if (!Tenancy.EnforceWrites || BypassesTenantWrites) return [];
+        if (BypassesTenantWrites) return [];
 
         var tenantEntries = entries.Where(e => e.Entity is ITenantEntity).ToList();
         if (tenantEntries.Count == 0) return [];
@@ -119,7 +119,7 @@ public partial class ApplicationDbContext
         return Validate(tenantEntries, tenantHh, Tenant.IsCrossTenantWriteAllowed, newHouseholdKeys);
     }
 
-    /// <summary>The same bypass states as the read filter's, minus the kill switch, which has its own setting here.</summary>
+    /// <summary>The same bypass states as the read filter's.</summary>
     private bool BypassesTenantWrites =>
         Tenant.IsUnfiltered || (Tenant.IsOutOfRequest && Tenant.OutOfRequestMode == OutOfRequestMode.Unfiltered);
 
@@ -249,8 +249,8 @@ public partial class ApplicationDbContext
 
     /// <summary>
     /// Does the row with this <c>Id</c> exist in the tenant's household? It runs under the Tenant filter, and it
-    /// also names the household itself, so the check still holds while the read kill switch
-    /// (<c>Tenancy:EnforceFilter=false</c>) is off. It ignores only <c>SoftDelete</c>, so an update to a soft-deleted
+    /// also names the household itself (kept by WP-05, which retired the read kill switch it was written for), so the
+    /// check doesn't rest on the filter alone. It ignores only <c>SoftDelete</c>, so an update to a soft-deleted
     /// own row isn't taken for a foreign one. It materializes nothing and doesn't run <c>DetectChanges</c>.
     /// <para><c>false</c> means ABSENT or FOREIGN, and the two need opposite answers, so a <c>false</c> is followed by
     /// <see cref="ExistsInAnyHousehold{TEntity}"/>: a row that exists in another household is refused

@@ -32,17 +32,15 @@ public class ChoreBoardService(
         // Active chores only (M1 household filter). A completed OneOff (Status=Done) or Archived chore must
         // not linger on the board or in the rollups (council) — recurring chores stay Active.
         var chores = await context.Chores
-            .Where(c => c.HouseholdId == householdId && c.Status == ChoreStatus.Active)
+            .Where(c => c.Status == ChoreStatus.Active)
             .ToListAsync(cancellationToken);
 
         var rooms = await context.Rooms
-            .Where(r => r.HouseholdId == householdId)
             .OrderBy(r => r.SortOrder)
             .ThenBy(r => r.Name)
             .ToListAsync(cancellationToken);
 
         var members = await context.Users
-            .Where(u => u.HouseholdId == householdId)
             .OrderBy(u => u.DisplayName)
             .Select(u => new MemberDto(u.Id, u.DisplayName, u.Initials, u.PictureUrl))
             .ToListAsync(cancellationToken);
@@ -52,7 +50,7 @@ public class ChoreBoardService(
         // projection to an anonymous type — STILL ONE query (E4), no new round-trip. A missing row (caller not
         // found) ⇒ both null, preserving the prior FirstOrDefault-on-string behavior.
         var caller = await context.Users
-            .Where(u => u.HouseholdId == householdId && u.Id == userId)
+            .Where(u => u.Id == userId)
             .Select(u => new { u.ChoresDefaultView, u.PhysicalCapacityTier })
             .FirstOrDefaultAsync(cancellationToken);
         var userDefaultView = caller?.ChoresDefaultView;
@@ -70,7 +68,7 @@ public class ChoreBoardService(
         {
             // M7: single household-scoped query covering only the multi-person chore ids.
             var allCompletions = await context.ChoreCompletions
-                .Where(c => c.HouseholdId == householdId && multiPersonIds.Contains(c.ChoreId))
+                .Where(c => multiPersonIds.Contains(c.ChoreId))
                 .ToListAsync(cancellationToken);
 
             completionsByChore = allCompletions
@@ -84,7 +82,7 @@ public class ChoreBoardService(
         if (multiPersonIds.Count > 0)
         {
             var allEvents = await context.ChoreParticipationEvents
-                .Where(e => e.HouseholdId == householdId && multiPersonIds.Contains(e.ChoreId))
+                .Where(e => multiPersonIds.Contains(e.ChoreId))
                 .ToListAsync(cancellationToken);
 
             participationByChore = allEvents
@@ -96,7 +94,7 @@ public class ChoreBoardService(
         // (mirrors the completions/participation batch pattern). A chore with no checklist gets an empty list.
         var choreIds = chores.Select(c => c.ChoreId).ToList();
         var subtasksByChore = (await context.ChoreSubtasks
-            .Where(s => s.HouseholdId == householdId && choreIds.Contains(s.ChoreId))
+            .Where(s => choreIds.Contains(s.ChoreId))
             .ToListAsync(cancellationToken))
             .GroupBy(s => s.ChoreId)
             .ToDictionary(g => g.Key, g => g.OrderBy(s => s.SortOrder).ThenBy(s => s.SubtaskId)
@@ -184,7 +182,7 @@ public class ChoreBoardService(
         // participation, subtasks, or ChoreRoom memberships are touched. One row per chore: room fan-out is a
         // rollup concern only, so a multi-room chore counts ONCE here, exactly like board.Chores (MN1).
         var chores = await context.Chores
-            .Where(c => c.HouseholdId == householdId && c.Status == ChoreStatus.Active)
+            .Where(c => c.Status == ChoreStatus.Active)
             .Select(c => new
             {
                 c.RecurrenceMode,

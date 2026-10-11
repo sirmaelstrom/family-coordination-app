@@ -16,7 +16,6 @@ public class RoomService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await context.Rooms
-            .Where(r => r.HouseholdId == householdId)
             .OrderBy(r => r.SortOrder)
             .ThenBy(r => r.Name)
             .ToListAsync(cancellationToken);
@@ -27,7 +26,7 @@ public class RoomService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await context.Rooms
-            .FirstOrDefaultAsync(r => r.HouseholdId == householdId && r.RoomId == roomId, cancellationToken);
+            .FirstOrDefaultAsync(r => r.RoomId == roomId, cancellationToken);
     }
 
     public async Task<Room> CreateRoomAsync(int householdId, string name, string icon, string? photoPath = null, CancellationToken cancellationToken = default)
@@ -38,16 +37,13 @@ public class RoomService(
                 await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
                 var maxId = await context.Rooms
-                    .Where(r => r.HouseholdId == householdId)
                     .MaxAsync(r => (int?)r.RoomId, cancellationToken) ?? 0;
 
                 var maxSortOrder = await context.Rooms
-                    .Where(r => r.HouseholdId == householdId)
                     .MaxAsync(r => (int?)r.SortOrder, cancellationToken) ?? 0;
 
                 var room = new Room
                 {
-                    HouseholdId = householdId,
                     RoomId = maxId + 1,
                     Name = name.Trim(),
                     Icon = icon.Trim(),
@@ -73,7 +69,7 @@ public class RoomService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var room = await context.Rooms
-            .FirstOrDefaultAsync(r => r.HouseholdId == householdId && r.RoomId == roomId, cancellationToken)
+            .FirstOrDefaultAsync(r => r.RoomId == roomId, cancellationToken)
             ?? throw new InvalidOperationException($"Room {roomId} not found for household {householdId}");
 
         // Delete-on-replace (M8): if the photo path changed and there was an old image, remove the old
@@ -101,7 +97,7 @@ public class RoomService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var room = await context.Rooms
-            .FirstOrDefaultAsync(r => r.HouseholdId == householdId && r.RoomId == roomId, cancellationToken)
+            .FirstOrDefaultAsync(r => r.RoomId == roomId, cancellationToken)
             ?? throw new InvalidOperationException($"Room {roomId} not found for household {householdId}");
 
         // Phase 13 (M:N): remove this room's ChoreRoom membership rows BEFORE the room row, in the SAME
@@ -110,7 +106,7 @@ public class RoomService(
         // ChoreRoom join is the sole source of membership now (WP-08 dropped the old Chore.RoomId shim), so
         // there is nothing else to recompute.
         var membershipsToRemove = await context.ChoreRooms
-            .Where(cr => cr.HouseholdId == householdId && cr.RoomId == roomId)
+            .Where(cr => cr.RoomId == roomId)
             .ToListAsync(cancellationToken);
         context.ChoreRooms.RemoveRange(membershipsToRemove);
 
@@ -133,7 +129,7 @@ public class RoomService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var rooms = await context.Rooms
-            .Where(r => r.HouseholdId == householdId && orderedRoomIds.Contains(r.RoomId))
+            .Where(r => orderedRoomIds.Contains(r.RoomId))
             .ToListAsync(cancellationToken);
 
         for (var index = 0; index < orderedRoomIds.Count; index++)

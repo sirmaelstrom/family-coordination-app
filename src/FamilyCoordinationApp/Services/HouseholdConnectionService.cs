@@ -80,7 +80,7 @@ public class HouseholdConnectionService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await context.HouseholdInvites
-            .Where(i => i.HouseholdId == householdId && !i.IsUsed && i.ExpiresAt > clock.UtcNow)
+            .Where(i => !i.IsUsed && i.ExpiresAt > clock.UtcNow)
             .OrderByDescending(i => i.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
     }
@@ -90,7 +90,7 @@ public class HouseholdConnectionService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var activeInvites = await context.HouseholdInvites
-            .Where(i => i.HouseholdId == householdId && !i.IsUsed && i.ExpiresAt > clock.UtcNow)
+            .Where(i => !i.IsUsed && i.ExpiresAt > clock.UtcNow)
             .ToListAsync(cancellationToken);
 
         foreach (var invite in activeInvites)

@@ -73,19 +73,18 @@ public class ChoreRecapService(
 
         var members = await context.Users
             .AsNoTracking()
-            .Where(u => u.HouseholdId == householdId)
             .OrderBy(u => u.DisplayName)
             .Select(u => new MemberDto(u.Id, u.DisplayName, u.Initials, u.PictureUrl))
             .ToListAsync(ct);
 
         var completions = await context.ChoreCompletions
             .AsNoTracking()
-            .Where(c => c.HouseholdId == householdId && c.CompletedAt >= oldestWeekStartUtc)
+            .Where(c => c.CompletedAt >= oldestWeekStartUtc)
             .ToListAsync(ct);
 
         var activeChores = await context.Chores
             .AsNoTracking()
-            .Where(c => c.HouseholdId == householdId && c.Status == ChoreStatus.Active)
+            .Where(c => c.Status == ChoreStatus.Active)
             .ToListAsync(ct);
 
         // Phase 15 (D2/D3): project the shared history result for the additive logbook sections. Same instant

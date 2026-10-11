@@ -29,7 +29,6 @@ public static class ChoreRoomMembership
         ApplicationDbContext context, int householdId, CancellationToken ct = default)
     {
         var rows = await context.ChoreRooms
-            .Where(cr => cr.HouseholdId == householdId)
             .OrderBy(cr => cr.RoomId)
             .Select(cr => new { cr.ChoreId, cr.RoomId })
             .ToListAsync(ct);
@@ -51,7 +50,7 @@ public static class ChoreRoomMembership
         ApplicationDbContext context, int householdId, int choreId, CancellationToken ct = default)
     {
         return await context.ChoreRooms
-            .Where(cr => cr.HouseholdId == householdId && cr.ChoreId == choreId)
+            .Where(cr => cr.ChoreId == choreId)
             .OrderBy(cr => cr.RoomId)
             .Select(cr => cr.RoomId)
             .ToListAsync(ct);
@@ -69,7 +68,7 @@ public static class ChoreRoomMembership
         var desired = desiredRoomIds.Distinct().ToHashSet();
 
         var current = await context.ChoreRooms
-            .Where(cr => cr.HouseholdId == householdId && cr.ChoreId == choreId)
+            .Where(cr => cr.ChoreId == choreId)
             .ToListAsync(ct);
 
         var currentIds = current.Select(cr => cr.RoomId).ToHashSet();
@@ -82,7 +81,6 @@ public static class ChoreRoomMembership
         foreach (var roomId in desired.Where(id => !currentIds.Contains(id)))
             context.ChoreRooms.Add(new ChoreRoom
             {
-                HouseholdId = householdId,
                 ChoreId = choreId,
                 RoomId = roomId
             });

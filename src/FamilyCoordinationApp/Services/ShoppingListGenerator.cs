@@ -64,7 +64,7 @@ public class ShoppingListGenerator(
 
         // Load meal plan with entries, recipes, and ingredients
         var mealPlan = await context.MealPlans
-            .Where(mp => mp.HouseholdId == householdId && mp.MealPlanId == mealPlanId)
+            .Where(mp => mp.MealPlanId == mealPlanId)
             .Include(mp => mp.Entries)
                 .ThenInclude(e => e.Recipe)
                     .ThenInclude(r => r!.Ingredients)
@@ -156,7 +156,7 @@ public class ShoppingListGenerator(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var existingList = await context.ShoppingLists
-            .Where(sl => sl.HouseholdId == householdId && sl.ShoppingListId == shoppingListId)
+            .Where(sl => sl.ShoppingListId == shoppingListId)
             .Include(sl => sl.Items)
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new InvalidOperationException(
@@ -177,7 +177,7 @@ public class ShoppingListGenerator(
             .ToDictionary(g => g.Key, g => g.OrderBy(i => i.ItemId).First());
 
         var mealPlan = await context.MealPlans
-            .Where(mp => mp.HouseholdId == householdId && mp.MealPlanId == existingList.MealPlanId)
+            .Where(mp => mp.MealPlanId == existingList.MealPlanId)
             .Include(mp => mp.Entries)
                 .ThenInclude(e => e.Recipe)
                     .ThenInclude(r => r!.Ingredients)
@@ -206,7 +206,6 @@ public class ShoppingListGenerator(
 
             context.ShoppingListItems.Add(new ShoppingListItem
             {
-                HouseholdId = householdId,
                 ShoppingListId = shoppingListId,
                 ItemId = ++nextItemId,
                 Name = result.Name,

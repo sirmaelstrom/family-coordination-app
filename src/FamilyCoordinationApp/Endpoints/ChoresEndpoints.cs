@@ -518,7 +518,7 @@ public static class ChoresEndpoints
         await using (var context = await dbFactory.CreateDbContextAsync(ct))
         {
             choreExists = await context.Chores
-                .AnyAsync(c => c.HouseholdId == caller.HouseholdId && c.ChoreId == choreId, ct);
+                .AnyAsync(c => c.ChoreId == choreId, ct);
         }
         if (!choreExists) return Results.NotFound();
 
@@ -583,7 +583,7 @@ public static class ChoresEndpoints
         }
 
         await using var context = await dbFactory.CreateDbContextAsync(ct);
-        var entity = await context.Users.FirstOrDefaultAsync(u => u.Id == userId && u.HouseholdId == householdId, ct);
+        var entity = await context.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (entity is null) return (DefaultViewOutcome.UserMissing, null);
 
         entity.ChoresDefaultView = view;
@@ -634,7 +634,7 @@ public static class ChoresEndpoints
         }
 
         await using var context = await dbFactory.CreateDbContextAsync(ct);
-        var entity = await context.Users.FirstOrDefaultAsync(u => u.Id == userId && u.HouseholdId == householdId, ct);
+        var entity = await context.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (entity is null) return (CapacityOutcome.UserMissing, null);
 
         entity.PhysicalCapacityTier = tier;
@@ -674,47 +674,42 @@ public static class ChoresEndpoints
         await using var context = await dbFactory.CreateDbContextAsync(ct);
 
         var members = await context.Users
-            .Where(u => u.HouseholdId == caller.HouseholdId)
             .OrderBy(u => u.DisplayName)
             .Select(u => new MemberDto(u.Id, u.DisplayName, u.Initials, u.PictureUrl))
             .ToListAsync(ct);
 
         var completions = await context.ChoreCompletions
-            .Where(c => c.HouseholdId == caller.HouseholdId)
             .ToListAsync(ct);
 
         // Active chores only (mirror ChoreBoardService) for the attention counts.
         var activeChores = await context.Chores
-            .Where(c => c.HouseholdId == caller.HouseholdId && c.Status == ChoreStatus.Active)
+            .Where(c => c.Status == ChoreStatus.Active)
             .ToListAsync(ct);
 
         // Planning footprint (Phase 15): ALL-TIME, household-scoped authorship across five lanes — these are
         // independent of the equity `window` (which governs only the physical lane). All HouseholdId-scoped (M1).
         var allChores = await context.Chores
-            .Where(c => c.HouseholdId == caller.HouseholdId)
             .ToListAsync(ct);
 
         var recipes = await context.Recipes
-            .Where(r => r.HouseholdId == caller.HouseholdId && !r.IsDeleted && r.CreatedByUserId != null)
+            .Where(r => !r.IsDeleted && r.CreatedByUserId != null)
             .ToListAsync(ct);
 
         var manualListItems = await context.ShoppingListItems
-            .Where(s => s.HouseholdId == caller.HouseholdId && s.IsManuallyAdded && s.AddedByUserId != null)
+            .Where(s => s.IsManuallyAdded && s.AddedByUserId != null)
             .ToListAsync(ct);
 
         var choreEvents = await context.ChoreEvents
-            .Where(e => e.HouseholdId == caller.HouseholdId)
             .ToListAsync(ct);
 
         var mealEntries = await context.MealPlanEntries
-            .Where(m => m.HouseholdId == caller.HouseholdId && m.CreatedByUserId != null)
+            .Where(m => m.CreatedByUserId != null)
             .ToListAsync(ct);
 
         // Per-member physical-capacity tiers (Phase 15 WP-05, D3). A lightweight household-scoped projection
         // separate from the MemberDto projection (so the board DTO / ChoreDtos.cs stay untouched — MN1) and
         // filtered to the caller's household (no cross-tenant leakage — M1). null tier ⇒ Full.
         var tiersByUserId = (await context.Users
-                .Where(u => u.HouseholdId == caller.HouseholdId)
                 .Select(u => new { u.Id, u.PhysicalCapacityTier })
                 .ToListAsync(ct))
             .ToDictionary(u => u.Id, u => u.PhysicalCapacityTier);
@@ -890,8 +885,8 @@ public static class ChoresEndpoints
         bool alreadyHad;
         await using (var context = await dbFactory.CreateDbContextAsync(ct))
         {
-            alreadyHad = await context.Rooms.AnyAsync(r => r.HouseholdId == caller.HouseholdId, ct)
-                || await context.Chores.AnyAsync(c => c.HouseholdId == caller.HouseholdId, ct);
+            alreadyHad = await context.Rooms.AnyAsync(ct)
+                || await context.Chores.AnyAsync(ct);
         }
 
         var seeded = !alreadyHad;

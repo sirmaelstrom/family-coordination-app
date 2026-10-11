@@ -6,11 +6,13 @@ using Moq;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
+using FamilyCoordinationApp.Tenancy;
 
 namespace FamilyCoordinationApp.Tests.Services;
 
 public class RoomServiceTests : IDisposable
 {
+    private readonly TenantContext _tenant = TestTenancy.Caller(1);
     private readonly ApplicationDbContext _context;
     private readonly DbContextOptions<ApplicationDbContext> _options;
     private readonly RoomService _service;
@@ -27,7 +29,7 @@ public class RoomServiceTests : IDisposable
 
         var dbFactoryMock = new Mock<IDbContextFactory<ApplicationDbContext>>();
         dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(_options));
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
 
         // Real ImageService backed by a temp WebRootPath so disk delete-on-replace /
         // delete-before-delete is verifiable against the actual filesystem.
@@ -97,7 +99,7 @@ public class RoomServiceTests : IDisposable
     public async Task ListRoomsAsync_ReturnsOnlyCurrentHouseholdsRooms_OrderedBySortOrder()
     {
         var h1 = await _service.ListRoomsAsync(householdId: 1);
-        var h2 = await _service.ListRoomsAsync(householdId: 2);
+        var h2 = await _tenant.As(2, () => _service.ListRoomsAsync(householdId: 2));
 
         h1.Should().HaveCount(2);
         h1.Should().OnlyContain(r => r.HouseholdId == 1);
@@ -121,7 +123,7 @@ public class RoomServiceTests : IDisposable
         // Round-trips and isolated to household 1
         var h1 = await _service.ListRoomsAsync(householdId: 1);
         h1.Should().HaveCount(3);
-        var h2 = await _service.ListRoomsAsync(householdId: 2);
+        var h2 = await _tenant.As(2, () => _service.ListRoomsAsync(householdId: 2));
         h2.Should().HaveCount(1);
     }
 
@@ -139,13 +141,13 @@ public class RoomServiceTests : IDisposable
     {
         // Both households have RoomId 1, but with different names.
         var h1Room1 = await _service.GetRoomAsync(householdId: 1, roomId: 1);
-        var h2Room1 = await _service.GetRoomAsync(householdId: 2, roomId: 1);
+        var h2Room1 = await _tenant.As(2, () => _service.GetRoomAsync(householdId: 2, roomId: 1));
 
         h1Room1!.Name.Should().Be("Kitchen");
         h2Room1!.Name.Should().Be("Garage");
 
         // A room id that only exists in another household is not visible.
-        var missing = await _service.GetRoomAsync(householdId: 2, roomId: 2);
+        var missing = await _tenant.As(2, () => _service.GetRoomAsync(householdId: 2, roomId: 2));
         missing.Should().BeNull();
     }
 
@@ -158,7 +160,7 @@ public class RoomServiceTests : IDisposable
         result.Icon.Should().Be("🔪");
 
         // Household 2's RoomId 1 is unchanged.
-        var h2Room1 = await _service.GetRoomAsync(householdId: 2, roomId: 1);
+        var h2Room1 = await _tenant.As(2, () => _service.GetRoomAsync(householdId: 2, roomId: 1));
         h2Room1!.Name.Should().Be("Garage");
     }
 
@@ -330,7 +332,7 @@ public class RoomServiceTests : IDisposable
         // Includes room id 1 (exists in both households) — only household 1's row should change.
         await _service.ReorderAsync(householdId: 1, orderedRoomIds: new[] { 1, 2 });
 
-        var h2Room1 = await _service.GetRoomAsync(householdId: 2, roomId: 1);
+        var h2Room1 = await _tenant.As(2, () => _service.GetRoomAsync(householdId: 2, roomId: 1));
         h2Room1!.SortOrder.Should().Be(1, "household 2's room must be untouched by household 1's reorder");
     }
 

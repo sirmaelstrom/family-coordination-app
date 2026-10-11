@@ -62,7 +62,7 @@ public class DashboardService(
         // one copy-paste away from a cross-tenant read).
         var name = await context.Users
             .AsNoTracking()
-            .Where(u => u.Id == userId && u.HouseholdId == householdId)
+            .Where(u => u.Id == userId)
             .Select(u => u.Household != null ? u.Household.Name : null)
             .FirstOrDefaultAsync(ct);
         return string.IsNullOrWhiteSpace(name) ? "Your Household" : name;
@@ -76,7 +76,7 @@ public class DashboardService(
         await using var context = await dbFactory.CreateDbContextAsync(ct);
         var plan = await context.MealPlans
             .AsNoTracking()
-            .Where(mp => mp.HouseholdId == householdId && mp.WeekStartDate == weekStart)
+            .Where(mp => mp.WeekStartDate == weekStart)
             .Include(mp => mp.Entries.Where(e => e.Date == today))
                 .ThenInclude(e => e.Recipe)
             .FirstOrDefaultAsync(ct);

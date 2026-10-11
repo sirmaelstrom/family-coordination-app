@@ -208,7 +208,8 @@ public class ChoresWebAppFactory(PostgresContainerFixture postgres) : WebApplica
             // uses (so DigestService.GetDecryptedWebhookAsync round-trips at run time). Resolve the real
             // settings service from the booted host and seed the webhooks through it inside the guarded block.
             var settingsService = Services.GetRequiredService<IDigestSettingsService>();
-            await SeedAsync(context, settingsService);
+            // The root scope's tenant: the same instance the root-resolved settings service's contexts read.
+            await SeedAsync(context, settingsService, Services.GetRequiredService<ITenantContext>());
             _seeded = true;
         }
         finally
@@ -217,7 +218,7 @@ public class ChoresWebAppFactory(PostgresContainerFixture postgres) : WebApplica
         }
     }
 
-    private static async Task SeedAsync(ApplicationDbContext context, IDigestSettingsService settingsService)
+    private static async Task SeedAsync(ApplicationDbContext context, IDigestSettingsService settingsService, ITenantContext tenant)
     {
         // Clean-slate, deterministic seed inserted directly via the context (NOT via SetupService, which would
         // pull in WP-07's 11-chore library and obscure the fixture). Two distinct households.
@@ -353,15 +354,23 @@ public class ChoresWebAppFactory(PostgresContainerFixture postgres) : WebApplica
         // Seeded THROUGH the real settings service so the webhook ciphertext is encrypted with the host's
         // DataProtection keys (DigestService.GetDecryptedWebhookAsync must round-trip it at send time).
         // SendDayOfWeek=Sunday + SendHourLocal=18 + LastSentAt=null ⇒ DUE at FixedNowUtc (local Sun 18:30).
-        await settingsService.UpdateAsync(HouseholdAId, new DigestSettingsUpdate(
-            Enabled: true, Cadence: DigestCadence.Weekly,
-            SendDayOfWeek: DayOfWeek.Sunday, SendHourLocal: 18,
-            WebhookProvided: true, WebhookUrl: WebhookUrlA));
+        // Each call runs as its household (WP-05): the service has no household predicate or stamp of its own, and
+        // out of request the test host is Unfiltered, so without RunAs the second call would update the first row.
+        using (tenant.RunAs(HouseholdAId))
+        {
+            await settingsService.UpdateAsync(HouseholdAId, new DigestSettingsUpdate(
+                Enabled: true, Cadence: DigestCadence.Weekly,
+                SendDayOfWeek: DayOfWeek.Sunday, SendHourLocal: 18,
+                WebhookProvided: true, WebhookUrl: WebhookUrlA));
+        }
 
-        await settingsService.UpdateAsync(HouseholdBId, new DigestSettingsUpdate(
-            Enabled: true, Cadence: DigestCadence.Weekly,
-            SendDayOfWeek: DayOfWeek.Sunday, SendHourLocal: 18,
-            WebhookProvided: true, WebhookUrl: WebhookUrlB));
+        using (tenant.RunAs(HouseholdBId))
+        {
+            await settingsService.UpdateAsync(HouseholdBId, new DigestSettingsUpdate(
+                Enabled: true, Cadence: DigestCadence.Weekly,
+                SendDayOfWeek: DayOfWeek.Sunday, SendHourLocal: 18,
+                WebhookProvided: true, WebhookUrl: WebhookUrlB));
+        }
     }
 
     /// <summary>Create an <see cref="HttpClient"/> that authenticates every request as the given user email.</summary>

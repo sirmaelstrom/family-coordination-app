@@ -25,6 +25,7 @@ public class ChoreSubtaskResetTests : IDisposable
 
     private readonly DbContextOptions<ApplicationDbContext> _options;
     private readonly ApplicationDbContext _seedContext;
+    private readonly FamilyCoordinationApp.Tenancy.TenantContext _tenant = TestTenancy.Caller(HouseholdId);
     private readonly FixedTimeProvider _clock = new(NowBase);
     private readonly ChoreService _service;
 
@@ -38,7 +39,7 @@ public class ChoreSubtaskResetTests : IDisposable
 
         var dbFactoryMock = new Mock<IDbContextFactory<ApplicationDbContext>>();
         dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(_options));
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
 
         _service = new ChoreService(
             dbFactoryMock.Object,

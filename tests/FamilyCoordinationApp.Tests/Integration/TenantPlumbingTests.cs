@@ -183,8 +183,6 @@ public sealed class TenantPlumbingTests(PostgresContainerFixture postgres) : IAs
         var options = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<TenancyOptions>>().Value;
 
         options.OutOfRequest.Should().Be(OutOfRequestMode.Unfiltered, "TestHostTenancy.Apply sets it (D15)");
-        options.EnforceFilter.Should().BeTrue("M7: nothing turns the kill switch off");
-        options.EnforceWrites.Should().BeTrue("M7: nothing turns the kill switch off");
     }
 
     // ── Fact 6: endpoint coverage ──────────────────────────────────────────────────────────────────

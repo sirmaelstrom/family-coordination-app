@@ -332,8 +332,6 @@ public class TenantContextTests
         // Constraints M7: every default is the enforcing value.
         var options = new TenancyOptions();
 
-        options.EnforceFilter.Should().BeTrue();
-        options.EnforceWrites.Should().BeTrue();
         options.OutOfRequest.Should().Be(OutOfRequestMode.Throw);
     }
 
@@ -350,23 +348,19 @@ public class TenantContextTests
         var factory = new TenantDbContextFactory(dbOptions, Create(new DefaultHttpContext()), source, TimeProvider.System);
         using var a = factory.CreateDbContext();
 
-        source.Value.EnforceFilter = false;
-        source.Value.EnforceWrites = false;
         source.Value.OutOfRequest = OutOfRequestMode.Unfiltered;
         using var b = factory.CreateDbContext();
 
-        (a.Tenancy.EnforceFilter, a.Tenancy.EnforceWrites, a.Tenancy.OutOfRequest).Should().Be(
-            (true, true, OutOfRequestMode.Throw), "a context's snapshot is fixed at its creation");
-        (b.Tenancy.EnforceFilter, b.Tenancy.EnforceWrites, b.Tenancy.OutOfRequest).Should().Be(
-            (false, false, OutOfRequestMode.Unfiltered), "a later context snapshots the source as it is then");
+        a.Tenancy.OutOfRequest.Should().Be(OutOfRequestMode.Throw, "a context's snapshot is fixed at its creation");
+        b.Tenancy.OutOfRequest.Should().Be(OutOfRequestMode.Unfiltered, "a later context snapshots the source as it is then");
         a.Tenancy.Should().NotBeSameAs(b.Tenancy, "each context holds its own snapshot");
     }
 
     [Fact]
     public void TenancySettings_is_immutable_and_mirrors_every_TenancyOptions_member()
     {
-        // PR #120 review 2 (opus): a settable per-context copy would let `db.Tenancy.EnforceFilter = false` bypass
-        // WP-02's filter at runtime, unseen by the IgnoreQueryFilters guard facts.
+        // PR #120 review 2 (opus): a settable per-context copy would let code change a context's tenancy settings at
+        // runtime (then the EnforceFilter kill switch, removed by WP-05), unseen by the IgnoreQueryFilters guard facts.
         const BindingFlags instance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
         var properties = typeof(TenancySettings).GetProperties(instance);
 

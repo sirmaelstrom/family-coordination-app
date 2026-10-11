@@ -50,7 +50,6 @@ public class DraftService(
 
         var existing = await context.RecipeDrafts
             .FirstOrDefaultAsync(d =>
-                d.HouseholdId == householdId &&
                 d.UserId == userId &&
                 d.RecipeId == recipeId,
                 cancellationToken);
@@ -66,7 +65,6 @@ public class DraftService(
         {
             context.RecipeDrafts.Add(new RecipeDraft
             {
-                HouseholdId = householdId,
                 UserId = userId,
                 RecipeId = recipeId,
                 DraftJson = json,
@@ -84,7 +82,6 @@ public class DraftService(
 
         var draft = await context.RecipeDrafts
             .FirstOrDefaultAsync(d =>
-                d.HouseholdId == householdId &&
                 d.UserId == userId &&
                 d.RecipeId == recipeId,
                 cancellationToken);
@@ -109,7 +106,6 @@ public class DraftService(
 
         var draft = await context.RecipeDrafts
             .FirstOrDefaultAsync(d =>
-                d.HouseholdId == householdId &&
                 d.UserId == userId &&
                 d.RecipeId == recipeId,
                 cancellationToken);

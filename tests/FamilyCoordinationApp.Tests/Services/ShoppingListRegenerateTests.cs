@@ -40,6 +40,7 @@ public class ShoppingListRegenerateTests : IDisposable
 
     private readonly SaveCountingInterceptor _saveCounter = new();
     private readonly ApplicationDbContext _seedContext;
+    private readonly FamilyCoordinationApp.Tenancy.TenantContext _tenant = TestTenancy.Caller(1);
     private readonly DbContextOptions<ApplicationDbContext> _options;
     private readonly ShoppingListGenerator _generator;
 
@@ -56,7 +57,7 @@ public class ShoppingListRegenerateTests : IDisposable
 
         var dbFactoryMock = new Mock<IDbContextFactory<ApplicationDbContext>>();
         dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(_options));
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
 
         _generator = new ShoppingListGenerator(
             dbFactoryMock.Object,
@@ -208,7 +209,7 @@ public class ShoppingListRegenerateTests : IDisposable
     [Fact]
     public async Task Regenerate_RespectsHouseholdIsolation()
     {
-        var act = () => _generator.RegenerateShoppingListAsync(2, 50);
+        var act = () => _tenant.As(2, () => _generator.RegenerateShoppingListAsync(2, 50));
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not found*");
     }
@@ -223,7 +224,7 @@ public class ShoppingListRegenerateTests : IDisposable
     {
         var dbFactoryMock = new Mock<IDbContextFactory<ApplicationDbContext>>();
         dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(_options));
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
         var service = new ShoppingListService(
             dbFactoryMock.Object, new Mock<ILogger<ShoppingListService>>().Object, TestClocks.System);
 

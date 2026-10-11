@@ -77,7 +77,6 @@ public class SetupService(
 
         var user = new User
         {
-            HouseholdId = household.Id,
             Email = userEmail,
             DisplayName = displayName,
             GoogleId = googleId,
@@ -108,7 +107,7 @@ public class SetupService(
     {
         email = EmailAddress.Normalize(email);
         await using var context = await dbFactory.CreateDbContextAsync();
-        // TENANT-SCOPE-OK: identity lookup by authenticated email for onboarding/setup flows — pre-household
+        // TENANT-SCOPE-OK: identity lookup by email under the Tenant filter (no bypass): no caller in src or tests, so an unmarked future caller throws TenantNotSetException
         return await context.Users
             .Include(u => u.Household)
             .WhereEmailMatches(email)

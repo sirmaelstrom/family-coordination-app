@@ -15,8 +15,7 @@ public class CategoryService(
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        var query = context.Categories
-            .Where(c => c.HouseholdId == householdId);
+        var query = context.Categories.AsQueryable();
 
         if (includeDeleted)
         {
@@ -34,7 +33,7 @@ public class CategoryService(
 
         return await context.Categories
             .IgnoreQueryFilters(["SoftDelete"])
-            .FirstOrDefaultAsync(c => c.HouseholdId == householdId && c.CategoryId == categoryId, cancellationToken);
+            .FirstOrDefaultAsync(c => c.CategoryId == categoryId, cancellationToken);
     }
 
     public async Task<Category> CreateCategoryAsync(Category category, CancellationToken cancellationToken = default)
@@ -50,7 +49,6 @@ public class CategoryService(
                 if (category.SortOrder == 0)
                 {
                     var maxOrder = await context.Categories
-                        .Where(c => c.HouseholdId == category.HouseholdId)
                         .MaxAsync(c => (int?)c.SortOrder, cancellationToken) ?? 0;
                     category.SortOrder = maxOrder + 1;
                 }
@@ -72,7 +70,7 @@ public class CategoryService(
 
         var existing = await context.Categories
             .IgnoreQueryFilters(["SoftDelete"])
-            .FirstOrDefaultAsync(c => c.HouseholdId == category.HouseholdId && c.CategoryId == category.CategoryId, cancellationToken);
+            .FirstOrDefaultAsync(c => c.CategoryId == category.CategoryId, cancellationToken);
 
         if (existing == null)
         {
@@ -96,7 +94,7 @@ public class CategoryService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var category = await context.Categories
-            .FirstOrDefaultAsync(c => c.HouseholdId == householdId && c.CategoryId == categoryId, cancellationToken);
+            .FirstOrDefaultAsync(c => c.CategoryId == categoryId, cancellationToken);
 
         if (category == null)
         {
@@ -118,7 +116,7 @@ public class CategoryService(
 
         var category = await context.Categories
             .IgnoreQueryFilters(["SoftDelete"])
-            .FirstOrDefaultAsync(c => c.HouseholdId == householdId && c.CategoryId == categoryId && c.IsDeleted, cancellationToken);
+            .FirstOrDefaultAsync(c => c.CategoryId == categoryId && c.IsDeleted, cancellationToken);
 
         if (category == null)
         {
@@ -140,7 +138,7 @@ public class CategoryService(
         foreach (var (categoryId, sortOrder) in sortOrders)
         {
             var category = await context.Categories
-                .FirstOrDefaultAsync(c => c.HouseholdId == householdId && c.CategoryId == categoryId, cancellationToken);
+                .FirstOrDefaultAsync(c => c.CategoryId == categoryId, cancellationToken);
 
             if (category != null)
             {
@@ -155,7 +153,6 @@ public class CategoryService(
     {
         var maxId = await context.Categories
             .IgnoreQueryFilters(["SoftDelete"])
-            .Where(c => c.HouseholdId == householdId)
             .MaxAsync(c => (int?)c.CategoryId, cancellationToken) ?? 0;
 
         return maxId + 1;
@@ -166,6 +163,6 @@ public class CategoryService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await context.RecipeIngredients
-            .AnyAsync(i => i.HouseholdId == householdId && i.Category == categoryName, cancellationToken);
+            .AnyAsync(i => i.Category == categoryName, cancellationToken);
     }
 }

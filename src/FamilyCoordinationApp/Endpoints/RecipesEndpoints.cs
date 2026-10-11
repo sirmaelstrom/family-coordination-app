@@ -545,7 +545,7 @@ public static class RecipesEndpoints
     {
         await using var ctx = await dbFactory.CreateDbContextAsync(ct);
         var existing = await ctx.Recipes
-            .Where(r => r.HouseholdId == householdId && r.SourceUrl == url)
+            .Where(r => r.SourceUrl == url)
             .Select(r => new { r.RecipeId, r.Name })
             .FirstOrDefaultAsync(ct);
         return existing is null ? null : (existing.RecipeId, existing.Name);

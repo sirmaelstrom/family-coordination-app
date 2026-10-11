@@ -318,7 +318,7 @@ public static class ShoppingListEndpoints
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         return await db.ShoppingLists
-            .Where(l => l.HouseholdId == householdId && l.ShoppingListId == listId)
+            .Where(l => l.ShoppingListId == listId)
             .Select(l => (bool?)l.IsArchived)
             .FirstOrDefaultAsync(ct);
     }
@@ -344,8 +344,7 @@ public static class ShoppingListEndpoints
         var item = await db.ShoppingListItems
             .Include(i => i.AddedBy)
             .FirstOrDefaultAsync(
-                i => i.HouseholdId == caller.HouseholdId
-                    && i.ShoppingListId == listId
+                i => i.ShoppingListId == listId
                     && i.ItemId == itemId,
                 ct);
 
@@ -426,8 +425,7 @@ public static class ShoppingListEndpoints
         var withAuthor = await db.ShoppingListItems
             .Include(i => i.AddedBy)
             .FirstAsync(
-                i => i.HouseholdId == caller.HouseholdId
-                    && i.ShoppingListId == listId
+                i => i.ShoppingListId == listId
                     && i.ItemId == saved.ItemId,
                 ct);
 

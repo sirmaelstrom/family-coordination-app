@@ -31,6 +31,7 @@ public class ChoreBoardHomeStatsTests
     private static readonly TimeZoneInfo Utc = TimeZoneInfo.Utc;
 
     private readonly DbContextOptions<ApplicationDbContext> _options;
+    private readonly FamilyCoordinationApp.Tenancy.TenantContext _tenant = TestTenancy.Caller(H1);
 
     public ChoreBoardHomeStatsTests()
     {
@@ -53,7 +54,7 @@ public class ChoreBoardHomeStatsTests
     {
         var dbFactory = new Mock<IDbContextFactory<ApplicationDbContext>>();
         dbFactory.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new ApplicationDbContext(_options));
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
 
         return new ChoreBoardService(
             dbFactory.Object,
@@ -231,7 +232,7 @@ public class ChoreBoardHomeStatsTests
     {
         SeedRepresentativeScenario();
 
-        var stats = await CreateService().GetHomeStatsAsync(H2, Now);
+        var stats = await _tenant.As(H2, () => CreateService().GetHomeStatsAsync(H2, Now));
 
         stats.Should().Be(new ChoreHomeStatsDto(ActiveTotal: 1, Overdue: 1, DueToday: 0, UpForGrabs: 1),
             "H2 sees only its own chore 20 — never H1's board (M1)");

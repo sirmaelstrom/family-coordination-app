@@ -92,7 +92,6 @@ public sealed class HouseholdRequestService(
 
         context.Users.Add(new User
         {
-            HouseholdId = household.Id,
             Email = EmailAddress.Normalize(request.Email),
             DisplayName = request.DisplayName,
             GoogleId = request.GoogleId,
@@ -221,7 +220,6 @@ public sealed class HouseholdRequestService(
 
         context.Users.Add(new User
         {
-            HouseholdId = household.Id,
             Email = email,
             DisplayName = ownerName,
             GoogleId = null, // set when the owner first logs in with Google (parity AddMemberAsync)

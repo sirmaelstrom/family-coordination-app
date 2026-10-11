@@ -32,14 +32,14 @@ public class ChoreSubtaskService(
 
         // The chore must exist in the household (else 404). We never read Chore.Version here.
         var choreExists = await context.Chores
-            .AnyAsync(c => c.HouseholdId == householdId && c.ChoreId == choreId, ct);
+            .AnyAsync(c => c.ChoreId == choreId, ct);
         if (!choreExists)
         {
             throw new ChoreNotFoundException($"Chore {choreId} not found for household {householdId}.");
         }
 
         var existing = await context.ChoreSubtasks
-            .Where(s => s.HouseholdId == householdId && s.ChoreId == choreId)
+            .Where(s => s.ChoreId == choreId)
             .Select(s => (int?)s.SortOrder)
             .ToListAsync(ct);
 
@@ -52,7 +52,6 @@ public class ChoreSubtaskService(
 
         var subtask = new ChoreSubtask
         {
-            HouseholdId = householdId,
             ChoreId = choreId,
             // SubtaskId is DB-generated — do NOT set it.
             Title = cleanTitle,
@@ -118,7 +117,7 @@ public class ChoreSubtaskService(
         // order), then any omitted subtasks in their current stable order; then renumber. O(N); one
         // SaveChanges; never touches Chore.Version (versionless / LWW).
         var subtasks = await context.ChoreSubtasks
-            .Where(s => s.HouseholdId == householdId && s.ChoreId == choreId)
+            .Where(s => s.ChoreId == choreId)
             .ToListAsync(ct);
         if (subtasks.Count == 0)
         {
@@ -168,7 +167,7 @@ public class ChoreSubtaskService(
         ApplicationDbContext context, int householdId, int choreId, int subtaskId, CancellationToken ct)
     {
         return await context.ChoreSubtasks
-            .FirstOrDefaultAsync(s => s.HouseholdId == householdId && s.ChoreId == choreId && s.SubtaskId == subtaskId, ct)
+            .FirstOrDefaultAsync(s => s.ChoreId == choreId && s.SubtaskId == subtaskId, ct)
             ?? throw new ChoreNotFoundException(
                 $"Subtask {subtaskId} not found for chore {choreId} in household {householdId}.");
     }

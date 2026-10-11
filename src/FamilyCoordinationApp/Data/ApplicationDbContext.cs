@@ -45,19 +45,19 @@ public partial class ApplicationDbContext : DbContext
     internal TimeProvider Clock { get; init; } = TimeProvider.System;
 
     /// <summary>
-    /// The Tenant filter's bypass term (D12, D14, D15): the kill switch is off, the tenant is Unfiltered, or the
-    /// tenant is out of request with <c>OutOfRequest=Unfiltered</c>. The out-of-request mode is read through the
-    /// tenant, which is authoritative (WP-01). Static so <c>TenantFilterSpikeTests</c> pins this exact code.
+    /// The Tenant filter's bypass term (D12, D15): the tenant is Unfiltered, or the tenant is out of request with
+    /// <c>OutOfRequest=Unfiltered</c>. The out-of-request mode is read through the tenant, which is authoritative
+    /// (WP-01), so <paramref name="tenancy"/> is unused since WP-05 removed the D14 kill switch; the parameter stays so
+    /// the signature <c>TenantFilterSpikeTests</c> pins is unchanged. Static so that test pins this exact code.
     /// </summary>
     internal static bool BypassTenantFilterFor(ITenantContext tenant, TenancySettings tenancy) =>
-        !tenancy.EnforceFilter
-        || tenant.IsUnfiltered
+        tenant.IsUnfiltered
         || (tenant.IsOutOfRequest && tenant.OutOfRequestMode == OutOfRequestMode.Unfiltered);
 
     /// <summary>
     /// The Tenant filter's household term. EF evaluates every filter parameter even when the bypass term
-    /// short-circuits the <c>OR</c>, so a bypassing context answers 0 (unused) instead of throwing, which keeps the
-    /// D14 rollback working. Otherwise the Caller or System household, or <see cref="TenantNotSetException"/>.
+    /// short-circuits the <c>OR</c>, so a bypassing context answers 0 (unused) instead of throwing. Otherwise the
+    /// Caller or System household, or <see cref="TenantNotSetException"/>.
     /// </summary>
     internal static int CurrentHouseholdIdFor(ITenantContext tenant, TenancySettings tenancy)
     {

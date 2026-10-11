@@ -101,7 +101,7 @@ public sealed class ChoreServiceSnoozeTests(PostgresContainerFixture postgres) :
         }
 
         _service = new ChoreService(
-            _dbFactory,
+            _dbFactory.WithTenant(TestTenancy.Caller(HouseholdId)),
             new ChoreStatusCalculator(),
             Mock.Of<IImageService>(),
             new FamilyCoordinationApp.Tests.Services.FixedTimeProvider(Now),
