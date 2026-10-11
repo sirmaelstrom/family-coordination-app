@@ -92,10 +92,9 @@ public static class MealPlanEndpoints
         }
 
         // Validate recipe ownership BEFORE creating anything (council R1). The household-scoped lookup makes a
-        // cross-household recipe id a clean not-found (M1, no leak), and validating up front avoids both an
-        // FK-violation 500 AND an orphan MealPlan row — GetOrCreateMealPlanAsync commits the week's plan in its
-        // own SaveChanges, so a bad recipeId reaching the entry insert would leave an empty plan behind. The
-        // loaded recipe is reused for the response projection (AddMealAsync doesn't load the nav).
+        // cross-household recipe id a clean not-found (M1, no leak) instead of an FK-violation 500. The loaded
+        // recipe is reused for the response projection (AddMealAsync doesn't load the nav). (It no longer guards
+        // an orphan MealPlan row: AddMealAsync stages a new week's plan in the entry's own SaveChanges, b942b943.)
         Recipe? recipe = null;
         if (req.RecipeId.HasValue)
         {

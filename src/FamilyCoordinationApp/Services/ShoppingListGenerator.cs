@@ -52,14 +52,31 @@ public class ShoppingListGenerator(
     IHouseholdClock clock) : IShoppingListGenerator
 {
 
-    public async Task<ShoppingList> GenerateFromMealPlanAsync(
+    public Task<ShoppingList> GenerateFromMealPlanAsync(
         int householdId,
         int mealPlanId,
         string listName,
         DateOnly? startDate = null,
         DateOnly? endDate = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        // Retry wrapper: the list id is assigned max+1 in memory, so a concurrent create can collide on the
+        // composite key (the same hazard and remedy as CreateShoppingListAsync, which this used to call).
+        IdGenerationHelper.ExecuteWithRetryAsync(
+            _ => GenerateOnceAsync(householdId, mealPlanId, listName, startDate, endDate, cancellationToken),
+            logger,
+            "ShoppingList");
+
+    private async Task<ShoppingList> GenerateOnceAsync(
+        int householdId,
+        int mealPlanId,
+        string listName,
+        DateOnly? startDate,
+        DateOnly? endDate,
+        CancellationToken cancellationToken)
     {
+        // One context, one SaveChanges (quest b942b943): the list and all its items commit together. This used to
+        // create the list through the service and then save once per item, so a failure partway (a column
+        // overflow, say) left a list holding some of its items.
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         // Load meal plan with entries, recipes, and ingredients
@@ -98,34 +115,45 @@ public class ShoppingListGenerator(
         // Consolidate ingredients
         var consolidationResults = await ConsolidateScaledIngredientsAsync(allIngredients, autoConsolidate: true);
 
-        // Create shopping list via service
-        var shoppingList = await shoppingListService.CreateShoppingListAsync(
-            householdId, listName, mealPlanId, cancellationToken);
+        var maxListId = await context.ShoppingLists
+            .MaxAsync(sl => (int?)sl.ShoppingListId, cancellationToken) ?? 0;
+        var now = clock.UtcNow;
 
-        // Add items from consolidation results
+        var shoppingList = new ShoppingList
+        {
+            ShoppingListId = maxListId + 1,
+            Name = listName,
+            MealPlanId = mealPlanId,
+            CreatedAt = now,
+            IsArchived = false
+        };
+        context.ShoppingLists.Add(shoppingList);
+
+        // The list is new, so its item ids start at 1.
+        var itemId = 0;
         foreach (var result in consolidationResults)
         {
-            var item = new ShoppingListItem
+            // No HouseholdId: the write step stamps the new list and then its items (parents before children).
+            shoppingList.Items.Add(new ShoppingListItem
             {
-                HouseholdId = householdId,
                 ShoppingListId = shoppingList.ShoppingListId,
+                ItemId = ++itemId,
                 Name = result.Name,
                 Quantity = result.Quantity,
                 Unit = result.Unit,
                 Category = result.Category,
-                SourceRecipes = result.SourceRecipes.Count > 0
-                    ? string.Join(", ", result.SourceRecipes)
-                    : null,
+                SourceRecipes = JoinSourceRecipes(result.SourceRecipes),
                 OriginalUnits = result.OriginalUnits,
-                RecipeIngredientIds = result.RecipeIngredientIds.Count > 0
-                    ? string.Join(",", result.RecipeIngredientIds)
-                    : null,
+                RecipeIngredientIds = JoinRecipeIngredientIds(result.RecipeIngredientIds),
                 IsManuallyAdded = false,
-                SortOrder = 0
-            };
-
-            await shoppingListService.AddManualItemAsync(item, cancellationToken);
+                IsChecked = false,
+                SortOrder = 0,
+                AddedAt = now,
+                UpdatedAt = now
+            });
         }
+
+        await context.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation(
             "Generated shopping list {ShoppingListId} from meal plan {MealPlanId} with {ItemCount} items",
@@ -216,13 +244,9 @@ public class ShoppingListGenerator(
                 Quantity = Math.Max(0, result.Quantity + (quantityDelta ?? 0)),
                 Unit = result.Unit,
                 Category = result.Category,
-                SourceRecipes = result.SourceRecipes.Count > 0
-                    ? string.Join(", ", result.SourceRecipes)
-                    : null,
+                SourceRecipes = JoinSourceRecipes(result.SourceRecipes),
                 OriginalUnits = result.OriginalUnits,
-                RecipeIngredientIds = result.RecipeIngredientIds.Count > 0
-                    ? string.Join(",", result.RecipeIngredientIds)
-                    : null,
+                RecipeIngredientIds = JoinRecipeIngredientIds(result.RecipeIngredientIds),
                 IsManuallyAdded = false,
                 QuantityDelta = quantityDelta,
                 IsChecked = previous?.IsChecked ?? false,
@@ -254,6 +278,21 @@ public class ShoppingListGenerator(
         entryServings is > 0 && recipeServings is > 0
             ? (decimal)entryServings.Value / recipeServings.Value
             : 1m;
+
+    /// <summary>Distinct recipe names, bounded to the column with a visible "… (+N more)" marker.</summary>
+    private static string? JoinSourceRecipes(List<string> sourceRecipes) =>
+        sourceRecipes.Count > 0
+            ? BoundedJoin.Join(sourceRecipes, ", ", FieldLengths.ShoppingListItem.SourceRecipes)
+            : null;
+
+    /// <summary>
+    /// Distinct ingredient identities, bounded to the column by dropping whole ids past it: a marker would not
+    /// parse as an id. Nothing in src reads this column back.
+    /// </summary>
+    private static string? JoinRecipeIngredientIds(List<string> recipeIngredientIds) =>
+        recipeIngredientIds.Count > 0
+            ? BoundedJoin.Join(recipeIngredientIds, ",", FieldLengths.ShoppingListItem.RecipeIngredientIds, marker: false)
+            : null;
 
     /// <summary>Quantities are persisted as <c>decimal(10,2)</c>; round here so the computed value is the stored one.</summary>
     private static decimal Round(decimal quantity) => Math.Round(quantity, 2, MidpointRounding.AwayFromZero);
@@ -342,7 +381,12 @@ public class ShoppingListGenerator(
                     Unit = commonUnit ?? string.Empty,
                     Category = items.First().Ingredient.Category,
                     SourceRecipes = sourceRecipes.Distinct().ToList(),
-                    OriginalUnits = originalUnits.Count > 1 ? string.Join(" + ", originalUnits) : null,
+                    // Repeats collapse ("20 × 1 cup") and the join is bounded to its column: one staple planned in
+                    // every slot of the week used to join one part per slot and overflow it (b942b943).
+                    OriginalUnits = originalUnits.Count > 1
+                        ? BoundedJoin.Join(
+                            BoundedJoin.CollapseRepeats(originalUnits), " + ", FieldLengths.ShoppingListItem.OriginalUnits)
+                        : null,
                     // Distinct for the same reason SourceRecipes is: one recipe planned twice in a week
                     // contributes the same RecipeIngredient rows twice, and these are identities, not counts.
                     RecipeIngredientIds = recipeIngredientIds.Distinct().ToList()

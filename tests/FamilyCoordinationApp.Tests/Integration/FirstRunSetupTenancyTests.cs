@@ -10,9 +10,10 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// First-run setup under the read switch (fca-household-scope WP-02 step 7a, V7). On an unseeded database, and
 /// IN-REQUEST with the tenant Unset (the <c>/setup</c> page is unmarked), <c>SetupService.CreateHouseholdAsync</c>
 /// must produce the household with its admin, default categories, rooms and chores.
-/// <para>Its <c>RunAs(household.Id)</c> has to stay open through BOTH seed helpers: they open their own contexts
-/// from the same scoped factory and read (their idempotency checks). Negative control: close the <c>RunAs</c>
-/// right after the users save, and the first helper's read throws <c>TenantNotSetException</c>.</para>
+/// <para>Its <c>RunAs(household.Id)</c> has to stay open through BOTH seeds: since quest b942b943 they run on the
+/// setup context inside its transaction, and the chore/room seed reads (its idempotency check and owner lookup).
+/// Negative control: close the <c>RunAs</c> right after the users save, and the chore seed's read throws
+/// <c>TenantNotSetException</c>.</para>
 /// </summary>
 [Collection(IntegrationCollection.Name)]
 [Trait("kind", "integration")]
@@ -44,7 +45,7 @@ public sealed class FirstRunSetupTenancyTests(PostgresContainerFixture postgres)
         await using var db = await new PostgresDbContextFactory(connectionString).CreateDbContextAsync();
         (await db.Households.CountAsync(h => h.Id == householdId)).Should().Be(1);
         (await db.Users.SingleAsync(u => u.HouseholdId == householdId)).Email.Should().Be("first@home.test");
-        (await db.Categories.CountAsync(c => c.HouseholdId == householdId)).Should().Be(9, "SeedDefaultCategoriesAsync ran under the RunAs");
+        (await db.Categories.CountAsync(c => c.HouseholdId == householdId)).Should().Be(9, "the default categories were staged under the RunAs");
         (await db.Rooms.CountAsync(r => r.HouseholdId == householdId)).Should().BePositive("SeedChoresAndRoomsAsync ran under the RunAs");
         (await db.Chores.CountAsync(c => c.HouseholdId == householdId)).Should().BePositive();
     }

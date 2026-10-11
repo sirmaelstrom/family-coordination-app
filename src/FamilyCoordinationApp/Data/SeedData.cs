@@ -148,7 +148,16 @@ public static class SeedData
     public static async Task SeedChoresAndRoomsAsync(IDbContextFactory<ApplicationDbContext> dbFactory, int householdId)
     {
         await using var context = await dbFactory.CreateDbContextAsync();
+        await SeedChoresAndRoomsAsync(context, householdId);
+    }
 
+    /// <summary>
+    /// The same seed on the GIVEN context, saved on it, so a caller can run it inside its own transaction
+    /// (<c>SetupService.CreateHouseholdAsync</c>, quest b942b943: the household, its owner and both seeds commit
+    /// together). The household's first user must already be saved on this context (or in its transaction).
+    /// </summary>
+    public static async Task SeedChoresAndRoomsAsync(ApplicationDbContext context, int householdId)
+    {
         // Idempotency guard (M1-scoped to this household): skip entirely if rooms OR chores already
         // exist. Mirrors the "only seed when empty" style of SeedDefaultCategoriesAsync.
         var alreadySeeded = await context.Rooms.AnyAsync(r => r.HouseholdId == householdId)
