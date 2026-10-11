@@ -89,8 +89,11 @@ public class MealPlanService(
 
                 // The week's plan is found or STAGED on this context, never committed on its own (quest b942b943):
                 // a new week's plan and its first entry share the one SaveChanges below, so an entry insert that
-                // fails (a bad recipe id's FK, say) leaves no empty plan behind. A concurrent add that creates the
-                // same plan first collides on the plan id; the retry re-reads and finds it.
+                // fails (a bad recipe id's FK, say) leaves no empty plan behind. Two concurrent first adds for one
+                // week collide on the plan id (and the retry finds the winner's plan) only when both read the max
+                // before either commits; a rival that commits between this week read and the max read yields a
+                // second plan for the week. Pre-existing (GetOrCreateMealPlanAsync has the same window); the fix
+                // is a unique index on (HouseholdId, WeekStartDate), a migration (PR #134 Amendment 1).
                 var mealPlan = await context.MealPlans
                     .FirstOrDefaultAsync(mp => mp.WeekStartDate == weekStart, cancellationToken);
                 if (mealPlan == null)
