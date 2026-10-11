@@ -62,17 +62,33 @@ public sealed class HouseholdMembershipEndpointTests(PostgresContainerFixture po
     }
 
     private static object NewChore(string name, int? ownerUserId = null, int? assigneeUserId = null,
-        int requiredCount = 1, int[]? assignedUserIds = null) => new
+        int requiredCount = 1, int[]? assignedUserIds = null)
     {
-        name,
-        recurrenceMode = "flexible",
-        intervalDays = 7,
-        effortTier = "standard",
-        ownerUserId,
-        assigneeUserId,
-        requiredCount,
-        assignedUserIds,
-    };
+        return new
+        {
+            name,
+            recurrenceMode = "flexible",
+            intervalDays = 7,
+            effortTier = "standard",
+            ownerUserId,
+            assigneeUserId,
+            requiredCount,
+            assignedUserIds,
+        };
+    }
+
+    private static object EditChore(string name, uint version, int? ownerUserId)
+    {
+        return new
+        {
+            name,
+            recurrenceMode = "flexible",
+            intervalDays = 7,
+            effortTier = "standard",
+            version,
+            ownerUserId,
+        };
+    }
 
     private async Task<ChoreWire> CreateAsync(HttpClient client, object body)
     {
@@ -111,11 +127,7 @@ public sealed class HouseholdMembershipEndpointTests(PostgresContainerFixture po
         using var client = AliceClient();
         var chore = await CreateAsync(client, NewChore("u-owner"));
 
-        var resp = await client.PutAsync($"/api/chores/{chore.id}", Body(new
-        {
-            name = "u-owner", recurrenceMode = "flexible", intervalDays = 7, effortTier = "standard",
-            version = chore.version, ownerUserId = ForeignBob,
-        }));
+        var resp = await client.PutAsync($"/api/chores/{chore.id}", Body(EditChore("u-owner", chore.version, ForeignBob)));
 
         await ShouldBeRefusedAsync(resp, "owner on update");
     }
@@ -179,11 +191,7 @@ public sealed class HouseholdMembershipEndpointTests(PostgresContainerFixture po
         var chore = await CreateAsync(client, NewChore("d-owner-change"));
         await DisableAmyAsync();
 
-        var resp = await client.PutAsync($"/api/chores/{chore.id}", Body(new
-        {
-            name = "d-owner-change", recurrenceMode = "flexible", intervalDays = 7, effortTier = "standard",
-            version = chore.version, ownerUserId = Amy,
-        }));
+        var resp = await client.PutAsync($"/api/chores/{chore.id}", Body(EditChore("d-owner-change", chore.version, Amy)));
 
         await ShouldBeRefusedAsync(resp, "a disabled member can't become the owner");
     }
@@ -199,11 +207,7 @@ public sealed class HouseholdMembershipEndpointTests(PostgresContainerFixture po
         var chore = await CreateAsync(client, NewChore("d-owner-kept", ownerUserId: Amy));
         await DisableAmyAsync();
 
-        var resp = await client.PutAsync($"/api/chores/{chore.id}", Body(new
-        {
-            name = "d-owner-kept renamed", recurrenceMode = "flexible", intervalDays = 7, effortTier = "standard",
-            version = chore.version, ownerUserId = Amy,
-        }));
+        var resp = await client.PutAsync($"/api/chores/{chore.id}", Body(EditChore("d-owner-kept renamed", chore.version, Amy)));
 
         resp.StatusCode.Should().Be(HttpStatusCode.OK, await resp.Content.ReadAsStringAsync());
         (await resp.Content.ReadFromJsonAsync<ChoreWire>(Json))!.ownerUserId.Should().Be(Amy);
