@@ -8,6 +8,7 @@ using FluentAssertions;
 using FluentAssertions.Execution;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.EntityFrameworkCore;
@@ -160,7 +161,12 @@ public sealed class CentralAuthorizationTests(PostgresContainerFixture postgres)
                 using var request = new HttpRequestMessage(new HttpMethod(method), UrlFor(endpoint));
                 if (method is "POST" or "PUT" or "PATCH")
                 {
-                    request.Content = JsonContent.Create(new { }, options: Json);
+                    // The content type the route accepts (an upload route takes multipart), so routing's 415 for a
+                    // wrong media type can't answer before the auth pipeline does.
+                    var mediaType = endpoint.Metadata.GetMetadata<IAcceptsMetadata>()?.ContentTypes.FirstOrDefault()
+                        ?? "application/json";
+                    request.Content = new StringContent("{}", System.Text.Encoding.UTF8);
+                    request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mediaType);
                 }
 
                 using var resp = await client.SendAsync(request);
