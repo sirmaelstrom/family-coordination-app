@@ -121,7 +121,7 @@ public class HouseholdConnectionService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         // TENANT-SCOPE-OK: invite redemption resolves a code issued by ANOTHER household — cross-household by design;
-        // the code is the capability (exact match, then the used/expired/self checks below), rate-limited at HouseholdConnectionService.cs:115
+        // the code is the capability (exact match, then the used/expired/self checks below), rate-limited at HouseholdConnectionService.cs:116
         var invite = await context.HouseholdInvites
             .IgnoreQueryFilters(["Tenant"])
             .Include(i => i.Household)

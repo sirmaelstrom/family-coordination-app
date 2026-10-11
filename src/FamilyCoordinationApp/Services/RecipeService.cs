@@ -254,7 +254,7 @@ public class RecipeService(
 
         // PRIVACY: Do NOT include CreatedBy — connected households should not see individual user details
         // TENANT-SCOPE-OK: a connected household's recipes; gated by AreHouseholdsConnectedAsync at
-        // RecipesEndpoints.cs:453 (ListConnectedRecipes, the only caller). Soft delete stays in force.
+        // RecipesEndpoints.cs:382 (ListConnectedRecipes, the only caller). Soft delete stays in force.
         var query = context.Recipes
             .IgnoreQueryFilters(["Tenant"])
             .Where(r => r.HouseholdId == connectedHouseholdId)
@@ -281,7 +281,7 @@ public class RecipeService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         // TENANT-SCOPE-OK: one recipe of a connected household; gated by AreHouseholdsConnectedAsync at
-        // RecipesEndpoints.cs:477 and RecipesEndpoints.cs:502 (its only callers). The ordinary GetRecipeAsync stays filtered.
+        // RecipesEndpoints.cs:402 and RecipesEndpoints.cs:423 (its only callers). The ordinary GetRecipeAsync stays filtered.
         return await context.Recipes
             .IgnoreQueryFilters(["Tenant"])
             .Where(r => r.HouseholdId == connectedHouseholdId && r.RecipeId == recipeId)
@@ -337,7 +337,7 @@ public class RecipeService(
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
         // TENANT-SCOPE-OK: the copy source lives in a connected household; gated by AreHouseholdsConnectedAsync at
-        // RecipesEndpoints.cs:502 (CopyConnectedRecipe, the only caller of the copy)
+        // RecipesEndpoints.cs:423 (CopyConnectedRecipe, the only caller of the copy)
         return await context.Recipes
             .IgnoreQueryFilters(["Tenant"])
             .Where(r => r.HouseholdId == sourceHouseholdId && r.RecipeId == sourceRecipeId)
@@ -356,7 +356,7 @@ public class RecipeService(
 
                 // Load source recipe with ingredients
                 // TENANT-SCOPE-OK: the copy source lives in a connected household; gated by AreHouseholdsConnectedAsync
-                // at RecipesEndpoints.cs:502 (CopyConnectedRecipe). The write below targets the caller's household.
+                // at RecipesEndpoints.cs:423 (CopyConnectedRecipe). The write below targets the caller's household.
                 var sourceRecipe = await context.Recipes
                     .IgnoreQueryFilters(["Tenant"])
                     .Where(r => r.HouseholdId == sourceHouseholdId && r.RecipeId == sourceRecipeId)

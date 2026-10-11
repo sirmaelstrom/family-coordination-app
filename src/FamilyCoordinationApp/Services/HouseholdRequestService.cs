@@ -30,7 +30,7 @@ public sealed class HouseholdRequestService(
 
         // Include Users so the endpoint can project MemberCount = Users.Count (R-C8).
         // TENANT-SCOPE-OK: site-admin list of every household with its member count; gated by RequireSiteAdmin at
-        // SettingsAdminEndpoints.cs:77 (the Users include must see every household's members)
+        // SettingsAdminEndpoints.cs:76 (the Users include must see every household's members)
         var households = await context.Households
             .IgnoreQueryFilters(["Tenant"])
             .AsNoTracking()
@@ -68,7 +68,7 @@ public sealed class HouseholdRequestService(
         // A user row written before quest 3642dbb8 may hold this email in another case, which the case-sensitive
         // unique index lets a lowercase insert sit beside. Refuse here instead of creating that case-duplicate.
         // TENANT-SCOPE-OK: cross-tenant email uniqueness, returning only a boolean; gated by RequireSiteAdmin at
-        // Endpoints/SettingsAdminEndpoints.cs:91 (ApproveRequest)
+        // Endpoints/SettingsAdminEndpoints.cs:92 (ApproveRequest)
         var emailInUse = await context.Users.IgnoreQueryFilters(["Tenant"]).WhereEmailMatches(request.Email).AnyAsync(cancellationToken);
         if (emailInUse)
         {
@@ -195,7 +195,7 @@ public sealed class HouseholdRequestService(
         // existing user already has a home, and the unique Users.Email constraint would reject the insert anyway.
         // Cheap pre-check for a clean 409 before opening the transaction.
         // TENANT-SCOPE-OK: deliberate cross-tenant uniqueness check — Users.Email is globally unique (comment above);
-        // gated by RequireSiteAdmin at SettingsAdminEndpoints.cs:150, and it returns only a boolean
+        // gated by RequireSiteAdmin at SettingsAdminEndpoints.cs:151, and it returns only a boolean
         var emailTaken = await context.Users.IgnoreQueryFilters(["Tenant"]).WhereEmailMatches(email).AnyAsync(cancellationToken);
         if (emailTaken)
         {

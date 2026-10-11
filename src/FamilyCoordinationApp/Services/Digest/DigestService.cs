@@ -51,7 +51,7 @@ public class DigestService(
             tenant = context.Tenant;
 
             // TENANT-SCOPE-OK: cron all-households sweep — M1: HouseholdId comes from these rows, never a client;
-            // gated by the trigger-token check at ChoresEndpoints.cs:1011
+            // gated by the trigger-token check at ChoresEndpoints.cs:922
             candidates = await context.ChoreDigestSettings
                 .IgnoreQueryFilters(["Tenant"])
                 .Where(s => s.Enabled && s.WebhookUrlProtected != null)
