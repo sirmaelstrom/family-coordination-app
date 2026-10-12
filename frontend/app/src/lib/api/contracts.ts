@@ -33,6 +33,7 @@ import type {
 import type { DashboardDto } from '../dashboard/lib/types';
 import type { MealPlanBoardDto } from '../meal-plan/lib/types';
 import type {
+  RecipeDraftData,
   RecipeFullDto,
   RecipeListDto,
   RecipeWriteRequest,
@@ -422,6 +423,21 @@ const saveDraftRequest = objectOf({
   prepTimeMinutes: nullable(num),
   cookTimeMinutes: nullable(num),
   ingredients: arrayOf(writeIngredient),
+  baseVersion: nullable(num),
+});
+
+// GET /draft (Fixtures/RecipeDraft/draft.json): DraftService.RecipeDraftData, the restore half of the base version.
+const recipeDraft = objectOf({
+  name: str,
+  description: nullable(str),
+  instructions: nullable(str),
+  imagePath: nullable(str),
+  sourceUrl: nullable(str),
+  servings: nullable(num),
+  prepTimeMinutes: nullable(num),
+  cookTimeMinutes: nullable(num),
+  ingredients: arrayOf(writeIngredient),
+  baseVersion: nullable(num),
 });
 
 // ── Settings (Fixtures/Settings/{categories,members,category-write}.json) ───
@@ -555,6 +571,7 @@ interface PinnedTypes {
   RecipeListDto: RecipeListDto;
   RecipeWriteRequest: RecipeWriteRequest;
   SaveDraftRequest: SaveDraftRequest;
+  RecipeDraftData: RecipeDraftData;
   CategoryListDto: CategoryListDto;
   CategoryWriteRequest: CategoryWriteRequest;
   ConnectionsDto: ConnectionsDto;
@@ -579,6 +596,7 @@ const SHAPES: { readonly [K in keyof PinnedTypes]: Shape<PinnedTypes[K]> } = {
   RecipeListDto: recipeList,
   RecipeWriteRequest: recipeWriteRequest,
   SaveDraftRequest: saveDraftRequest,
+  RecipeDraftData: recipeDraft,
   CategoryListDto: categoryList,
   CategoryWriteRequest: categoryWriteRequest,
   ConnectionsDto: connections,
@@ -603,6 +621,7 @@ const PIN_FIXTURES: { readonly [K in keyof PinnedTypes]: string } = {
   RecipeListDto: 'RecipeList/list.json',
   RecipeWriteRequest: 'RecipeWrite/request.json',
   SaveDraftRequest: 'RecipeDraft/save-request.json',
+  RecipeDraftData: 'RecipeDraft/draft.json',
   CategoryListDto: 'Settings/categories.json',
   CategoryWriteRequest: 'Settings/category-write.json',
   ConnectionsDto: 'Settings/connections.json',

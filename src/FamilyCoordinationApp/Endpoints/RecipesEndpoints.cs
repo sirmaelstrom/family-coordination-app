@@ -149,7 +149,8 @@ public static class RecipesEndpoints
         var recipe = MapToRecipe(req, caller.HouseholdId, recipeId, imagePath);
 
         // req.Version is the xmin token echoed from GET. A missing token is checked as MissingToken, which matches no
-        // row, so it answers 409 like a stale one (the SPA's draft restore sends null when its version fetch failed).
+        // row, so it answers 409 like a stale one (the SPA's restore of a base-less legacy draft sends null when its version fetch failed; a draft with a
+        // base version saves with that, quest 0c97a292).
         // A missing / cross-household id (404) and a stale token (409) are answered by the /api exception branch.
         await recipeService.UpdateRecipeAsync(recipe, req.Version ?? ConcurrencySave.MissingToken, ct);
 
@@ -437,7 +438,9 @@ public static class RecipesEndpoints
             req.Servings, req.PrepTimeMinutes, req.CookTimeMinutes,
             (req.Ingredients ?? new List<DraftIngredientBody>())
                 .Select(i => new IngredientDraftData(i.Name, i.Quantity, i.Unit, i.Category, i.Notes, i.GroupName, i.SortOrder))
-                .ToList());
+                .ToList(),
+            // A base version means nothing without a recipe to be based on, so a new-recipe draft stores none.
+            req.RecipeId is null or 0 ? null : req.BaseVersion);
 
         // recipeId null ⇒ "new recipe" draft ⇒ 0 sentinel (RecipeDraft's composite PK can't take null).
         await draftService.SaveDraftAsync(caller.HouseholdId, caller.UserId, req.RecipeId ?? 0, draft, ct);
@@ -567,7 +570,9 @@ public static class RecipesEndpoints
     /// Draft autosave body — FLAT (recipeId + the draft fields), mapped to DraftService's
     /// <see cref="RecipeDraftData"/> in the handler. The island sends <c>{ recipeId, ...draftFields }</c>
     /// (recipeId omitted/null for a new-recipe draft → 0 sentinel server-side); GET /draft returns the draft
-    /// fields (RecipeDraftData).
+    /// fields (RecipeDraftData). <c>BaseVersion</c> is the xmin token of the recipe the edits started from (null
+    /// for a new recipe, or when the editor holds no token); GET /draft returns it as <c>baseVersion</c> so the
+    /// restored draft saves with its own base and a stale one answers 409 (quest 0c97a292).
     /// </summary>
     public sealed record SaveDraftRequest(
         int? RecipeId,
@@ -579,7 +584,8 @@ public static class RecipesEndpoints
         int? Servings,
         int? PrepTimeMinutes,
         int? CookTimeMinutes,
-        IReadOnlyList<DraftIngredientBody> Ingredients);
+        IReadOnlyList<DraftIngredientBody> Ingredients,
+        uint? BaseVersion = null);
 
     public sealed record DraftIngredientBody(
         string Name,

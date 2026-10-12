@@ -3,7 +3,10 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using FamilyCoordinationApp.Data;
+using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace FamilyCoordinationApp.Tests.Integration;
@@ -52,7 +55,8 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
         string name, decimal? quantity, string? unit, string category, string? notes, string? groupName, int sortOrder);
     private sealed record DraftWire(
         string name, string? description, string? instructions, string? imagePath, string? sourceUrl,
-        int? servings, int? prepTimeMinutes, int? cookTimeMinutes, List<DraftIngredient> ingredients);
+        int? servings, int? prepTimeMinutes, int? cookTimeMinutes, List<DraftIngredient> ingredients,
+        uint? baseVersion = null);
 
     private HttpClient ClientA => _factory.CreateClientAs(ChoresWebAppFactory.UserAEmail);
     private HttpClient ClientB => _factory.CreateClientAs(ChoresWebAppFactory.UserBEmail);
@@ -498,6 +502,101 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
 
         var afterDelete = await ClientA.GetAsync("/api/recipes/draft");
         afterDelete.StatusCode.Should().Be(HttpStatusCode.NoContent); // no draft ⇒ 204
+    }
+
+    private static object DraftBody(int? recipeId, string name, uint? baseVersion) => new
+    {
+        recipeId,
+        name,
+        description = (string?)null,
+        instructions = (string?)null,
+        imagePath = (string?)null,
+        sourceUrl = (string?)null,
+        servings = (int?)null,
+        prepTimeMinutes = (int?)null,
+        cookTimeMinutes = (int?)null,
+        ingredients = Array.Empty<object>(),
+        baseVersion
+    };
+
+    /// <summary>
+    /// Quest 0c97a292: an edit draft stores the token its edits started from, GET /draft returns it, and a save
+    /// with that token after someone else's save answers 409 instead of overwriting. Before the fix the draft held
+    /// no token and the SPA saved with the live one, which won.
+    /// </summary>
+    [Fact]
+    public async Task Draft_BaseVersion_RoundTrips_AndAStaleBaseAnswers409()
+    {
+        var created = await CreateAsync(ClientA, WriteBody("Draft Base Dish"));
+
+        var put = await ClientA.PutAsJsonAsync("/api/recipes/draft",
+            DraftBody(created.recipeId, "Draft Base Dish (draft)", created.version), Json);
+        put.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Someone saves the recipe after the draft began.
+        var other = await ClientA.PutAsJsonAsync($"/api/recipes/{created.recipeId}",
+            WriteBody("Draft Base Dish (other writer)", version: created.version), Json);
+        other.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var restored = await ClientA.GetFromJsonAsync<DraftWire>($"/api/recipes/draft?recipeId={created.recipeId}", Json);
+        restored!.baseVersion.Should().Be(created.version, "the draft keeps the token its edits started from");
+
+        var save = await ClientA.PutAsJsonAsync($"/api/recipes/{created.recipeId}",
+            WriteBody("Draft Base Dish (draft)", version: restored.baseVersion), Json);
+        save.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var detail = await ClientA.GetFromJsonAsync<RecipeFull>($"/api/recipes/{created.recipeId}", Json);
+        detail!.name.Should().Be("Draft Base Dish (other writer)", "the stale draft did not overwrite the later save");
+
+        await ClientA.DeleteAsync($"/api/recipes/draft?recipeId={created.recipeId}");
+    }
+
+    [Fact]
+    public async Task Draft_StoredBeforeBaseVersionExisted_ReadsThroughTheRealReader_AsNull()
+    {
+        // A draft row written by the pre-0c97a292 code: its JSON has no baseVersion key. Read it back through
+        // GET /draft (DraftService's own serializer options), not a test-side deserializer.
+        const int legacyRecipeId = 9177;
+        var dbFactory = _factory.Services.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
+        await using (var context = await dbFactory.CreateDbContextAsync())
+        using (context.Tenant.RunAs(ChoresWebAppFactory.HouseholdAId))
+        {
+            context.RecipeDrafts.Add(new RecipeDraft
+            {
+                UserId = ChoresWebAppFactory.UserAId,
+                RecipeId = legacyRecipeId,
+                DraftJson = """{"name":"Legacy draft","description":null,"instructions":null,"imagePath":null,"sourceUrl":null,"servings":3,"prepTimeMinutes":null,"cookTimeMinutes":null,"ingredients":[]}""",
+                UpdatedAt = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+        }
+
+        var got = await ClientA.GetFromJsonAsync<DraftWire>($"/api/recipes/draft?recipeId={legacyRecipeId}", Json);
+
+        got.Should().NotBeNull("a legacy draft must still restore");
+        got!.name.Should().Be("Legacy draft");
+        got.servings.Should().Be(3);
+        got.baseVersion.Should().BeNull();
+
+        await ClientA.DeleteAsync($"/api/recipes/draft?recipeId={legacyRecipeId}");
+    }
+
+    [Fact]
+    public async Task Draft_ForANewRecipe_StoresNoBaseVersion()
+    {
+        var put = await ClientA.PutAsJsonAsync("/api/recipes/draft", DraftBody(null, "Base-less draft", 42), Json);
+        put.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var got = await ClientA.GetFromJsonAsync<DraftWire>("/api/recipes/draft", Json);
+        got!.baseVersion.Should().BeNull("a new recipe has no version to be based on");
+
+        // recipeId 0 is the new-recipe sentinel row, so it stores no base either.
+        var putZero = await ClientA.PutAsJsonAsync("/api/recipes/draft", DraftBody(0, "Sentinel draft", 42), Json);
+        putZero.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var gotZero = await ClientA.GetFromJsonAsync<DraftWire>("/api/recipes/draft", Json);
+        gotZero!.name.Should().Be("Sentinel draft");
+        gotZero.baseVersion.Should().BeNull();
+
+        await ClientA.DeleteAsync("/api/recipes/draft");
     }
 
     // ── Auth + M1 ──────────────────────────────────────────────────────────────────
