@@ -177,6 +177,14 @@ public class DigestSettingsService(
             throw new DigestSettingsValidationException(
                 $"Cadence value {(int)update.Cadence} is not a valid DigestCadence.");
         }
+
+        // Only a Discord webhook URL may be stored: the server POSTs to it (quest e9c2e497). The length bound also
+        // keeps the protected value inside its column (quest 9b750f8c).
+        if (update.WebhookProvided && !string.IsNullOrEmpty(update.WebhookUrl)
+            && Digest.DiscordWebhookUrl.Problem(update.WebhookUrl) is { } problem)
+        {
+            throw new DigestSettingsValidationException(problem);
+        }
     }
 
     /// <summary>

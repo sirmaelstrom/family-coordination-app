@@ -34,6 +34,13 @@ public class DiscordWebhookDigestSender(
     /// <inheritdoc/>
     public async Task SendAsync(string webhookUrl, DigestModel model, CancellationToken ct = default)
     {
+        // Re-checked at send (quest e9c2e497): a URL stored before the write-time rule existed must not reach the
+        // network either. The reason never contains the URL.
+        if (DiscordWebhookUrl.Problem(webhookUrl) is { } problem)
+        {
+            throw new InvalidOperationException($"Refusing to send the digest: {problem}");
+        }
+
         var payload = BuildPayload(model);
         var client = httpFactory.CreateClient("DiscordWebhook");
 

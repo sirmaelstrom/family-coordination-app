@@ -115,6 +115,47 @@ public sealed class DigestSettingsIntegrationTests(PostgresContainerFixture post
         row.WebhookUrlProtected.Should().BeNull("clear nulls the stored ciphertext");
     }
 
+    /// <summary>
+    /// Quests e9c2e497 and 9b750f8c: a webhook URL that is not a Discord webhook (an internal host here), or one too
+    /// long to store once protected, answers 400 with a message and stores nothing. On the base tree the internal URL
+    /// answered 200 and was stored, and the long one answered 500 (the protected value overflowed its column).
+    /// </summary>
+    [Theory]
+    [InlineData("https://familyapp-postgres:5432/api/webhooks/1/a")]
+    [InlineData("http://192.168.50.1/api/webhooks/1/a")]
+    [InlineData("LONG")]
+    public async Task PutWebhook_Set_WithANonDiscordOrOverlongUrl_Is400_AndStoresNothing(string url)
+    {
+        if (url == "LONG") url = "https://discord.com/api/webhooks/1/" + new string('x', 1600);
+        var client = _factory.CreateClientAs(ChoresWebAppFactory.UserAEmail);
+        var dbFactory = new PostgresDbContextFactory(_factory.ConnectionString);
+        string? before;
+        await using (var ctx = await dbFactory.CreateDbContextAsync())
+        {
+            before = (await ctx.ChoreDigestSettings.AsNoTracking()
+                .SingleAsync(s => s.HouseholdId == ChoresWebAppFactory.HouseholdAId)).WebhookUrlProtected;
+        }
+
+        var resp = await client.PutAsJsonAsync("/api/chores/digest-settings", new
+        {
+            enabled = true,
+            cadence = "weekly",
+            sendDayOfWeek = "sunday",
+            sendHourLocal = 18,
+            webhookAction = "set",
+            webhookUrl = url
+        }, Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await resp.Content.ReadAsStringAsync();
+        body.Should().Contain("webhook URL");
+        body.Should().NotContain(url, "the URL is a secret and is never echoed (MN7)");
+
+        await using var check = await dbFactory.CreateDbContextAsync();
+        (await check.ChoreDigestSettings.AsNoTracking().SingleAsync(s => s.HouseholdId == ChoresWebAppFactory.HouseholdAId))
+            .WebhookUrlProtected.Should().Be(before, "a refused URL stores nothing");
+    }
+
     [Fact]
     public async Task PutSettings_IsHouseholdScoped_DoesNotAffectOtherHousehold()
     {

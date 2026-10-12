@@ -477,7 +477,9 @@ public static class RecipesEndpoints
         Ingredients = (req.Ingredients ?? new List<RecipeIngredientWrite>())
             .Select((ing, i) => new RecipeIngredient
             {
-                Name = ing.Name.Trim(),
+                // An explicit JSON null name binds despite the non-nullable annotation; treat it as the empty name it
+                // already allows, instead of an NRE 500 (quest 9b750f8c).
+                Name = (ing.Name ?? string.Empty).Trim(),
                 Quantity = ing.Quantity,
                 Unit = NullIfBlank(ing.Unit),
                 Category = string.IsNullOrWhiteSpace(ing.Category) ? "Pantry" : ing.Category.Trim(),

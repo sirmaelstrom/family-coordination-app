@@ -160,6 +160,16 @@ public static class SettingsAdminEndpoints
         {
             return Results.BadRequest(new { message = $"Owner display name must be {FieldLengths.User.DisplayName} characters or fewer." });
         }
+        // With no display name the service derives one from the email's local part (parity AddMember), which can be
+        // longer than the column (quest 9b750f8c): refuse it here, as AddMember does.
+        if (string.IsNullOrWhiteSpace(req?.OwnerDisplayName)
+            && SettingsEndpoints.MemberDisplayNameFor(email).Length > FieldLengths.User.DisplayName)
+        {
+            return Results.BadRequest(new
+            {
+                message = $"The name taken from the owner email (the part before the @) must be {FieldLengths.User.DisplayName} characters or fewer. Give a display name instead.",
+            });
+        }
 
         var createdBy = principal.FindFirst(ClaimTypes.Email)?.Value ?? "";
         var result = await requestService.CreateHouseholdAsync(name, email, req?.OwnerDisplayName, createdBy, ct);

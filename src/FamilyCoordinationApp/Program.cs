@@ -219,7 +219,10 @@ builder.Services.AddHttpClient("RecipeScraper")
 
 // Named HttpClient for the Discord webhook digest sender (Chores v1.1 WP-06, M14). Mirrors the
 // RecipeScraper resilience profile; consumed by DiscordWebhookDigestSender via IHttpClientFactory.
+// No redirects (quest e9c2e497): DiscordWebhookUrl only vouches for the host it checked, so a 3xx from it must not
+// carry the POST to another host.
 builder.Services.AddHttpClient("DiscordWebhook")
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false })
     .AddStandardResilienceHandler(o =>
     {
         o.Retry.MaxRetryAttempts = 3;

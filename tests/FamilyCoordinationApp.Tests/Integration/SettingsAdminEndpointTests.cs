@@ -94,6 +94,25 @@ public sealed class SettingsAdminEndpointTests(PostgresContainerFixture postgres
         return fb.Id;
     }
 
+    /// <summary>
+    /// Quest 9b750f8c: with no display name, create-household derives the owner's from the email's part before the
+    /// <c>@</c> (200-char column, while the email may be 256). An over-long one is a 400 with a message, not a 500
+    /// from Postgres, the same rule as AddMember. Red on the base tree (500).
+    /// </summary>
+    [Fact]
+    public async Task CreateHousehold_DerivedOwnerNameTooLong_Is400_AndCreatesNothing()
+    {
+        var email = new string('o', 201) + "@x.test";
+
+        var resp = await AdminClient.PostAsJsonAsync("/api/settings/households/",
+            new { householdName = "Long Owner House", ownerEmail = email }, Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await resp.Content.ReadAsStringAsync()).Should().Contain("before the @");
+        var dto = (await AdminClient.GetFromJsonAsync<RequestsWire>($"{RequestsUrl}/", Json))!;
+        dto.households.Should().NotContain(h => h.name == "Long Owner House");
+    }
+
     // ─── Site-admin 403 gate (R-C8 — the C test for these routes is the gate, not M1) ─────────────
 
     [Fact]
