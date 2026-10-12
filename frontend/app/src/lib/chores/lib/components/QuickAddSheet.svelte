@@ -29,6 +29,7 @@
   import { showToast } from '$lib/shared/toast-store.svelte';
   import { minFloorDate } from '../dates';
   import IconPicker from './IconPicker.svelte';
+  import { assignableMembers } from '../assignable';
 
   /** What the parent needs to create the chore + (optionally) attach a photo. */
   export interface QuickAddValue {
@@ -41,15 +42,20 @@
   interface Props {
     open: boolean;
     submitting: boolean;
-    /** Household members for the optional assignee picker. */
+    /** Household members: the headcount for "How many people?" (everyone, disabled members included). */
     members: MemberDto[];
+    /** Who the assignee chips may offer: the board's assignable (enabled) members (quest 59b0e3b6). */
+    assignableUserIds: number[];
     /** Room rollups from the board (incl. the virtual General group, roomId null). */
     rooms: RoomRollupDto[];
     onClose: () => void;
     onSubmit: (value: QuickAddValue) => Promise<void> | void;
   }
 
-  let { open, submitting, members, rooms, onClose, onSubmit }: Props = $props();
+  let { open, submitting, members, assignableUserIds, rooms, onClose, onSubmit }: Props = $props();
+
+  // A new chore has nobody on it yet, so the chips offer assignable members only.
+  let choices = $derived(assignableMembers(members, assignableUserIds));
 
   // ── Form state ───────────────────────────────────────────────────────────
   type Cadence = 'once' | 'everyN' | 'days';
@@ -579,7 +585,7 @@
         </legend>
         {#if requiredCount > 1}
           <div class="ch-chip-row" role="group" aria-label="Assign people">
-            {#each members as member (member.userId)}
+            {#each choices as member (member.userId)}
               <button
                 type="button"
                 class="ch-chip"
@@ -606,7 +612,7 @@
             >
               Leave for anyone
             </button>
-            {#each members as member (member.userId)}
+            {#each choices as member (member.userId)}
               <button
                 type="button"
                 class="ch-chip"

@@ -139,6 +139,11 @@ export interface ChoreBoardDto {
    * separately-cached equity fetch. Serializes AFTER `userDefaultView` (additive init-only body property).
    */
   callerCapacityTier: CapacityTier | null;
+  /**
+   * Who a NEW assignment may name (owner, assignee, hand-off target, roster): enabled members only, as the server
+   * enforces (quest 59b0e3b6). `members` stays everyone, for labels and completion credit.
+   */
+  assignableUserIds: number[];
 }
 
 // ─── Rooms (admin surface, /api/rooms) ──────────────────────────────────────

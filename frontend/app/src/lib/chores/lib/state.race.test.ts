@@ -53,6 +53,7 @@ function minimalBoard(): ChoreBoardDto {
     needsAttentionChoreIds: [],
     userDefaultView: null,
     callerCapacityTier: null,
+    assignableUserIds: [],
   };
 }
 

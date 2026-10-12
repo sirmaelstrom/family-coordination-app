@@ -41,10 +41,14 @@ public class ChoreBoardService(
             .ThenBy(r => r.Name)
             .ToListAsync(cancellationToken);
 
-        var members = await context.Users
+        var memberRows = await context.Users
             .OrderBy(u => u.DisplayName)
-            .Select(u => new MemberDto(u.Id, u.DisplayName, u.Initials, u.PictureUrl))
+            .Select(u => new { Dto = new MemberDto(u.Id, u.DisplayName, u.Initials, u.PictureUrl), u.IsWhitelisted })
             .ToListAsync(cancellationToken);
+        var members = memberRows.Select(r => r.Dto).ToList();
+        // Who a NEW assignment may name: the same rule as HouseholdMembership.EnsureAssignableAsync (enabled members).
+        // Members stays everyone, so history labels and completion credit still resolve a disabled member (59b0e3b6).
+        var assignableUserIds = memberRows.Where(r => r.IsWhitelisted).Select(r => r.Dto.UserId).ToList();
 
         // The caller's own row carries BOTH the roaming default lens AND (Phase 15 R4′) the self-set
         // physical-capacity tier the up-for-grabs "Fits me" chip reads. Widen the existing single-user
@@ -165,6 +169,7 @@ public class ChoreBoardService(
             userDefaultView)
         {
             CallerCapacityTier = callerCapacityTier,
+            AssignableUserIds = assignableUserIds,
         };
     }
 

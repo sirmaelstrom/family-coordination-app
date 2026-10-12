@@ -24,19 +24,30 @@
   import { showToast } from '$lib/shared/toast-store.svelte';
   import { minFloorDate } from '../dates';
   import IconPicker from './IconPicker.svelte';
+  import { assignableMembers } from '../assignable';
 
   interface Props {
     open: boolean;
     /** The chore being edited — used to pre-fill the form. */
     chore: ChoreDto | null;
-    /** Household members for the optional owner picker. */
+    /** Household members: the headcount for "How many people?" (everyone, disabled members included). */
     members: MemberDto[];
+    /** Who a NEW pick may name: the board's assignable (enabled) members (quest 59b0e3b6). */
+    assignableUserIds: number[];
     /** Room rollups from the board. */
     rooms: RoomRollupDto[];
     onClose: () => void;
   }
 
-  let { open, chore, members, rooms, onClose }: Props = $props();
+  let { open, chore, members, assignableUserIds, rooms, onClose }: Props = $props();
+
+  // Each role picker offers the assignable members plus whoever ALREADY holds that role, so a disabled member stays
+  // visible where they are but can't be picked into another role (the server refuses a new assignment to them).
+  let minderChoices = $derived(assignableMembers(members, assignableUserIds, [chore?.ownerUserId]));
+  let assigneeChoices = $derived(assignableMembers(members, assignableUserIds, [chore?.assigneeUserId]));
+  let rosterChoices = $derived(
+    assignableMembers(members, assignableUserIds, chore?.roster.map((r) => r.userId) ?? []),
+  );
 
   type Cadence = 'once' | 'everyN' | 'days';
 
@@ -727,7 +738,7 @@
           >
             No minder
           </button>
-          {#each members as member (member.userId)}
+          {#each minderChoices as member (member.userId)}
             <button
               type="button"
               class="ch-chip"
@@ -764,7 +775,7 @@
             >
               Up for grabs
             </button>
-            {#each members as member (member.userId)}
+            {#each assigneeChoices as member (member.userId)}
               <button
                 type="button"
                 class="ch-chip"
@@ -782,7 +793,7 @@
         <fieldset class="ch-field">
           <legend class="ch-field-label">Assign people (optional)</legend>
           <div class="ch-chip-row" role="group" aria-label="Assign people">
-            {#each members as member (member.userId)}
+            {#each rosterChoices as member (member.userId)}
               <button
                 type="button"
                 class="ch-chip"

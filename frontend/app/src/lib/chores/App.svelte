@@ -18,6 +18,7 @@
   import CompleteDialog from './lib/components/CompleteDialog.svelte';
   import DigestSettings from './lib/components/DigestSettings.svelte';
   import PhotoLightbox from './lib/components/PhotoLightbox.svelte';
+  import { assignableMembers } from './lib/assignable';
 
   // ───────────────────────────────────────────────────────────────────────
   // Root of the chores island. Fetches the ONE board payload into the shared
@@ -502,6 +503,7 @@
   open={quickAddOpen}
   submitting={quickAddSubmitting}
   members={store.board?.members ?? []}
+  assignableUserIds={store.board?.assignableUserIds ?? []}
   rooms={store.board?.rooms ?? []}
   onClose={() => (quickAddOpen = false)}
   onSubmit={handleQuickAdd}
@@ -510,7 +512,7 @@
 <HandOffPicker
   open={handOffOpen}
   choreName={handOffChore?.name ?? ''}
-  members={store.board?.members ?? []}
+  members={assignableMembers(store.board?.members ?? [], store.board?.assignableUserIds ?? [])}
   mode={pickerMode}
   excludeUserId={pickerMode === 'assign' ? null : (handOffChore?.assigneeUserId ?? null)}
   onClose={() => {
@@ -536,6 +538,7 @@
   open={editOpen}
   chore={editChore}
   members={store.board?.members ?? []}
+  assignableUserIds={store.board?.assignableUserIds ?? []}
   rooms={store.board?.rooms ?? []}
   onClose={() => {
     editOpen = false;

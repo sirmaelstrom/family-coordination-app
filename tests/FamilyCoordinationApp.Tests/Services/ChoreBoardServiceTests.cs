@@ -109,6 +109,24 @@ public class ChoreBoardServiceTests
         CreatedAt = Now,
     };
 
+    // ------------------------------------------------------------------ assignable members (quest 59b0e3b6)
+
+    [Fact]
+    public async Task Board_ListsEveryMember_ButOnlyEnabledOnesAsAssignable()
+    {
+        using (var ctx = new ApplicationDbContext(_options))
+        {
+            (await ctx.Users.SingleAsync(u => u.Id == Alice)).IsWhitelisted = true;
+            (await ctx.Users.SingleAsync(u => u.Id == Bob)).IsWhitelisted = false; // disabled
+            await ctx.SaveChangesAsync();
+        }
+
+        var board = await CreateService().GetBoardAsync(H1, Alice, Now);
+
+        board.Members.Select(m => m.UserId).Should().BeEquivalentTo([Alice, Bob], "labels still resolve a disabled member");
+        board.AssignableUserIds.Should().Equal(Alice);
+    }
+
     // ------------------------------------------------------------------ rollup bucketing
 
     [Fact]
