@@ -494,14 +494,14 @@ namespace FamilyCoordinationApp.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("HouseholdId")
+                        .IsUnique()
+                        .HasFilter("\"RevokedAt\" IS NULL");
+
                     b.HasIndex("TokenHash")
                         .IsUnique();
 
                     b.HasIndex("HouseholdId", "RevokedAt");
-
-                    b.HasIndex("HouseholdId")
-                        .IsUnique()
-                        .HasFilter("\"RevokedAt\" IS NULL");
 
                     b.ToTable("HouseholdCalendarTokens", (string)null);
                 });
@@ -722,6 +722,9 @@ namespace FamilyCoordinationApp.Migrations
                         .HasColumnType("date");
 
                     b.HasKey("HouseholdId", "MealPlanId");
+
+                    b.HasIndex("HouseholdId", "WeekStartDate")
+                        .IsUnique();
 
                     b.ToTable("MealPlans", (string)null);
                 });
