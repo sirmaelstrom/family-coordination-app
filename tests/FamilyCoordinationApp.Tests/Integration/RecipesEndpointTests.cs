@@ -133,6 +133,34 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
         detail.ingredients.Should().HaveCount(2);
     }
 
+    /// <summary>
+    /// Quest 9b750f8c: an ingredient whose name is an explicit JSON null is stored with the empty name an empty
+    /// string already gets, instead of an NRE 500. Red on the base tree (500).
+    /// </summary>
+    [Fact]
+    public async Task Create_WithANullIngredientName_IsNotA500_AndStoresAnEmptyName()
+    {
+        var body = WriteBody("Null Ingredient Dish", ingredients: new object[]
+        {
+            new { name = (string?)null, quantity = 1.0, unit = "cup", category = "Pantry", sortOrder = 0 },
+        });
+
+        var created = await CreateAsync(ClientA, body);
+
+        created.ingredients.Should().ContainSingle().Which.name.Should().BeEmpty();
+    }
+
+    /// <summary>Council round 1 (opus, sonnet): a JSON null ingredient ELEMENT is dropped, not an NRE 500.</summary>
+    [Fact]
+    public async Task Create_WithANullIngredientElement_IsNotA500_AndDropsIt()
+    {
+        var body = WriteBody("Null Element Dish", ingredients: new object?[] { null, Ing("Salt", 1, "tsp") }!);
+
+        var created = await CreateAsync(ClientA, body);
+
+        created.ingredients.Should().ContainSingle().Which.name.Should().Be("Salt");
+    }
+
     [Fact]
     public async Task Search_MatchesIngredientName()
     {
