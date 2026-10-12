@@ -440,7 +440,7 @@ public static class RecipesEndpoints
                 .Select(i => new IngredientDraftData(i.Name, i.Quantity, i.Unit, i.Category, i.Notes, i.GroupName, i.SortOrder))
                 .ToList(),
             // A base version means nothing without a recipe to be based on, so a new-recipe draft stores none.
-            req.RecipeId is null ? null : req.BaseVersion);
+            req.RecipeId is null or 0 ? null : req.BaseVersion);
 
         // recipeId null ⇒ "new recipe" draft ⇒ 0 sentinel (RecipeDraft's composite PK can't take null).
         await draftService.SaveDraftAsync(caller.HouseholdId, caller.UserId, req.RecipeId ?? 0, draft, ct);

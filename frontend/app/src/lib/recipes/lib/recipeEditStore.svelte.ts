@@ -124,7 +124,8 @@ class RecipeEditStore {
 
   isEdit = $derived(this.recipeId != null);
 
-  /** The xmin token from the last GET — echoed on the update PUT (null until a fresh load). */
+  /** The xmin token the form's content is based on — from the last GET, or a restored draft's base version
+   *  (quest 0c97a292). Echoed on the update PUT and stored as the draft's baseVersion (null until loaded). */
   private serverVersion: number | null = null;
   private uidSeq = 1;
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -157,14 +158,16 @@ class RecipeEditStore {
         if (recipeId != null && draft.baseVersion != null) {
           // The draft carries the token its edits started from (quest 0c97a292). Save with THAT, not the live
           // one: if someone saved the recipe after the draft began, the PUT answers 409 and the reload banner
-          // shows, instead of the draft silently overwriting their edit.
+          // shows, instead of the draft silently overwriting their edit. No GET here, so a draft for a recipe
+          // deleted meanwhile opens and learns of the delete at save (404 → back to the list).
           this.serverVersion = draft.baseVersion;
         } else if (recipeId != null) {
           // A draft stored before drafts carried a base version (or saved while the editor held no token).
           // Best-effort fetch the current token so the save is still guarded. On failure keep null: the server
           // answers a tokenless PUT with 409 (quest 8cf3c806), so the save shows the reload banner instead of
           // overwriting (a deleted recipe answers 404). Residual for these legacy drafts only: the live token
-          // can't see an edit made between the draft's start and now.
+          // can't see an edit made between the draft's start and now, and the next autosave stores that live
+          // token as the draft's base, so the unknown base is adopted rather than kept unknown.
           try {
             this.serverVersion = (await getRecipe(recipeId)).version;
           } catch {
@@ -488,7 +491,13 @@ class RecipeEditStore {
       this.conflict = false;
       this.error = null;
       this.dirty = false;
-      showToast({ message: 'Loaded the latest version. Your edits were kept as a draft.', kind: 'info' });
+      // The draft saved above keeps the conflicted base (serverVersion was still the old token), so reopening the
+      // editor shows those edits again and their save answers 409 again: they were made on the old version.
+      // Editing this reloaded form autosaves over that draft with the new base.
+      showToast({
+        message: 'Loaded the latest version. Your edits are kept as a draft until you edit this version.',
+        kind: 'info',
+      });
     } catch (e) {
       if (e instanceof ApiError) {
         // The recipe was deleted meanwhile — nothing to reload into.

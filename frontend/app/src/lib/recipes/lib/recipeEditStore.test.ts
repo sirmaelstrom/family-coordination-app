@@ -134,6 +134,41 @@ describe('recipe draft base version (0c97a292)', () => {
     expect(vi.mocked(saveDraft).mock.calls[0][0]).toMatchObject({ recipeId: RECIPE_ID, baseVersion: 5 });
   });
 
+  it('a restored draft keeps its base through autosave', async () => {
+    vi.useFakeTimers();
+    vi.mocked(getDraft).mockResolvedValue(draft(3));
+    vi.mocked(saveDraft).mockResolvedValue(undefined);
+
+    await recipeEditStore.load(RECIPE_ID);
+    recipeEditStore.onEdit();
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(vi.mocked(saveDraft).mock.calls[0][0]).toMatchObject({ recipeId: RECIPE_ID, baseVersion: 3 });
+  });
+
+  it('a conflict reload keeps the old base on the saved draft, then re-bases on the next edit', async () => {
+    vi.useFakeTimers();
+    vi.mocked(getDraft).mockResolvedValue(draft(3));
+    vi.mocked(updateRecipe).mockRejectedValue(new ApiError(409, 'conflict'));
+    vi.mocked(saveDraft).mockResolvedValue(undefined);
+
+    await recipeEditStore.load(RECIPE_ID);
+    await recipeEditStore.save();
+    expect(recipeEditStore.conflict).toBe(true);
+
+    vi.mocked(getRecipe).mockResolvedValue(full(5));
+    await recipeEditStore.reloadAfterConflict();
+
+    // The typed state is preserved under the base it was made on, not the reloaded one.
+    expect(vi.mocked(saveDraft).mock.calls[0][0]).toMatchObject({ name: 'Soup (draft)', baseVersion: 3 });
+    expect(recipeEditStore.conflict).toBe(false);
+    expect(recipeEditStore.form.name).toBe('Soup');
+
+    recipeEditStore.onEdit();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(vi.mocked(saveDraft).mock.calls[1][0]).toMatchObject({ name: 'Soup', baseVersion: 5 });
+  });
+
   it('a new-recipe draft carries no base version', async () => {
     vi.useFakeTimers();
     recipeEditStore.init({ userId: 1, recipeId: null } as never);

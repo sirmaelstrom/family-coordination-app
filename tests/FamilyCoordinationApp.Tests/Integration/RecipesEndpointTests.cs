@@ -3,7 +3,10 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using FamilyCoordinationApp.Data;
+using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace FamilyCoordinationApp.Tests.Integration;
@@ -548,6 +551,36 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
     }
 
     [Fact]
+    public async Task Draft_StoredBeforeBaseVersionExisted_ReadsThroughTheRealReader_AsNull()
+    {
+        // A draft row written by the pre-0c97a292 code: its JSON has no baseVersion key. Read it back through
+        // GET /draft (DraftService's own serializer options), not a test-side deserializer.
+        const int legacyRecipeId = 9177;
+        var dbFactory = _factory.Services.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
+        await using (var context = await dbFactory.CreateDbContextAsync())
+        using (context.Tenant.RunAs(ChoresWebAppFactory.HouseholdAId))
+        {
+            context.RecipeDrafts.Add(new RecipeDraft
+            {
+                UserId = ChoresWebAppFactory.UserAId,
+                RecipeId = legacyRecipeId,
+                DraftJson = """{"name":"Legacy draft","description":null,"instructions":null,"imagePath":null,"sourceUrl":null,"servings":3,"prepTimeMinutes":null,"cookTimeMinutes":null,"ingredients":[]}""",
+                UpdatedAt = DateTime.UtcNow
+            });
+            await context.SaveChangesAsync();
+        }
+
+        var got = await ClientA.GetFromJsonAsync<DraftWire>($"/api/recipes/draft?recipeId={legacyRecipeId}", Json);
+
+        got.Should().NotBeNull("a legacy draft must still restore");
+        got!.name.Should().Be("Legacy draft");
+        got.servings.Should().Be(3);
+        got.baseVersion.Should().BeNull();
+
+        await ClientA.DeleteAsync($"/api/recipes/draft?recipeId={legacyRecipeId}");
+    }
+
+    [Fact]
     public async Task Draft_ForANewRecipe_StoresNoBaseVersion()
     {
         var put = await ClientA.PutAsJsonAsync("/api/recipes/draft", DraftBody(null, "Base-less draft", 42), Json);
@@ -555,6 +588,13 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
 
         var got = await ClientA.GetFromJsonAsync<DraftWire>("/api/recipes/draft", Json);
         got!.baseVersion.Should().BeNull("a new recipe has no version to be based on");
+
+        // recipeId 0 is the new-recipe sentinel row, so it stores no base either.
+        var putZero = await ClientA.PutAsJsonAsync("/api/recipes/draft", DraftBody(0, "Sentinel draft", 42), Json);
+        putZero.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var gotZero = await ClientA.GetFromJsonAsync<DraftWire>("/api/recipes/draft", Json);
+        gotZero!.name.Should().Be("Sentinel draft");
+        gotZero.baseVersion.Should().BeNull();
 
         await ClientA.DeleteAsync("/api/recipes/draft");
     }
