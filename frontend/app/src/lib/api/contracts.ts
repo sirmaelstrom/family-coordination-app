@@ -169,6 +169,7 @@ const choreBoard = objectOf({
   needsAttentionChoreIds: arrayOf(num),
   userDefaultView: nullable(str),
   callerCapacityTier: nullable(capacityTier),
+  assignableUserIds: arrayOf(num),
 });
 
 // ── Chores: equity (Fixtures/ChoreEquity/equity.json) ───────────────────────

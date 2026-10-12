@@ -29,6 +29,14 @@ public sealed record ChoreBoardDto(
     /// camelCase as <c>callerCapacityTier</c>, AFTER the positional keys.
     /// </summary>
     public string? CallerCapacityTier { get; init; }
+
+    /// <summary>
+    /// The members a NEW assignment (owner, assignee, hand-off target, roster) may name: enabled members only, the
+    /// rule <c>HouseholdMembership.EnsureAssignableAsync</c> enforces (quest 59b0e3b6). <see cref="Members"/> stays
+    /// everyone, so labels and completion credit still resolve a disabled member. Serializes as
+    /// <c>assignableUserIds</c>, after <c>callerCapacityTier</c>.
+    /// </summary>
+    public IReadOnlyList<int> AssignableUserIds { get; init; } = [];
 }
 
 /// <summary>

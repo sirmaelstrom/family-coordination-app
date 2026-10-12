@@ -256,5 +256,8 @@
     3
   ],
   "userDefaultView": "rooms",
-  "callerCapacityTier": "Reduced"
+  "callerCapacityTier": "Reduced",
+  "assignableUserIds": [
+    100
+  ]
 }

@@ -18,6 +18,7 @@
   import CompleteDialog from './lib/components/CompleteDialog.svelte';
   import DigestSettings from './lib/components/DigestSettings.svelte';
   import PhotoLightbox from './lib/components/PhotoLightbox.svelte';
+  import { assignableMembers, peopleOnChore } from './lib/assignable';
 
   // ───────────────────────────────────────────────────────────────────────
   // Root of the chores island. Fetches the ONE board payload into the shared
@@ -501,7 +502,7 @@
 <QuickAddSheet
   open={quickAddOpen}
   submitting={quickAddSubmitting}
-  members={store.board?.members ?? []}
+  members={assignableMembers(store.board?.members ?? [], store.board?.assignableUserIds ?? [])}
   rooms={store.board?.rooms ?? []}
   onClose={() => (quickAddOpen = false)}
   onSubmit={handleQuickAdd}
@@ -510,7 +511,7 @@
 <HandOffPicker
   open={handOffOpen}
   choreName={handOffChore?.name ?? ''}
-  members={store.board?.members ?? []}
+  members={assignableMembers(store.board?.members ?? [], store.board?.assignableUserIds ?? [])}
   mode={pickerMode}
   excludeUserId={pickerMode === 'assign' ? null : (handOffChore?.assigneeUserId ?? null)}
   onClose={() => {
@@ -535,7 +536,7 @@
 <EditChoreSheet
   open={editOpen}
   chore={editChore}
-  members={store.board?.members ?? []}
+  members={assignableMembers(store.board?.members ?? [], store.board?.assignableUserIds ?? [], peopleOnChore(editChore))}
   rooms={store.board?.rooms ?? []}
   onClose={() => {
     editOpen = false;
