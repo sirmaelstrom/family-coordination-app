@@ -5,6 +5,12 @@ using FamilyCoordinationApp.Data.Entities;
 
 namespace FamilyCoordinationApp.Services;
 
+/// <summary>
+/// One autosaved draft. <see cref="BaseVersion"/> is the recipe's xmin token the draft's edits were based on (quest
+/// 0c97a292): the SPA restores it and saves with it, so a draft begun before someone else's save answers 409 instead
+/// of overwriting that save. <c>null</c> for a new-recipe draft, and for a draft stored before the field existed
+/// (the JSON simply lacks the key).
+/// </summary>
 public record RecipeDraftData(
     string Name,
     string? Description,
@@ -14,7 +20,8 @@ public record RecipeDraftData(
     int? Servings,
     int? PrepTimeMinutes,
     int? CookTimeMinutes,
-    List<IngredientDraftData> Ingredients
+    List<IngredientDraftData> Ingredients,
+    uint? BaseVersion = null
 );
 
 public record IngredientDraftData(

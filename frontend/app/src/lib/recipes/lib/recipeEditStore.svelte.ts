@@ -154,12 +154,17 @@ class RecipeEditStore {
       if (draft) {
         this.applyDraft(draft);
         showToast({ message: 'Restored from draft', kind: 'info' });
-        if (recipeId != null) {
-          // Drafts carry no version token — best-effort fetch the current one so the eventual save is
-          // still concurrency-guarded. On failure keep null: the server answers a tokenless PUT with 409 (quest
-          // 8cf3c806), so the save shows the reload banner instead of overwriting (a deleted recipe answers 404).
-          // Residual (pre-existing): the fetched token is the LIVE one, not the draft's base, so a draft begun
-          // before someone else's save can still overwrite it — drafts carry no base version yet.
+        if (recipeId != null && draft.baseVersion != null) {
+          // The draft carries the token its edits started from (quest 0c97a292). Save with THAT, not the live
+          // one: if someone saved the recipe after the draft began, the PUT answers 409 and the reload banner
+          // shows, instead of the draft silently overwriting their edit.
+          this.serverVersion = draft.baseVersion;
+        } else if (recipeId != null) {
+          // A draft stored before drafts carried a base version (or saved while the editor held no token).
+          // Best-effort fetch the current token so the save is still guarded. On failure keep null: the server
+          // answers a tokenless PUT with 409 (quest 8cf3c806), so the save shows the reload banner instead of
+          // overwriting (a deleted recipe answers 404). Residual for these legacy drafts only: the live token
+          // can't see an edit made between the draft's start and now.
           try {
             this.serverVersion = (await getRecipe(recipeId)).version;
           } catch {
@@ -594,6 +599,9 @@ class RecipeEditStore {
         groupName: nullIfBlank(r.groupName),
         sortOrder: i,
       })),
+      // The token the edits started from, so a restored draft saves against its own base (quest 0c97a292).
+      // After a conflict this is still the conflicted base until reload, so a draft saved then keeps it.
+      baseVersion: this.recipeId != null ? this.serverVersion : null,
     };
   }
 

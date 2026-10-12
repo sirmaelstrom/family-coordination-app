@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using FluentAssertions;
 using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Endpoints;
+using FamilyCoordinationApp.Services;
 
 namespace FamilyCoordinationApp.Tests.Services;
 
@@ -49,9 +50,9 @@ public class RecipeWriteContractTests
         },
         Version: 7);
 
-    /// <summary>A new-recipe draft (recipeId null) with a stored image path.</summary>
+    /// <summary>An edit draft with a stored image path and the base version it started from (quest 0c97a292).</summary>
     public static RecipesEndpoints.SaveDraftRequest BuildRepresentativeDraftRequest() => new(
-        RecipeId: null,
+        RecipeId: 12,
         Name: "Untitled soup",
         Description: null,
         Instructions: "Simmer until done.",
@@ -64,7 +65,50 @@ public class RecipeWriteContractTests
         {
             new(Name: "stock", Quantity: 1.5m, Unit: "l", Category: "Pantry",
                 Notes: null, GroupName: null, SortOrder: 1),
-        });
+        },
+        BaseVersion: 7);
+
+    /// <summary>The GET /draft body: what the SPA restores, base version included (quest 0c97a292).</summary>
+    public static RecipeDraftData BuildRepresentativeDraft() => new(
+        Name: "Untitled soup",
+        Description: null,
+        Instructions: "Simmer until done.",
+        ImagePath: "/uploads/1/draft.jpg",
+        SourceUrl: null,
+        Servings: null,
+        PrepTimeMinutes: 5,
+        CookTimeMinutes: 30,
+        Ingredients: [new IngredientDraftData("stock", 1.5m, "l", "Pantry", null, null, 1)],
+        BaseVersion: 7);
+
+    private static readonly string DraftReadFixturePath =
+        Path.Combine(AppContext.BaseDirectory, "Fixtures", "RecipeDraft", "draft.json");
+
+    [Fact]
+    public void SerializedDraft_MatchesContractFixture()
+    {
+        var actualJson = JsonSerializer.Serialize(BuildRepresentativeDraft(), Options);
+
+        File.Exists(DraftReadFixturePath).Should().BeTrue(
+            $"the draft.json contract fixture must be checked in at {DraftReadFixturePath}");
+
+        Normalize(actualJson).Should().Be(Normalize(File.ReadAllText(DraftReadFixturePath)),
+            "the serialized RecipeDraftData (GET /api/recipes/draft) must match the checked-in contract fixture; "
+            + "if this fails after a deliberate change, update draft.json AND the island types.ts in lockstep (M9)");
+    }
+
+    [Fact]
+    public void A_draft_stored_before_BaseVersion_existed_reads_as_null()
+    {
+        // Drafts already in the database lack the key; they must still deserialize (as a legacy, base-less draft).
+        var legacy = """{"name":"Old","description":null,"instructions":null,"imagePath":null,"sourceUrl":null,"servings":null,"prepTimeMinutes":null,"cookTimeMinutes":null,"ingredients":[]}""";
+
+        var draft = JsonSerializer.Deserialize<RecipeDraftData>(legacy,
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+
+        draft.Should().NotBeNull();
+        draft!.BaseVersion.Should().BeNull();
+    }
 
     [Fact]
     public void SerializedWriteRequest_MatchesContractFixture()

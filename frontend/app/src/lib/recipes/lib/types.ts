@@ -169,6 +169,8 @@ export interface RecipeDraftData {
   prepTimeMinutes: number | null;
   cookTimeMinutes: number | null;
   ingredients: IngredientDraftData[];
+  /** The recipe's xmin token the draft's edits started from; null for a new-recipe draft or a pre-0c97a292 draft. */
+  baseVersion: number | null;
 }
 
 // ── Write request (POST/PUT body — Endpoints RecipeWriteRequest) ────────────
@@ -210,6 +212,8 @@ export interface SaveDraftRequest {
   prepTimeMinutes: number | null;
   cookTimeMinutes: number | null;
   ingredients: IngredientDraftData[];
+  /** The editor's xmin token when the draft was saved (null: new recipe, or no token held). Stored server-side. */
+  baseVersion: number | null;
 }
 
 // ── Shell context (read from the root data-attrs) ──────────────────────────
