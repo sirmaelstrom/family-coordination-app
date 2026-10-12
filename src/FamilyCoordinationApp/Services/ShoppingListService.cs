@@ -12,6 +12,7 @@ public class ShoppingListService(
     IHouseholdClock clock) : IShoppingListService
 {
     private const string ListNotFound = "Shopping list not found.";
+    private const string ItemNotFound = "Item not found.";
 
     public async Task<ShoppingList> CreateShoppingListAsync(int householdId, string name, int? mealPlanId = null, CancellationToken cancellationToken = default)
     {
@@ -169,24 +170,16 @@ public class ShoppingListService(
     }
 
     /// <summary>
-    /// Updates a shopping list item with optimistic concurrency handling.
-    /// Uses "checked wins" strategy: if either user checked the item, it stays checked.
+    /// Updates a shopping list item checked against the client's <paramref name="version"/> (quest 8cf3c806, operator
+    /// answer c): a stale or missing (<see cref="ConcurrencySave.MissingToken"/>) token throws
+    /// <see cref="ConcurrencyConflictException"/> (→ 409), like every other client-token write. The old "checked wins"
+    /// merge-retry is gone; the client reloads on 409.
     /// </summary>
-    /// <returns>True if update succeeded, false if item was deleted by another user</returns>
-    public async Task<(bool Success, bool WasConflict, string? ConflictMessage)> UpdateItemWithConcurrencyAsync(ShoppingListItem item, CancellationToken cancellationToken = default)
+    /// <exception cref="NotFoundException">The item is gone.</exception>
+    public async Task UpdateItemAsync(ShoppingListItem item, uint version, CancellationToken cancellationToken = default)
     {
-        const int maxRetries = 3;
-        var retries = 0;
-        var wasConflict = false;
-        string? conflictMessage = null;
-
-        // One context for the whole call, outside the retry loop: the catch below reads the database values
-        // and merges into this context's tracked entry, and the retry saves that merged entry. A context
-        // opened inside the try is already disposed when the catch runs (quest 489954e5), and a retry that
-        // re-fetched and re-applied the caller's values would discard the merge.
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        // Fetch fresh entity from this context to avoid disposed context error
         var existing = await context.ShoppingListItems
             .FirstOrDefaultAsync(i =>
                 i.ShoppingListId == item.ShoppingListId &&
@@ -194,8 +187,7 @@ public class ShoppingListService(
 
         if (existing == null)
         {
-            logger.LogWarning("Item {ItemId} not found during update", item.ItemId);
-            return (false, false, "Item not found");
+            throw new NotFoundException(ItemNotFound, $"Item {item.ItemId} not found in list {item.ShoppingListId}");
         }
 
         // Apply changes from the passed-in item. This copy is a whitelist — a field left off
@@ -208,96 +200,28 @@ public class ShoppingListService(
         existing.QuantityDelta = item.QuantityDelta;
         existing.Unit = item.Unit;
         existing.Category = item.Category;
-        existing.UpdatedByUserId = item.UpdatedByUserId;
+        // A touch, kept on purpose: a PATCH that changes nothing must still put the row in the UPDATE so the version
+        // check runs. The write step stamps UpdatedByUserId (the caller; quest e8bf9e1d).
         existing.UpdatedAt = clock.UtcNow;
 
-        while (retries < maxRetries)
-        {
-            try
-            {
-                await context.SaveChangesAsync(cancellationToken);
+        await context.SaveWithConcurrencyAsync(existing, version, cancellationToken);
 
-                // Copy the saved row back onto the caller's object: the endpoint answers with `item`, so without
-                // this a checked-wins merge and the new xmin Version never reach the client. Same whitelist as
-                // the apply block above, plus Version — a field left off it is answered stale.
-                item.IsChecked = existing.IsChecked;
-                item.CheckedAt = existing.CheckedAt;
-                item.Name = existing.Name;
-                item.Quantity = existing.Quantity;
-                item.QuantityDelta = existing.QuantityDelta;
-                item.Unit = existing.Unit;
-                item.Category = existing.Category;
-                item.UpdatedByUserId = existing.UpdatedByUserId;
-                item.UpdatedAt = existing.UpdatedAt;
-                item.Version = existing.Version;
+        // Copy the saved row back onto the caller's object: the endpoint answers with `item`, so without this the new
+        // xmin Version never reaches the client. Same whitelist as the apply block above, plus the audit columns and
+        // Version — a field left off it is answered stale.
+        item.IsChecked = existing.IsChecked;
+        item.CheckedAt = existing.CheckedAt;
+        item.Name = existing.Name;
+        item.Quantity = existing.Quantity;
+        item.QuantityDelta = existing.QuantityDelta;
+        item.Unit = existing.Unit;
+        item.Category = existing.Category;
+        item.UpdatedByUserId = existing.UpdatedByUserId;
+        item.UpdatedAt = existing.UpdatedAt;
+        item.Version = existing.Version;
 
-                logger.LogInformation("Updated item {ItemId} in ShoppingList {ShoppingListId} for household {HouseholdId} (conflict: {WasConflict})",
-                    item.ItemId, item.ShoppingListId, item.HouseholdId, wasConflict);
-
-                return (true, wasConflict, conflictMessage);
-            }
-            catch (DbUpdateConcurrencyException ex)
-            {
-                retries++;
-                wasConflict = true;
-
-                foreach (var entry in ex.Entries)
-                {
-                    if (entry.Entity is ShoppingListItem)
-                    {
-                        var databaseValues = await entry.GetDatabaseValuesAsync(cancellationToken);
-
-                        if (databaseValues == null)
-                        {
-                            // Item was deleted by another user
-                            logger.LogWarning("Item {ItemId} was deleted by another user during update", item.ItemId);
-                            return (false, true, "This item was deleted by another family member");
-                        }
-
-                        var proposedChecked = (bool)(entry.CurrentValues[nameof(ShoppingListItem.IsChecked)] ?? false);
-                        var databaseChecked = (bool)(databaseValues[nameof(ShoppingListItem.IsChecked)] ?? false);
-
-                        // "Checked wins" - if either user checked it, keep it checked
-                        if (proposedChecked || databaseChecked)
-                        {
-                            entry.CurrentValues[nameof(ShoppingListItem.IsChecked)] = true;
-                            entry.CurrentValues[nameof(ShoppingListItem.CheckedAt)] =
-                                entry.CurrentValues[nameof(ShoppingListItem.CheckedAt)] ??
-                                databaseValues[nameof(ShoppingListItem.CheckedAt)] ??
-                                clock.UtcNow;
-                        }
-
-                        // For quantity/name changes, check if there's a true conflict
-                        var proposedName = (string?)entry.CurrentValues[nameof(ShoppingListItem.Name)] ?? string.Empty;
-                        var databaseName = (string?)databaseValues[nameof(ShoppingListItem.Name)] ?? string.Empty;
-                        var proposedQty = entry.CurrentValues[nameof(ShoppingListItem.Quantity)] as decimal?;
-                        var databaseQty = databaseValues[nameof(ShoppingListItem.Quantity)] as decimal?;
-
-                        if (proposedName != databaseName || proposedQty != databaseQty)
-                        {
-                            // For now, use last-write-wins for non-checkbox fields
-                            // but record that there was a conflict
-                            conflictMessage = "Another family member also edited this item";
-
-                            logger.LogInformation("Concurrent edit detected on item {ItemId}: Name({ProposedName} vs {DatabaseName}), Qty({ProposedQty} vs {DatabaseQty})",
-                                item.ItemId, proposedName, databaseName, proposedQty, databaseQty);
-                        }
-
-                        // Refresh original values to allow retry
-                        entry.OriginalValues.SetValues(databaseValues);
-                    }
-                }
-
-                if (retries >= maxRetries)
-                {
-                    logger.LogError("Failed to update item {ItemId} after {MaxRetries} retries due to concurrency conflicts",
-                        item.ItemId, maxRetries);
-                    return (false, true, "Could not save changes after multiple attempts");
-                }
-            }
-        }
-
-        return (true, wasConflict, conflictMessage);
+        logger.LogInformation("Updated item {ItemId} in ShoppingList {ShoppingListId} for household {HouseholdId}",
+            item.ItemId, item.ShoppingListId, item.HouseholdId);
     }
 
     public async Task DeleteItemAsync(int householdId, int shoppingListId, int itemId, CancellationToken cancellationToken = default)
@@ -421,7 +345,7 @@ public class ShoppingListService(
         return count;
     }
 
-    public async Task UpdateItemSortOrdersAsync(int householdId, int shoppingListId, List<(int ItemId, int SortOrder, string? Category)> updates, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<(int ItemId, uint VersionBefore, uint Version)>> UpdateItemSortOrdersAsync(int householdId, int shoppingListId, List<(int ItemId, int SortOrder, string? Category)> updates, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
@@ -431,6 +355,11 @@ public class ShoppingListService(
                 i.ShoppingListId == shoppingListId &&
                 itemIds.Contains(i.ItemId))
             .ToListAsync(cancellationToken);
+
+        // The token each row had when this request read it: the client adopts the post-save token only where this
+        // equals the token it held, so a row someone else changed since its last read is never given a token that
+        // would let its stale content overwrite that change (quest 8cf3c806).
+        var versionsBefore = items.ToDictionary(i => i.ItemId, i => i.Version);
 
         foreach (var item in items)
         {
@@ -442,9 +371,9 @@ public class ShoppingListService(
                 {
                     item.Category = update.Category;
                 }
-                // A touch, kept on purpose: every item in the request is written, even one whose order didn't
-                // change, as before. The write step stamps UpdatedByUserId (the caller; quest e8bf9e1d, answer d).
-                item.UpdatedAt = clock.UtcNow;
+                // No UpdatedAt touch: only a row whose order or category really changed is written, so a reorder
+                // advances no other item's token (quest 8cf3c806). The write step stamps UpdatedAt and
+                // UpdatedByUserId (the caller) on the rows that are written (quest e8bf9e1d, answer d).
             }
         }
 
@@ -452,5 +381,9 @@ public class ShoppingListService(
 
         logger.LogInformation("Updated sort orders for {Count} items in ShoppingList {ShoppingListId} for household {HouseholdId}",
             updates.Count, shoppingListId, householdId);
+
+        // The tokens before and after the save, so the client's next PATCH on a moved item isn't stale. The save is
+        // checked against the tokens read above, so a write landing in between is a 409, never folded in silently.
+        return [.. items.Select(i => (i.ItemId, versionsBefore[i.ItemId], i.Version))];
     }
 }

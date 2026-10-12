@@ -79,7 +79,7 @@ public class RecipeService(
             "Recipe");
     }
 
-    public async Task<Recipe> UpdateRecipeAsync(Recipe recipe, uint? expectedVersion = null, CancellationToken cancellationToken = default)
+    public async Task<Recipe> UpdateRecipeAsync(Recipe recipe, uint expectedVersion, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
@@ -130,8 +130,7 @@ public class RecipeService(
         }
 
         // Optimistic concurrency through the one path (ConcurrencySave): a stale token → ConcurrencyConflictException
-        // (→ 409). null ⇒ no token supplied ⇒ checked only against the version loaded above, the legacy
-        // last-write-wins semantic, kept pending the conductor's ruling (quest 8cf3c806).
+        // (→ 409), and so does a missing one (MissingToken, operator answer c on quest 8cf3c806).
         await context.SaveWithConcurrencyAsync(existing, expectedVersion, cancellationToken);
 
         logger.LogInformation("Updated recipe {RecipeId} for household {HouseholdId}", recipe.RecipeId, recipe.HouseholdId);

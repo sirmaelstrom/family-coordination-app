@@ -25,6 +25,7 @@
     type SortOrderUpdate,
   } from './lib/api';
   import { startLiveness } from '$lib/liveness';
+  import { adoptItem as adoptItemOnRows, adoptReorderVersions } from './lib/itemSync';
   import CategorySection from './lib/components/CategorySection.svelte';
   import HeaderBar, { type MenuAction } from './lib/components/HeaderBar.svelte';
   import ItemDialog, { type ItemFormValue } from './lib/components/ItemDialog.svelte';
@@ -205,6 +206,14 @@
     } catch { /* ignore */ }
   }
 
+  /**
+   * A 409 on an item write: the item changed since this tab read it (or the list was archived). The caller reloads
+   * the list; this tells the user why their tap didn't stick (quest 8cf3c806: no server-side merge any more).
+   */
+  function notifyConflict(e: ApiError) {
+    showToast({ message: e.message, kind: 'info' });
+  }
+
   function markPending(id: number, on: boolean) {
     const next = new Set(pendingIds);
     if (on) next.add(id);
@@ -212,18 +221,29 @@
     pendingIds = next;
   }
 
+  /** A write's answer, on the held object and on the row shown now (lib/itemSync.ts). */
+  function adoptItem(held: ShoppingListItemDto, updated: ShoppingListItemDto, sentVersion: number) {
+    adoptItemOnRows(list?.items, held, updated, sentVersion);
+  }
+
   async function setChecked(item: ShoppingListItemDto, target: boolean) {
     if (!list || currentListId == null) return;
+    // One write per item at a time: a second tap would carry the same token and 409 against the first.
+    if (pendingIds.has(item.id)) return;
     const prev = { isChecked: item.isChecked, checkedAt: item.checkedAt };
     retireInFlightLoads();
     item.isChecked = target;
     item.checkedAt = target ? new Date().toISOString() : null;
     markPending(item.id, true);
+    const sentVersion = item.version;
     try {
-      const updated = await patchItem(currentListId, item.id, { isChecked: target });      Object.assign(item, updated);      retireInFlightLoads();
+      const updated = await patchItem(currentListId, item.id, { isChecked: target, version: sentVersion });
+      adoptItem(item, updated, sentVersion);
+      retireInFlightLoads();
     } catch (e) {
       Object.assign(item, prev);
       if (e instanceof ApiError && (e.status === 404 || e.status === 409)) {
+        if (e.status === 409) notifyConflict(e);
         await loadList(currentListId);
       } else {
         error = e instanceof Error ? e.message : String(e);
@@ -235,19 +255,26 @@
   }
 
   async function handleToggle(item: ShoppingListItemDto) {
+    if (pendingIds.has(item.id)) return;
     const target = !item.isChecked;
     try {
       await setChecked(item, target);
       // Only show undo when CHECKING (matches production).
       if (target) {
-        const snapshot = item;
+        const { id, name } = item;
+        const listId = currentListId;
         showToast({
-          message: `Checked ${snapshot.name}`,
+          message: `Checked ${name}`,
           kind: 'success',
           actionLabel: 'Undo',
           durationMs: 4000,
           onAction: () => {
-            setChecked(snapshot, false).catch(() => { /* handled in setChecked */ });
+            // Resolve the row at undo time: a poll or a reorder may have replaced the object (and its token). Item
+            // ids are per list, so an undo pressed after switching lists must not touch the other list's item.
+            if (currentListId !== listId) return;
+            const current = list?.items.find((i) => i.id === id);
+            if (!current || !current.isChecked) return;
+            setChecked(current, false).catch(() => { /* handled in setChecked */ });
           },
         });
       }
@@ -258,17 +285,22 @@
 
   async function handleQuantity(item: ShoppingListItemDto, delta: number) {
     if (!list || currentListId == null || item.quantity == null) return;
+    if (pendingIds.has(item.id)) return;
     const next = item.quantity + delta;
     if (next < 1) return;
     const prev = item.quantity;
     retireInFlightLoads();
     item.quantity = next;
     markPending(item.id, true);
+    const sentVersion = item.version;
     try {
-      const updated = await patchItem(currentListId, item.id, { quantity: next });      Object.assign(item, updated);      retireInFlightLoads();
+      const updated = await patchItem(currentListId, item.id, { quantity: next, version: sentVersion });
+      adoptItem(item, updated, sentVersion);
+      retireInFlightLoads();
     } catch (e) {
       item.quantity = prev;
       if (e instanceof ApiError && (e.status === 404 || e.status === 409)) {
+        if (e.status === 409) notifyConflict(e);
         await loadList(currentListId);
       } else {
         error = e instanceof Error ? e.message : String(e);
@@ -300,6 +332,7 @@
         list.items = [...list.items, created];
       } else if (itemDialogInitial) {
         const updated = await patchItem(currentListId, itemDialogInitial.id, {
+          version: itemDialogInitial.version,
           name: value.name,
           quantity: value.quantity,
           unit: value.unit,
@@ -311,7 +344,14 @@
       retireInFlightLoads(); // a GET begun during the request still holds the pre-write list
       itemDialogOpen = false;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      if (e instanceof ApiError && e.status === 409 && itemDialogMode === 'edit' && itemDialogInitial) {
+        // Someone else changed the item since this dialog opened: show their version and let the user redo the edit.
+        notifyConflict(e);
+        itemDialogOpen = false;
+        await loadList(currentListId);
+      } else {
+        error = e instanceof Error ? e.message : String(e);
+      }
     } finally {
       itemDialogSubmitting = false;
     }
@@ -516,12 +556,23 @@
       sortOrder: index,
       category,
     }));
+    // The moved items are pending until the answer brings their new tokens: a tap now would carry the pre-reorder
+    // token and 409 once the reorder commits (quest 8cf3c806).
+    const movedIds = reordered.map((item) => item.id);
+    const sent = new Map(
+      reordered.map((item, index) => [item.id, { heldVersion: item.version, sortOrder: index, category }]),
+    );
+    movedIds.forEach((id) => markPending(id, true));
     try {
-      await updateSortOrders(currentListId, updates);
+      const result = await updateSortOrders(currentListId, updates);
       retireInFlightLoads(); // a GET begun during the request still holds the pre-drag order
+      // Adopt the answered tokens only where the reorder read the row at the token this tab held (lib/itemSync.ts).
+      adoptReorderVersions(list?.items, sent, result.items);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
       await loadList(currentListId);
+    } finally {
+      movedIds.forEach((id) => markPending(id, false));
     }
   }
 

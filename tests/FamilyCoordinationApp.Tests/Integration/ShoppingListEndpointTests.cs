@@ -174,15 +174,106 @@ public sealed class ShoppingListEndpointTests(PostgresContainerFixture postgres)
         var item = await AddItemAsync(ClientA, list.id, "eggs");
 
         var check = await ClientA.PatchAsync($"/api/shopping-lists/{list.id}/items/{item.id}",
-            JsonContent.Create(new { isChecked = true }, options: Json));
+            JsonContent.Create(new { isChecked = true, version = item.version }, options: Json));
         check.StatusCode.Should().Be(HttpStatusCode.OK);
         var checkedItem = (await check.Content.ReadFromJsonAsync<Item>(Json))!;
         checkedItem.isChecked.Should().BeTrue();
         checkedItem.checkedAt.Should().NotBeNull();
+        checkedItem.version.Should().NotBe(item.version, "the answer carries the saved xmin for the next PATCH");
 
         var uncheck = await ClientA.PatchAsync($"/api/shopping-lists/{list.id}/items/{item.id}",
-            JsonContent.Create(new { isChecked = false }, options: Json));
+            JsonContent.Create(new { isChecked = false, version = checkedItem.version }, options: Json));
         (await uncheck.Content.ReadFromJsonAsync<Item>(Json))!.checkedAt.Should().BeNull();
+    }
+
+    private sealed record ItemVersion(int id, uint versionBefore, uint version);
+
+    /// <summary>
+    /// Council round-1 challenge, concern A: a reorder must not hand a stale tab a token newer than its content. The
+    /// answer names the token the reorder READ, so a tab that held an older one (another member changed the item
+    /// since) can tell and keep its old token (the SPA rule is pinned in lib/itemSync.test.ts).
+    /// </summary>
+    [Fact]
+    public async Task Reorder_AnswersTheTokenItRead_SoATabThatMissedAChangeCanTell()
+    {
+        var list = await CreateListAsync(ClientA, "Reorder after a change");
+        var held = await AddItemAsync(ClientA, list.id, "milk"); // this tab's view
+
+        // Another member changes the quantity first.
+        var changed = await ClientA.PatchAsync($"/api/shopping-lists/{list.id}/items/{held.id}",
+            JsonContent.Create(new { quantity = 3m, version = held.version }, options: Json));
+        var afterChange = (await changed.Content.ReadFromJsonAsync<Item>(Json))!;
+
+        // This tab, still holding `held`, reorders the item.
+        var resp = await ClientA.PostAsJsonAsync($"/api/shopping-lists/{list.id}/items/sort-orders", new
+        {
+            updates = new[] { new { itemId = held.id, sortOrder = held.sortOrder + 2, category = held.category } },
+        }, Json);
+
+        var answer = (await resp.Content.ReadFromJsonAsync<SortOrdersResult>(Json))!.items.Single();
+        answer.versionBefore.Should().Be(afterChange.version, "the reorder read the row after the other member's change");
+        answer.versionBefore.Should().NotBe(held.version, "so this tab sees its token was stale and must not adopt");
+    }
+    private sealed record SortOrdersResult(List<ItemVersion> items);
+
+    /// <summary>
+    /// Quest 8cf3c806: a reorder writes only the rows whose order changed, and answers every listed item's token
+    /// after the save, so the tab's next PATCH on a moved item is not stale. Red on the base tree (204, no body; and
+    /// every listed row was written, advancing an unmoved item's token too).
+    /// </summary>
+    [Fact]
+    public async Task Reorder_AnswersTheTokens_AndWritesOnlyTheMovedRows()
+    {
+        var list = await CreateListAsync(ClientA, "Reorder tokens");
+        var stays = await AddItemAsync(ClientA, list.id, "stays");
+        var moves = await AddItemAsync(ClientA, list.id, "moves");
+        // Time passes, as it does in production: a touch of UpdatedAt would now be a real change and write the row.
+        _factory.Clock.SetUtcNow(_factory.Clock.GetUtcNow().UtcDateTime.AddMinutes(1));
+
+        var resp = await ClientA.PostAsJsonAsync($"/api/shopping-lists/{list.id}/items/sort-orders", new
+        {
+            updates = new[]
+            {
+                new { itemId = stays.id, sortOrder = stays.sortOrder, category = stays.category },
+                new { itemId = moves.id, sortOrder = moves.sortOrder + 5, category = moves.category },
+            },
+        }, Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+        var answered = (await resp.Content.ReadFromJsonAsync<SortOrdersResult>(Json))!.items;
+        answered.Single(i => i.id == stays.id).version.Should().Be(stays.version, "an unmoved row is not written");
+        var movedVersion = answered.Single(i => i.id == moves.id).version;
+        movedVersion.Should().NotBe(moves.version);
+
+        (await ClientA.PatchAsync($"/api/shopping-lists/{list.id}/items/{moves.id}",
+            JsonContent.Create(new { isChecked = true, version = movedVersion }, options: Json)))
+            .StatusCode.Should().Be(HttpStatusCode.OK, "the answered token is the current one");
+    }
+
+    /// <summary>
+    /// Quest 8cf3c806, operator answer c: the item PATCH carries the client's token. A stale one (another member's
+    /// check landed first) or a missing one answers 409 and changes nothing; the old "checked wins" server merge is
+    /// gone. Red on the base tree (the merge-retry answered 200).
+    /// </summary>
+    [Fact]
+    public async Task PatchingAnItem_WithAStaleOrMissingVersion_Is409_AndChangesNothing()
+    {
+        var list = await CreateListAsync(ClientA, "Stale token");
+        var item = await AddItemAsync(ClientA, list.id, "bread");
+
+        // Another member checks it first, advancing xmin.
+        (await ClientA.PatchAsync($"/api/shopping-lists/{list.id}/items/{item.id}",
+            JsonContent.Create(new { isChecked = true, version = item.version }, options: Json)))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await AssertJsonError(await ClientA.PatchAsync($"/api/shopping-lists/{list.id}/items/{item.id}",
+            JsonContent.Create(new { quantity = 4m, version = item.version }, options: Json)), HttpStatusCode.Conflict);
+        await AssertJsonError(await ClientA.PatchAsync($"/api/shopping-lists/{list.id}/items/{item.id}",
+            JsonContent.Create(new { quantity = 4m }, options: Json)), HttpStatusCode.Conflict);
+
+        var after = (await GetListAsync(ClientA, list.id)).items.Single(i => i.id == item.id);
+        after.isChecked.Should().BeTrue();
+        after.quantity.Should().NotBe(4m);
     }
 
     // ── Generate commits the list with its items (quest b942b943) ──
@@ -213,7 +304,7 @@ public sealed class ShoppingListEndpointTests(PostgresContainerFixture postgres)
 
         // The user bumps 2 → 5 (delta +3), and checks it off.
         (await ClientA.PatchAsync($"/api/shopping-lists/{summary.id}/items/{flour.id}",
-            JsonContent.Create(new { quantity = 5m, isChecked = true }, options: Json)))
+            JsonContent.Create(new { quantity = 5m, isChecked = true, version = flour.version }, options: Json)))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
         var regen = await ClientA.PostAsync($"/api/shopping-lists/{summary.id}/actions/regenerate", null);
@@ -233,10 +324,12 @@ public sealed class ShoppingListEndpointTests(PostgresContainerFixture postgres)
         var sugar = list.items.Single(i => i.name == "unit sugar");
 
         // Edit the quantity (delta +3), then change the unit — the delta must die with the old unit.
+        var edited = await ClientA.PatchAsync($"/api/shopping-lists/{summary.id}/items/{sugar.id}",
+            JsonContent.Create(new { quantity = 5m, version = sugar.version }, options: Json));
+        edited.StatusCode.Should().Be(HttpStatusCode.OK);
+        var afterQuantity = (await edited.Content.ReadFromJsonAsync<Item>(Json))!;
         (await ClientA.PatchAsync($"/api/shopping-lists/{summary.id}/items/{sugar.id}",
-            JsonContent.Create(new { quantity = 5m }, options: Json))).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await ClientA.PatchAsync($"/api/shopping-lists/{summary.id}/items/{sugar.id}",
-            JsonContent.Create(new { unit = "g" }, options: Json))).StatusCode.Should().Be(HttpStatusCode.OK);
+            JsonContent.Create(new { unit = "g", version = afterQuantity.version }, options: Json))).StatusCode.Should().Be(HttpStatusCode.OK);
 
         var regen = await ClientA.PostAsync($"/api/shopping-lists/{summary.id}/actions/regenerate", null);
         var regenerated = (await regen.Content.ReadFromJsonAsync<ListDto>(Json))!;

@@ -194,7 +194,7 @@ export interface RecipeWriteRequest {
   recipeType: RecipeType;
   imagePath: string | null;
   ingredients: RecipeIngredientWrite[];
-  /** xmin token from GET (PUT only; null ⇒ server skips the check — e.g. create). Stale ⇒ 409. */
+  /** xmin token from GET. Ignored on create; on PUT a stale OR null token ⇒ 409 (quest 8cf3c806). */
   version: number | null;
 }
 

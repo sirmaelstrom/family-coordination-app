@@ -21,7 +21,7 @@ namespace FamilyCoordinationApp.Endpoints;
 ///
 /// <para>Full-form edits are optimistic-concurrency guarded: GET carries the xmin token (<c>version</c>),
 /// PUT echoes it back, and a stale token → 409 with a non-empty body (<see cref="ConcurrencyConflictException"/>).
-/// A null token omits the client staleness check (legacy); EF still checks the version the save loaded. Not-found responses carry a NON-EMPTY body so callers
+/// A PUT with no token answers 409 too (fail-safe; quest 8cf3c806). Not-found responses carry a NON-EMPTY body so callers
 /// receive specific detail instead of the generic /api backfill. <c>Recipe</c> has an EF global query filter on <c>IsDeleted</c>
 /// (<c>RecipeConfiguration</c>), so soft-deleted recipes are auto-excluded — no explicit filter here.</para>
 /// </summary>
@@ -148,10 +148,10 @@ public static class RecipesEndpoints
         // UpdatedByUserId (the caller) is stamped by the write step (quest e8bf9e1d).
         var recipe = MapToRecipe(req, caller.HouseholdId, recipeId, imagePath);
 
-        // req.Version is the xmin token echoed from GET (null ⇒ legacy client ⇒ no client staleness check; EF still
-        // checks the version the save loaded). A missing /
-        // cross-household id (404) and a stale token (409) are answered by the /api exception branch.
-        await recipeService.UpdateRecipeAsync(recipe, req.Version, ct);
+        // req.Version is the xmin token echoed from GET. A missing token is checked as MissingToken, which matches no
+        // row, so it answers 409 like a stale one (the SPA's draft restore sends null when its version fetch failed).
+        // A missing / cross-household id (404) and a stale token (409) are answered by the /api exception branch.
+        await recipeService.UpdateRecipeAsync(recipe, req.Version ?? ConcurrencySave.MissingToken, ct);
 
         // Project from a FRESH load, NOT the UpdateRecipeAsync return — its Ingredients nav is stale after the
         // RemoveRange/Add (spec §11.11 / council).
@@ -530,8 +530,7 @@ public static class RecipesEndpoints
 
     /// <summary>
     /// Create/update body. <see cref="ImagePath"/> is a path already returned by POST /images.
-    /// <see cref="Version"/> is the xmin token from GET, enforced on PUT (stale ⇒ 409); ignored on POST and
-    /// when null the client staleness check is omitted (EF still checks the version the save loaded).
+    /// <see cref="Version"/> is the xmin token from GET, enforced on PUT (stale or missing ⇒ 409); ignored on POST.
     /// </summary>
     public sealed record RecipeWriteRequest(
         [Display(Name = "Recipe name"), RequiredText, MaxTextLength(FieldLengths.Recipe.Name)] string Name,

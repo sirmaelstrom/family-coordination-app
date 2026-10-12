@@ -15,6 +15,8 @@ const BASE = '/api/shopping-lists';
 export { ApiError };
 
 export interface PatchItemBody {
+  /** The item's xmin token from the last read. Required: a stale or missing one answers 409 (quest 8cf3c806). */
+  version: number;
   isChecked?: boolean;
   quantity?: number | null;
   unit?: string | null;
@@ -81,8 +83,16 @@ export async function deleteItem(listId: number, itemId: number): Promise<void> 
 export async function updateSortOrders(
   listId: number,
   updates: SortOrderUpdate[],
-): Promise<void> {
-  await apiSend<void>(`${BASE}/${listId}/items/sort-orders`, 'POST', { updates });
+): Promise<SortOrdersResult> {
+  return apiSend<SortOrdersResult>(`${BASE}/${listId}/items/sort-orders`, 'POST', { updates });
+}
+
+/**
+ * A reorder's answer: each listed item's token as the reorder read it and after its save (quest 8cf3c806). Adopt
+ * `version` only where `versionBefore` equals the token this tab held (lib/itemSync.ts).
+ */
+export interface SortOrdersResult {
+  items: { id: number; versionBefore: number; version: number }[];
 }
 
 export async function toggleFavorite(

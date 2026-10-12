@@ -351,17 +351,11 @@ public static class ShoppingListEndpoints
         if (req.Unit is not null) item.Unit = req.Unit;
         if (req.Name is not null) item.Name = req.Name;
         if (req.Category is not null) item.Category = req.Category;
-        item.UpdatedByUserId = caller.UserId;
 
-        var (success, wasConflict, conflictMessage) =
-            await svc.UpdateItemWithConcurrencyAsync(item, ct);
-
-        if (!success)
-        {
-            return wasConflict
-                ? Results.Conflict(new { message = conflictMessage ?? "Concurrency conflict" })
-                : Results.NotFound();
-        }
+        // req.Version is the item's xmin token from the list GET (quest 8cf3c806, operator answer c). A stale or
+        // missing token answers 409 through the /api exception branch, as a gone item answers 404; the SPA reloads.
+        // UpdatedByUserId is the caller, stamped by the write step.
+        await svc.UpdateItemAsync(item, req.Version ?? ConcurrencySave.MissingToken, ct);
 
         return Results.Ok(ToItemDto(item));
     }
@@ -433,7 +427,7 @@ public static class ShoppingListEndpoints
     {
         if (req.Updates is null || req.Updates.Count == 0)
         {
-            return Results.NoContent();
+            return Results.Ok(new SortOrdersResult([]));
         }
 
         var archived = await IsListArchivedAsync(dbFactory, caller.HouseholdId, listId, ct);
@@ -444,8 +438,10 @@ public static class ShoppingListEndpoints
             .Select(u => (u.ItemId, u.SortOrder, (string?)u.Category))
             .ToList();
 
-        await svc.UpdateItemSortOrdersAsync(caller.HouseholdId, listId, updates, ct);
-        return Results.NoContent();
+        // Answer each listed item's token after the save (quest 8cf3c806): a moved item's version advanced, and the
+        // SPA's next PATCH on it must carry the new one.
+        var versions = await svc.UpdateItemSortOrdersAsync(caller.HouseholdId, listId, updates, ct);
+        return Results.Ok(new SortOrdersResult([.. versions.Select(v => new ItemVersionDto(v.ItemId, v.VersionBefore, v.Version))]));
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -491,7 +487,8 @@ public static class ShoppingListEndpoints
         decimal? Quantity,
         [Display(Name = "Unit"), MaxTextLength(FieldLengths.ShoppingListItem.Unit)] string? Unit,
         [Display(Name = "Item name"), MaxTextLength(FieldLengths.ShoppingListItem.Name)] string? Name,
-        [Display(Name = "Category"), MaxTextLength(FieldLengths.ShoppingListItem.Category)] string? Category);
+        [Display(Name = "Category"), MaxTextLength(FieldLengths.ShoppingListItem.Category)] string? Category,
+        uint? Version = null);
 
     public sealed record AddItemRequest(
         [Display(Name = "Item name"), RequiredText, MaxTextLength(FieldLengths.ShoppingListItem.Name)] string Name,
@@ -515,6 +512,9 @@ public static class ShoppingListEndpoints
         int SortOrder,
         [Display(Name = "Category"), MaxTextLength(FieldLengths.ShoppingListItem.Category)] string Category);
     public sealed record UpdateSortOrdersRequest(List<SortOrderUpdate> Updates);
+    /// <summary>A reordered item's token as the reorder read it (<see cref="VersionBefore"/>) and after its save.</summary>
+    public sealed record ItemVersionDto(int Id, uint VersionBefore, uint Version);
+    public sealed record SortOrdersResult(List<ItemVersionDto> Items);
 
     public sealed record ShoppingListDto(
         int Id,
