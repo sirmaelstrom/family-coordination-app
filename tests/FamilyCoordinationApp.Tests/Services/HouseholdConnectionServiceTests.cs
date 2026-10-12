@@ -286,13 +286,13 @@ public class HouseholdConnectionServiceTests : IDisposable
     }
 
     /// <summary>
-    /// A concurrent accept surfaces as a <see cref="ConcurrencyConflictException"/> (→ 409): an expected refusal, so the
-    /// accept's catch rolls back and rethrows without an Error line (PR #132 amendment 1, C2). The conflict is injected at
-    /// the save (a context whose <c>SaveChangesAsync</c> throws <see cref="DbUpdateConcurrencyException"/>); the InMemory
-    /// provider has no xmin, so a real race needs Postgres.
+    /// A concurrent accept is an expected outcome, not a fault: since quest f1dc7a24 the accept rolls back and answers the
+    /// documented "already used" envelope instead of a 409 (it was a rethrow under PR #132 amendment 1, C2), still without
+    /// an Error line. The conflict is injected at the save (a context whose <c>SaveChangesAsync</c> throws
+    /// <see cref="DbUpdateConcurrencyException"/>); the real Postgres race is <c>Integration/ConcurrencyOutcomeTests</c>.
     /// </summary>
     [Fact]
-    public async Task AcceptInvite_ConcurrencyConflict_RethrowsWithoutAnErrorLog()
+    public async Task AcceptInvite_ConcurrencyConflict_AnswersAlreadyUsedWithoutAnErrorLog()
     {
         var invite = await _connectionService.GenerateInviteAsync(1, 1);
         var logger = new Mock<ILogger<HouseholdConnectionService>>();
@@ -301,9 +301,10 @@ public class HouseholdConnectionServiceTests : IDisposable
             .ReturnsAsync(() => new ConflictOnSaveDbContext(_options, _tenant));
         var service = new HouseholdConnectionService(conflictingFactory.Object, logger.Object, TestClocks.System);
 
-        var act = () => _tenant.As(2, () => service.AcceptInviteAsync(invite.InviteCode, 2, 2));
+        var (success, _, error) = await _tenant.As(2, () => service.AcceptInviteAsync(invite.InviteCode, 2, 2));
 
-        await act.Should().ThrowAsync<ConcurrencyConflictException>();
+        success.Should().BeFalse();
+        error.Should().Be("This invite code has already been used.");
         logger.Verify(l => l.Log(LogLevel.Error, It.IsAny<EventId>(), It.IsAny<It.IsAnyType>(), It.IsAny<Exception?>(),
             It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Never, "an expected conflict is not a server fault");
     }

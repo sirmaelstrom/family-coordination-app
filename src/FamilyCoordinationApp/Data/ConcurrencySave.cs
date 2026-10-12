@@ -42,7 +42,9 @@ public static class ConcurrencySave
 
     /// <summary>
     /// Save, checked against the versions this context loaded. For server-side read-modify-write with no client
-    /// token (invite accept/invalidate, calendar-token revoke): a concurrent writer answers 409, not 500.
+    /// token (invite accept/invalidate, calendar-token revoke): a concurrent writer raises
+    /// <see cref="ConcurrencyConflictException"/> (409 unless the caller decides otherwise; those three callers map it
+    /// to the outcome the user should see, quest f1dc7a24).
     /// </summary>
     public static async Task SaveChangesOrConflictAsync(this ApplicationDbContext context, CancellationToken cancellationToken)
     {
