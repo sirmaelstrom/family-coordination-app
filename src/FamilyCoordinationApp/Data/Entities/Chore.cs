@@ -2,8 +2,10 @@ using System.ComponentModel.DataAnnotations;
 
 namespace FamilyCoordinationApp.Data.Entities;
 
-public class Chore : Tenancy.ITenantEntity, Tenancy.IAuditable, IVersioned
+public class Chore : Tenancy.ITenantEntity, Tenancy.IAuditable, Tenancy.ICreatedByAudited, IVersioned
 {
+    string Tenancy.ICreatedByAudited.CreatedByProperty => nameof(EnteredByUserId);
+
     public int HouseholdId { get; set; }
     public int ChoreId { get; set; }
 

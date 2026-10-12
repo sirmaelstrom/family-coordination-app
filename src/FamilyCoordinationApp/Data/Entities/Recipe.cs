@@ -2,8 +2,11 @@ using System.ComponentModel.DataAnnotations;
 
 namespace FamilyCoordinationApp.Data.Entities;
 
-public class Recipe : Tenancy.ITenantEntity, Tenancy.IAuditable, IVersioned
+public class Recipe : Tenancy.ITenantEntity, Tenancy.IAuditable, Tenancy.ICreatedByAudited, Tenancy.IUpdateAudited, IVersioned
 {
+    string Tenancy.ICreatedByAudited.CreatedByProperty => nameof(CreatedByUserId);
+    string? Tenancy.IUpdateAudited.UpdatedByProperty => nameof(UpdatedByUserId);
+
     public int HouseholdId { get; set; }
     public int RecipeId { get; set; }
     public string Name { get; set; } = string.Empty;

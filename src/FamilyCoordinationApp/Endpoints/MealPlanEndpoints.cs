@@ -183,17 +183,15 @@ public static class MealPlanEndpoints
         CallerScope caller,
         IRecipeService recipeService,
         IMealPlanBoardService boardService,
-        IHouseholdClock clock,
         CancellationToken ct)
     {
         // Name required + length: QuickCreateRecipeRequest's attributes, checked by the validation filter.
+        // CreatedAt and CreatedByUserId (the caller) are stamped by the write step (quest e8bf9e1d).
         var recipe = new Recipe
         {
             HouseholdId = caller.HouseholdId,
             Name = req.Name.Trim(),
             RecipeType = req.RecipeType,
-            CreatedByUserId = caller.UserId,
-            CreatedAt = clock.UtcNow,
         };
 
         var created = await recipeService.CreateRecipeAsync(recipe, ct);

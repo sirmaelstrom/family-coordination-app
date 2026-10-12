@@ -442,6 +442,8 @@ public class ShoppingListService(
                 {
                     item.Category = update.Category;
                 }
+                // A touch, kept on purpose: every item in the request is written, even one whose order didn't
+                // change, as before. The write step stamps UpdatedByUserId (the caller; quest e8bf9e1d, answer d).
                 item.UpdatedAt = clock.UtcNow;
             }
         }

@@ -4,8 +4,11 @@ namespace FamilyCoordinationApp.Data.Entities;
 
 public enum MealType { Breakfast, Lunch, Dinner, Snack }
 
-public class MealPlanEntry : Tenancy.ITenantEntity, IVersioned
+public class MealPlanEntry : Tenancy.ITenantEntity, Tenancy.ICreatedByAudited, Tenancy.IUpdateAudited, IVersioned
 {
+    string Tenancy.ICreatedByAudited.CreatedByProperty => nameof(CreatedByUserId);
+    string? Tenancy.IUpdateAudited.UpdatedByProperty => nameof(UpdatedByUserId);
+
     public int HouseholdId { get; set; }
     public int MealPlanId { get; set; }
     public int EntryId { get; set; }

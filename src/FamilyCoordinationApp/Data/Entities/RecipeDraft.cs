@@ -1,7 +1,9 @@
 namespace FamilyCoordinationApp.Data.Entities;
 
-public class RecipeDraft : Tenancy.ITenantEntity
+public class RecipeDraft : Tenancy.ITenantEntity, Tenancy.IUpdateAudited
 {
+    string? Tenancy.IUpdateAudited.UpdatedByProperty => null;
+
     public int HouseholdId { get; set; }
     public int UserId { get; set; }  // References User.Id
     public int? RecipeId { get; set; }  // Null for new recipes

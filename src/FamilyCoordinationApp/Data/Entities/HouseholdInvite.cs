@@ -6,8 +6,10 @@ namespace FamilyCoordinationApp.Data.Entities;
 /// Short-lived invite code for establishing household connections.
 /// Codes are 6-char from charset ABCDEFGHJKLMNPQRSTUVWXYZ23456789 (excludes ambiguous 0/1/O/I).
 /// </summary>
-public class HouseholdInvite : Tenancy.ITenantEntity, Tenancy.IAuditable, IVersioned
+public class HouseholdInvite : Tenancy.ITenantEntity, Tenancy.IAuditable, Tenancy.ICreatedByAudited, IVersioned
 {
+    string Tenancy.ICreatedByAudited.CreatedByProperty => nameof(CreatedByUserId);
+
     public int Id { get; set; }
     public int HouseholdId { get; set; }
     public string InviteCode { get; set; } = string.Empty;

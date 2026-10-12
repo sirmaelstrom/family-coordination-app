@@ -57,7 +57,7 @@ public class RecipeService(
 
                 // Get next recipe ID for this household
                 recipe.RecipeId = await GetNextRecipeIdInternalAsync(context, recipe.HouseholdId, cancellationToken);
-                recipe.CreatedAt = clock.UtcNow;
+                // CreatedAt, and CreatedByUserId when the caller left it unset, are stamped by the write step.
 
                 // Set ingredient IDs and household IDs
                 var ingredientId = 1;
@@ -103,8 +103,9 @@ public class RecipeService(
         existing.PrepTimeMinutes = recipe.PrepTimeMinutes;
         existing.CookTimeMinutes = recipe.CookTimeMinutes;
         existing.RecipeType = recipe.RecipeType; // was silently dropped — fixed for the recipes island (spec D12)
+        // A touch, kept on purpose: it puts the recipe row in the UPDATE even when only ingredients changed, so the
+        // version check runs. The write step can't make an unchanged row Modified; it stamps UpdatedByUserId.
         existing.UpdatedAt = clock.UtcNow;
-        existing.UpdatedByUserId = recipe.UpdatedByUserId;
 
         // Replace ingredients (simpler than tracking changes)
         context.RecipeIngredients.RemoveRange(existing.Ingredients);
@@ -150,9 +151,8 @@ public class RecipeService(
             throw new NotFoundException(RecipeNotFound, $"Recipe {recipeId} not found in household {householdId}");
         }
 
-        // Soft delete
+        // Soft delete. UpdatedAt and UpdatedByUserId (the caller) are stamped by the write step (quest e8bf9e1d).
         recipe.IsDeleted = true;
-        recipe.UpdatedAt = clock.UtcNow;
 
         await context.SaveChangesAsync(cancellationToken);
 

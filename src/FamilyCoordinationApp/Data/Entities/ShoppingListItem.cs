@@ -3,8 +3,13 @@ using FamilyCoordinationApp.Constants;
 
 namespace FamilyCoordinationApp.Data.Entities;
 
-public class ShoppingListItem : Tenancy.ITenantEntity, IVersioned
+public class ShoppingListItem : Tenancy.ITenantEntity, Tenancy.ICreatedByAudited, Tenancy.IUpdateAudited, IVersioned
 {
+    // Generated items are stamped with the generating user too (quest e8bf9e1d, operator answer d). Planning credit
+    // is unaffected: ChorePlanningCalculator counts only IsManuallyAdded rows.
+    string Tenancy.ICreatedByAudited.CreatedByProperty => nameof(AddedByUserId);
+    string? Tenancy.IUpdateAudited.UpdatedByProperty => nameof(UpdatedByUserId);
+
     public int HouseholdId { get; set; }
     public int ShoppingListId { get; set; }
     public int ItemId { get; set; }

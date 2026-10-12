@@ -129,8 +129,9 @@ public class MealPlanService(
                         duplicateEntry.Notes = notes;
                     }
 
+                    // A touch, kept on purpose: with no notes this is the fold's only change, and it is what makes
+                    // the entry Modified so the write step stamps the caller as UpdatedByUserId (quest e8bf9e1d).
                     duplicateEntry.UpdatedAt = clock.UtcNow;
-                    duplicateEntry.UpdatedByUserId = userId;
 
                     // Update parent MealPlan timestamp for polling (the plan is tracked on this context).
                     mealPlan.UpdatedAt = clock.UtcNow;
@@ -216,8 +217,9 @@ public class MealPlanService(
 
         entry.Date = newDate;
         entry.MealType = newMealType;
+        // A touch, kept on purpose: a move to the same slot changes nothing else, and the row must still be in the
+        // UPDATE for the version check. The write step stamps UpdatedByUserId (the caller).
         entry.UpdatedAt = clock.UtcNow;
-        entry.UpdatedByUserId = userId;
 
         // Update parent MealPlan timestamp for polling
         mealPlan.UpdatedAt = clock.UtcNow;
@@ -273,8 +275,9 @@ public class MealPlanService(
         }
 
         entry.Servings = servings;
+        // A touch, kept on purpose: an unchanged servings value must still put the row in the UPDATE for the version
+        // check. The write step stamps UpdatedByUserId (the caller).
         entry.UpdatedAt = clock.UtcNow;
-        entry.UpdatedByUserId = userId;
 
         // Update parent MealPlan timestamp for polling (parity MoveMealAsync — the board polls on it).
         var mealPlan = await context.MealPlans

@@ -9,9 +9,10 @@ namespace FamilyCoordinationApp.Data;
 /// <summary>
 /// The central write step (fca-household-scope D9/D16, WP-03). Before every save it walks the change tracker once:
 /// <list type="bullet">
-/// <item>An Added <see cref="IAuditable"/> with a <c>default</c> <c>CreatedAt</c> gets <see cref="Clock"/>'s now. This
-/// runs in every tenant state, bypass states included: audit is independent of tenancy. Modified entries are
-/// never touched.</item>
+/// <item>Audit stamps (<see cref="StampAudit"/>): an Added row gets an unset <c>CreatedAt</c> from <see cref="Clock"/>
+/// and an unset create-side actor from the caller; a Modified <see cref="IUpdateAudited"/> row gets <c>UpdatedAt</c>
+/// and its updater from the caller, unless the code set them. This runs in every tenant state, bypass states
+/// included: audit is independent of tenancy, and it changes no entry's state.</item>
 /// <item>Every Added, Modified or Deleted <see cref="ITenantEntity"/> is checked against the tenant: an Added row whose
 /// <c>HouseholdId</c> is unset (0, or EF's temporary key) is stamped, parents before children, except under a
 /// <c>Household</c> added in the same save, which is refused (<see cref="StampHouseholdId"/>); a row of another
@@ -96,7 +97,7 @@ public partial class ApplicationDbContext
             .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
             .ToList();
 
-        StampCreatedAt(entries);
+        StampAudit(entries);
 
         if (BypassesTenantWrites) return [];
 
@@ -123,19 +124,51 @@ public partial class ApplicationDbContext
     private bool BypassesTenantWrites =>
         Tenant.IsUnfiltered || (Tenant.IsOutOfRequest && Tenant.OutOfRequestMode == OutOfRequestMode.Unfiltered);
 
-    /// <summary>D16: Added only, and only where unset, so every hand-set value keeps its exact behavior.</summary>
-    private void StampCreatedAt(List<EntityEntry> entries)
+    /// <summary>
+    /// The audit stamps (D16, quest e8bf9e1d). They run in every tenant state, before the tenant checks, and never
+    /// change an entry's state, so they add no row to the save and no new concurrency surface.
+    /// <list type="bullet">
+    /// <item><b>Added</b>: an <see cref="IAuditable"/> with a <c>default</c> <c>CreatedAt</c> gets the clock's now; an
+    /// <see cref="ICreatedByAudited"/> whose actor column is unset (<c>null</c> or <c>0</c>, not a temporary key EF
+    /// will fix up from a tracked principal) gets the caller. Insert-time <c>UpdatedAt</c> stays as the code built it.</item>
+    /// <item><b>Modified</b>: an <see cref="IUpdateAudited"/> gets <c>UpdatedAt</c> = now and, if it has one, its updater
+    /// column = the caller, each unless the code changed that property itself in this save (an explicit value wins).
+    /// The create-side actor is never touched on modify: it feeds planning credit and a chore authorization check.</item>
+    /// </list>
+    /// "The caller" is <see cref="ITenantContext.UserId"/> in <see cref="TenantState.Caller"/> only. Inside
+    /// <c>RunAs</c> (system work), unfiltered, or Unset there is none, and the actor columns stay as the code left them.
+    /// </summary>
+    private void StampAudit(List<EntityEntry> entries)
     {
         DateTime? now = null;
+        DateTime Now() => now ??= Clock.GetUtcNow().UtcDateTime;
+        var callerUserId = Tenant.State == TenantState.Caller ? Tenant.UserId : null;
+
         foreach (var entry in entries)
         {
-            if (entry.State != EntityState.Added || entry.Entity is not IAuditable) continue;
-
-            var createdAt = entry.Property(nameof(IAuditable.CreatedAt));
-            if ((DateTime)createdAt.CurrentValue! == default)
+            if (entry.State == EntityState.Added)
             {
-                now ??= Clock.GetUtcNow().UtcDateTime;
-                createdAt.CurrentValue = now.Value;
+                if (entry.Entity is IAuditable)
+                {
+                    var createdAt = entry.Property(nameof(IAuditable.CreatedAt));
+                    if ((DateTime)createdAt.CurrentValue! == default) createdAt.CurrentValue = Now();
+                }
+                if (entry.Entity is ICreatedByAudited createdBy && callerUserId is { } creator)
+                {
+                    var actor = entry.Property(createdBy.CreatedByProperty);
+                    if (!actor.IsTemporary && actor.CurrentValue is null or 0) actor.CurrentValue = creator;
+                }
+            }
+            else if (entry.State == EntityState.Modified && entry.Entity is IUpdateAudited updated)
+            {
+                var updatedAt = entry.Property(IUpdateAudited.UpdatedAtProperty);
+                if (!updatedAt.IsModified) updatedAt.CurrentValue = Now();
+
+                if (updated.UpdatedByProperty is { } updaterName && callerUserId is { } updater)
+                {
+                    var updatedBy = entry.Property(updaterName);
+                    if (!updatedBy.IsModified) updatedBy.CurrentValue = updater;
+                }
             }
         }
     }
