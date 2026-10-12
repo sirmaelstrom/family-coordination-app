@@ -161,7 +161,8 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
 
         var putBody = WriteBody(
             "Update Target Dish (edited)", "dessert",
-            ingredients: new[] { Ing("New X", 3, "tbsp", "Spices"), Ing("New Y"), Ing("New Z", 1, "pinch") });
+            ingredients: new[] { Ing("New X", 3, "tbsp", "Spices"), Ing("New Y"), Ing("New Z", 1, "pinch") },
+            version: created.version);
 
         var resp = await ClientA.PutAsJsonAsync($"/api/recipes/{created.recipeId}", putBody, Json);
         resp.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -198,9 +199,9 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
         var staleVersion = created.version;
         staleVersion.Should().NotBe(0u, "real Postgres assigns a non-zero xmin to a committed row");
 
-        // Writer 1 saves (advances xmin) — no token, legacy last-write-wins path still succeeds.
+        // Writer 1 saves with the current token (advances xmin).
         var first = await ClientA.PutAsJsonAsync($"/api/recipes/{created.recipeId}",
-            WriteBody("Concurrency Target Dish (writer 1)"), Json);
+            WriteBody("Concurrency Target Dish (writer 1)", version: staleVersion), Json);
         first.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Writer 2 echoes the ORIGINAL (now stale) token → 409 with a NON-EMPTY body whose specific detail beats
@@ -214,6 +215,24 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
         // The stale writer did NOT overwrite writer 1.
         var detail = await ClientA.GetFromJsonAsync<RecipeFull>($"/api/recipes/{created.recipeId}", Json);
         detail!.name.Should().Be("Concurrency Target Dish (writer 1)");
+    }
+
+    /// <summary>
+    /// Quest 8cf3c806, operator answer c: a PUT with no token (the SPA's draft restore after a failed version fetch)
+    /// answers 409 like a stale one, instead of last-write-wins. Red on the base tree (it answered 200 and overwrote).
+    /// </summary>
+    [Fact]
+    public async Task Update_WithNoVersion_Returns409_AndDoesNotOverwrite()
+    {
+        var created = await CreateAsync(ClientA, WriteBody("Tokenless Target Dish"));
+
+        var resp = await ClientA.PutAsJsonAsync($"/api/recipes/{created.recipeId}",
+            WriteBody("Tokenless Target Dish (overwrite)"), Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await resp.Content.ReadAsStringAsync()).Should().Contain("changed by someone else");
+        var detail = await ClientA.GetFromJsonAsync<RecipeFull>($"/api/recipes/{created.recipeId}", Json);
+        detail!.name.Should().Be("Tokenless Target Dish");
     }
 
     [Fact]

@@ -8,13 +8,12 @@ public interface IRecipeService
     Task<Recipe?> GetRecipeAsync(int householdId, int recipeId, CancellationToken cancellationToken = default);
     Task<Recipe> CreateRecipeAsync(Recipe recipe, CancellationToken cancellationToken = default);
     /// <summary>
-    /// Full-form update (wholesale ingredient replace). When <paramref name="expectedVersion"/> is supplied it
-    /// is enforced as the xmin concurrency token — a stale value throws <see cref="ConcurrencyConflictException"/>
-    /// (→ 409). <c>null</c> omits the CLIENT staleness check (legacy callers): EF still checks the version this save
-    /// loaded, so only a write landing between that load and the save conflicts.
+    /// Full-form update (wholesale ingredient replace). <paramref name="expectedVersion"/> is enforced as the xmin
+    /// concurrency token: a stale value, or <see cref="Data.ConcurrencySave.MissingToken"/> for a request that sent
+    /// none, throws <see cref="ConcurrencyConflictException"/> (→ 409). There is no last-write-wins path (quest 8cf3c806).
     /// </summary>
-    /// <exception cref="ConcurrencyConflictException">The client <paramref name="expectedVersion"/> is stale.</exception>
-    Task<Recipe> UpdateRecipeAsync(Recipe recipe, uint? expectedVersion = null, CancellationToken cancellationToken = default);
+    /// <exception cref="ConcurrencyConflictException">The client <paramref name="expectedVersion"/> is stale or missing.</exception>
+    Task<Recipe> UpdateRecipeAsync(Recipe recipe, uint expectedVersion, CancellationToken cancellationToken = default);
     Task DeleteRecipeAsync(int householdId, int recipeId, CancellationToken cancellationToken = default);
     Task<List<string>> GetIngredientSuggestionsAsync(int householdId, string prefix, CancellationToken cancellationToken = default);
 

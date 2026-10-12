@@ -216,7 +216,7 @@ public class ShoppingListRegenerateTests : IDisposable
 
     /// <summary>
     /// The end-to-end council finding: a quantity edit must survive the SERVICE persistence hop
-    /// (UpdateItemWithConcurrencyAsync's field copy dropped QuantityDelta) and then be re-applied by
+    /// (UpdateItemAsync's field copy once dropped QuantityDelta) and then be re-applied by
     /// regenerate — the full PATCH → persist → regenerate path, not just the pure delta math.
     /// </summary>
     [Fact]
@@ -233,8 +233,7 @@ public class ShoppingListRegenerateTests : IDisposable
         eggs.Quantity = 5m;
         eggs.QuantityDelta = 3m; // what ShoppingListEndpoints.ComputeQuantityDelta produces for 2 → 5
 
-        var (success, _, _) = await service.UpdateItemWithConcurrencyAsync(eggs);
-        success.Should().BeTrue();
+        await service.UpdateItemAsync(eggs, eggs.Version); // InMemory has no xmin: the loaded 0 matches
 
         (await ItemsAsync()).Single(i => i.Name == "eggs").QuantityDelta.Should().Be(3m,
             "the persistence hop must not drop the delta — its field copy is a whitelist");

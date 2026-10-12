@@ -174,15 +174,42 @@ public sealed class ShoppingListEndpointTests(PostgresContainerFixture postgres)
         var item = await AddItemAsync(ClientA, list.id, "eggs");
 
         var check = await ClientA.PatchAsync($"/api/shopping-lists/{list.id}/items/{item.id}",
-            JsonContent.Create(new { isChecked = true }, options: Json));
+            JsonContent.Create(new { isChecked = true, version = item.version }, options: Json));
         check.StatusCode.Should().Be(HttpStatusCode.OK);
         var checkedItem = (await check.Content.ReadFromJsonAsync<Item>(Json))!;
         checkedItem.isChecked.Should().BeTrue();
         checkedItem.checkedAt.Should().NotBeNull();
+        checkedItem.version.Should().NotBe(item.version, "the answer carries the saved xmin for the next PATCH");
 
         var uncheck = await ClientA.PatchAsync($"/api/shopping-lists/{list.id}/items/{item.id}",
-            JsonContent.Create(new { isChecked = false }, options: Json));
+            JsonContent.Create(new { isChecked = false, version = checkedItem.version }, options: Json));
         (await uncheck.Content.ReadFromJsonAsync<Item>(Json))!.checkedAt.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Quest 8cf3c806, operator answer c: the item PATCH carries the client's token. A stale one (another member's
+    /// check landed first) or a missing one answers 409 and changes nothing; the old "checked wins" server merge is
+    /// gone. Red on the base tree (the merge-retry answered 200).
+    /// </summary>
+    [Fact]
+    public async Task PatchingAnItem_WithAStaleOrMissingVersion_Is409_AndChangesNothing()
+    {
+        var list = await CreateListAsync(ClientA, "Stale token");
+        var item = await AddItemAsync(ClientA, list.id, "bread");
+
+        // Another member checks it first, advancing xmin.
+        (await ClientA.PatchAsync($"/api/shopping-lists/{list.id}/items/{item.id}",
+            JsonContent.Create(new { isChecked = true, version = item.version }, options: Json)))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await AssertJsonError(await ClientA.PatchAsync($"/api/shopping-lists/{list.id}/items/{item.id}",
+            JsonContent.Create(new { quantity = 4m, version = item.version }, options: Json)), HttpStatusCode.Conflict);
+        await AssertJsonError(await ClientA.PatchAsync($"/api/shopping-lists/{list.id}/items/{item.id}",
+            JsonContent.Create(new { quantity = 4m }, options: Json)), HttpStatusCode.Conflict);
+
+        var after = (await GetListAsync(ClientA, list.id)).items.Single(i => i.id == item.id);
+        after.isChecked.Should().BeTrue();
+        after.quantity.Should().NotBe(4m);
     }
 
     // ── Generate commits the list with its items (quest b942b943) ──
@@ -213,7 +240,7 @@ public sealed class ShoppingListEndpointTests(PostgresContainerFixture postgres)
 
         // The user bumps 2 → 5 (delta +3), and checks it off.
         (await ClientA.PatchAsync($"/api/shopping-lists/{summary.id}/items/{flour.id}",
-            JsonContent.Create(new { quantity = 5m, isChecked = true }, options: Json)))
+            JsonContent.Create(new { quantity = 5m, isChecked = true, version = flour.version }, options: Json)))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
         var regen = await ClientA.PostAsync($"/api/shopping-lists/{summary.id}/actions/regenerate", null);
@@ -233,10 +260,12 @@ public sealed class ShoppingListEndpointTests(PostgresContainerFixture postgres)
         var sugar = list.items.Single(i => i.name == "unit sugar");
 
         // Edit the quantity (delta +3), then change the unit — the delta must die with the old unit.
+        var edited = await ClientA.PatchAsync($"/api/shopping-lists/{summary.id}/items/{sugar.id}",
+            JsonContent.Create(new { quantity = 5m, version = sugar.version }, options: Json));
+        edited.StatusCode.Should().Be(HttpStatusCode.OK);
+        var afterQuantity = (await edited.Content.ReadFromJsonAsync<Item>(Json))!;
         (await ClientA.PatchAsync($"/api/shopping-lists/{summary.id}/items/{sugar.id}",
-            JsonContent.Create(new { quantity = 5m }, options: Json))).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await ClientA.PatchAsync($"/api/shopping-lists/{summary.id}/items/{sugar.id}",
-            JsonContent.Create(new { unit = "g" }, options: Json))).StatusCode.Should().Be(HttpStatusCode.OK);
+            JsonContent.Create(new { unit = "g", version = afterQuantity.version }, options: Json))).StatusCode.Should().Be(HttpStatusCode.OK);
 
         var regen = await ClientA.PostAsync($"/api/shopping-lists/{summary.id}/actions/regenerate", null);
         var regenerated = (await regen.Content.ReadFromJsonAsync<ListDto>(Json))!;

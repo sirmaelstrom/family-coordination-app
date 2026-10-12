@@ -156,7 +156,8 @@ class RecipeEditStore {
         showToast({ message: 'Restored from draft', kind: 'info' });
         if (recipeId != null) {
           // Drafts carry no version token — best-effort fetch the current one so the eventual save is
-          // still concurrency-guarded. On failure (e.g. recipe deleted) keep null ⇒ last-write-wins as before.
+          // still concurrency-guarded. On failure (e.g. recipe deleted) keep null: the server answers a tokenless
+          // PUT with 409 (quest 8cf3c806), so the save shows the reload banner instead of overwriting.
           try {
             this.serverVersion = (await getRecipe(recipeId)).version;
           } catch {

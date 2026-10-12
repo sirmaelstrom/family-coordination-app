@@ -351,17 +351,11 @@ public static class ShoppingListEndpoints
         if (req.Unit is not null) item.Unit = req.Unit;
         if (req.Name is not null) item.Name = req.Name;
         if (req.Category is not null) item.Category = req.Category;
-        item.UpdatedByUserId = caller.UserId;
 
-        var (success, wasConflict, conflictMessage) =
-            await svc.UpdateItemWithConcurrencyAsync(item, ct);
-
-        if (!success)
-        {
-            return wasConflict
-                ? Results.Conflict(new { message = conflictMessage ?? "Concurrency conflict" })
-                : Results.NotFound();
-        }
+        // req.Version is the item's xmin token from the list GET (quest 8cf3c806, operator answer c). A stale or
+        // missing token answers 409 through the /api exception branch, as a gone item answers 404; the SPA reloads.
+        // UpdatedByUserId is the caller, stamped by the write step.
+        await svc.UpdateItemAsync(item, req.Version ?? ConcurrencySave.MissingToken, ct);
 
         return Results.Ok(ToItemDto(item));
     }
@@ -491,7 +485,8 @@ public static class ShoppingListEndpoints
         decimal? Quantity,
         [Display(Name = "Unit"), MaxTextLength(FieldLengths.ShoppingListItem.Unit)] string? Unit,
         [Display(Name = "Item name"), MaxTextLength(FieldLengths.ShoppingListItem.Name)] string? Name,
-        [Display(Name = "Category"), MaxTextLength(FieldLengths.ShoppingListItem.Category)] string? Category);
+        [Display(Name = "Category"), MaxTextLength(FieldLengths.ShoppingListItem.Category)] string? Category,
+        uint? Version = null);
 
     public sealed record AddItemRequest(
         [Display(Name = "Item name"), RequiredText, MaxTextLength(FieldLengths.ShoppingListItem.Name)] string Name,

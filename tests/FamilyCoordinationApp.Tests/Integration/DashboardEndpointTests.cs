@@ -68,8 +68,13 @@ public sealed class DashboardEndpointTests(PostgresContainerFixture postgres) : 
 
     private async Task CheckItemAsync(HttpClient client, int listId, int itemId)
     {
+        // The PATCH carries the item's token from the list read (quest 8cf3c806).
+        var list = await client.GetFromJsonAsync<JsonElement>($"/api/shopping-lists/{listId}", Json);
+        var version = list.GetProperty("items").EnumerateArray()
+            .Single(i => i.GetProperty("id").GetInt32() == itemId).GetProperty("version").GetUInt32();
+
         var resp = await client.PatchAsJsonAsync(
-            $"/api/shopping-lists/{listId}/items/{itemId}", new { isChecked = true }, Json);
+            $"/api/shopping-lists/{listId}/items/{itemId}", new { isChecked = true, version }, Json);
         resp.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 

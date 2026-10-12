@@ -15,6 +15,8 @@ const BASE = '/api/shopping-lists';
 export { ApiError };
 
 export interface PatchItemBody {
+  /** The item's xmin token from the last read. Required: a stale or missing one answers 409 (quest 8cf3c806). */
+  version: number;
   isChecked?: boolean;
   quantity?: number | null;
   unit?: string | null;

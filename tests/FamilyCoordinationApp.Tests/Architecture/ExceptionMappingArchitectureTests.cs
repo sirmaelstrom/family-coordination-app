@@ -14,7 +14,7 @@ namespace FamilyCoordinationApp.Tests.Architecture;
 /// The structural half of the central exception mapping (quest 940b4022) and the one concurrency path (quest 8cf3c806).
 /// The HTTP behavior is proven by <c>Integration/ApiExceptionMappingTests</c>; these facts keep the shape from
 /// regrowing: endpoints don't map exceptions, domain exceptions never inherit a BCL catch, every row-versioned entity
-/// is <see cref="IVersioned"/>, and a <c>DbUpdateConcurrencyException</c> is caught in exactly two files.
+/// is <see cref="IVersioned"/>, and a <c>DbUpdateConcurrencyException</c> is caught in exactly one file.
 /// <para><b>Key:</b> the source scans read the comment- and string-stripped <c>src</c>
 /// (<see cref="TenantScopeArchitectureTests.StripCommentsAndStrings"/>) and identify a site by file and trimmed line
 /// text, so a moved line keeps its key and a doc mention is not a site.</para>
@@ -33,10 +33,10 @@ public sealed class ExceptionMappingArchitectureTests
     ];
 
     /// <summary>
-    /// The two <c>DbUpdateConcurrencyException</c> handlers: the one save path, and the shopping item's server-side
-    /// merge-retry (its PATCH carries no version, so a 409 would leave the client nothing to resend).
+    /// The one <c>DbUpdateConcurrencyException</c> handler: the one save path. The shopping item's merge-retry was the
+    /// second until its PATCH gained a client token (quest 8cf3c806, operator answer c).
     /// </summary>
-    internal static readonly string[] ConcurrencyCatchFiles = ["Data/ConcurrencySave.cs", "Services/ShoppingListService.cs"];
+    internal static readonly string[] ConcurrencyCatchFiles = ["Data/ConcurrencySave.cs"];
 
     [Fact]
     public void DomainException_derives_from_Exception_so_no_BCL_catch_can_see_it()
@@ -75,7 +75,7 @@ public sealed class ExceptionMappingArchitectureTests
     }
 
     [Fact]
-    public void DbUpdateConcurrencyException_is_caught_only_by_the_one_save_path_and_the_shopping_merge()
+    public void DbUpdateConcurrencyException_is_caught_only_by_the_one_save_path()
     {
         var files = TenantScopeArchitectureTests.AppSources()
             .Where(f => Sites(f.RelativePath, f.Source, ConcurrencyCatch).Count > 0)

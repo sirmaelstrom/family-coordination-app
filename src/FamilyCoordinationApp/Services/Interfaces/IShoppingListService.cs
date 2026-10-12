@@ -9,7 +9,13 @@ public interface IShoppingListService
     Task<List<ShoppingList>> GetActiveShoppingListsAsync(int householdId, CancellationToken cancellationToken = default);
     Task<ShoppingList> RenameShoppingListAsync(int householdId, int shoppingListId, string newName, CancellationToken cancellationToken = default);
     Task<ShoppingListItem> AddManualItemAsync(ShoppingListItem item, CancellationToken cancellationToken = default);
-    Task<(bool Success, bool WasConflict, string? ConflictMessage)> UpdateItemWithConcurrencyAsync(ShoppingListItem item, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Apply <paramref name="item"/>'s editable fields, checked against the client's <paramref name="version"/>: a
+    /// stale or missing token throws <see cref="ConcurrencyConflictException"/> (→ 409); a gone item throws
+    /// <see cref="NotFoundException"/>. On success the saved values and the new Version are copied back onto
+    /// <paramref name="item"/>.
+    /// </summary>
+    Task UpdateItemAsync(ShoppingListItem item, uint version, CancellationToken cancellationToken = default);
     Task UpdateItemSortOrdersAsync(int householdId, int shoppingListId, List<(int ItemId, int SortOrder, string? Category)> updates, CancellationToken cancellationToken = default);
     Task DeleteItemAsync(int householdId, int shoppingListId, int itemId, CancellationToken cancellationToken = default);
     Task<ShoppingList> ToggleFavoriteAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default);

@@ -205,6 +205,14 @@
     } catch { /* ignore */ }
   }
 
+  /**
+   * A 409 on an item write: the item changed since this tab read it (or the list was archived). The caller reloads
+   * the list; this tells the user why their tap didn't stick (quest 8cf3c806: no server-side merge any more).
+   */
+  function notifyConflict(e: ApiError) {
+    showToast({ message: e.message, kind: 'info' });
+  }
+
   function markPending(id: number, on: boolean) {
     const next = new Set(pendingIds);
     if (on) next.add(id);
@@ -220,10 +228,13 @@
     item.checkedAt = target ? new Date().toISOString() : null;
     markPending(item.id, true);
     try {
-      const updated = await patchItem(currentListId, item.id, { isChecked: target });      Object.assign(item, updated);      retireInFlightLoads();
+      const updated = await patchItem(currentListId, item.id, { isChecked: target, version: item.version });
+      Object.assign(item, updated);
+      retireInFlightLoads();
     } catch (e) {
       Object.assign(item, prev);
       if (e instanceof ApiError && (e.status === 404 || e.status === 409)) {
+        if (e.status === 409) notifyConflict(e);
         await loadList(currentListId);
       } else {
         error = e instanceof Error ? e.message : String(e);
@@ -265,10 +276,13 @@
     item.quantity = next;
     markPending(item.id, true);
     try {
-      const updated = await patchItem(currentListId, item.id, { quantity: next });      Object.assign(item, updated);      retireInFlightLoads();
+      const updated = await patchItem(currentListId, item.id, { quantity: next, version: item.version });
+      Object.assign(item, updated);
+      retireInFlightLoads();
     } catch (e) {
       item.quantity = prev;
       if (e instanceof ApiError && (e.status === 404 || e.status === 409)) {
+        if (e.status === 409) notifyConflict(e);
         await loadList(currentListId);
       } else {
         error = e instanceof Error ? e.message : String(e);
@@ -300,6 +314,7 @@
         list.items = [...list.items, created];
       } else if (itemDialogInitial) {
         const updated = await patchItem(currentListId, itemDialogInitial.id, {
+          version: itemDialogInitial.version,
           name: value.name,
           quantity: value.quantity,
           unit: value.unit,
@@ -311,7 +326,14 @@
       retireInFlightLoads(); // a GET begun during the request still holds the pre-write list
       itemDialogOpen = false;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      if (e instanceof ApiError && e.status === 409 && itemDialogMode === 'edit' && itemDialogInitial) {
+        // Someone else changed the item since this dialog opened: show their version and let the user redo the edit.
+        notifyConflict(e);
+        itemDialogOpen = false;
+        await loadList(currentListId);
+      } else {
+        error = e instanceof Error ? e.message : String(e);
+      }
     } finally {
       itemDialogSubmitting = false;
     }
@@ -519,6 +541,9 @@
     try {
       await updateSortOrders(currentListId, updates);
       retireInFlightLoads(); // a GET begun during the request still holds the pre-drag order
+      // The reorder advanced every moved item's version, and the endpoint answers no body: refetch, or this tab's
+      // next tap on a moved item would send a stale token and 409 (quest 8cf3c806).
+      await loadList(currentListId);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
       await loadList(currentListId);
