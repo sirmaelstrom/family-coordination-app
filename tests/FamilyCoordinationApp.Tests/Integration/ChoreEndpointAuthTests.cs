@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FamilyCoordinationApp.Data;
+using FamilyCoordinationApp.Data.Entities;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,7 +27,7 @@ public sealed class ChoreEndpointAuthTests(PostgresContainerFixture postgres) : 
 
     public async Task DisposeAsync() => await _factory.DisposeAsync();
 
-    private sealed record BoardChore(int id, IReadOnlyList<int>? roomIds);
+    private sealed record BoardChore(int id, string? name, IReadOnlyList<int>? roomIds);
     private sealed record Board(List<BoardChore> chores);
     private sealed record VersionBody(uint version);
 
@@ -60,9 +61,27 @@ public sealed class ChoreEndpointAuthTests(PostgresContainerFixture postgres) : 
 
         board.Should().NotBeNull();
         board!.chores.Should().Contain(c => c.id == ChoresWebAppFactory.PileChoreAId);
-        // Household B's chore happens to share id 1 (composite key); it must NOT bleed into A's board content.
-        board.chores.Should().OnlyContain(c => c.id == ChoresWebAppFactory.PileChoreAId || c.id > 1,
-            "household A must never see household B's rows");
+
+        // Household B's chore shares id 1 (composite key), so ids alone can't tell the households apart: compare
+        // (id, name) pairs. The expected set is household A's active chores read with an explicit HouseholdId
+        // predicate and the Tenant filter bypassed, so it doesn't depend on the filter under test (quest 92034618:
+        // the old `c.id == PileChoreAId || c.id > 1` stayed green with the filter disabled). The collection's other
+        // classes add chores to the shared database, so the set is read, not hard-coded.
+        var dbFactory = _factory.Services.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
+        await using var context = await dbFactory.CreateDbContextAsync();
+        // TENANT-SCOPE-OK: test oracle; the explicit HouseholdId predicate is the scope.
+        var householdAChores = await context.Chores
+            .IgnoreQueryFilters(["Tenant"])
+            .Where(c => c.HouseholdId == ChoresWebAppFactory.HouseholdAId && c.Status == ChoreStatus.Active)
+            .Select(c => new { c.ChoreId, c.Name })
+            .ToListAsync();
+        householdAChores.Should().NotBeEmpty();
+
+        board.chores.Select(c => (c.id, c.name)).Should().BeEquivalentTo(
+            householdAChores.Select(c => (c.ChoreId, (string?)c.Name)),
+            "household A's board is exactly household A's active chores; household B's rows never appear");
+        board.chores.Should().NotContain(c => c.name == "Household B private chore",
+            "household B's seeded chore must never bleed into A's board");
     }
 
     [Fact]
