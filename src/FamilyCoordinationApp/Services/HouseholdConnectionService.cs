@@ -101,7 +101,19 @@ public class HouseholdConnectionService(
 
         if (activeInvites.Count > 0)
         {
-            await context.SaveChangesOrConflictAsync(cancellationToken);
+            try
+            {
+                await context.SaveChangesOrConflictAsync(cancellationToken);
+            }
+            catch (ConcurrencyConflictException)
+            {
+                // Idempotent (quest f1dc7a24): the only writes to an invite row mark it used (another cancel, a
+                // generate's invalidate, or an accept), so a conflict here means the row is already in the state
+                // this call wanted. A double-clicked cancel succeeds instead of answering 409.
+                logger.LogInformation("Invite invalidation for household {HouseholdId} raced another write; already used",
+                    householdId);
+                return;
+            }
             logger.LogInformation("Invalidated {Count} active invite(s) for household {HouseholdId}",
                 activeInvites.Count, householdId);
         }
@@ -236,12 +248,22 @@ public class HouseholdConnectionService(
 
             return (true, invite.Household.Name, null);
         }
+        catch (ConcurrencyConflictException)
+        {
+            // The invite row changed between this read and the save. Its only writes mark it used (another accept,
+            // or the inviter cancelling or regenerating), so answer the documented "already used" outcome (200 with
+            // Success = false), as a sequential second accept would, instead of a 409 (quest f1dc7a24).
+            await transaction.RollbackAsync(cancellationToken);
+            logger.LogInformation("Invite accept for household {HouseholdId} lost a race; the code was used meanwhile",
+                acceptingHouseholdId);
+            return (false, null, "This invite code has already been used.");
+        }
         catch (Exception ex)
         {
             await transaction.RollbackAsync(cancellationToken);
             if (ex is DomainException)
             {
-                // An expected refusal (a concurrent accept's ConcurrencyConflictException → 409), not a fault: no Error line.
+                // An expected refusal, not a fault: no Error line.
                 logger.LogInformation("Invite accept for household {HouseholdId} refused: {Reason}", acceptingHouseholdId, ex.Message);
             }
             else

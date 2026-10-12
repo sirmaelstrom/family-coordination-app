@@ -62,8 +62,21 @@ public sealed class HouseholdCalendarTokenService(
         {
             token.RevokedAt = now;
         }
-        // Checked against the loaded xmin: a rotation landing between load and save is a 409, not a 500.
-        await context.SaveChangesOrConflictAsync(ct);
+        // Checked against the loaded xmin. A conflict is either a rotation (a real conflict: 409) or another revoke
+        // (the state this call wanted). Tell them apart by what is persisted now (quest f1dc7a24).
+        try
+        {
+            await context.SaveChangesOrConflictAsync(ct);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            await using var check = await dbFactory.CreateDbContextAsync(ct);
+            if (await check.HouseholdCalendarTokens.AnyAsync(calendarToken => calendarToken.RevokedAt == null, ct))
+            {
+                throw; // a rotation landed: a new active token exists that this revoke never saw
+            }
+            // Another revoke landed first: no active token remains, so the double-clicked revoke succeeds.
+        }
     }
 
     public async Task<HouseholdCalendarToken?> ResolveActiveAsync(string? token, CancellationToken ct = default)
