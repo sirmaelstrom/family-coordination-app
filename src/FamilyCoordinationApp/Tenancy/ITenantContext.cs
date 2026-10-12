@@ -64,7 +64,9 @@ public interface ITenantContext
 
     /// <summary>
     /// Act as <see cref="TenantState.System"/> for <paramref name="householdId"/> until the returned scope is
-    /// disposed, which restores the exact previous state. Nests. A no-op on an Unfiltered instance.
+    /// disposed, which restores the exact previous state. Nests for the same household; inside an open RunAs scope,
+    /// a RunAs for a different household throws <see cref="InvalidOperationException"/> and changes nothing.
+    /// Entering from Caller (any household) is allowed. A no-op on an Unfiltered instance.
     /// </summary>
     IDisposable RunAs(int householdId);
 

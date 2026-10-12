@@ -134,21 +134,74 @@ public class TenantContextTests
     }
 
     [Fact]
-    public void Nested_RunAs_restores_each_level_in_turn()
+    public void Nested_RunAs_for_the_same_household_restores_each_level_in_turn()
     {
         var tenant = Create(new DefaultHttpContext());
         tenant.SetCaller(1, 1);
 
         using (tenant.RunAs(2))
         {
-            using (tenant.RunAs(3))
+            using (tenant.RunAs(2))
             {
-                Snapshot(tenant).Should().Be((TenantState.System, (int?)3, (int?)null));
+                Snapshot(tenant).Should().Be((TenantState.System, (int?)2, (int?)null));
             }
-            Snapshot(tenant).Should().Be((TenantState.System, (int?)2, (int?)null));
+            Snapshot(tenant).Should().Be((TenantState.System, (int?)2, (int?)null), "the outer scope is still open");
         }
 
         Snapshot(tenant).Should().Be((TenantState.Caller, (int?)1, (int?)1));
+    }
+
+    [Fact]
+    public void RunAs_for_a_different_household_inside_an_open_RunAs_throws_and_changes_nothing()
+    {
+        // Quest 92034618 item 4 (operator ruling (a), 2026-10-12): system work for one household can't switch to
+        // another mid-scope. The refusal pushes nothing, so the open scope still disposes back to the Caller.
+        var tenant = Create(new DefaultHttpContext());
+        tenant.SetCaller(1, 1);
+        var outer = tenant.RunAs(2);
+
+        var act = () => tenant.RunAs(3);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*household 2*");
+        Snapshot(tenant).Should().Be((TenantState.System, (int?)2, (int?)null), "a refused RunAs changes nothing");
+
+        outer.Dispose();
+        Snapshot(tenant).Should().Be((TenantState.Caller, (int?)1, (int?)1), "the refusal left no scope on the stack");
+    }
+
+    [Fact]
+    public void RunAs_for_a_different_household_is_refused_through_an_AllowCrossTenantWrite_scope_too()
+    {
+        // The refusal keys on the open RunAs, not on the innermost scope's kind.
+        var tenant = Create(new DefaultHttpContext());
+        var runAs = tenant.RunAs(2);
+        var crossWrite = tenant.AllowCrossTenantWrite("reason");
+
+        var act = () => tenant.RunAs(3);
+
+        act.Should().Throw<InvalidOperationException>();
+        Snapshot(tenant).Should().Be((TenantState.System, (int?)2, (int?)null));
+        tenant.IsCrossTenantWriteAllowed.Should().BeTrue("the refusal leaves the cross-write scope alone");
+
+        crossWrite.Dispose();
+        runAs.Dispose();
+        Snapshot(tenant).Should().Be((TenantState.Unset, (int?)null, (int?)null), "both scopes close in order");
+        tenant.IsCrossTenantWriteAllowed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void RunAs_after_the_previous_RunAs_closed_may_name_any_household()
+    {
+        // Sequential scopes (the digest's per-household loop) are not a switch.
+        var tenant = Create(httpContext: null);
+
+        using (tenant.RunAs(2)) { }
+        using (tenant.RunAs(3))
+        {
+            Snapshot(tenant).Should().Be((TenantState.System, (int?)3, (int?)null));
+        }
+
+        tenant.State.Should().Be(TenantState.Unset);
     }
 
     [Fact]
@@ -220,14 +273,15 @@ public class TenantContextTests
         var tenant = Create(new DefaultHttpContext());
         tenant.SetCaller(1, 1);
         var outer = tenant.RunAs(2);
-        var inner = tenant.RunAs(3);
+        var inner = tenant.RunAs(2);
 
         var act = () => outer.Dispose();
 
         act.Should().Throw<InvalidOperationException>();
-        Snapshot(tenant).Should().Be((TenantState.System, (int?)3, (int?)null), "a refused dispose restores nothing");
+        Snapshot(tenant).Should().Be((TenantState.System, (int?)2, (int?)null), "a refused dispose restores nothing");
 
         inner.Dispose();
+        Snapshot(tenant).Should().Be((TenantState.System, (int?)2, (int?)null), "the refused outer scope is still open");
         outer.Dispose();
         Snapshot(tenant).Should().Be((TenantState.Caller, (int?)1, (int?)1));
     }
@@ -256,7 +310,7 @@ public class TenantContextTests
         var tenant = Create(new DefaultHttpContext());
         tenant.SetCaller(1, 1);
         var outer = tenant.RunAs(2);
-        var inner = tenant.RunAs(3);
+        var inner = tenant.RunAs(2);
 
         inner.Dispose();
         var again = () => inner.Dispose();

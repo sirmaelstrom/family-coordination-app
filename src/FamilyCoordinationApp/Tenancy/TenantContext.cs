@@ -12,7 +12,9 @@ namespace FamilyCoordinationApp.Tenancy;
 /// counts as out-of-request (Unfiltered in the test hosts, a throw in production). WP-02 relies on this split
 /// (D15).</para>
 /// <para><b>State machine</b> (council round 1): <see cref="SetCaller"/> only from Unset; <see cref="RunAs"/> pushes
-/// System and its dispose restores the exact previous state (Caller's <c>UserId</c> included);
+/// System and its dispose restores the exact previous state (Caller's <c>UserId</c> included); inside an open
+/// <see cref="RunAs"/> scope a <see cref="RunAs"/> for the same household nests and one for a different household
+/// throws (quest 92034618);
 /// <see cref="AllowCrossTenantWrite"/> is a depth counter. Both kinds of scope share ONE stack, so disposing any
 /// scope out of LIFO order throws, and a second dispose of the same scope is a no-op. On an Unfiltered instance
 /// <see cref="RunAs"/> is a no-op, so services can call <c>context.Tenant.RunAs(...)</c> unchanged under the
@@ -83,6 +85,14 @@ public sealed class TenantContext : ITenantContext
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(householdId);
         if (_state == TenantState.Unfiltered) return NoOpScope.Instance;
+        // Only RunAs enters System, so System means a RunAs scope is open. Re-entering the same household nests;
+        // switching to another one inside it is refused before anything is pushed, so the state is unchanged.
+        if (_state == TenantState.System && _householdId != householdId)
+        {
+            throw new InvalidOperationException(
+                $"RunAs({householdId}) is refused: a RunAs scope for household {_householdId} is open. " +
+                "Dispose it before acting as another household.");
+        }
 
         var previous = (_state, _householdId, _userId);
         var scope = new Scope(this, () => (_state, _householdId, _userId) = previous);
