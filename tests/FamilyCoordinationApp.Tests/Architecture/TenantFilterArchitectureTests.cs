@@ -323,8 +323,10 @@ public class TenantFilterArchitectureTests
     /// <para><b>Stated limits:</b> the fingerprint covers only the bypass statement. A move within its method that
     /// leaves that statement's text unchanged (out of a gating <c>if</c>/<c>else</c>, say) keeps the id, and so do edits
     /// to a separate statement the bypass widens (a query built earlier and bypassed later). Behavior tests pin those,
-    /// not fact 2, so a bypass should carry its gate and base query in its own statement (see
-    /// <c>FeedbackService.GetFeedbackAsync</c>). Two textually identical bypass statements in one member share an id
+    /// not fact 2, so a bypass should carry its gate and base query in its own statement where it can. One deliberate
+    /// exception: <c>FeedbackService.GetFeedbackAsync</c> gates its bypass with an <c>if</c>, so the non-admin branch's
+    /// household predicate stays inline where <c>TenantScopeArchitectureTests</c> sees it (quest 92034618); its gate is
+    /// pinned by <c>Integration/FeedbackTenancyTests</c>. Two textually identical bypass statements in one member share an id
     /// and match as a count; a change only inside a string literal of the statement keeps the id (strings are
     /// blanked).</para>
     /// </summary>

@@ -68,7 +68,8 @@ method or file does: review the gate, then re-point the row (the failure prints 
 **Limit:** the fingerprint covers only the bypass statement. A move within its method that leaves that statement's
 text unchanged (out of a gating `if`/`else`, say) keeps the id, and so do edits to a separate statement the bypass
 widens. Behavior tests pin those, not fact 2, so a bypass carries its gate and base query in its own statement where
-it can (`FeedbackService.GetFeedbackAsync` does).
+it can. `FeedbackService.GetFeedbackAsync` deliberately doesn't since quest 92034618: its gate is an `if`, so the
+non-admin predicate is inline where the scope scan sees it, and `Integration/FeedbackTenancyTests` pins the gate.
 
 | file:line | expression (trimmed) | classification | gate / household source |
 |---|---|---|---|

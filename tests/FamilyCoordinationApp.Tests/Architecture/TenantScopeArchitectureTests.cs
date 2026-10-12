@@ -1182,7 +1182,8 @@ public class TenantScopeArchitectureTests
     {
         var offenders = new List<string>();
         var root = AppSourceRoot();
-        var banned = new Regex(@"\.Set\s*<|FromSql|SqlQuery|ExecuteSql");
+        // The same raw-SQL patterns as the allowlist fact (RawSql), so an ADO.NET line also needs its pragma.
+        var banned = new Regex(@"\.Set\s*<|" + RawSql);
 
         foreach (var file in AppSourceFiles().Where(f => !f.EndsWith("ApplicationDbContext.cs", StringComparison.OrdinalIgnoreCase)))
         {
