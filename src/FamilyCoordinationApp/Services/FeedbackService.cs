@@ -77,26 +77,21 @@ public sealed class FeedbackService(
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        // Read-only projection ⇒ AsNoTracking (council R6).
-        // TENANT-SCOPE-OK: dual-mode (R-C1) — site admin sees all households; non-admin scope applied conditionally below.
-        // The Tenant bypass is the site admin's arm only, gated by IsSiteAdmin at SettingsAdminEndpoints.cs:315: it keeps
-        // OTHER households' authors (User is a tenant entity). A non-admin's User include stays under the Tenant filter.
-        // The gate sits in this one statement so the bypass's site id (TenantFilterArchitectureTests fact 2) covers it.
-        IQueryable<Feedback> query = (isSiteAdmin ? context.Feedbacks.IgnoreQueryFilters(["Tenant"]) : context.Feedbacks)
-            .AsNoTracking()
-            .Include(f => f.User);
-
-        // Dual-mode: site admin → all households; regular user → own household only (R-C1, server-scoped). A
-        // non-admin with no resolved household sees nothing rather than everything.
-        if (!isSiteAdmin)
+        // Dual-mode (R-C1): site admin → all households; regular user → own household only. Two statements, so the
+        // non-admin's household predicate sits inline where TenantScopeArchitectureTests can see it (quest 92034618:
+        // a predicate added to a builder variable was invisible to the scanner). Read-only ⇒ AsNoTracking (council R6).
+        if (isSiteAdmin)
         {
-            if (householdId is null) return [];
-            query = query.Where(f => f.HouseholdId == householdId);
+            // TENANT-SCOPE-OK: the site admin's arm, gated by IsSiteAdmin at SettingsAdminEndpoints.cs:325 — every household's
+            // feedback, with OTHER households' authors (User is a tenant entity, so its include needs the Tenant bypass).
+            return await context.Feedbacks.IgnoreQueryFilters(["Tenant"]).AsNoTracking().Include(f => f.User)
+                .OrderByDescending(f => f.CreatedAt).ToListAsync(cancellationToken);
         }
 
-        return await query
-            .OrderByDescending(f => f.CreatedAt)
-            .ToListAsync(cancellationToken);
+        // A non-admin with no resolved household sees nothing rather than everything.
+        if (householdId is null) return [];
+        return await context.Feedbacks.AsNoTracking().Include(f => f.User).Where(f => f.HouseholdId == householdId)
+            .OrderByDescending(f => f.CreatedAt).ToListAsync(cancellationToken);
     }
 
     public async Task<bool> MarkReadAsync(int id, bool isSiteAdmin, int? householdId, CancellationToken cancellationToken = default)
@@ -117,15 +112,19 @@ public sealed class FeedbackService(
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        // TENANT-SCOPE-OK: dual-mode (R-C1) — site admin reaches all households; non-admin scope applied conditionally below
-        IQueryable<Feedback> query = context.Feedbacks.Where(f => f.Id == id);
-        if (!isSiteAdmin)
+        // Two statements, so the non-admin's household predicate is inline (quest 92034618).
+        Feedback? feedback;
+        if (isSiteAdmin)
+        {
+            // TENANT-SCOPE-OK: dual-mode (R-C1) — the site admin's arm reaches all households (IsSiteAdmin, SettingsAdminEndpoints.cs:325)
+            feedback = await context.Feedbacks.Where(f => f.Id == id).FirstOrDefaultAsync(cancellationToken);
+        }
+        else
         {
             if (householdId is null) return false;
-            query = query.Where(f => f.HouseholdId == householdId);
+            feedback = await context.Feedbacks.Where(f => f.Id == id && f.HouseholdId == householdId).FirstOrDefaultAsync(cancellationToken);
         }
 
-        var feedback = await query.FirstOrDefaultAsync(cancellationToken);
         if (feedback is null) return false;
 
         mutate(feedback);

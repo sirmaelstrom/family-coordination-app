@@ -44,8 +44,9 @@ namespace FamilyCoordinationApp.Tests.Architecture;
 ///  - The scope window is ONE STATEMENT (to the terminating semicolon; a ';'
 ///    inside a string literal truncates it early, which fails SAFE — a false
 ///    flag, never a bypass). A builder-pattern query that applies scope in a
-///    later statement takes the pragma, naming where the scope lands (see
-///    FeedbackService).
+///    later statement is invisible to this window, so prefer one statement
+///    per branch with the predicate inline (FeedbackService, quest 92034618);
+///    a builder that can't be split takes the pragma, naming where scope lands.
 ///  - The pragma REQUIRES a reason, a real `//` marker, and line adjacency:
 ///    the occurrence's own line, or the contiguous comment/blank run directly
 ///    above it. A bare pragma fails; a pragma cannot leak onto the next
@@ -1148,7 +1149,8 @@ public class TenantScopeArchitectureTests
         // codebase, not that the codebase stopped querying.
         total.Should().BeGreaterThan(150);
 
-        // The rule's own sets (WP-05): 9 occurrences measured at d33b3ca (FeedbackService 4, HouseholdConnectionService 5).
+        // The rule's own sets (WP-05): 9 occurrences measured at d33b3ca (FeedbackService 4, HouseholdConnectionService 5);
+        // 10 since quest 92034618 split FeedbackService's dual-mode statements (FeedbackService 5).
         OccurrenceCount(ComparisonRuleDbSets()).Should().BeGreaterThanOrEqualTo(6);
     }
 
@@ -1180,7 +1182,8 @@ public class TenantScopeArchitectureTests
     {
         var offenders = new List<string>();
         var root = AppSourceRoot();
-        var banned = new Regex(@"\.Set\s*<|FromSql|SqlQuery|ExecuteSql");
+        // The same raw-SQL patterns as the allowlist fact (RawSql), so an ADO.NET line also needs its pragma.
+        var banned = new Regex(@"\.Set\s*<|" + RawSql);
 
         foreach (var file in AppSourceFiles().Where(f => !f.EndsWith("ApplicationDbContext.cs", StringComparison.OrdinalIgnoreCase)))
         {
@@ -1201,6 +1204,50 @@ public class TenantScopeArchitectureTests
             "use the DbSet properties, or carry a reasoned // TENANT-SCOPE-OK: pragma. Offenders:\n" +
             string.Join("\n", offenders));
     }
+
+    /// <summary>
+    /// Raw SQL in app source is exactly this allowlist (quest 92034618, fca#131 review yd2 opus 5). The fact above
+    /// accepts any raw SQL that carries a pragma; this one pins WHICH: a new raw statement, even pragma'd, is a
+    /// reviewed addition to this list. Covers EF's raw APIs and ADO.NET commands (council round 1 on fca#141: a
+    /// <c>GetDbConnection().CreateCommand()</c> path runs SQL outside the filter too). Keyed by file and trimmed CALL
+    /// line (a moved line keeps its key); SQL continued on later lines is the reviewer's to read, not this key's.
+    /// </summary>
+    internal static readonly (string File, string Line)[] RawSqlAllowlist =
+    [
+        ("Services/Calendar/HouseholdCalendarTokenService.cs",
+            "await context.Database.ExecuteSqlInterpolatedAsync($\"SELECT pg_advisory_xact_lock({householdId})\", ct);"),
+    ];
+
+    [Fact]
+    public void Raw_SQL_in_src_is_exactly_the_allowlist()
+    {
+        var root = AppSourceRoot();
+        var sites = AppSourceFiles()
+            .SelectMany(file => File.ReadAllLines(file)
+                .Where(line => RawSql.IsMatch(line) && !line.TrimStart().StartsWith("//", StringComparison.Ordinal))
+                .Select(line => (File: Path.GetRelativePath(root, file).Replace('\\', '/'), Line: line.Trim())))
+            .ToList();
+
+        sites.Should().BeEquivalentTo(RawSqlAllowlist,
+            "raw SQL bypasses the tenant filter and the scan; each site is reviewed into RawSqlAllowlist");
+    }
+
+    /// <summary>EF raw-SQL APIs, and the ADO.NET ways to run a command on the context's connection.</summary>
+    internal static readonly Regex RawSql =
+        new(@"FromSql|SqlQuery|ExecuteSql|GetDbConnection|CreateCommand|NpgsqlCommand|CommandText|ExecuteReader|ExecuteScalar|ExecuteNonQuery");
+
+    /// <summary>The matcher's own negative control: each way to run raw SQL is caught; ordinary EF calls are not.</summary>
+    [Theory]
+    [InlineData("await context.Database.ExecuteSqlRawAsync(\"SELECT 1\", ct);", true)]
+    [InlineData("var rows = context.Recipes.FromSqlInterpolated($\"SELECT * FROM x\");", true)]
+    [InlineData("await using var cmd = context.Database.GetDbConnection().CreateCommand();", true)]
+    [InlineData("cmd.CommandText = \"SELECT 1\";", true)]
+    [InlineData("await cmd.ExecuteNonQueryAsync(ct);", true)]
+    [InlineData("var cmd = new NpgsqlCommand(sql, conn);", true)]
+    [InlineData("await context.SaveChangesAsync(ct);", false)]
+    [InlineData("var r = await context.Recipes.Where(r => r.Id == id).ToListAsync(ct);", false)]
+    public void The_raw_SQL_matcher_catches_EF_and_ADO_NET_paths(string line, bool isRaw) =>
+        RawSql.IsMatch(line).Should().Be(isRaw);
 
     // ── Negative controls: the scanner fails on known-bad input ─────────────
 
