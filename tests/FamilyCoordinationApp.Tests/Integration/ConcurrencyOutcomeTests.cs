@@ -80,6 +80,25 @@ public sealed class ConcurrencyOutcomeTests(PostgresContainerFixture postgres) :
         (await check.HouseholdConnections.CountAsync()).Should().Be(1, "only the winner connected");
     }
 
+    /// <summary>
+    /// Challenge finding 7: a double-clicked accept from the SAME household also inserts the same connection key, so
+    /// the losing save may fail on that key rather than on the invite's xmin. Either way the user sees an outcome
+    /// envelope, never a 500.
+    /// </summary>
+    [Fact]
+    public async Task A_double_clicked_accept_from_the_same_household_answers_an_envelope()
+    {
+        var interleaved = new InterleavingDbContextFactory(_connectionString,
+            async () => (await Connections(_plain).AcceptInviteAsync(Code, Accepting, 2)).Success.Should().BeTrue());
+
+        var result = await Connections(interleaved).AcceptInviteAsync(Code, Accepting, 2);
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().BeOneOf("This invite code has already been used.", "Your households are already connected.");
+        await using var check = _plain.CreateDbContext();
+        (await check.HouseholdConnections.CountAsync()).Should().Be(1);
+    }
+
     [Fact]
     public async Task A_double_clicked_cancel_succeeds_and_leaves_no_active_invite()
     {

@@ -121,7 +121,8 @@ public class HouseholdConnectionService(
             catch (ConcurrencyConflictException) when (attempt < MaxInvalidateAttempts)
             {
                 logger.LogInformation("Invite invalidation for household {HouseholdId} raced another write (attempt {Attempt}); re-reading",
-                    householdId, attempt);            }
+                    householdId, attempt);
+            }
         }
     }
 
@@ -264,6 +265,19 @@ public class HouseholdConnectionService(
             logger.LogInformation("Invite accept for household {HouseholdId} lost a race; the code was used meanwhile",
                 acceptingHouseholdId);
             return (false, null, "This invite code has already been used.");
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException
+        {
+            SqlState: Npgsql.PostgresErrorCodes.UniqueViolation, ConstraintName: "PK_HouseholdConnections",
+        })
+        {
+            // A double-clicked accept from the SAME household: the winner already inserted this pair's connection,
+            // and the loser's insert hits the key before its invite update can conflict. Answer the documented
+            // "already connected" outcome instead of a 500 (council round 1 on fca#140, finding 7; pre-existing).
+            await transaction.RollbackAsync(cancellationToken);
+            logger.LogInformation("Invite accept for household {HouseholdId} lost a race; the households are already connected",
+                acceptingHouseholdId);
+            return (false, null, "Your households are already connected.");
         }
         catch (Exception ex)
         {
