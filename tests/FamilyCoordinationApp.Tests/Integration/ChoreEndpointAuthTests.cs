@@ -65,11 +65,11 @@ public sealed class ChoreEndpointAuthTests(PostgresContainerFixture postgres) : 
         // Household B's chore shares id 1 (composite key), so ids alone can't tell the households apart: compare
         // (id, name) pairs. The expected set is household A's active chores read with an explicit HouseholdId
         // predicate and the Tenant filter bypassed, so it doesn't depend on the filter under test (quest 92034618:
-        // the old `c.id == PileChoreAId || c.id > 1` stayed green with the filter disabled). The collection's other
-        // classes add chores to the shared database, so the set is read, not hard-coded.
+        // the old `c.id == PileChoreAId || c.id > 1` stayed green with the filter disabled). Each test gets its own
+        // factory and database, so the set is the fixture seed; it is read rather than hard-coded so the oracle
+        // follows ChoresWebAppFactory's seed when that changes. Active only, as ChoreBoardService reads.
         var dbFactory = _factory.Services.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
         await using var context = await dbFactory.CreateDbContextAsync();
-        // TENANT-SCOPE-OK: test oracle; the explicit HouseholdId predicate is the scope.
         var householdAChores = await context.Chores
             .IgnoreQueryFilters(["Tenant"])
             .Where(c => c.HouseholdId == ChoresWebAppFactory.HouseholdAId && c.Status == ChoreStatus.Active)

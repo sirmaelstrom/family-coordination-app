@@ -174,13 +174,19 @@ public class TenantContextTests
     {
         // The refusal keys on the open RunAs, not on the innermost scope's kind.
         var tenant = Create(new DefaultHttpContext());
-        using var runAs = tenant.RunAs(2);
-        using var crossWrite = tenant.AllowCrossTenantWrite("reason");
+        var runAs = tenant.RunAs(2);
+        var crossWrite = tenant.AllowCrossTenantWrite("reason");
 
         var act = () => tenant.RunAs(3);
 
         act.Should().Throw<InvalidOperationException>();
         Snapshot(tenant).Should().Be((TenantState.System, (int?)2, (int?)null));
+        tenant.IsCrossTenantWriteAllowed.Should().BeTrue("the refusal leaves the cross-write scope alone");
+
+        crossWrite.Dispose();
+        runAs.Dispose();
+        Snapshot(tenant).Should().Be((TenantState.Unset, (int?)null, (int?)null), "both scopes close in order");
+        tenant.IsCrossTenantWriteAllowed.Should().BeFalse();
     }
 
     [Fact]
