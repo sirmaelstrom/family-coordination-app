@@ -18,7 +18,7 @@ public interface IShoppingListService
     Task UpdateItemAsync(ShoppingListItem item, uint version, CancellationToken cancellationToken = default);
     /// <summary>Reorder; writes only the rows whose order or category changed, and returns every listed item's
     /// version after the save.</summary>
-    Task<IReadOnlyList<(int ItemId, uint Version)>> UpdateItemSortOrdersAsync(int householdId, int shoppingListId, List<(int ItemId, int SortOrder, string? Category)> updates, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<(int ItemId, uint VersionBefore, uint Version)>> UpdateItemSortOrdersAsync(int householdId, int shoppingListId, List<(int ItemId, int SortOrder, string? Category)> updates, CancellationToken cancellationToken = default);
     Task DeleteItemAsync(int householdId, int shoppingListId, int itemId, CancellationToken cancellationToken = default);
     Task<ShoppingList> ToggleFavoriteAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default);
     Task ArchiveShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default);

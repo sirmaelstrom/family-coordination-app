@@ -83,9 +83,16 @@ export async function deleteItem(listId: number, itemId: number): Promise<void> 
 export async function updateSortOrders(
   listId: number,
   updates: SortOrderUpdate[],
-): Promise<{ items: { id: number; version: number }[] }> {
-  // Answers each listed item's token after the save: a moved item's version advanced (quest 8cf3c806).
-  return apiSend<{ items: { id: number; version: number }[] }>(`${BASE}/${listId}/items/sort-orders`, 'POST', { updates });
+): Promise<SortOrdersResult> {
+  return apiSend<SortOrdersResult>(`${BASE}/${listId}/items/sort-orders`, 'POST', { updates });
+}
+
+/**
+ * A reorder's answer: each listed item's token as the reorder read it and after its save (quest 8cf3c806). Adopt
+ * `version` only where `versionBefore` equals the token this tab held (lib/itemSync.ts).
+ */
+export interface SortOrdersResult {
+  items: { id: number; versionBefore: number; version: number }[];
 }
 
 export async function toggleFavorite(

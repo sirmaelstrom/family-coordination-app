@@ -345,7 +345,7 @@ public class ShoppingListService(
         return count;
     }
 
-    public async Task<IReadOnlyList<(int ItemId, uint Version)>> UpdateItemSortOrdersAsync(int householdId, int shoppingListId, List<(int ItemId, int SortOrder, string? Category)> updates, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<(int ItemId, uint VersionBefore, uint Version)>> UpdateItemSortOrdersAsync(int householdId, int shoppingListId, List<(int ItemId, int SortOrder, string? Category)> updates, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
@@ -355,6 +355,11 @@ public class ShoppingListService(
                 i.ShoppingListId == shoppingListId &&
                 itemIds.Contains(i.ItemId))
             .ToListAsync(cancellationToken);
+
+        // The token each row had when this request read it: the client adopts the post-save token only where this
+        // equals the token it held, so a row someone else changed since its last read is never given a token that
+        // would let its stale content overwrite that change (quest 8cf3c806).
+        var versionsBefore = items.ToDictionary(i => i.ItemId, i => i.Version);
 
         foreach (var item in items)
         {
@@ -377,7 +382,8 @@ public class ShoppingListService(
         logger.LogInformation("Updated sort orders for {Count} items in ShoppingList {ShoppingListId} for household {HouseholdId}",
             updates.Count, shoppingListId, householdId);
 
-        // The tokens after the save, so the client's next PATCH on a moved item isn't stale.
-        return [.. items.Select(i => (i.ItemId, i.Version))];
+        // The tokens before and after the save, so the client's next PATCH on a moved item isn't stale. The save is
+        // checked against the tokens read above, so a write landing in between is a 409, never folded in silently.
+        return [.. items.Select(i => (i.ItemId, versionsBefore[i.ItemId], i.Version))];
     }
 }

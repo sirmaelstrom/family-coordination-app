@@ -441,7 +441,7 @@ public static class ShoppingListEndpoints
         // Answer each listed item's token after the save (quest 8cf3c806): a moved item's version advanced, and the
         // SPA's next PATCH on it must carry the new one.
         var versions = await svc.UpdateItemSortOrdersAsync(caller.HouseholdId, listId, updates, ct);
-        return Results.Ok(new SortOrdersResult([.. versions.Select(v => new ItemVersionDto(v.ItemId, v.Version))]));
+        return Results.Ok(new SortOrdersResult([.. versions.Select(v => new ItemVersionDto(v.ItemId, v.VersionBefore, v.Version))]));
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -512,7 +512,8 @@ public static class ShoppingListEndpoints
         int SortOrder,
         [Display(Name = "Category"), MaxTextLength(FieldLengths.ShoppingListItem.Category)] string Category);
     public sealed record UpdateSortOrdersRequest(List<SortOrderUpdate> Updates);
-    public sealed record ItemVersionDto(int Id, uint Version);
+    /// <summary>A reordered item's token as the reorder read it (<see cref="VersionBefore"/>) and after its save.</summary>
+    public sealed record ItemVersionDto(int Id, uint VersionBefore, uint Version);
     public sealed record SortOrdersResult(List<ItemVersionDto> Items);
 
     public sealed record ShoppingListDto(

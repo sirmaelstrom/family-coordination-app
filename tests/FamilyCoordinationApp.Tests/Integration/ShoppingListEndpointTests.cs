@@ -186,7 +186,34 @@ public sealed class ShoppingListEndpointTests(PostgresContainerFixture postgres)
         (await uncheck.Content.ReadFromJsonAsync<Item>(Json))!.checkedAt.Should().BeNull();
     }
 
-    private sealed record ItemVersion(int id, uint version);
+    private sealed record ItemVersion(int id, uint versionBefore, uint version);
+
+    /// <summary>
+    /// Council round-1 challenge, concern A: a reorder must not hand a stale tab a token newer than its content. The
+    /// answer names the token the reorder READ, so a tab that held an older one (another member changed the item
+    /// since) can tell and keep its old token (the SPA rule is pinned in lib/itemSync.test.ts).
+    /// </summary>
+    [Fact]
+    public async Task Reorder_AnswersTheTokenItRead_SoATabThatMissedAChangeCanTell()
+    {
+        var list = await CreateListAsync(ClientA, "Reorder after a change");
+        var held = await AddItemAsync(ClientA, list.id, "milk"); // this tab's view
+
+        // Another member changes the quantity first.
+        var changed = await ClientA.PatchAsync($"/api/shopping-lists/{list.id}/items/{held.id}",
+            JsonContent.Create(new { quantity = 3m, version = held.version }, options: Json));
+        var afterChange = (await changed.Content.ReadFromJsonAsync<Item>(Json))!;
+
+        // This tab, still holding `held`, reorders the item.
+        var resp = await ClientA.PostAsJsonAsync($"/api/shopping-lists/{list.id}/items/sort-orders", new
+        {
+            updates = new[] { new { itemId = held.id, sortOrder = held.sortOrder + 2, category = held.category } },
+        }, Json);
+
+        var answer = (await resp.Content.ReadFromJsonAsync<SortOrdersResult>(Json))!.items.Single();
+        answer.versionBefore.Should().Be(afterChange.version, "the reorder read the row after the other member's change");
+        answer.versionBefore.Should().NotBe(held.version, "so this tab sees its token was stale and must not adopt");
+    }
     private sealed record SortOrdersResult(List<ItemVersion> items);
 
     /// <summary>

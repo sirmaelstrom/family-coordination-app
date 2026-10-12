@@ -222,8 +222,8 @@
   }
 
   /** A write's answer, on the held object and on the row shown now (lib/itemSync.ts). */
-  function adoptItem(held: ShoppingListItemDto, updated: ShoppingListItemDto) {
-    adoptItemOnRows(list?.items, held, updated);
+  function adoptItem(held: ShoppingListItemDto, updated: ShoppingListItemDto, sentVersion: number) {
+    adoptItemOnRows(list?.items, held, updated, sentVersion);
   }
 
   async function setChecked(item: ShoppingListItemDto, target: boolean) {
@@ -235,9 +235,10 @@
     item.isChecked = target;
     item.checkedAt = target ? new Date().toISOString() : null;
     markPending(item.id, true);
+    const sentVersion = item.version;
     try {
-      const updated = await patchItem(currentListId, item.id, { isChecked: target, version: item.version });
-      adoptItem(item, updated);
+      const updated = await patchItem(currentListId, item.id, { isChecked: target, version: sentVersion });
+      adoptItem(item, updated, sentVersion);
       retireInFlightLoads();
     } catch (e) {
       Object.assign(item, prev);
@@ -261,13 +262,16 @@
       // Only show undo when CHECKING (matches production).
       if (target) {
         const { id, name } = item;
+        const listId = currentListId;
         showToast({
           message: `Checked ${name}`,
           kind: 'success',
           actionLabel: 'Undo',
           durationMs: 4000,
           onAction: () => {
-            // Resolve the row at undo time: a poll or a reorder may have replaced the object (and its token).
+            // Resolve the row at undo time: a poll or a reorder may have replaced the object (and its token). Item
+            // ids are per list, so an undo pressed after switching lists must not touch the other list's item.
+            if (currentListId !== listId) return;
             const current = list?.items.find((i) => i.id === id);
             if (!current || !current.isChecked) return;
             setChecked(current, false).catch(() => { /* handled in setChecked */ });
@@ -288,9 +292,10 @@
     retireInFlightLoads();
     item.quantity = next;
     markPending(item.id, true);
+    const sentVersion = item.version;
     try {
-      const updated = await patchItem(currentListId, item.id, { quantity: next, version: item.version });
-      adoptItem(item, updated);
+      const updated = await patchItem(currentListId, item.id, { quantity: next, version: sentVersion });
+      adoptItem(item, updated, sentVersion);
       retireInFlightLoads();
     } catch (e) {
       item.quantity = prev;
@@ -554,13 +559,15 @@
     // The moved items are pending until the answer brings their new tokens: a tap now would carry the pre-reorder
     // token and 409 once the reorder commits (quest 8cf3c806).
     const movedIds = reordered.map((item) => item.id);
-    const versionsBefore = new Map(reordered.map((item) => [item.id, item.version]));
+    const sent = new Map(
+      reordered.map((item, index) => [item.id, { heldVersion: item.version, sortOrder: index, category }]),
+    );
     movedIds.forEach((id) => markPending(id, true));
     try {
       const result = await updateSortOrders(currentListId, updates);
       retireInFlightLoads(); // a GET begun during the request still holds the pre-drag order
-      // Adopt the tokens on the rows shown now, only where a row is still at the token this tab held (lib/itemSync.ts).
-      adoptReorderVersions(list?.items, versionsBefore, result.items);
+      // Adopt the answered tokens only where the reorder read the row at the token this tab held (lib/itemSync.ts).
+      adoptReorderVersions(list?.items, sent, result.items);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
       await loadList(currentListId);
