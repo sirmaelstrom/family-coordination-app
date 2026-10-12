@@ -345,7 +345,7 @@ public class ShoppingListService(
         return count;
     }
 
-    public async Task UpdateItemSortOrdersAsync(int householdId, int shoppingListId, List<(int ItemId, int SortOrder, string? Category)> updates, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<(int ItemId, uint Version)>> UpdateItemSortOrdersAsync(int householdId, int shoppingListId, List<(int ItemId, int SortOrder, string? Category)> updates, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
@@ -366,9 +366,9 @@ public class ShoppingListService(
                 {
                     item.Category = update.Category;
                 }
-                // A touch, kept on purpose: every item in the request is written, even one whose order didn't
-                // change, as before. The write step stamps UpdatedByUserId (the caller; quest e8bf9e1d, answer d).
-                item.UpdatedAt = clock.UtcNow;
+                // No UpdatedAt touch: only a row whose order or category really changed is written, so a reorder
+                // advances no other item's token (quest 8cf3c806). The write step stamps UpdatedAt and
+                // UpdatedByUserId (the caller) on the rows that are written (quest e8bf9e1d, answer d).
             }
         }
 
@@ -376,5 +376,8 @@ public class ShoppingListService(
 
         logger.LogInformation("Updated sort orders for {Count} items in ShoppingList {ShoppingListId} for household {HouseholdId}",
             updates.Count, shoppingListId, householdId);
+
+        // The tokens after the save, so the client's next PATCH on a moved item isn't stale.
+        return [.. items.Select(i => (i.ItemId, i.Version))];
     }
 }

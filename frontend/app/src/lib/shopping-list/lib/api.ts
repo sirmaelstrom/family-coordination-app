@@ -83,8 +83,9 @@ export async function deleteItem(listId: number, itemId: number): Promise<void> 
 export async function updateSortOrders(
   listId: number,
   updates: SortOrderUpdate[],
-): Promise<void> {
-  await apiSend<void>(`${BASE}/${listId}/items/sort-orders`, 'POST', { updates });
+): Promise<{ items: { id: number; version: number }[] }> {
+  // Answers each listed item's token after the save: a moved item's version advanced (quest 8cf3c806).
+  return apiSend<{ items: { id: number; version: number }[] }>(`${BASE}/${listId}/items/sort-orders`, 'POST', { updates });
 }
 
 export async function toggleFavorite(

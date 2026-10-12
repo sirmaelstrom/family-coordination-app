@@ -427,7 +427,7 @@ public static class ShoppingListEndpoints
     {
         if (req.Updates is null || req.Updates.Count == 0)
         {
-            return Results.NoContent();
+            return Results.Ok(new SortOrdersResult([]));
         }
 
         var archived = await IsListArchivedAsync(dbFactory, caller.HouseholdId, listId, ct);
@@ -438,8 +438,10 @@ public static class ShoppingListEndpoints
             .Select(u => (u.ItemId, u.SortOrder, (string?)u.Category))
             .ToList();
 
-        await svc.UpdateItemSortOrdersAsync(caller.HouseholdId, listId, updates, ct);
-        return Results.NoContent();
+        // Answer each listed item's token after the save (quest 8cf3c806): a moved item's version advanced, and the
+        // SPA's next PATCH on it must carry the new one.
+        var versions = await svc.UpdateItemSortOrdersAsync(caller.HouseholdId, listId, updates, ct);
+        return Results.Ok(new SortOrdersResult([.. versions.Select(v => new ItemVersionDto(v.ItemId, v.Version))]));
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -510,6 +512,8 @@ public static class ShoppingListEndpoints
         int SortOrder,
         [Display(Name = "Category"), MaxTextLength(FieldLengths.ShoppingListItem.Category)] string Category);
     public sealed record UpdateSortOrdersRequest(List<SortOrderUpdate> Updates);
+    public sealed record ItemVersionDto(int Id, uint Version);
+    public sealed record SortOrdersResult(List<ItemVersionDto> Items);
 
     public sealed record ShoppingListDto(
         int Id,

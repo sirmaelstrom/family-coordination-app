@@ -186,6 +186,43 @@ public sealed class ShoppingListEndpointTests(PostgresContainerFixture postgres)
         (await uncheck.Content.ReadFromJsonAsync<Item>(Json))!.checkedAt.Should().BeNull();
     }
 
+    private sealed record ItemVersion(int id, uint version);
+    private sealed record SortOrdersResult(List<ItemVersion> items);
+
+    /// <summary>
+    /// Quest 8cf3c806: a reorder writes only the rows whose order changed, and answers every listed item's token
+    /// after the save, so the tab's next PATCH on a moved item is not stale. Red on the base tree (204, no body; and
+    /// every listed row was written, advancing an unmoved item's token too).
+    /// </summary>
+    [Fact]
+    public async Task Reorder_AnswersTheTokens_AndWritesOnlyTheMovedRows()
+    {
+        var list = await CreateListAsync(ClientA, "Reorder tokens");
+        var stays = await AddItemAsync(ClientA, list.id, "stays");
+        var moves = await AddItemAsync(ClientA, list.id, "moves");
+        // Time passes, as it does in production: a touch of UpdatedAt would now be a real change and write the row.
+        _factory.Clock.SetUtcNow(_factory.Clock.GetUtcNow().UtcDateTime.AddMinutes(1));
+
+        var resp = await ClientA.PostAsJsonAsync($"/api/shopping-lists/{list.id}/items/sort-orders", new
+        {
+            updates = new[]
+            {
+                new { itemId = stays.id, sortOrder = stays.sortOrder, category = stays.category },
+                new { itemId = moves.id, sortOrder = moves.sortOrder + 5, category = moves.category },
+            },
+        }, Json);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+        var answered = (await resp.Content.ReadFromJsonAsync<SortOrdersResult>(Json))!.items;
+        answered.Single(i => i.id == stays.id).version.Should().Be(stays.version, "an unmoved row is not written");
+        var movedVersion = answered.Single(i => i.id == moves.id).version;
+        movedVersion.Should().NotBe(moves.version);
+
+        (await ClientA.PatchAsync($"/api/shopping-lists/{list.id}/items/{moves.id}",
+            JsonContent.Create(new { isChecked = true, version = movedVersion }, options: Json)))
+            .StatusCode.Should().Be(HttpStatusCode.OK, "the answered token is the current one");
+    }
+
     /// <summary>
     /// Quest 8cf3c806, operator answer c: the item PATCH carries the client's token. A stale one (another member's
     /// check landed first) or a missing one answers 409 and changes nothing; the old "checked wins" server merge is
