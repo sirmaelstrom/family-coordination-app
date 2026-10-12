@@ -15,9 +15,9 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// found nothing, and commits a rival add for the same week there. With the unique index on
 /// <c>(HouseholdId, WeekStartDate)</c> the first add's insert is a unique violation, <c>IdGenerationHelper</c> retries,
 /// and the retry finds the rival's plan.
-/// <para>Negative control: on the base tree (no index) this is red with 2 plans for the week (the probe lane ag6 ran on
-/// fca#134's base and head, logs <c>lanes/ag/lane-ag6-a1-{base,head}-race.log</c>), and with the index removed from
-/// <c>MealPlanConfiguration</c> it is red the same way (receipted in the PR body).</para>
+/// <para>The schema comes from the real migrations (<c>MigrateAsync</c>), so the test fails if the migration lacks the
+/// index even when the model has it. Negative control: on the base tree (no index) it is red with 2 plans for the week
+/// (receipted in PR #138).</para>
 /// </summary>
 [Collection(IntegrationCollection.Name)]
 [Trait("kind", "integration")]
@@ -33,7 +33,7 @@ public sealed class MealPlanWeekRaceTests(PostgresContainerFixture postgres) : I
     {
         _connectionString = await postgres.CreateDatabaseConnectionStringAsync();
         await using var ctx = new PostgresDbContextFactory(_connectionString).CreateDbContext();
-        await ctx.Database.EnsureCreatedAsync();
+        await ctx.Database.MigrateAsync();
         ctx.Households.Add(new Household { Id = HouseholdId, Name = "Race Week House", CreatedAt = Now });
         ctx.Users.Add(new User { Id = 1, HouseholdId = HouseholdId, Email = "a@race.test", DisplayName = "A", Initials = "A", IsWhitelisted = true, CreatedAt = Now });
         await ctx.SaveChangesAsync();
