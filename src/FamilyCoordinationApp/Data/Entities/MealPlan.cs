@@ -1,7 +1,9 @@
 namespace FamilyCoordinationApp.Data.Entities;
 
-public class MealPlan : Tenancy.ITenantEntity, Tenancy.IAuditable
+public class MealPlan : Tenancy.ITenantEntity, Tenancy.IAuditable, Tenancy.IUpdateAudited
 {
+    string? Tenancy.IUpdateAudited.UpdatedByProperty => null;
+
     public int HouseholdId { get; set; }
     public int MealPlanId { get; set; }
     public DateOnly WeekStartDate { get; set; }

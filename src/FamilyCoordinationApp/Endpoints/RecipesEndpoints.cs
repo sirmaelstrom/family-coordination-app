@@ -114,7 +114,6 @@ public static class RecipesEndpoints
         CallerScope caller,
         IRecipeService recipeService,
         IRecipeProjectionService projection,
-        IHouseholdClock clock,
         CancellationToken ct)
     {
         // Name required + every string's length: RecipeWriteRequest's attributes, checked by the validation filter.
@@ -123,9 +122,8 @@ public static class RecipesEndpoints
             return Results.BadRequest(new { message = "Image path is not valid." });
         }
 
+        // CreatedAt and CreatedByUserId (the caller) are stamped by the write step (quest e8bf9e1d).
         var recipe = MapToRecipe(req, caller.HouseholdId, recipeId: 0, imagePath);
-        recipe.CreatedByUserId = caller.UserId;
-        recipe.CreatedAt = clock.UtcNow;
 
         var created = await recipeService.CreateRecipeAsync(recipe, ct);
 
@@ -147,8 +145,8 @@ public static class RecipesEndpoints
             return Results.BadRequest(new { message = "Image path is not valid." });
         }
 
+        // UpdatedByUserId (the caller) is stamped by the write step (quest e8bf9e1d).
         var recipe = MapToRecipe(req, caller.HouseholdId, recipeId, imagePath);
-        recipe.UpdatedByUserId = caller.UserId;
 
         // req.Version is the xmin token echoed from GET (null ⇒ legacy client ⇒ no client staleness check; EF still
         // checks the version the save loaded). A missing /

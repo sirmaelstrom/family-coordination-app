@@ -119,11 +119,11 @@ public class MealPlanServiceMoveTests : IDisposable
     public async Task MoveMeal_ToAnotherSameWeekSlot_UpdatesDateAndMealType()
     {
         var newDate = WeekStart.AddDays(3); // Thursday
-        var moved = await _service.MoveMealAsync(1, 1, 1, newDate, MealType.Lunch, NoConcurrencyCheck, userId: 1);
+        var moved = await _service.MoveMealAsync(1, 1, 1, newDate, MealType.Lunch, NoConcurrencyCheck);
 
         moved.Date.Should().Be(newDate);
         moved.MealType.Should().Be(MealType.Lunch);
-        moved.UpdatedByUserId.Should().Be(1);
+        moved.UpdatedByUserId.Should().Be(1, "the write step stamps the caller (TestTenancy.Caller(1) is user 1)");
         moved.UpdatedAt.Should().NotBeNull();
         moved.Recipe.Should().NotBeNull("the Recipe nav must be loaded for the response projection");
 

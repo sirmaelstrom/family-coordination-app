@@ -4,8 +4,11 @@ namespace FamilyCoordinationApp.Data.Entities;
 
 public enum MealType { Breakfast, Lunch, Dinner, Snack }
 
-public class MealPlanEntry : Tenancy.ITenantEntity, IVersioned
+public class MealPlanEntry : Tenancy.ITenantEntity, Tenancy.ICreatedByAudited, Tenancy.IUpdateAudited, IVersioned
 {
+    string Tenancy.ICreatedByAudited.CreatedByProperty => nameof(CreatedByUserId);
+    string? Tenancy.IUpdateAudited.UpdatedByProperty => nameof(UpdatedByUserId);
+
     public int HouseholdId { get; set; }
     public int MealPlanId { get; set; }
     public int EntryId { get; set; }
@@ -27,7 +30,8 @@ public class MealPlanEntry : Tenancy.ITenantEntity, IVersioned
     /// Who added this entry — the mealsPlanned planning lane reads it (planned-by avatars are future
     /// work; the column and nav are groundwork). Nullable: rows created before the migration have no
     /// author and earn no planning credit (the calculator skips null authors). Set once at create — the
-    /// AddMealAsync duplicate-fold path touches only <see cref="UpdatedByUserId"/>, never this.
+    /// AddMealAsync duplicate-fold path is a modify, so the write step stamps <see cref="UpdatedAt"/> and
+    /// <see cref="UpdatedByUserId"/> and never this (quest e8bf9e1d).
     /// </summary>
     public int? CreatedByUserId { get; set; }
 

@@ -394,6 +394,25 @@ public class ShoppingListGeneratorTests : IDisposable
             .ToListAsync();
     }
 
+    /// <summary>
+    /// Quest e8bf9e1d, operator answer d: generated items record the generating caller (Caller user 1 here) as
+    /// <c>AddedByUserId</c>, and stay <c>IsManuallyAdded = false</c>, so the planning calculator's list-items lane
+    /// still credits nobody for them. Red on the base tree (01dd1bc): the generator left AddedByUserId null.
+    /// </summary>
+    [Fact]
+    public async Task GenerateFromMealPlanAsync_StampsTheCallerOnGeneratedItems_WithoutPlanningCredit()
+    {
+        var list = await _generator.GenerateFromMealPlanAsync(householdId: 1, mealPlanId: 1, listName: "Week 1 Shopping");
+        var items = await CommittedItemsAsync(list);
+
+        items.Should().NotBeEmpty();
+        items.Should().OnlyContain(i => i.AddedByUserId == 1 && !i.IsManuallyAdded);
+
+        var planning = new ChorePlanningCalculator().Compute(
+            [new FamilyCoordinationApp.Services.Dtos.MemberDto(1, "Alice", "A", null)], [], [], items, [], []);
+        planning.Single().ListItemsCurated.Should().Be(0, "generated rows earn no list-curation credit");
+    }
+
     [Fact]
     public async Task GenerateFromMealPlanAsync_RespectsHouseholdIsolation()
     {

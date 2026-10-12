@@ -13,9 +13,10 @@ public interface IMealPlanService
     /// Throws <see cref="NotFoundException"/> when the entry is not found and
     /// <see cref="DomainValidationException"/> when the target date falls outside the plan's week or the target
     /// slot already holds the same meal (mirrors the AddMealAsync duplicate guard).
-    /// Throws <see cref="ConcurrencyConflictException"/> when <paramref name="version"/> is stale.
+    /// Throws <see cref="ConcurrencyConflictException"/> when <paramref name="version"/> is stale. The updater is
+    /// the caller, stamped by the write step (quest e8bf9e1d).
     /// </summary>
-    Task<MealPlanEntry> MoveMealAsync(int householdId, int mealPlanId, int entryId, DateOnly newDate, MealType newMealType, uint version, int? userId = null, CancellationToken cancellationToken = default);
+    Task<MealPlanEntry> MoveMealAsync(int householdId, int mealPlanId, int entryId, DateOnly newDate, MealType newMealType, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Set how many people this meal is being cooked for; null clears the override back to "as the recipe is
@@ -23,7 +24,7 @@ public interface IMealPlanService
     /// Household-scoped: a cross-household id finds nothing and throws.
     /// Throws <see cref="ConcurrencyConflictException"/> when <paramref name="version"/> is stale.
     /// </summary>
-    Task<MealPlanEntry> SetMealServingsAsync(int householdId, int mealPlanId, int entryId, int? servings, uint version, int? userId = null, CancellationToken cancellationToken = default);
+    Task<MealPlanEntry> SetMealServingsAsync(int householdId, int mealPlanId, int entryId, int? servings, uint version, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Remove an entry. Household-scoped (M1); throws <see cref="ConcurrencyConflictException"/> when
