@@ -493,9 +493,9 @@ class RecipeEditStore {
       this.dirty = false;
       // The draft saved above keeps the conflicted base (serverVersion was still the old token), so reopening the
       // editor shows those edits again and their save answers 409 again: they were made on the old version.
-      // Editing this reloaded form autosaves over that draft with the new base.
+      // Editing this reloaded form autosaves over that draft with the new base; saving it deletes the draft.
       showToast({
-        message: 'Loaded the latest version. Your edits are kept as a draft until you edit this version.',
+        message: 'Loaded the latest version. Your edits are kept as a draft until you edit or save this version.',
         kind: 'info',
       });
     } catch (e) {
