@@ -1202,6 +1202,32 @@ public class TenantScopeArchitectureTests
             string.Join("\n", offenders));
     }
 
+    /// <summary>
+    /// Raw SQL in app source is exactly this allowlist (quest 92034618, fca#131 review yd2 opus 5). The fact above
+    /// accepts any raw SQL that carries a pragma; this one pins WHICH: a new raw statement, even pragma'd, is a
+    /// reviewed addition to this list. Keyed by file and trimmed line text (a moved line keeps its key).
+    /// </summary>
+    internal static readonly (string File, string Line)[] RawSqlAllowlist =
+    [
+        ("Services/Calendar/HouseholdCalendarTokenService.cs",
+            "await context.Database.ExecuteSqlInterpolatedAsync($\"SELECT pg_advisory_xact_lock({householdId})\", ct);"),
+    ];
+
+    [Fact]
+    public void Raw_SQL_in_src_is_exactly_the_allowlist()
+    {
+        var raw = new Regex(@"FromSql|SqlQuery|ExecuteSql");
+        var root = AppSourceRoot();
+        var sites = AppSourceFiles()
+            .SelectMany(file => File.ReadAllLines(file)
+                .Where(line => raw.IsMatch(line) && !line.TrimStart().StartsWith("//", StringComparison.Ordinal))
+                .Select(line => (File: Path.GetRelativePath(root, file).Replace('\\', '/'), Line: line.Trim())))
+            .ToList();
+
+        sites.Should().BeEquivalentTo(RawSqlAllowlist,
+            "raw SQL bypasses the tenant filter and the scan; each site is reviewed into RawSqlAllowlist");
+    }
+
     // ── Negative controls: the scanner fails on known-bad input ─────────────
 
     private static readonly string[] NcSets = ["Recipes"];
