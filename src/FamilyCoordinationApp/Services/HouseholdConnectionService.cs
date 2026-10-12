@@ -85,37 +85,43 @@ public class HouseholdConnectionService(
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    /// <summary>Attempts at invalidating before a persistent conflict is reported (409).</summary>
+    private const int MaxInvalidateAttempts = 3;
+
+    /// <summary>
+    /// Mark every active invite used. Idempotent under a race (quest f1dc7a24): a conflict rolls back the WHOLE save,
+    /// so it proves nothing about the other loaded rows. Each attempt therefore re-reads what is still active on a
+    /// fresh context and invalidates that; the call succeeds once nothing active remains (a double-clicked cancel, or
+    /// an accept consuming one of two codes), and answers 409 only if it keeps losing.
+    /// </summary>
     public async Task InvalidateInviteAsync(int householdId, CancellationToken cancellationToken = default)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
-
-        var activeInvites = await context.HouseholdInvites
-            .Where(i => !i.IsUsed && i.ExpiresAt > clock.UtcNow)
-            .ToListAsync(cancellationToken);
-
-        foreach (var invite in activeInvites)
+        for (var attempt = 1; ; attempt++)
         {
-            invite.IsUsed = true;
-            invite.UsedAt = clock.UtcNow;
-        }
+            await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        if (activeInvites.Count > 0)
-        {
+            var activeInvites = await context.HouseholdInvites
+                .Where(i => !i.IsUsed && i.ExpiresAt > clock.UtcNow)
+                .ToListAsync(cancellationToken);
+            if (activeInvites.Count == 0) return;
+
+            foreach (var invite in activeInvites)
+            {
+                invite.IsUsed = true;
+                invite.UsedAt = clock.UtcNow;
+            }
+
             try
             {
                 await context.SaveChangesOrConflictAsync(cancellationToken);
-            }
-            catch (ConcurrencyConflictException)
-            {
-                // Idempotent (quest f1dc7a24): the only writes to an invite row mark it used (another cancel, a
-                // generate's invalidate, or an accept), so a conflict here means the row is already in the state
-                // this call wanted. A double-clicked cancel succeeds instead of answering 409.
-                logger.LogInformation("Invite invalidation for household {HouseholdId} raced another write; already used",
-                    householdId);
+                logger.LogInformation("Invalidated {Count} active invite(s) for household {HouseholdId}",
+                    activeInvites.Count, householdId);
                 return;
             }
-            logger.LogInformation("Invalidated {Count} active invite(s) for household {HouseholdId}",
-                activeInvites.Count, householdId);
+            catch (ConcurrencyConflictException) when (attempt < MaxInvalidateAttempts)
+            {
+                logger.LogInformation("Invite invalidation for household {HouseholdId} raced another write (attempt {Attempt}); re-reading",
+                    householdId, attempt);            }
         }
     }
 
@@ -234,7 +240,8 @@ public class HouseholdConnectionService(
             // write (D9). Inert until WP-03's write step.
             using (context.Tenant.AllowCrossTenantWrite("invite accept writes UsedByHouseholdId on the inviting household's row"))
             {
-                // Checked against the invite's loaded xmin: a concurrent accept of the same code is a 409, not a 500.
+                // Checked against the invite's loaded xmin: a concurrent accept, cancel or regenerate of the same code
+                // (or a household delete's cascade) makes this a conflict, answered below as "already used".
                 await context.SaveChangesOrConflictAsync(cancellationToken);
             }
             await transaction.CommitAsync(cancellationToken);

@@ -92,6 +92,32 @@ public sealed class ConcurrencyOutcomeTests(PostgresContainerFixture postgres) :
         (await check.HouseholdInvites.CountAsync(i => !i.IsUsed)).Should().Be(0);
     }
 
+    /// <summary>
+    /// Council round 1 (consensus Major): with two active invites, an accept consuming one of them makes the cancel's
+    /// save conflict and roll back BOTH updates. The cancel must still leave nothing active, not answer success over a
+    /// surviving code.
+    /// </summary>
+    [Fact]
+    public async Task A_cancel_racing_an_accept_of_one_of_two_codes_still_leaves_no_active_invite()
+    {
+        await using (var seed = _plain.CreateDbContext())
+        {
+            seed.HouseholdInvites.Add(new HouseholdInvite
+            {
+                HouseholdId = Inviting, InviteCode = "XYZ789", CreatedByUserId = 1, CreatedAt = Now, ExpiresAt = DateTime.UtcNow.AddDays(1),
+            });
+            await seed.SaveChangesAsync();
+        }
+        var interleaved = new InterleavingDbContextFactory(_connectionString,
+            async () => (await Connections(_plain).AcceptInviteAsync(Code, Third, 3)).Success.Should().BeTrue());
+
+        await Connections(interleaved).InvalidateInviteAsync(Inviting);
+
+        await using var check = _plain.CreateDbContext();
+        (await check.HouseholdInvites.Where(i => !i.IsUsed).Select(i => i.InviteCode).ToListAsync())
+            .Should().BeEmpty("the code the accept didn't take must be cancelled too");
+    }
+
     [Fact]
     public async Task A_double_clicked_calendar_revoke_succeeds()
     {
