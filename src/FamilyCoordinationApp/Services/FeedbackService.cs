@@ -82,7 +82,7 @@ public sealed class FeedbackService(
         // a predicate added to a builder variable was invisible to the scanner). Read-only ⇒ AsNoTracking (council R6).
         if (isSiteAdmin)
         {
-            // TENANT-SCOPE-OK: the site admin's arm, gated by IsSiteAdmin at SettingsAdminEndpoints.cs:315 — every household's
+            // TENANT-SCOPE-OK: the site admin's arm, gated by IsSiteAdmin at SettingsAdminEndpoints.cs:325 — every household's
             // feedback, with OTHER households' authors (User is a tenant entity, so its include needs the Tenant bypass).
             return await context.Feedbacks.IgnoreQueryFilters(["Tenant"]).AsNoTracking().Include(f => f.User)
                 .OrderByDescending(f => f.CreatedAt).ToListAsync(cancellationToken);
@@ -116,7 +116,7 @@ public sealed class FeedbackService(
         Feedback? feedback;
         if (isSiteAdmin)
         {
-            // TENANT-SCOPE-OK: dual-mode (R-C1) — the site admin's arm reaches all households (IsSiteAdmin, SettingsAdminEndpoints.cs:315)
+            // TENANT-SCOPE-OK: dual-mode (R-C1) — the site admin's arm reaches all households (IsSiteAdmin, SettingsAdminEndpoints.cs:325)
             feedback = await context.Feedbacks.Where(f => f.Id == id).FirstOrDefaultAsync(cancellationToken);
         }
         else
