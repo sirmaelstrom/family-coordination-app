@@ -175,7 +175,7 @@ public class MealPlanService(
             "MealPlanEntry");
     }
 
-    public async Task<MealPlanEntry> MoveMealAsync(int householdId, int mealPlanId, int entryId, DateOnly newDate, MealType newMealType, uint version, int? userId = null, CancellationToken cancellationToken = default)
+    public async Task<MealPlanEntry> MoveMealAsync(int householdId, int mealPlanId, int entryId, DateOnly newDate, MealType newMealType, uint version, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
@@ -243,7 +243,6 @@ public class MealPlanService(
         int entryId,
         int? servings,
         uint version,
-        int? userId = null,
         CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);

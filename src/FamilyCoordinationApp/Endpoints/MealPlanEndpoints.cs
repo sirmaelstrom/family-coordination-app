@@ -132,7 +132,7 @@ public static class MealPlanEndpoints
         // Recipe nav, so the response reuses the ONE board projection (M9) with no extra query. Missing entry (404),
         // cross-week target / duplicate-in-slot (400) and a stale version (409) are answered by the /api exception branch.
         var entry = await mealPlanService.MoveMealAsync(
-            caller.HouseholdId, mealPlanId, entryId, req.Date, req.MealType, req.Version, caller.UserId, ct);
+            caller.HouseholdId, mealPlanId, entryId, req.Date, req.MealType, req.Version, ct);
         return Results.Ok(boardService.ProjectEntry(entry, entry.Recipe));
     }
 
@@ -147,7 +147,7 @@ public static class MealPlanEndpoints
     {
         // The service loads the Recipe nav, so the response reuses the ONE board projection (M9).
         var entry = await mealPlanService.SetMealServingsAsync(
-            caller.HouseholdId, mealPlanId, entryId, req.Servings, req.Version, caller.UserId, ct);
+            caller.HouseholdId, mealPlanId, entryId, req.Servings, req.Version, ct);
         return Results.Ok(boardService.ProjectEntry(entry, entry.Recipe));
     }
 

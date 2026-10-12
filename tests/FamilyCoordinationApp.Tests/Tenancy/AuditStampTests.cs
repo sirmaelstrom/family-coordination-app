@@ -278,6 +278,55 @@ public class AuditStampTests
         row.UpdatedByUserId.Should().Be(CallerUserId);
     }
 
+    [Fact]
+    public async Task Recipe_create_through_the_service_records_the_caller_as_creator()
+    {
+        // The one create path that no longer names its creator explicitly (the endpoints dropped CreatedByUserId).
+        var service = new RecipeService(Factory(TestTenancy.Caller(1, CallerUserId)), Mock.Of<IImageService>(),
+            NullLogger<RecipeService>.Instance, TestClocksAt(FixedNow));
+
+        await service.CreateRecipeAsync(new Recipe { HouseholdId = 1, Name = "soup" });
+
+        await using var check = Unfiltered();
+        var row = await check.Recipes.AsNoTracking().SingleAsync();
+        row.CreatedByUserId.Should().Be(CallerUserId, "the recipesAdded planning lane credits this column");
+        row.CreatedAt.Should().Be(FixedNow);
+    }
+
+    // ── the model: every audit column is mapped, and every mapping names a real int column ──
+
+    [Fact]
+    public void Every_entity_with_an_audit_column_opts_into_the_matching_stamp_and_each_mapping_is_an_int_column()
+    {
+        using var db = Unfiltered();
+        string[] createdBy = ["CreatedByUserId", "EnteredByUserId", "AddedByUserId"];
+        foreach (var type in db.Model.GetEntityTypes())
+        {
+            var clr = type.ClrType;
+            if (type.FindProperty(IUpdateAudited.UpdatedAtProperty) is not null)
+            {
+                typeof(IUpdateAudited).IsAssignableFrom(clr).Should().BeTrue($"{clr.Name} has UpdatedAt");
+            }
+            if (createdBy.Any(p => type.FindProperty(p) is not null))
+            {
+                typeof(ICreatedByAudited).IsAssignableFrom(clr).Should().BeTrue($"{clr.Name} has a create-side actor column");
+            }
+
+            var instance = typeof(IUpdateAudited).IsAssignableFrom(clr) || typeof(ICreatedByAudited).IsAssignableFrom(clr)
+                ? Activator.CreateInstance(clr) : null;
+            if (instance is ICreatedByAudited c) AssertIntColumn(type, c.CreatedByProperty);
+            if (instance is IUpdateAudited { UpdatedByProperty: { } u }) AssertIntColumn(type, u);
+        }
+
+        static void AssertIntColumn(Microsoft.EntityFrameworkCore.Metadata.IEntityType type, string name)
+        {
+            var property = type.FindProperty(name);
+            property.Should().NotBeNull($"{type.ClrType.Name}.{name} must be a mapped column");
+            // `is null or 0` only matches an int column: any other type would never be stamped.
+            new[] { typeof(int), typeof(int?) }.Should().Contain(property!.ClrType, $"{type.ClrType.Name}.{name} is an actor id");
+        }
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private static ShoppingListItem ShoppingItem(int? addedBy) => new()
