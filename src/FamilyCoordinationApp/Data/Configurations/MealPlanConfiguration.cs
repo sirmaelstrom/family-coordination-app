@@ -17,6 +17,12 @@ public class MealPlanConfiguration : IEntityTypeConfiguration<MealPlan>
         builder.Property(mp => mp.WeekStartDate)
             .IsRequired();
 
+        // One plan per household per week (quest f5ca4b08). Two concurrent first adds into a new week used to commit
+        // two plans; now the second insert is a unique violation, and IdGenerationHelper's retry re-reads the week
+        // and finds the winner's plan (MealPlanService.AddMealAsync / GetOrCreateMealPlanAsync).
+        builder.HasIndex(mp => new { mp.HouseholdId, mp.WeekStartDate })
+            .IsUnique();
+
         builder.Property(mp => mp.CreatedAt)
             .IsRequired();
 
