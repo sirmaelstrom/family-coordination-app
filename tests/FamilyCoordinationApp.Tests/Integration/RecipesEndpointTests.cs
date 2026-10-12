@@ -150,6 +150,17 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
         created.ingredients.Should().ContainSingle().Which.name.Should().BeEmpty();
     }
 
+    /// <summary>Council round 1 (opus, sonnet): a JSON null ingredient ELEMENT is dropped, not an NRE 500.</summary>
+    [Fact]
+    public async Task Create_WithANullIngredientElement_IsNotA500_AndDropsIt()
+    {
+        var body = WriteBody("Null Element Dish", ingredients: new object?[] { null, Ing("Salt", 1, "tsp") }!);
+
+        var created = await CreateAsync(ClientA, body);
+
+        created.ingredients.Should().ContainSingle().Which.name.Should().Be("Salt");
+    }
+
     [Fact]
     public async Task Search_MatchesIngredientName()
     {

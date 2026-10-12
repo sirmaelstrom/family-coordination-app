@@ -33,10 +33,28 @@ public class DiscordWebhookUrlTests
     [InlineData("https://discord.com@evil.example/api/webhooks/1/a")] // userinfo: the host is evil.example
     [InlineData("https://user:pw@discord.com/api/webhooks/1/a")]
     [InlineData("https://discord.com:8443/api/webhooks/1/a")]        // explicit port
+    [InlineData("https://discord.com:443/api/webhooks/1/a")]         // even the default one (council r1, codex)
+    [InlineData("https://ｄｉｓｃｏｒｄ.ｃｏｍ/api/webhooks/1/a")]       // full-width: IdnHost normalizes it to discord.com
+    [InlineData("https://xn--discrd-uta.com/api/webhooks/1/a")]      // a punycode look-alike
+    [InlineData("https://discord.com/api/webhooks/1/a b")]           // whitespace
+    [InlineData("https:/discord.com/api/webhooks/1/a")]              // one slash
     [InlineData("https://discord.com/api/v9/users/@me")]             // not a webhook path
     [InlineData("file:///etc/passwd")]
     [InlineData("not a url")]
     public void Refused(string url) => DiscordWebhookUrl.Problem(url).Should().NotBeNull();
+
+    /// <summary>
+    /// Council round 1 (astra, Major): 500 characters of multi-byte text protect to more than the 2000-character column
+    /// (measured 2,019). Only ASCII is accepted now, so the exact counterexample is refused.
+    /// </summary>
+    [Fact]
+    public void The_multi_byte_counterexample_that_overflowed_the_column_is_refused()
+    {
+        var url = "https://ｄｉｓｃｏｒｄ.ｃｏｍ/api/webhooks/1/" + new string('一', 465);
+        url.Length.Should().Be(500);
+        DiscordWebhookUrl.Problem(url).Should().NotBeNull();
+        DiscordWebhookUrl.Problem("https://discord.com/api/webhooks/1/" + new string('一', 10)).Should().NotBeNull();
+    }
 
     [Fact]
     public void A_URL_over_the_length_bound_is_refused_and_the_reason_never_echoes_it()

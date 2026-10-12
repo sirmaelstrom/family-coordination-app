@@ -926,8 +926,9 @@ public static class ChoresEndpoints
     ///   <item><description><c>webhookAction:"keep"</c> (or omitted/unknown) ⇒ leave the stored webhook
     ///   unchanged (<c>WebhookProvided = false</c>).</description></item>
     ///   <item><description><c>webhookAction:"set"</c> ⇒ replace/encrypt with <c>webhookUrl</c>
-    ///   (<c>WebhookProvided = true</c>, value = the supplied string; a blank string is treated as a clear by
-    ///   the service).</description></item>
+    ///   (<c>WebhookProvided = true</c>, value = the supplied string; an empty string is treated as a clear by
+    ///   the service, and anything else must be a Discord webhook URL (<c>DiscordWebhookUrl</c>) or it is a 400 —
+    ///   whitespace included).</description></item>
     ///   <item><description><c>webhookAction:"clear"</c> ⇒ clear the stored webhook
     ///   (<c>WebhookProvided = true, WebhookUrl = null</c>).</description></item>
     /// </list>
