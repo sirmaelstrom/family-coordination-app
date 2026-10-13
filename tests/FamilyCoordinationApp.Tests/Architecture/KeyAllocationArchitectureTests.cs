@@ -49,7 +49,8 @@ public sealed class KeyAllocationArchitectureTests
             keyNames.Should().Contain(["RecipeId", "ItemId", "EntryId", "CompletionId"],
                 "the key names come from the real model (guard the guard)");
             sites.Should().BeEmpty(
-                "a per-household id is allocated only by IKeyAllocator.NextKeyAsync inside InsertAsync (quest " +
+                "a per-household id is allocated only by IKeyAllocator (NextKeyAsync, or NextKeyFromSnapshot for " +
+                "the pinned read-and-replace) inside InsertAsync (quest " +
                 "0328001a); a second max+1 site is a second allocator with no retry of its own. Sites:\n{0}",
                 string.Join("\n", sites));
         }
@@ -75,6 +76,32 @@ public sealed class KeyAllocationArchitectureTests
                 "References:\n{0}", string.Join("\n", references));
         }
     }
+
+    /// <summary>
+    /// Rule 3: <c>NextKeyFromSnapshot</c> is the in-memory max the allocator keeps for one read-and-replace, so its
+    /// callers are pinned. A snapshot loaded through a <c>SoftDelete</c>-filtered query would reuse a deleted id and
+    /// collide on every retry; a new caller must show its snapshot is unfiltered and be added here.
+    /// </summary>
+    internal static readonly Dictionary<string, int> SnapshotCallersPerFile = new(StringComparer.Ordinal)
+    {
+        ["Services/ShoppingListGenerator.cs"] = 1, // RegenerateOnceAsync: ShoppingListItem has no SoftDelete filter
+    };
+
+    [Fact]
+    public void Rule3_NextKeyFromSnapshot_has_only_its_pinned_callers()
+    {
+        var calls = TenantScopeArchitectureTests.AppSources()
+            .Where(f => f.RelativePath != AllocatorFile)
+            .Select(f => (f.RelativePath, Count: TenantScopeArchitectureTests.ReferenceLines(f.Source, SnapshotCall).Count))
+            .Where(f => f.Count > 0)
+            .ToDictionary(f => f.RelativePath, f => f.Count, StringComparer.Ordinal);
+
+        calls.Should().BeEquivalentTo(SnapshotCallersPerFile,
+            "the snapshot allocator is for a read-and-replace over an unfiltered snapshot only (council round 1 on " +
+            "PR #145). In src: " + string.Join(", ", calls.Select(c => $"{c.Key}={c.Value}")));
+    }
+
+    private static readonly Regex SnapshotCall = new(@"\.\s*NextKeyFromSnapshot\s*\(", RegexOptions.Compiled);
 
     // ── Negative controls: feed the detectors known input ─────────────────────────────
 
@@ -114,6 +141,20 @@ public sealed class KeyAllocationArchitectureTests
             """;
 
         TenantScopeArchitectureTests.ReferenceLines(source, HelperReference).Should().Equal([3]);
+    }
+
+    [Fact]
+    public void NC_rule3_finds_a_snapshot_call_and_skips_a_mention_in_a_comment_or_string()
+    {
+        const string source = """
+            // keys.NextKeyFromSnapshot(ids) in a comment
+            var s = "keys.NextKeyFromSnapshot(ids)";
+            var next = keys
+                .NextKeyFromSnapshot(list.Items.Select(i => i.ItemId));
+            """;
+
+        // The match starts at the `.` of the split call, on line 4.
+        TenantScopeArchitectureTests.ReferenceLines(source, SnapshotCall).Should().Equal([4]);
     }
 
     // ── Detector ───────────────────────────────────────────────────────────────────────

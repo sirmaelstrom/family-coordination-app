@@ -35,8 +35,10 @@ public interface IKeyAllocator
     /// <summary>
     /// The next key after a snapshot the insert already loaded: <c>max(<paramref name="loadedKeys"/>) + 1</c>, or 1
     /// for an empty snapshot. For a read-and-replace (shopping-list regenerate) this is deliberately the snapshot's max,
-    /// not the database's: a rival insert committed since the load holds the snapshot's next id, so this insert
-    /// collides and the retry re-runs it from a fresh load. A database max would hand out fresh ids instead, and a
+    /// not the database's: absent a concurrent hard delete, a rival insert committed since the load holds the
+    /// snapshot's next id, so this insert collides and the retry re-runs it from a fresh load. The snapshot must not
+    /// be <c>SoftDelete</c>-filtered (a deleted id would be reused and collide on every retry); callers are pinned by
+    /// <c>KeyAllocationArchitectureTests</c> rule 3. A database max would hand out fresh ids instead, and a
     /// stale snapshot's replace would then leave both rows (council round 1 on PR #145). Throws like
     /// <see cref="NextKeyAsync{TEntity}"/> outside <see cref="InsertAsync{TResult}"/>.
     /// </summary>
