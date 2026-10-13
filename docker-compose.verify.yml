@@ -40,7 +40,8 @@ services:
       retries: 30
 
   app:
-    image: ${FAMILYAPP_IMAGE:?set FAMILYAPP_IMAGE to the image under test}    depends_on:
+    image: ${FAMILYAPP_IMAGE:?set FAMILYAPP_IMAGE to the image under test}
+    depends_on:
       postgres:
         condition: service_healthy
     secrets:

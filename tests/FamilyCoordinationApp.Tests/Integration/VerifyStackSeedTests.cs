@@ -58,6 +58,37 @@ public sealed class VerifyStackSeedTests(PostgresContainerFixture postgres)
         compose.Should().NotContain(line => line.Contains("nginx"));
     }
 
+    [Fact]
+    public void The_compose_file_is_valid_compose()
+    {
+        // The line checks above cannot see a broken YAML document (measured: a joined line passed them and failed
+        // `compose up` at runtime). Docker is already required by this collection (Testcontainers), so compose is here.
+        var secret = Path.GetTempFileName();
+        try
+        {
+            var start = new System.Diagnostics.ProcessStartInfo("docker")
+            {
+                WorkingDirectory = RepoRoot,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            foreach (var arg in new[] { "compose", "-p", "familyapp-verify-test", "-f", "docker-compose.verify.yml", "config", "--quiet" })
+                start.ArgumentList.Add(arg);
+            start.Environment["FAMILYAPP_IMAGE"] = "familyapp:verify-test";
+            start.Environment["VERIFY_POSTGRES_SECRET_FILE"] = secret;
+            using var process = System.Diagnostics.Process.Start(start)!;
+            var stderr = process.StandardError.ReadToEndAsync();
+            process.StandardOutput.ReadToEnd();
+            process.WaitForExit(60_000).Should().BeTrue("docker compose config must finish");
+            process.ExitCode.Should().Be(0, "docker compose config rejected docker-compose.verify.yml: {0}", stderr.Result);
+        }
+        finally
+        {
+            File.Delete(secret);
+        }
+    }
+
     private async Task<DbContextOptions<ApplicationDbContext>> MigratedAsync()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
