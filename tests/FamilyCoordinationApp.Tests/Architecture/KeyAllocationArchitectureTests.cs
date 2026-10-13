@@ -13,7 +13,8 @@ namespace FamilyCoordinationApp.Tests.Architecture;
 /// The scan reads the comment- and string-stripped <c>src</c>
 /// (<see cref="TenantScopeArchitectureTests.StripCommentsAndStrings"/>), Migrations excluded.
 /// <list type="bullet">
-/// <item><b>Rule 1:</b> no statement outside the allocator calls <c>.Max(</c> / <c>.MaxAsync(</c> and names a key
+/// <item><b>Rule 1:</b> no statement outside the allocator calls <c>.Max(</c> / <c>.MaxAsync(</c> / <c>.MaxBy(</c>
+/// (with or without explicit type arguments) and names a key
 /// column (<c>.RecipeId</c>, <c>.ItemId</c>, …). The key names come from the real model: every int primary-key property
 /// other than <c>HouseholdId</c>. <c>Math.Max</c> is not a query and is skipped.</item>
 /// <item><b>Rule 2:</b> nothing outside the allocator and the helper's own file names <c>IdGenerationHelper</c>.</item>
@@ -29,7 +30,9 @@ public sealed class KeyAllocationArchitectureTests
     internal const string AllocatorFile = "Services/KeyAllocator.cs";
     internal const string HelperFile = "Services/IdGenerationHelper.cs";
 
-    private static readonly Regex MaxCall = new(@"(?<!\bMath\s*)\.\s*Max(?:Async)?\s*\(", RegexOptions.Compiled);
+    // .Max( / .MaxAsync( / .MaxBy( / .MaxByAsync(, each optionally with explicit type arguments (.Max<int?>().
+    private static readonly Regex MaxCall = new(
+        @"(?<!\bMath\s*)\.\s*Max(?:By)?(?:Async)?\s*(?:<[^<>()]*>)?\s*\(", RegexOptions.Compiled);
     private static readonly Regex HelperReference = new(@"\bIdGenerationHelper\b", RegexOptions.Compiled);
 
     [Fact]
@@ -87,12 +90,18 @@ public sealed class KeyAllocationArchitectureTests
             var hi = Math.Max(invite.HouseholdId, other);
             // context.Recipes.MaxAsync(r => r.RecipeId) in a comment
             var label = "x.Max(r => r.RecipeId)";
+            var top = list.Items.MaxBy(i => i.ItemId);
+            var g = await context.Recipes.Select(r => (int?)r.RecipeId).MaxAsync<int?>(ct);
+            var t = list.Items.Max<ShoppingListItem, int>(i => i.ItemId);
             """;
 
         KeyMaxSites("X.cs", source, ["RecipeId", "ItemId", "CompletionId"]).Should().Equal(
             "X.cs:1: RecipeId",
             "X.cs:3: ItemId",
-            "X.cs:4: CompletionId");
+            "X.cs:4: CompletionId",
+            "X.cs:9: ItemId",
+            "X.cs:10: RecipeId",
+            "X.cs:11: ItemId");
     }
 
     [Fact]

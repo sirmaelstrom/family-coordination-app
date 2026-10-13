@@ -52,6 +52,17 @@ public sealed class KeyAllocatorTests
     }
 
     [Fact]
+    public async Task A_snapshot_key_is_one_past_the_snapshot_and_refused_outside_InsertAsync()
+    {
+        var keys = await TestKeys.Allocator.InsertAsync("Test", _ => Task.FromResult(
+            (TestKeys.Allocator.NextKeyFromSnapshot([3, 7, 5]), TestKeys.Allocator.NextKeyFromSnapshot([]))));
+
+        keys.Should().Be((8, 1));
+        FluentActions.Invoking(() => TestKeys.Allocator.NextKeyFromSnapshot([1]))
+            .Should().Throw<InvalidOperationException>().WithMessage("*outside IKeyAllocator.InsertAsync*");
+    }
+
+    [Fact]
     public async Task After_InsertAsync_returns_the_flow_is_outside_again()
     {
         await TestKeys.Allocator.InsertAsync("Test", _ => Task.FromResult(0));

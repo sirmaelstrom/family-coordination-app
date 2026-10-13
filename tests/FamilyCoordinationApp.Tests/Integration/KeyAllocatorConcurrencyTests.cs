@@ -50,7 +50,7 @@ public sealed class KeyAllocatorConcurrencyTests(PostgresContainerFixture postgr
     {
         var rival = Rooms(Plain(HouseholdA, userId: 1));
         Room? rivalRoom = null;
-        var interceptor = new RivalBeforeInsert("\"Rooms\"", async () => rivalRoom = await rival.CreateRoomAsync(HouseholdA, "Rival", "🛁"));
+        var interceptor = RivalBeforeInsert("\"Rooms\"", async () => rivalRoom = await rival.CreateRoomAsync(HouseholdA, "Rival", "🛁"));
         var first = Rooms(new InterceptedFactory(_connectionString, interceptor, TestTenancy.Caller(HouseholdA, 1)));
 
         var firstRoom = await first.CreateRoomAsync(HouseholdA, "First", "🍳");
@@ -70,7 +70,7 @@ public sealed class KeyAllocatorConcurrencyTests(PostgresContainerFixture postgr
         var list = await setup.CreateShoppingListAsync(HouseholdA, "Groceries");
 
         var rival = Lists(Plain(HouseholdA, userId: 1));
-        var interceptor = new RivalBeforeInsert("\"ShoppingListItems\"", () =>
+        var interceptor = RivalBeforeInsert("\"ShoppingListItems\"", () =>
             rival.AddManualItemAsync(new ShoppingListItem { ShoppingListId = list.ShoppingListId, Name = "Rival milk", IsManuallyAdded = true }));
         var first = Lists(new InterceptedFactory(_connectionString, interceptor, TestTenancy.Caller(HouseholdA, 1)));
 
@@ -125,8 +125,54 @@ public sealed class KeyAllocatorConcurrencyTests(PostgresContainerFixture postgr
     private static RecipeService Recipes(IDbContextFactory<ApplicationDbContext> factory) =>
         new(factory, Mock.Of<IImageService>(), NullLogger<RecipeService>.Instance, Services.TestClocks.System, Services.TestKeys.Allocator);
 
-    /// <summary>Runs <paramref name="rival"/> to completion once, just before the first <c>INSERT INTO</c> <paramref name="table"/>.</summary>
-    private sealed class RivalBeforeInsert(string table, Func<Task> rival) : DbCommandInterceptor
+    /// <summary>
+    /// Council round 1 on PR #145 (reproduced by the challenge seat): regenerate A loads a linked list with no generated
+    /// items; a rival regenerate commits its generated set before A allocates. A must not add a second set. The rival
+    /// fires on A's meal-plan load, which comes after A's list load and before its id allocation. With the snapshot max
+    /// A's first id collides with the rival's, the retry re-reads the list and replaces the rival's set; with a
+    /// database max (the round-1 head, a0cabe5) A took fresh ids and both sets survived.
+    /// </summary>
+    [Fact]
+    public async Task A_regenerate_racing_a_rival_regenerate_leaves_one_generated_set()
+    {
+        var plain = Plain(HouseholdA, userId: 1);
+        var recipe = await Recipes(plain).CreateRecipeAsync(new Recipe
+        {
+            HouseholdId = HouseholdA,
+            Name = "Pancakes",
+            Ingredients =
+            [
+                new RecipeIngredient { Name = "flour", Quantity = 2, Unit = "cup", SortOrder = 0 },
+                new RecipeIngredient { Name = "eggs", Quantity = 3, SortOrder = 1 },
+            ],
+        });
+        var entry = await MealPlans(plain).AddMealAsync(HouseholdA, new DateOnly(2026, 10, 13), MealType.Breakfast, recipe.RecipeId, null, userId: 1);
+        var list = await Lists(plain).CreateShoppingListAsync(HouseholdA, "Linked", entry.MealPlanId);
+
+        var rival = Generator(Plain(HouseholdA, userId: 1));
+        var interceptor = new RivalBeforeCommand("\"MealPlanEntries\"", () => rival.RegenerateShoppingListAsync(HouseholdA, list.ShoppingListId));
+        var first = Generator(new InterceptedFactory(_connectionString, interceptor, TestTenancy.Caller(HouseholdA, 1)));
+
+        await first.RegenerateShoppingListAsync(HouseholdA, list.ShoppingListId);
+
+        interceptor.Fired.Should().BeTrue("the rival must have committed after the first regenerate loaded the list");
+        await using var verify = new PostgresDbContextFactory(_connectionString).CreateDbContext();
+        (await verify.ShoppingListItems.Where(i => i.HouseholdId == HouseholdA && i.ShoppingListId == list.ShoppingListId && !i.IsManuallyAdded)
+                .Select(i => i.Name).ToListAsync())
+            .Should().BeEquivalentTo(["flour", "eggs"], "one regenerate's set replaces the other's; two sets is the race");
+    }
+
+    private static MealPlanService MealPlans(IDbContextFactory<ApplicationDbContext> factory) =>
+        new(factory, NullLogger<MealPlanService>.Instance, Services.TestClocks.System, Services.TestKeys.Allocator);
+
+    private static ShoppingListGenerator Generator(IDbContextFactory<ApplicationDbContext> factory) =>
+        new(factory, Lists(factory), new UnitConverter(), NullLogger<ShoppingListGenerator>.Instance,
+            Services.TestClocks.System, Services.TestKeys.Allocator);
+
+    private static RivalBeforeCommand RivalBeforeInsert(string table, Func<Task> rival) => new("INSERT INTO " + table, rival);
+
+    /// <summary>Runs <paramref name="rival"/> to completion once, just before the first command containing <paramref name="marker"/>.</summary>
+    private sealed class RivalBeforeCommand(string marker, Func<Task> rival) : DbCommandInterceptor
     {
         public bool Fired { get; private set; }
 
@@ -146,7 +192,7 @@ public sealed class KeyAllocatorConcurrencyTests(PostgresContainerFixture postgr
 
         private async Task MaybeFireAsync(DbCommand command)
         {
-            if (Fired || !command.CommandText.Contains("INSERT INTO " + table, StringComparison.Ordinal))
+            if (Fired || !command.CommandText.Contains(marker, StringComparison.Ordinal))
             {
                 return;
             }

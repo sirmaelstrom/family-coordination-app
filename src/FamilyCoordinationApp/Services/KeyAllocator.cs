@@ -29,11 +29,7 @@ public sealed class KeyAllocator(ILogger<KeyAllocator> logger) : IKeyAllocator
         IQueryable<TEntity> scope, Expression<Func<TEntity, int>> key, CancellationToken cancellationToken)
         where TEntity : class
     {
-        if (!InsideInsert.Value)
-        {
-            throw new InvalidOperationException(
-                $"A {typeof(TEntity).Name} key was allocated outside IKeyAllocator.InsertAsync; nothing would retry a collision.");
-        }
+        EnsureInsideInsert(typeof(TEntity).Name);
 
         var max = await scope
             .IgnoreQueryFilters(["SoftDelete"])
@@ -42,5 +38,20 @@ public sealed class KeyAllocator(ILogger<KeyAllocator> logger) : IKeyAllocator
             .MaxAsync(cancellationToken);
 
         return (max ?? 0) + 1;
+    }
+
+    public int NextKeyFromSnapshot(IEnumerable<int> loadedKeys)
+    {
+        EnsureInsideInsert("snapshot");
+        return loadedKeys.DefaultIfEmpty(0).Max() + 1;
+    }
+
+    private static void EnsureInsideInsert(string what)
+    {
+        if (!InsideInsert.Value)
+        {
+            throw new InvalidOperationException(
+                $"A {what} key was allocated outside IKeyAllocator.InsertAsync; nothing would retry a collision.");
+        }
     }
 }

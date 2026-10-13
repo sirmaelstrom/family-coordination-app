@@ -223,10 +223,13 @@ public class ShoppingListGenerator(
 
         var consolidationResults = await ConsolidateScaledIngredientsAsync(allIngredients, autoConsolidate: true);
 
-        // The fresh rows take ids above every existing one (removed generated rows included: they are deleted in
-        // this same save, so their ids are not free yet).
-        var nextItemId = await keys.NextKeyAsync(
-            context.ShoppingListItems.Where(i => i.ShoppingListId == shoppingListId), i => i.ItemId, cancellationToken);
+        // The fresh rows take ids above every row in the LOADED snapshot (removed generated rows included: they are
+        // deleted in this same save, so their ids are not free yet). The snapshot's max, not the database's, on
+        // purpose: a rival regenerate or manual add committed since the load holds the snapshot's next id, so this
+        // save collides and the retry re-runs from a fresh load. With the database max, a stale snapshot holding no
+        // generated rows would remove nothing and add a second generated set (council round 1 on PR #145,
+        // KeyAllocatorConcurrencyTests).
+        var nextItemId = keys.NextKeyFromSnapshot(existingList.Items.Select(i => i.ItemId));
 
         context.ShoppingListItems.RemoveRange(existingList.Items.Where(i => !i.IsManuallyAdded));
 

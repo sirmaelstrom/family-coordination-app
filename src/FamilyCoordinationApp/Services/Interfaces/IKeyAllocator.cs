@@ -16,7 +16,10 @@ public interface IKeyAllocator
     /// <summary>
     /// Runs <paramref name="insert"/> (passed the 1-based attempt number), re-running it from the start when its save
     /// raises a unique violation, up to 3 attempts. The operation must open its own context per attempt so a retry
-    /// re-reads the max. After the last attempt it throws <see cref="InvalidOperationException"/>.
+    /// re-reads the max, and must save inside the delegate: a save after it returns has no retry around it (the
+    /// runtime check sees the async scope, not where the save happens). After the last attempt it throws
+    /// <see cref="InvalidOperationException"/>. Retry warnings log under the <c>KeyAllocator</c> category, naming
+    /// <paramref name="entityName"/>.
     /// </summary>
     Task<TResult> InsertAsync<TResult>(string entityName, Func<int, Task<TResult>> insert);
 
@@ -28,4 +31,14 @@ public interface IKeyAllocator
     /// </summary>
     Task<int> NextKeyAsync<TEntity>(IQueryable<TEntity> scope, Expression<Func<TEntity, int>> key, CancellationToken cancellationToken)
         where TEntity : class;
+
+    /// <summary>
+    /// The next key after a snapshot the insert already loaded: <c>max(<paramref name="loadedKeys"/>) + 1</c>, or 1
+    /// for an empty snapshot. For a read-and-replace (shopping-list regenerate) this is deliberately the snapshot's max,
+    /// not the database's: a rival insert committed since the load holds the snapshot's next id, so this insert
+    /// collides and the retry re-runs it from a fresh load. A database max would hand out fresh ids instead, and a
+    /// stale snapshot's replace would then leave both rows (council round 1 on PR #145). Throws like
+    /// <see cref="NextKeyAsync{TEntity}"/> outside <see cref="InsertAsync{TResult}"/>.
+    /// </summary>
+    int NextKeyFromSnapshot(IEnumerable<int> loadedKeys);
 }
