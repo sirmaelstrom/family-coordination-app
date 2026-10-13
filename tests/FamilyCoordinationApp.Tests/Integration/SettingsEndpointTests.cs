@@ -98,6 +98,28 @@ public sealed class SettingsEndpointTests(PostgresContainerFixture postgres) : I
     }
 
     [Fact]
+    public async Task Categories_DuplicateActiveName_Is409WithMessage_OnCreateAndRename()
+    {
+        // Quest d9da6ca4: the (HouseholdId, Name) unique index used to be retried as an id collision and answer 500.
+        var client = ClientA;
+        await CreateCategoryAsync(client, "Produce");
+        var dairy = await CreateCategoryAsync(client, "Dairy");
+
+        var dup = await client.PostAsJsonAsync(CategoriesUrl, new { name = "Produce", iconEmoji = (string?)null, color = "#123456" }, Json);
+        dup.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await dup.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("message").GetString()
+            .Should().Be("A category with that name already exists.");
+
+        var rename = await client.PutAsJsonAsync($"{CategoriesUrl}/{dairy.categoryId}",
+            new { name = "Produce", iconEmoji = (string?)null, color = "#123456" }, Json);
+        rename.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var list = (await client.GetFromJsonAsync<CategoryList>(CategoriesUrl, Json))!;
+        list.active.Count(c => c.name == "Produce").Should().Be(1);
+        list.active.Should().Contain(c => c.categoryId == dairy.categoryId && c.name == "Dairy");
+    }
+
+    [Fact]
     public async Task Categories_InUse_FalseWhenNoIngredients_And404ForMissing()
     {
         var client = ClientA;
