@@ -22,7 +22,8 @@ public class ChoreService(
     ChoreStatusCalculator calculator,
     IImageService imageService,
     TimeProvider timeProvider,
-    ILogger<ChoreService> logger) : IChoreService
+    ILogger<ChoreService> logger,
+    IKeyAllocator keys) : IChoreService
 {
     private DateTime UtcNow() => timeProvider.GetUtcNow().UtcDateTime;
 
@@ -36,7 +37,8 @@ public class ChoreService(
 
         var now = UtcNow();
 
-        return await IdGenerationHelper.ExecuteWithRetryAsync(
+        return await keys.InsertAsync(
+            "Chore",
             async (attempt) =>
             {
                 await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -61,13 +63,10 @@ public class ChoreService(
                 var desiredRoomIds = ResolveDesiredRoomIds(cmd.RoomIds, forUpdate: false)!;
                 await EnsureRoomsExistAsync(context, householdId, desiredRoomIds, cancellationToken);
 
-                var maxId = await context.Chores
-                    .MaxAsync(c => (int?)c.ChoreId, cancellationToken) ?? 0;
-
                 var chore = new Chore
                 {
                     HouseholdId = householdId,
-                    ChoreId = maxId + 1,
+                    ChoreId = await keys.NextKeyAsync(context.Chores, c => c.ChoreId, cancellationToken),
                     Name = cmd.Name.Trim(),
                     Description = string.IsNullOrWhiteSpace(cmd.Description) ? null : cmd.Description.Trim(),
                     Icon = cmd.Icon ?? string.Empty,
@@ -113,7 +112,7 @@ public class ChoreService(
                     }
                 }
 
-                // Write the ChoreRoom membership rows for the resolved set (ChoreId is known — maxId+1 — so
+                // Write the ChoreRoom membership rows for the resolved set (ChoreId is known — allocated above — so
                 // this saves in the same transaction; EF orders the chore insert before its memberships).
                 await ChoreRoomMembership.ReconcileMembershipsAsync(context, householdId, chore.ChoreId, desiredRoomIds, cancellationToken);
 
@@ -121,9 +120,7 @@ public class ChoreService(
 
                 logger.LogInformation("Created Chore {ChoreId} for household {HouseholdId}", chore.ChoreId, householdId);
                 return chore;
-            },
-            logger,
-            "Chore");
+            });
     }
 
     public async Task<Chore> UpdateChoreAsync(int householdId, int choreId, UpdateChoreCommand cmd, uint version, CancellationToken cancellationToken = default)

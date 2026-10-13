@@ -99,6 +99,8 @@ builder.Services.AddScoped<SetupService>();
 builder.Services.AddSingleton<SetupCompletionLatch>();
 // Login-time profile refresh (OnCreatingTicket below) — replaces the per-request write in WhitelistedEmailHandler.
 builder.Services.AddScoped<LoginProfileService>();
+// The one allocator for per-household composite-key ids (max+1 plus the unique-violation retry, quest 0328001a).
+builder.Services.AddSingleton<IKeyAllocator, KeyAllocator>();
 builder.Services.AddScoped<IIngredientParser, IngredientParser>();
 builder.Services.AddScoped<ICategoryInferenceService, CategoryInferenceService>();
 builder.Services.AddScoped<IImageService, ImageService>();

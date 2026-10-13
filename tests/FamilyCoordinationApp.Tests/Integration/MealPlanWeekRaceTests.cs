@@ -13,7 +13,7 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// Quest f5ca4b08: two first adds into the same new week must leave ONE plan for that week. The interleaving is forced
 /// against real Postgres: an interceptor holds the first add at its <c>max("MealPlanId")</c> read, after its week read
 /// found nothing, and commits a rival add for the same week there. With the unique index on
-/// <c>(HouseholdId, WeekStartDate)</c> the first add's insert is a unique violation, <c>IdGenerationHelper</c> retries,
+/// <c>(HouseholdId, WeekStartDate)</c> the first add's insert is a unique violation, <c>IKeyAllocator.InsertAsync</c> retries,
 /// and the retry finds the rival's plan.
 /// <para>The schema comes from the real migrations (<c>MigrateAsync</c>), so the test fails if the migration lacks the
 /// index even when the model has it. Negative control: on the base tree (no index) it is red with 2 plans for the week
@@ -60,7 +60,7 @@ public sealed class MealPlanWeekRaceTests(PostgresContainerFixture postgres) : I
     }
 
     private static MealPlanService Service(IDbContextFactory<ApplicationDbContext> factory) =>
-        new(factory, NullLogger<MealPlanService>.Instance, Services.TestClocks.System);
+        new(factory, NullLogger<MealPlanService>.Instance, Services.TestClocks.System, Services.TestKeys.Allocator);
 
     /// <summary>Runs <paramref name="rival"/> to completion once, just before the first <c>max("MealPlanId")</c> read.</summary>
     private sealed class RivalAtMaxRead(Func<Task> rival) : DbCommandInterceptor

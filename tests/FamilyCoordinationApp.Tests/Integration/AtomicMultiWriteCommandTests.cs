@@ -178,10 +178,11 @@ public sealed class AtomicMultiWriteCommandTests(PostgresContainerFixture postgr
 
     private static ShoppingListGenerator Generator(IDbContextFactory<ApplicationDbContext> factory) =>
         new(factory,
-            new ShoppingListService(factory, NullLogger<ShoppingListService>.Instance, TestClocks.System),
+            new ShoppingListService(factory, NullLogger<ShoppingListService>.Instance, TestClocks.System, TestKeys.Allocator),
             new UnitConverter(),
             NullLogger<ShoppingListGenerator>.Instance,
-            TestClocks.System);
+            TestClocks.System,
+            TestKeys.Allocator);
 
     [Fact]
     public async Task Generate_with_a_fault_on_one_item_leaves_no_list()
@@ -259,7 +260,7 @@ public sealed class AtomicMultiWriteCommandTests(PostgresContainerFixture postgr
         var connectionString = await MigratedDatabaseAsync();
         var householdId = await SeedHouseholdAsync(connectionString, (_, _) => { });
         var factory = new FaultingFactory(connectionString, TestTenancy.Caller(householdId), null);
-        var service = new MealPlanService(factory, NullLogger<MealPlanService>.Instance, TestClocks.System);
+        var service = new MealPlanService(factory, NullLogger<MealPlanService>.Instance, TestClocks.System, TestKeys.Allocator);
         var newWeek = WeekStart.AddDays(14);
 
         // Recipe 999 does not exist: the entry's (HouseholdId, RecipeId) FK refuses the insert (23503).
@@ -278,7 +279,7 @@ public sealed class AtomicMultiWriteCommandTests(PostgresContainerFixture postgr
         var connectionString = await MigratedDatabaseAsync();
         var householdId = await SeedHouseholdAsync(connectionString, (_, _) => { });
         var factory = new FaultingFactory(connectionString, TestTenancy.Caller(householdId), null);
-        var service = new MealPlanService(factory, NullLogger<MealPlanService>.Instance, TestClocks.System);
+        var service = new MealPlanService(factory, NullLogger<MealPlanService>.Instance, TestClocks.System, TestKeys.Allocator);
         var newWeek = WeekStart.AddDays(14);
 
         var entry = await service.AddMealAsync(householdId, newWeek.AddDays(2), MealType.Lunch, recipeId: null, customMealName: "Leftovers");

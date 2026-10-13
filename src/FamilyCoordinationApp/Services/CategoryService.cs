@@ -8,7 +8,8 @@ namespace FamilyCoordinationApp.Services;
 public class CategoryService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     ILogger<CategoryService> logger,
-    IHouseholdClock clock) : ICategoryService
+    IHouseholdClock clock,
+    IKeyAllocator keys) : ICategoryService
 {
 
     public async Task<List<Category>> GetCategoriesAsync(int householdId, bool includeDeleted = false, CancellationToken cancellationToken = default)
@@ -38,12 +39,13 @@ public class CategoryService(
 
     public async Task<Category> CreateCategoryAsync(Category category, CancellationToken cancellationToken = default)
     {
-        return await IdGenerationHelper.ExecuteWithRetryAsync(
+        return await keys.InsertAsync(
+            "Category",
             async (attempt) =>
             {
                 await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-                category.CategoryId = await GetNextCategoryIdInternalAsync(context, category.HouseholdId, cancellationToken);
+                category.CategoryId = await keys.NextKeyAsync(context.Categories, c => c.CategoryId, cancellationToken);
 
                 // Set sort order to end of list if not specified
                 if (category.SortOrder == 0)
@@ -59,9 +61,7 @@ public class CategoryService(
                 logger.LogInformation("Created category {CategoryId} for household {HouseholdId}", category.CategoryId, category.HouseholdId);
 
                 return category;
-            },
-            logger,
-            "Category");
+            });
     }
 
     public async Task<Category> UpdateCategoryAsync(Category category, CancellationToken cancellationToken = default)
@@ -147,15 +147,6 @@ public class CategoryService(
         }
 
         await context.SaveChangesAsync(cancellationToken);
-    }
-
-    private static async Task<int> GetNextCategoryIdInternalAsync(ApplicationDbContext context, int householdId, CancellationToken cancellationToken)
-    {
-        var maxId = await context.Categories
-            .IgnoreQueryFilters(["SoftDelete"])
-            .MaxAsync(c => (int?)c.CategoryId, cancellationToken) ?? 0;
-
-        return maxId + 1;
     }
 
     public async Task<bool> HasIngredientsAsync(int householdId, string categoryName, CancellationToken cancellationToken = default)

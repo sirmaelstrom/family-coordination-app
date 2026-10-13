@@ -83,7 +83,8 @@ public sealed class ChoreServiceConcurrencyTests(PostgresContainerFixture postgr
             new ChoreStatusCalculator(),
             Mock.Of<IImageService>(),
             new FamilyCoordinationApp.Tests.Services.FixedTimeProvider(Now),
-            NullLogger<ChoreService>.Instance);
+            NullLogger<ChoreService>.Instance,
+            FamilyCoordinationApp.Tests.Services.TestKeys.Allocator);
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -116,7 +117,8 @@ public sealed class ChoreServiceConcurrencyTests(PostgresContainerFixture postgr
             new ChoreStatusCalculator(),
             Mock.Of<IImageService>(),
             new FamilyCoordinationApp.Tests.Services.FixedTimeProvider(Now),
-            NullLogger<ChoreService>.Instance);
+            NullLogger<ChoreService>.Instance,
+            FamilyCoordinationApp.Tests.Services.TestKeys.Allocator);
 
         var claimAlice = Attempt(() => racingService.ClaimAsync(HouseholdId, PileChoreId, Alice, version));
         var claimBob = Attempt(() => racingService.ClaimAsync(HouseholdId, PileChoreId, Bob, version));

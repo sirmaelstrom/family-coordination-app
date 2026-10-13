@@ -198,7 +198,6 @@ public static class SeedData
         const int yard = 5;
 
         var choreId = 0;
-        var completionId = 0;
 
         // Local helper: build a chore with the invariant trio + effort tier → points kept consistent
         // (P3 — never hand-type points that disagree with the tier; ChoreEffort.PointsFor is the SoT).
@@ -254,7 +253,7 @@ public static class SeedData
                 {
                     HouseholdId = householdId,
                     ChoreId = chore.ChoreId,
-                    CompletionId = ++completionId,
+                    // CompletionId is left unset: the column's identity assigns it (quest 0328001a).
                     CompletedByUserId = userId,
                     CompletedAt = completedAt,
                     EffortPointsSnapshot = chore.EffortPoints,
@@ -435,20 +434,13 @@ public static class SeedData
 
         if (choreIds.Count == 0) return;
 
-        // ---- Determine next CompletionId to avoid PK collisions. ----
-        var maxCompletionId = await context.ChoreCompletions
-            .Where(cc => cc.HouseholdId == householdId)
-            .Select(cc => (int?)cc.CompletionId)
-            .MaxAsync() ?? 0;
-
-        var completionId = maxCompletionId;
-
+        // CompletionId is left unset: the column's identity assigns it, as it does for ChoreService's completions
+        // (quest 0328001a). A max+1 id here was a second allocator on the same column.
         ChoreCompletion MakeCompletion(int choreId, int userId, double daysAgo, EffortTier effort) =>
             new ChoreCompletion
             {
                 HouseholdId = householdId,
                 ChoreId = choreId,
-                CompletionId = ++completionId,
                 CompletedByUserId = userId,
                 CompletedAt = now.AddDays(-daysAgo),
                 EffortPointsSnapshot = ChoreEffort.PointsFor(effort),
