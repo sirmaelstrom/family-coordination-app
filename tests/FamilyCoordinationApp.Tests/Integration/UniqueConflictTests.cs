@@ -82,15 +82,18 @@ public sealed class UniqueConflictTests(PostgresContainerFixture postgres) : IAs
     }
 
     [Fact]
-    public async Task Every_retryable_constraint_name_exists_in_the_migrated_schema()
+    public async Task Every_retryable_constraint_name_is_a_unique_index_in_the_migrated_schema()
     {
+        // A primary key and a unique index both carry a unique index of the constraint's name (pg_index.indisunique);
+        // that name is what Postgres reports as the 23505's ConstraintName.
         await using var ctx = Plain().CreateDbContext();
-        var indexNames = await ctx.Database
-            .SqlQueryRaw<string>("SELECT relname::text AS \"Value\" FROM pg_class WHERE relkind = 'i'")
+        var uniqueIndexNames = await ctx.Database
+            .SqlQueryRaw<string>(
+                "SELECT c.relname::text AS \"Value\" FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid WHERE i.indisunique")
             .ToListAsync();
 
-        IdGenerationHelper.RetryableConstraints.Should().BeSubsetOf(indexNames,
-            "a misspelled or renamed constraint would silently turn its key collisions into 409s");
+        IdGenerationHelper.RetryableConstraints.Should().BeSubsetOf(uniqueIndexNames,
+            "a misspelled, renamed or non-unique constraint would silently turn its key collisions into 409s");
     }
 
     private PostgresDbContextFactory Plain() =>

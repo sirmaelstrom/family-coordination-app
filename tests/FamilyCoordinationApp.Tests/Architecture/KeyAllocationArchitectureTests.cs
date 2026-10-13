@@ -103,6 +103,45 @@ public sealed class KeyAllocationArchitectureTests
 
     private static readonly Regex SnapshotCall = new(@"\.\s*NextKeyFromSnapshot\s*\(", RegexOptions.Compiled);
 
+    /// <summary>The DbSet each <c>NextKeyAsync(context.X…)</c> call allocates in.</summary>
+    private static readonly Regex NextKeyScope = new(@"\.\s*NextKeyAsync\s*\(\s*context\s*\.\s*(\w+)", RegexOptions.Compiled);
+
+    /// <summary>The table each pinned <c>NextKeyFromSnapshot</c> caller allocates in (Rule 3 pins the callers).</summary>
+    private static readonly Dictionary<string, Type> SnapshotCallerEntity = new(StringComparer.Ordinal)
+    {
+        ["Services/ShoppingListGenerator.cs"] = typeof(FamilyCoordinationApp.Data.Entities.ShoppingListItem),
+    };
+
+    [Fact]
+    public void Rule4_every_allocated_table_primary_key_is_retryable()
+    {
+        // Quest d9da6ca4: the allocator retries only RetryableConstraints. A table allocated through IKeyAllocator
+        // whose primary key is missing there would answer its id races with 409 instead of retrying.
+        var sources = TenantScopeArchitectureTests.AppSources().Where(f => f.RelativePath != AllocatorFile).ToList();
+        var dbSets = sources
+            .SelectMany(f => NextKeyScope.Matches(TenantScopeArchitectureTests.StripCommentsAndStrings(f.Source)).Select(m => m.Groups[1].Value))
+            .ToHashSet(StringComparer.Ordinal);
+        var entities = dbSets
+            .Select(name => typeof(ApplicationDbContext).GetProperty(name)?.PropertyType.GetGenericArguments().SingleOrDefault()
+                ?? throw new InvalidOperationException($"NextKeyAsync(context.{name}…) does not name a DbSet on ApplicationDbContext"))
+            .Concat(SnapshotCallerEntity.Values)
+            .ToHashSet();
+
+        using var db = new ApplicationDbContext(
+            new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql("Host=unused;Database=unused").Options);
+        var keyNames = entities.ToDictionary(e => e.Name, e => db.Model.FindEntityType(e)!.FindPrimaryKey()!.GetName());
+
+        using (new AssertionScope())
+        {
+            dbSets.Should().Contain(["Recipes", "Categories", "Chores", "Rooms", "MealPlans", "MealPlanEntries", "ShoppingLists", "ShoppingListItems"],
+                "the scan sees the allocator's call sites (guard the guard)");
+            SnapshotCallerEntity.Keys.Should().BeEquivalentTo(SnapshotCallersPerFile.Keys, "a new snapshot caller names its table here");
+            keyNames.Values.Should().BeSubsetOf(FamilyCoordinationApp.Services.IdGenerationHelper.RetryableConstraints,
+                "every allocated table's primary key is a collision a retry cures. Keys: {0}",
+                string.Join(", ", keyNames.Select(k => $"{k.Key}={k.Value}")));
+        }
+    }
+
     // ── Negative controls: feed the detectors known input ─────────────────────────────
 
     [Fact]

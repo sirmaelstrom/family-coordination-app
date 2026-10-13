@@ -152,7 +152,9 @@ public class CategoryService(
 
     /// <summary>
     /// Saves a write that can collide with another active category's name: that unique violation is a 409 with the
-    /// category message (quest d9da6ca4), not a 500. Create gets the same answer from the key allocator.
+    /// category message (quest d9da6ca4), not a 500. Create gets the same answer from the key allocator. Deliberately
+    /// narrow: an update or restore never writes a key, so the name index is the one unique constraint it can hit; any
+    /// other unique violation here is unexpected and stays a 500.
     /// </summary>
     private static async Task SaveNameAsync(ApplicationDbContext context, string what, CancellationToken cancellationToken)
     {
