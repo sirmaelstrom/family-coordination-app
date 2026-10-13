@@ -43,7 +43,8 @@ public class RoomServiceTests : IDisposable
             dbFactoryMock.Object,
             _imageService,
             new Mock<ILogger<RoomService>>().Object,
-            TestClocks.System);
+            TestClocks.System,
+            TestKeys.Allocator);
 
         SeedTestData();
     }

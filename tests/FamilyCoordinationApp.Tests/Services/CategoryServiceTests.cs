@@ -28,7 +28,7 @@ public class CategoryServiceTests : IDisposable
             .ReturnsAsync(() => TestTenancy.Context(options, _tenant));
         _loggerMock = new Mock<ILogger<CategoryService>>();
 
-        _service = new CategoryService(_dbFactoryMock.Object, _loggerMock.Object, TestClocks.System);
+        _service = new CategoryService(_dbFactoryMock.Object, _loggerMock.Object, TestClocks.System, TestKeys.Allocator);
 
         // Seed test data
         SeedTestData();

@@ -49,7 +49,8 @@ public class ChoreServiceTests : IDisposable
             new ChoreStatusCalculator(),
             Mock.Of<IImageService>(),
             _clock,
-            new Mock<ILogger<ChoreService>>().Object);
+            new Mock<ILogger<ChoreService>>().Object,
+            TestKeys.Allocator);
 
         SeedBaseline();
     }
@@ -818,7 +819,8 @@ public class ChoreServiceTests : IDisposable
             new ChoreStatusCalculator(),
             Mock.Of<IImageService>(),
             _clock,
-            new Mock<ILogger<ChoreService>>().Object);
+            new Mock<ILogger<ChoreService>>().Object,
+            TestKeys.Allocator);
 
         var act = async () => await service.ClaimAsync(HouseholdId, choreId: 1, Alice, version: 0);
 

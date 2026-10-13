@@ -46,7 +46,8 @@ public class ChoreSubtaskResetTests : IDisposable
             new ChoreStatusCalculator(),
             Mock.Of<IImageService>(),
             _clock,
-            new Mock<ILogger<ChoreService>>().Object);
+            new Mock<ILogger<ChoreService>>().Object,
+            TestKeys.Allocator);
 
         SeedBaseline();
     }

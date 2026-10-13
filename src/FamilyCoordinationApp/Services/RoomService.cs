@@ -9,7 +9,8 @@ public class RoomService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     IImageService imageService,
     ILogger<RoomService> logger,
-    IHouseholdClock clock) : IRoomService
+    IHouseholdClock clock,
+    IKeyAllocator keys) : IRoomService
 {
     public async Task<List<Room>> ListRoomsAsync(int householdId, CancellationToken cancellationToken = default)
     {
@@ -31,20 +32,20 @@ public class RoomService(
 
     public async Task<Room> CreateRoomAsync(int householdId, string name, string icon, string? photoPath = null, CancellationToken cancellationToken = default)
     {
-        return await IdGenerationHelper.ExecuteWithRetryAsync(
+        return await keys.InsertAsync(
+            "Room",
             async (attempt) =>
             {
                 await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-                var maxId = await context.Rooms
-                    .MaxAsync(r => (int?)r.RoomId, cancellationToken) ?? 0;
+                var roomId = await keys.NextKeyAsync(context.Rooms, r => r.RoomId, cancellationToken);
 
                 var maxSortOrder = await context.Rooms
                     .MaxAsync(r => (int?)r.SortOrder, cancellationToken) ?? 0;
 
                 var room = new Room
                 {
-                    RoomId = maxId + 1,
+                    RoomId = roomId,
                     Name = name.Trim(),
                     Icon = icon.Trim(),
                     PhotoPath = photoPath,
@@ -59,9 +60,7 @@ public class RoomService(
                     room.RoomId, householdId);
 
                 return room;
-            },
-            logger,
-            "Room");
+            });
     }
 
     public async Task<Room> UpdateRoomAsync(int householdId, int roomId, string name, string icon, string? photoPath, CancellationToken cancellationToken = default)

@@ -118,7 +118,8 @@ public sealed class MultiPersonRosterTests(PostgresContainerFixture postgres)
 
     private static ChoreService NewService(
         IDbContextFactory<ApplicationDbContext> factory, FixedTimeProvider clock) =>
-        new(factory, new ChoreStatusCalculator(), Mock.Of<IImageService>(), clock, NullLogger<ChoreService>.Instance);
+        new(factory, new ChoreStatusCalculator(), Mock.Of<IImageService>(), clock, NullLogger<ChoreService>.Instance,
+            FamilyCoordinationApp.Tests.Services.TestKeys.Allocator);
 
     private static ChoreBoardService NewBoardService(
         IDbContextFactory<ApplicationDbContext> factory, FixedTimeProvider clock) =>

@@ -49,7 +49,8 @@ public class ShoppingListGenerator(
     IShoppingListService shoppingListService,
     UnitConverter unitConverter,
     ILogger<ShoppingListGenerator> logger,
-    IHouseholdClock clock) : IShoppingListGenerator
+    IHouseholdClock clock,
+    IKeyAllocator keys) : IShoppingListGenerator
 {
 
     public Task<ShoppingList> GenerateFromMealPlanAsync(
@@ -61,10 +62,9 @@ public class ShoppingListGenerator(
         CancellationToken cancellationToken = default) =>
         // Retry wrapper: the list id is assigned max+1 in memory, so a concurrent create can collide on the
         // composite key (the same hazard and remedy as CreateShoppingListAsync, which this used to call).
-        IdGenerationHelper.ExecuteWithRetryAsync(
-            _ => GenerateOnceAsync(householdId, mealPlanId, listName, startDate, endDate, cancellationToken),
-            logger,
-            "ShoppingList");
+        keys.InsertAsync(
+            "ShoppingList",
+            _ => GenerateOnceAsync(householdId, mealPlanId, listName, startDate, endDate, cancellationToken));
 
     private async Task<ShoppingList> GenerateOnceAsync(
         int householdId,
@@ -115,13 +115,12 @@ public class ShoppingListGenerator(
         // Consolidate ingredients
         var consolidationResults = await ConsolidateScaledIngredientsAsync(allIngredients, autoConsolidate: true);
 
-        var maxListId = await context.ShoppingLists
-            .MaxAsync(sl => (int?)sl.ShoppingListId, cancellationToken) ?? 0;
+        var shoppingListId = await keys.NextKeyAsync(context.ShoppingLists, sl => sl.ShoppingListId, cancellationToken);
         var now = clock.UtcNow;
 
         var shoppingList = new ShoppingList
         {
-            ShoppingListId = maxListId + 1,
+            ShoppingListId = shoppingListId,
             Name = listName,
             MealPlanId = mealPlanId,
             CreatedAt = now,
@@ -168,10 +167,9 @@ public class ShoppingListGenerator(
         CancellationToken cancellationToken = default) =>
         // Retry wrapper: item ids are assigned max+1 in memory, so a concurrent manual add can
         // collide on the composite key — same hazard (and same remedy) as the sibling writes.
-        IdGenerationHelper.ExecuteWithRetryAsync(
-            _ => RegenerateOnceAsync(householdId, shoppingListId, cancellationToken),
-            logger,
-            "ShoppingListRegenerate");
+        keys.InsertAsync(
+            "ShoppingListRegenerate",
+            _ => RegenerateOnceAsync(householdId, shoppingListId, cancellationToken));
 
     private async Task<ShoppingList> RegenerateOnceAsync(
         int householdId,
@@ -225,7 +223,15 @@ public class ShoppingListGenerator(
 
         var consolidationResults = await ConsolidateScaledIngredientsAsync(allIngredients, autoConsolidate: true);
 
-        var nextItemId = existingList.Items.Count > 0 ? existingList.Items.Max(i => i.ItemId) : 0;
+        // The fresh rows take ids above every row in the LOADED snapshot (removed generated rows included: they are
+        // deleted in this same save, so their ids are not free yet). The snapshot's max, not the database's, on
+        // purpose: absent a concurrent hard delete, a rival regenerate or manual add committed since the load holds
+        // the snapshot's next id, so this save collides and the retry re-runs from a fresh load (a delete in that
+        // window can still let a stale regenerate through, as before this change). With the database max, a stale
+        // snapshot holding no
+        // generated rows would remove nothing and add a second generated set (council round 1 on PR #145,
+        // KeyAllocatorConcurrencyTests).
+        var nextItemId = keys.NextKeyFromSnapshot(existingList.Items.Select(i => i.ItemId));
 
         context.ShoppingListItems.RemoveRange(existingList.Items.Where(i => !i.IsManuallyAdded));
 
@@ -237,7 +243,7 @@ public class ShoppingListGenerator(
             context.ShoppingListItems.Add(new ShoppingListItem
             {
                 ShoppingListId = shoppingListId,
-                ItemId = ++nextItemId,
+                ItemId = nextItemId++,
                 Name = result.Name,
                 // Floor at zero: a carried negative edit larger than the fresh quantity must not
                 // produce a negative line.

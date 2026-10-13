@@ -251,7 +251,7 @@ public class AuditStampTests
     {
         await SeedAsync(Recipe());
         var service = new RecipeService(Factory(TestTenancy.Caller(1, CallerUserId)), Mock.Of<IImageService>(),
-            NullLogger<RecipeService>.Instance, TestClocksAt(FixedNow));
+            NullLogger<RecipeService>.Instance, TestClocksAt(FixedNow), FamilyCoordinationApp.Tests.Services.TestKeys.Allocator);
 
         await service.DeleteRecipeAsync(1, 5);
 
@@ -267,7 +267,7 @@ public class AuditStampTests
     {
         await SeedAsync(ShoppingItem(addedBy: 3));
         var service = new ShoppingListService(Factory(TestTenancy.Caller(1, CallerUserId)),
-            NullLogger<ShoppingListService>.Instance, TestClocksAt(FixedNow));
+            NullLogger<ShoppingListService>.Instance, TestClocksAt(FixedNow), FamilyCoordinationApp.Tests.Services.TestKeys.Allocator);
 
         await service.UpdateItemSortOrdersAsync(1, 1, [(1, 4, null)]);
 
@@ -283,7 +283,7 @@ public class AuditStampTests
     {
         // The one create path that no longer names its creator explicitly (the endpoints dropped CreatedByUserId).
         var service = new RecipeService(Factory(TestTenancy.Caller(1, CallerUserId)), Mock.Of<IImageService>(),
-            NullLogger<RecipeService>.Instance, TestClocksAt(FixedNow));
+            NullLogger<RecipeService>.Instance, TestClocksAt(FixedNow), FamilyCoordinationApp.Tests.Services.TestKeys.Allocator);
 
         await service.CreateRecipeAsync(new Recipe { HouseholdId = 1, Name = "soup" });
 

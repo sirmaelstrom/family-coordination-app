@@ -44,7 +44,7 @@ public class MealPlanServiceMoveTests : IDisposable
         dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
 
-        _service = new MealPlanService(dbFactoryMock.Object, new Mock<ILogger<MealPlanService>>().Object, TestClocks.System);
+        _service = new MealPlanService(dbFactoryMock.Object, new Mock<ILogger<MealPlanService>>().Object, TestClocks.System, TestKeys.Allocator);
 
         SeedTestData();
     }

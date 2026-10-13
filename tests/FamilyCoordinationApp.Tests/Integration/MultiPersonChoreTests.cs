@@ -334,7 +334,8 @@ public sealed class MultiPersonChoreTests(PostgresContainerFixture postgres) : I
             new ChoreStatusCalculator(),
             Mock.Of<IImageService>(),
             clock,
-            NullLogger<ChoreService>.Instance);
+            NullLogger<ChoreService>.Instance,
+            FamilyCoordinationApp.Tests.Services.TestKeys.Allocator);
 
     private static async Task<uint> ReadVersionAsync(
         PostgresDbContextFactory dbFactory, int householdId, int choreId)

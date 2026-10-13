@@ -69,7 +69,7 @@ public sealed class ShoppingListItemConflictTests(PostgresContainerFixture postg
     };
 
     private ShoppingListService Service(IDbContextFactory<ApplicationDbContext>? factory = null) =>
-        new(factory ?? _dbFactory, NullLogger<ShoppingListService>.Instance, Services.TestClocks.System);
+        new(factory ?? _dbFactory, NullLogger<ShoppingListService>.Instance, Services.TestClocks.System, Services.TestKeys.Allocator);
 
     [Fact]
     public async Task A_current_token_saves_and_the_callers_object_carries_the_new_version()

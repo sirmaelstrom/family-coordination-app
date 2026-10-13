@@ -8,7 +8,8 @@ namespace FamilyCoordinationApp.Services;
 public class MealPlanService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     ILogger<MealPlanService> logger,
-    IHouseholdClock clock) : IMealPlanService
+    IHouseholdClock clock,
+    IKeyAllocator keys) : IMealPlanService
 {
 
     public async Task<MealPlan> GetOrCreateMealPlanAsync(int householdId, DateOnly weekStart, CancellationToken cancellationToken = default)
@@ -31,7 +32,8 @@ public class MealPlanService(
         }
 
         // Create new meal plan with retry logic for ID collisions
-        return await IdGenerationHelper.ExecuteWithRetryAsync(
+        return await keys.InsertAsync(
+            "MealPlan",
             async (attempt) =>
             {
                 await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -48,7 +50,7 @@ public class MealPlanService(
                     return existingPlan;
                 }
 
-                var nextId = await GetNextMealPlanIdAsync(context, householdId, cancellationToken);
+                var nextId = await GetNextMealPlanIdAsync(context, cancellationToken);
                 var mealPlan = new MealPlan
                 {
                     MealPlanId = nextId,
@@ -63,9 +65,7 @@ public class MealPlanService(
                     mealPlan.MealPlanId, householdId, weekStart);
 
                 return mealPlan;
-            },
-            logger,
-            "MealPlan");
+            });
     }
 
     public async Task<MealPlanEntry> AddMealAsync(int householdId, DateOnly date, MealType mealType, int? recipeId, string? customMealName, string? notes = null, int? userId = null, CancellationToken cancellationToken = default)
@@ -82,7 +82,8 @@ public class MealPlanService(
 
         var weekStart = GetWeekStartDate(date);
 
-        return await IdGenerationHelper.ExecuteWithRetryAsync(
+        return await keys.InsertAsync(
+            "MealPlanEntry",
             async (attempt) =>
             {
                 await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -100,7 +101,7 @@ public class MealPlanService(
                 {
                     mealPlan = new MealPlan
                     {
-                        MealPlanId = await GetNextMealPlanIdAsync(context, householdId, cancellationToken),
+                        MealPlanId = await GetNextMealPlanIdAsync(context, cancellationToken),
                         WeekStartDate = weekStart,
                         CreatedAt = clock.UtcNow
                     };
@@ -145,7 +146,7 @@ public class MealPlanService(
                 }
 
                 // Create new entry
-                var nextEntryId = await GetNextEntryIdAsync(context, householdId, mealPlan.MealPlanId, cancellationToken);
+                var nextEntryId = await GetNextEntryIdAsync(context, mealPlan.MealPlanId, cancellationToken);
                 var entry = new MealPlanEntry
                 {
                     MealPlanId = mealPlan.MealPlanId,
@@ -170,9 +171,7 @@ public class MealPlanService(
                     entry.EntryId, mealPlan.MealPlanId, householdId);
 
                 return entry;
-            },
-            logger,
-            "MealPlanEntry");
+            });
     }
 
     public async Task<MealPlanEntry> MoveMealAsync(int householdId, int mealPlanId, int entryId, DateOnly newDate, MealType newMealType, uint version, CancellationToken cancellationToken = default)
@@ -326,22 +325,11 @@ public class MealPlanService(
         return date.AddDays(-daysFromMonday);
     }
 
-    private static async Task<int> GetNextMealPlanIdAsync(ApplicationDbContext context, int householdId, CancellationToken cancellationToken)
-    {
-        var maxId = await context.MealPlans
-            .MaxAsync(mp => (int?)mp.MealPlanId, cancellationToken) ?? 0;
+    private Task<int> GetNextMealPlanIdAsync(ApplicationDbContext context, CancellationToken cancellationToken) =>
+        keys.NextKeyAsync(context.MealPlans, mp => mp.MealPlanId, cancellationToken);
 
-        return maxId + 1;
-    }
-
-    private static async Task<int> GetNextEntryIdAsync(ApplicationDbContext context, int householdId, int mealPlanId, CancellationToken cancellationToken)
-    {
-        var maxId = await context.MealPlanEntries
-            .Where(e => e.MealPlanId == mealPlanId)
-            .MaxAsync(e => (int?)e.EntryId, cancellationToken) ?? 0;
-
-        return maxId + 1;
-    }
+    private Task<int> GetNextEntryIdAsync(ApplicationDbContext context, int mealPlanId, CancellationToken cancellationToken) =>
+        keys.NextKeyAsync(context.MealPlanEntries.Where(e => e.MealPlanId == mealPlanId), e => e.EntryId, cancellationToken);
 
     private async Task UpdateMealPlanTimestampAsync(ApplicationDbContext context, int householdId, int mealPlanId, CancellationToken cancellationToken)
     {
