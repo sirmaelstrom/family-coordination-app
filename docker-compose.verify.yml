@@ -1,0 +1,62 @@
+# Scratch stack for verifying a branch's build without touching the dev stack (quest 9c8dd002).
+#
+# A separate compose PROJECT: its own containers, network and postgres volume, an app port of its
+# own, and no nginx. Nothing here names a container (container_name would collide with the dev
+# stack's familyapp-*), so compose names them <project>-postgres-1 / <project>-app-1.
+#
+#   docker compose -p familyapp-verify-<slug> -f docker-compose.verify.yml up -d
+#   (wait for http://127.0.0.1:${VERIFY_APP_PORT}/health; the app migrates the empty database)
+#   docker exec -i <project>-postgres-1 psql -U familyapp -d familyapp -v ON_ERROR_STOP=1 < docker/verify/seed.sql
+#   docker compose -p familyapp-verify-<slug> -f docker-compose.verify.yml restart app
+#   (the Development startup seed now enriches the seeded household: rooms, chores, categories, recipes, members)
+#   docker compose -p familyapp-verify-<slug> -f docker-compose.verify.yml down -v
+#
+# Required env:
+#   FAMILYAPP_IMAGE              the image under test, e.g. familyapp:verify-<sha> built from the branch
+#   VERIFY_POSTGRES_SECRET_FILE  a file holding a throwaway postgres password
+# Optional env:
+#   VERIFY_APP_PORT              loopback port for the app (default 8090; the dev stack owns 8080)
+#
+# ASPNETCORE_ENVIRONMENT is Development on purpose: the dev auth bypass answers /api/me as the seeded
+# user, which is what an unattended verifier signs in as. DevAuthStartupGuard refuses that bypass
+# outside Development, and this file is never used by a deploy (deploy.sh reads docker-compose.prod.yml).
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: familyapp
+      POSTGRES_USER: familyapp
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    command: postgres -c hba_file=/etc/postgresql/pg_hba.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U familyapp"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  app:
+    image: ${FAMILYAPP_IMAGE:?set FAMILYAPP_IMAGE to the image under test}    depends_on:
+      postgres:
+        condition: service_healthy
+    secrets:
+      - postgres_password
+    environment:
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=familyapp;Username=familyapp;SSL Mode=Disable"
+      ASPNETCORE_ENVIRONMENT: Development
+      # Program.cs requires both to be non-null at startup; no Google sign-in happens on this stack.
+      Authentication__Google__ClientId: verify-stack-placeholder
+      Authentication__Google__ClientSecret: verify-stack-placeholder
+    ports:
+      - "127.0.0.1:${VERIFY_APP_PORT:-8090}:8080"
+
+volumes:
+  pgdata:
+
+secrets:
+  postgres_password:
+    file: ${VERIFY_POSTGRES_SECRET_FILE:?set VERIFY_POSTGRES_SECRET_FILE to a throwaway password file}
