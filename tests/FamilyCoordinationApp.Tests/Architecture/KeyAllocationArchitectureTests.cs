@@ -105,6 +105,7 @@ public sealed class KeyAllocationArchitectureTests
 
     /// <summary>The DbSet each <c>NextKeyAsync(context.X…)</c> call allocates in.</summary>
     private static readonly Regex NextKeyScope = new(@"\.\s*NextKeyAsync\s*\(\s*context\s*\.\s*(\w+)", RegexOptions.Compiled);
+    private static readonly Regex NextKeyCall = new(@"\.\s*NextKeyAsync\s*\(", RegexOptions.Compiled);
 
     /// <summary>The table each pinned <c>NextKeyFromSnapshot</c> caller allocates in (Rule 3 pins the callers).</summary>
     private static readonly Dictionary<string, Type> SnapshotCallerEntity = new(StringComparer.Ordinal)
@@ -118,9 +119,13 @@ public sealed class KeyAllocationArchitectureTests
         // Quest d9da6ca4: the allocator retries only RetryableConstraints. A table allocated through IKeyAllocator
         // whose primary key is missing there would answer its id races with 409 instead of retrying.
         var sources = TenantScopeArchitectureTests.AppSources().Where(f => f.RelativePath != AllocatorFile).ToList();
-        var dbSets = sources
-            .SelectMany(f => NextKeyScope.Matches(TenantScopeArchitectureTests.StripCommentsAndStrings(f.Source)).Select(m => m.Groups[1].Value))
-            .ToHashSet(StringComparer.Ordinal);
+        var stripped = sources.Select(f => TenantScopeArchitectureTests.StripCommentsAndStrings(f.Source)).ToList();
+        var scopes = stripped.SelectMany(s => NextKeyScope.Matches(s).Select(m => m.Groups[1].Value)).ToList();
+        // A call whose scope is not written `context.X` (a local query, another variable name) is invisible to the
+        // scope regex; counting every call makes it fail here instead of being skipped (challenge r1 on PR #146).
+        stripped.Sum(s => NextKeyCall.Matches(s).Count).Should().Be(scopes.Count,
+            "every NextKeyAsync call must name its scope as context.<DbSet> so this rule can see its table");
+        var dbSets = scopes.ToHashSet(StringComparer.Ordinal);
         var entities = dbSets
             .Select(name => typeof(ApplicationDbContext).GetProperty(name)?.PropertyType.GetGenericArguments().SingleOrDefault()
                 ?? throw new InvalidOperationException($"NextKeyAsync(context.{name}…) does not name a DbSet on ApplicationDbContext"))
