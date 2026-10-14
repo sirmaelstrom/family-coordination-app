@@ -5,7 +5,9 @@
 # stack's familyapp-*), so compose names them <project>-postgres-1 / <project>-app-1.
 #
 #   docker compose -p familyapp-verify-<slug> -f docker-compose.verify.yml up -d
-#   (wait for http://127.0.0.1:${VERIFY_APP_PORT}/health; the app migrates the empty database)
+#   (wait until http://127.0.0.1:${VERIFY_APP_PORT}/health answers at all: the app migrates the empty database
+#    before it listens. The answer is 503, not 200: on an empty Users table the Development auth bypass answers
+#    every request, /health included, with "no seed user". A 200 is only possible after the seed and restart.)
 #   docker exec -i <project>-postgres-1 psql -U familyapp -d familyapp -v ON_ERROR_STOP=1 < docker/verify/seed.sql
 #   docker compose -p familyapp-verify-<slug> -f docker-compose.verify.yml restart app
 #   (the Development startup seed now enriches the seeded household: rooms, chores, categories, recipes, members)
