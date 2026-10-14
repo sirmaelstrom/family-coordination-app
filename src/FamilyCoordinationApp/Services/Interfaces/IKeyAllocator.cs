@@ -15,11 +15,15 @@ public interface IKeyAllocator
 {
     /// <summary>
     /// Runs <paramref name="insert"/> (passed the 1-based attempt number), re-running it from the start when its save
-    /// raises a unique violation, up to 3 attempts. The operation must open its own context per attempt so a retry
-    /// re-reads the max, and must save inside the delegate: a save after it returns has no retry around it (the
+    /// raises a unique violation a re-run can cure, up to 3 attempts. Only the constraints in
+    /// <see cref="IdGenerationHelper.RetryableConstraints"/> are retried (an allocated key's primary key, the meal-plan
+    /// week index); a violation on any other unique constraint throws <see cref="ConflictException"/> (409) on the first
+    /// attempt, because the row it collides with will still be there (quest d9da6ca4).
+    /// <para>The operation must open its own context per attempt so a retry re-reads the max, and must save inside the
+    /// delegate: a save after it returns has no retry around it (the
     /// runtime check sees the async scope, not where the save happens). After the last attempt it throws
     /// <see cref="InvalidOperationException"/>. Retry warnings log under the <c>KeyAllocator</c> category, naming
-    /// <paramref name="entityName"/>.
+    /// <paramref name="entityName"/>.</para>
     /// </summary>
     Task<TResult> InsertAsync<TResult>(string entityName, Func<int, Task<TResult>> insert);
 

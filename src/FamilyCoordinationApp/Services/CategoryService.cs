@@ -82,7 +82,7 @@ public class CategoryService(
         existing.Color = category.Color;
         existing.SortOrder = category.SortOrder;
 
-        await context.SaveChangesAsync(cancellationToken);
+        await SaveNameAsync(context, $"category {category.CategoryId}", cancellationToken);
 
         logger.LogInformation("Updated category {CategoryId} for household {HouseholdId}", category.CategoryId, category.HouseholdId);
 
@@ -126,7 +126,8 @@ public class CategoryService(
         category.IsDeleted = false;
         category.DeletedAt = null;
 
-        await context.SaveChangesAsync(cancellationToken);
+        // An active category may have taken this name since the delete (the unique index skips deleted rows).
+        await SaveNameAsync(context, $"restored category {categoryId}", cancellationToken);
 
         logger.LogInformation("Restored category {CategoryId} for household {HouseholdId}", categoryId, householdId);
     }
@@ -147,6 +148,24 @@ public class CategoryService(
         }
 
         await context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Saves a write that can collide with another active category's name: that unique violation is a 409 with the
+    /// category message (quest d9da6ca4), not a 500. Create gets the same answer from the key allocator. Deliberately
+    /// narrow: an update or restore never writes a key, so the name index is the one unique constraint it can hit; any
+    /// other unique violation here is unexpected and stays a 500.
+    /// </summary>
+    private static async Task SaveNameAsync(ApplicationDbContext context, string what, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (UniqueViolation.Of(ex) is { ConstraintName: UniqueViolation.CategoryNameIndex } violation)
+        {
+            throw UniqueViolation.ToConflict(ex, violation, what);
+        }
     }
 
     public async Task<bool> HasIngredientsAsync(int householdId, string categoryName, CancellationToken cancellationToken = default)
