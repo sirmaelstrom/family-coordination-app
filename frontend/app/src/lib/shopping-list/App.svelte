@@ -1,31 +1,11 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { base } from '$app/paths';
   import { goto } from '$app/navigation';
   import type { ShellContext } from '$lib/session.svelte';
-  import type {
-    ShoppingListDto,
-    ShoppingListItemDto,
-    ShoppingListSummaryDto,
-  } from './lib/types';
-  import {
-    getList,
-    listLists,
-    patchItem,
-    addItem,
-    deleteItem,
-    toggleFavorite,
-    archiveList,
-    renameList,
-    clearChecked,
-    createList,
-    generateFromMealPlan,
-    regenerateList,
-    updateSortOrders,
-    ApiError,
-    type SortOrderUpdate,
-  } from './lib/api';
+  import type { ShoppingListItemDto } from './lib/types';
   import { startLiveness } from '$lib/liveness';
-  import { adoptItem as adoptItemOnRows, adoptReorderVersions } from './lib/itemSync';
+  import { ShoppingListState } from './lib/shoppingListState.svelte';
   import CategorySection from './lib/components/CategorySection.svelte';
   import HeaderBar, { type MenuAction } from './lib/components/HeaderBar.svelte';
   import ItemDialog, { type ItemFormValue } from './lib/components/ItemDialog.svelte';
@@ -40,12 +20,28 @@
 
   let { ctx }: Props = $props();
 
-  let currentListId = $state<number | null>(ctx.listId);
-  let lists = $state<ShoppingListSummaryDto[]>([]);
-  let list = $state<ShoppingListDto | null>(null);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
-  let pendingIds = $state(new Set<number>());
+  function syncUrl(listId: number) {
+    try {
+      // Base-aware shallow URL sync (D6). A history.replaceState — NOT goto() —
+      // so the island keeps its state: goto would remount the route and re-run
+      // the session/ctx init. base is '/app', so the URL stays under /app.
+      const path = `${base}/shopping-list/${listId}`;
+      if (location.pathname !== path) {
+        history.replaceState(history.state, '', path);
+      }
+    } catch { /* ignore */ }
+  }
+
+  // The list state and its load/write ordering live in ShoppingListState (quest 41337b6f, spec §5 row 11):
+  // one Resource loads the list + the summaries, and every write runs inside its window — no GET that
+  // overlaps a write can commit, in either response order. The template reads these through the aliases.
+  const sl = new ShoppingListState(ctx.listId, syncUrl);
+  const lists = $derived(sl.lists);
+  const currentListId = $derived(sl.currentListId);
+  const list = $derived(sl.list);
+  const loading = $derived(sl.loading);
+  const error = $derived(sl.error);
+  const pendingIds = $derived(sl.pendingIds);
 
   // Dialogs
   let itemDialogOpen = $state(false);
@@ -127,187 +123,36 @@
     rebuildCategories();
   });
 
-  // Monotonic load ids. loadList is the initial load, the list switcher, the liveness poll AND the
-  // post-mutation reconcile, so several can be in flight at once; without a token the slower/older
-  // response lands last and shows another list's items. Both race classes are covered: a newer
-  // load supersedes an older one, and every local mutation site calls retireInFlightLoads() before
-  // its optimistic write (quest fe715e73, the recipeListStore pattern) — a GET already on the wire
-  // can no longer land afterwards and un-check an item that was just checked.
-  let listLoadSeq = 0;
-  let listsLoadSeq = 0;
-
-  /** Retire any in-flight reads — an optimistic write is newer truth than a response already on the wire. */
-  function retireInFlightLoads() {
-    listLoadSeq++;
-    listsLoadSeq++;
-  }
-
-  async function loadLists() {
-    const seq = ++listsLoadSeq;
-    try {
-      const next = await listLists();
-      if (seq !== listsLoadSeq) return; // a newer load superseded this one
-      lists = next;
-    } catch (e) {
-      if (seq !== listsLoadSeq) return;
-      error = e instanceof Error ? e.message : String(e);
-    }
-  }
-
-  async function loadList(listId: number | null) {
-    if (listId == null) {
-      error = 'No shopping list selected.';
-      loading = false;
-      return;
-    }
-    const seq = ++listLoadSeq;
-    try {
-      loading = true;
-      error = null;
-      const next = await getList(listId);
-      if (seq !== listLoadSeq) return; // superseded (list switch or a newer refresh)
-      list = next;
-    } catch (e) {
-      if (seq !== listLoadSeq) return; // a superseded load's failure is moot
-      if (e instanceof ApiError && e.status === 404) {
-        await loadLists();
-        // Re-check AFTER that await: the user can pick another list (or a visibility refresh can
-        // start a newer load) while it is pending, and this obsolete 404 handler would otherwise
-        // overwrite that newer selection — and the URL — with its own fallback.
-        if (seq !== listLoadSeq) return;
-        const fallback = lists[0]?.id ?? null;
-        if (fallback != null && fallback !== listId) {
-          currentListId = fallback;
-          syncUrl(fallback);
-          await loadList(fallback);
-          return;
-        }
-        list = null;
-        error = 'Shopping list not found.';
-      } else {
-        error = e instanceof Error ? e.message : String(e);
-      }
-    } finally {
-      // Only the newest load owns the spinner. The 404-fallback path above recurses into a NEWER
-      // load, so this correctly leaves the spinner to that one.
-      if (seq === listLoadSeq) loading = false;
-    }
-  }
-
-  function syncUrl(listId: number) {
-    try {
-      // Base-aware shallow URL sync (D6). A history.replaceState — NOT goto() —
-      // so the island keeps its state: goto would remount the route and re-run
-      // the session/ctx init. base is '/app', so the URL stays under /app.
-      const path = `${base}/shopping-list/${listId}`;
-      if (location.pathname !== path) {
-        history.replaceState(history.state, '', path);
-      }
-    } catch { /* ignore */ }
-  }
-
-  /**
-   * A 409 on an item write: the item changed since this tab read it (or the list was archived). The caller reloads
-   * the list; this tells the user why their tap didn't stick (quest 8cf3c806: no server-side merge any more).
-   */
-  function notifyConflict(e: ApiError) {
-    showToast({ message: e.message, kind: 'info' });
-  }
-
-  function markPending(id: number, on: boolean) {
-    const next = new Set(pendingIds);
-    if (on) next.add(id);
-    else next.delete(id);
-    pendingIds = next;
-  }
-
-  /** A write's answer, on the held object and on the row shown now (lib/itemSync.ts). */
-  function adoptItem(held: ShoppingListItemDto, updated: ShoppingListItemDto, sentVersion: number) {
-    adoptItemOnRows(list?.items, held, updated, sentVersion);
-  }
-
-  async function setChecked(item: ShoppingListItemDto, target: boolean) {
-    if (!list || currentListId == null) return;
-    // One write per item at a time: a second tap would carry the same token and 409 against the first.
-    if (pendingIds.has(item.id)) return;
-    const prev = { isChecked: item.isChecked, checkedAt: item.checkedAt };
-    retireInFlightLoads();
-    item.isChecked = target;
-    item.checkedAt = target ? new Date().toISOString() : null;
-    markPending(item.id, true);
-    const sentVersion = item.version;
-    try {
-      const updated = await patchItem(currentListId, item.id, { isChecked: target, version: sentVersion });
-      adoptItem(item, updated, sentVersion);
-      retireInFlightLoads();
-    } catch (e) {
-      Object.assign(item, prev);
-      if (e instanceof ApiError && (e.status === 404 || e.status === 409)) {
-        if (e.status === 409) notifyConflict(e);
-        await loadList(currentListId);
-      } else {
-        error = e instanceof Error ? e.message : String(e);
-      }
-      throw e;
-    } finally {
-      markPending(item.id, false);
-    }
+  /** Retry / reload the current list (the template's Retry button). */
+  function loadList(_listId: number | null) {
+    void sl.load();
   }
 
   async function handleToggle(item: ShoppingListItemDto) {
-    if (pendingIds.has(item.id)) return;
     const target = !item.isChecked;
-    try {
-      await setChecked(item, target);
-      // Only show undo when CHECKING (matches production).
-      if (target) {
-        const { id, name } = item;
-        const listId = currentListId;
-        showToast({
-          message: `Checked ${name}`,
-          kind: 'success',
-          actionLabel: 'Undo',
-          durationMs: 4000,
-          onAction: () => {
-            // Resolve the row at undo time: a poll or a reorder may have replaced the object (and its token). Item
-            // ids are per list, so an undo pressed after switching lists must not touch the other list's item.
-            if (currentListId !== listId) return;
-            const current = list?.items.find((i) => i.id === id);
-            if (!current || !current.isChecked) return;
-            setChecked(current, false).catch(() => { /* handled in setChecked */ });
-          },
-        });
-      }
-    } catch {
-      // already surfaced via error/toast
-    }
+    const outcome = await sl.setChecked(item, target);
+    // Only show undo when CHECKING, and only for a check that went through (matches production).
+    if (outcome !== 'ok' || !target) return;
+    const { id, name } = item;
+    const listId = sl.currentListId;
+    showToast({
+      message: `Checked ${name}`,
+      kind: 'success',
+      actionLabel: 'Undo',
+      durationMs: 4000,
+      onAction: () => {
+        // Resolve the row at undo time: a poll or a reorder may have replaced the object (and its token). Item
+        // ids are per list, so an undo pressed after switching lists must not touch the other list's item.
+        if (sl.currentListId !== listId) return;
+        const current = sl.list?.items.find((i) => i.id === id);
+        if (!current || !current.isChecked) return;
+        void sl.setChecked(current, false);
+      },
+    });
   }
 
   async function handleQuantity(item: ShoppingListItemDto, delta: number) {
-    if (!list || currentListId == null || item.quantity == null) return;
-    if (pendingIds.has(item.id)) return;
-    const next = item.quantity + delta;
-    if (next < 1) return;
-    const prev = item.quantity;
-    retireInFlightLoads();
-    item.quantity = next;
-    markPending(item.id, true);
-    const sentVersion = item.version;
-    try {
-      const updated = await patchItem(currentListId, item.id, { quantity: next, version: sentVersion });
-      adoptItem(item, updated, sentVersion);
-      retireInFlightLoads();
-    } catch (e) {
-      item.quantity = prev;
-      if (e instanceof ApiError && (e.status === 404 || e.status === 409)) {
-        if (e.status === 409) notifyConflict(e);
-        await loadList(currentListId);
-      } else {
-        error = e instanceof Error ? e.message : String(e);
-      }
-    } finally {
-      markPending(item.id, false);
-    }
+    await sl.setQuantity(item, delta);
   }
 
   function openAdd() {
@@ -325,33 +170,16 @@
   async function handleItemDialogSubmit(value: ItemFormValue) {
     if (currentListId == null || !list) return;
     itemDialogSubmitting = true;
-    retireInFlightLoads();
     try {
-      if (itemDialogMode === 'add') {
-        const created = await addItem(currentListId, value);
-        list.items = [...list.items, created];
-      } else if (itemDialogInitial) {
-        const updated = await patchItem(currentListId, itemDialogInitial.id, {
-          version: itemDialogInitial.version,
-          name: value.name,
-          quantity: value.quantity,
-          unit: value.unit,
-          category: value.category,
-        });
-        const idx = list.items.findIndex((i) => i.id === updated.id);
-        if (idx >= 0) list.items[idx] = updated;
-      }
-      retireInFlightLoads(); // a GET begun during the request still holds the pre-write list
-      itemDialogOpen = false;
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 409 && itemDialogMode === 'edit' && itemDialogInitial) {
-        // Someone else changed the item since this dialog opened: show their version and let the user redo the edit.
-        notifyConflict(e);
-        itemDialogOpen = false;
-        await loadList(currentListId);
-      } else {
-        error = e instanceof Error ? e.message : String(e);
-      }
+      const outcome =
+        itemDialogMode === 'add'
+          ? await sl.addItem(value)
+          : itemDialogInitial
+            ? await sl.editItem(itemDialogInitial, value)
+            : 'skipped';
+      // Close on success. On a 409 (someone else changed the item since this dialog opened) close too: the list
+      // refreshes to their version and the user redoes the edit there. Other failures keep the dialog open.
+      if (outcome === 'ok' || outcome === 'conflict') itemDialogOpen = false;
     } finally {
       itemDialogSubmitting = false;
     }
@@ -363,33 +191,18 @@
   }
 
   async function handleConfirmDelete() {
-    if (!list || currentListId == null || !pendingDelete) return;
+    if (!pendingDelete) return;
     const item = pendingDelete;
     confirmDeleteOpen = false;
-    markPending(item.id, true);
-    retireInFlightLoads();
     try {
-      await deleteItem(currentListId, item.id);      list.items = list.items.filter((i) => i.id !== item.id);      retireInFlightLoads();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      await sl.deleteItem(item);
     } finally {
-      markPending(item.id, false);
       pendingDelete = null;
     }
   }
 
   async function handleToggleFavorite() {
-    if (currentListId == null || !list) return;
-    const prev = list.isFavorite;
-    retireInFlightLoads();
-    list.isFavorite = !prev;
-    try {
-      const r = await toggleFavorite(currentListId);      list.isFavorite = r.isFavorite;      retireInFlightLoads();
-      await loadLists();
-    } catch (e) {
-      list.isFavorite = prev;
-      error = e instanceof Error ? e.message : String(e);
-    }
+    await sl.toggleFavorite();
   }
 
   function handleMenuAction(action: MenuAction) {
@@ -406,26 +219,14 @@
   }
 
   async function handleConfirmRegenerate() {
-    if (currentListId == null) return;
     confirmRegenerateOpen = false;
-    try {
-      const updated = await regenerateList(currentListId);      list = updated;      retireInFlightLoads();
-      await loadLists();
-      showToast({ message: 'List regenerated from the meal plan', kind: 'success' });
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
+    await sl.regenerate();
   }
 
   async function handleRename(newName: string) {
-    if (currentListId == null || !list) return;
     renameSubmitting = true;
     try {
-      const r = await renameList(currentListId, newName);      list.name = r.name;      retireInFlightLoads();
-      await loadLists();
-      renameOpen = false;
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      if (await sl.rename(newName)) renameOpen = false;
     } finally {
       renameSubmitting = false;
     }
@@ -434,14 +235,7 @@
   async function handleCreateList(name: string) {
     newListSubmitting = true;
     try {
-      const created = await createList(name);
-      await loadLists();
-      currentListId = created.id;
-      syncUrl(created.id);
-      await loadList(created.id);
-      newListOpen = false;
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      if (await sl.createList(name)) newListOpen = false;
     } finally {
       newListSubmitting = false;
     }
@@ -450,60 +244,24 @@
   async function handleGenerate(body: { startDate: string; endDate: string }) {
     generateSubmitting = true;
     try {
-      const created = await generateFromMealPlan(body);
-      await loadLists();
-      currentListId = created.id;
-      syncUrl(created.id);
-      await loadList(created.id);
-      generateOpen = false;
-      showToast({
-        message: `Generated with ${created.itemCount} items`,
-        kind: 'success',
-        durationMs: 3000,
-      });
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      if (await sl.generate(body)) generateOpen = false;
     } finally {
       generateSubmitting = false;
     }
   }
 
   async function handleConfirmClearChecked() {
-    if (currentListId == null) return;
     confirmClearOpen = false;
-    try {
-      const { removed } = await clearChecked(currentListId);
-      await loadList(currentListId);
-      showToast({ message: `Cleared ${removed} checked items`, kind: 'success' });
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
+    await sl.clearChecked();
   }
 
   async function handleConfirmArchive() {
-    if (currentListId == null) return;
     confirmArchiveOpen = false;
-    try {
-      await archiveList(currentListId);
-      await loadLists();
-      const next = lists.find((l) => l.id !== currentListId)?.id ?? null;
-      currentListId = next;
-      if (next != null) {
-        syncUrl(next);
-        await loadList(next);
-      } else {
-        list = null;
-      }
-      showToast({ message: 'List archived', kind: 'info' });
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
+    await sl.archive();
   }
 
   async function handleSelectList(id: number) {
-    currentListId = id;
-    syncUrl(id);
-    await loadList(id);
+    await sl.selectList(id);
   }
 
   // ── Drag-and-drop reorder ───────────────────────────────────────────────
@@ -512,7 +270,7 @@
   // (drop). We optimistically splice the reordered items back into
   // `list.items` with updated sortOrder + category on each event so the
   // categorized view stays coherent while dragging. On finalize we POST
-  // the new orderings to the server.
+  // the new orderings to the server (inside the list's write window).
 
   // Replace ONE category zone's items array — the per-zone update
   // svelte-dnd-action hands us on each event. No category mutation and no
@@ -541,7 +299,6 @@
     // finalize (drop): commit. Stamp the dropped items with this zone's category
     // + their new order, resync list.items from every zone, THEN release the
     // drag guard so the rebuild effect reconciles once from the final state.
-    retireInFlightLoads();
     setZoneItems(category, reordered);
     reordered.forEach((item, index) => {
       item.category = category;
@@ -550,48 +307,18 @@
     if (list) list.items = categories.flatMap((c) => c.items);
     dragging = false;
 
-    if (currentListId == null) return;
-    const updates: SortOrderUpdate[] = reordered.map((item, index) => ({
-      itemId: item.id,
-      sortOrder: index,
-      category,
-    }));
-    // The moved items are pending until the answer brings their new tokens: a tap now would carry the pre-reorder
-    // token and 409 once the reorder commits (quest 8cf3c806).
-    const movedIds = reordered.map((item) => item.id);
-    const sent = new Map(
-      reordered.map((item, index) => [item.id, { heldVersion: item.version, sortOrder: index, category }]),
-    );
-    movedIds.forEach((id) => markPending(id, true));
-    try {
-      const result = await updateSortOrders(currentListId, updates);
-      retireInFlightLoads(); // a GET begun during the request still holds the pre-drag order
-      // Adopt the answered tokens only where the reorder read the row at the token this tab held (lib/itemSync.ts).
-      adoptReorderVersions(list?.items, sent, result.items);
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-      await loadList(currentListId);
-    } finally {
-      movedIds.forEach((id) => markPending(id, false));
-    }
+    await sl.reorder(category, reordered);
   }
 
   $effect(() => {
-    (async () => {
-      await loadLists();
-      if (currentListId == null && lists.length > 0) {
-        currentListId = lists[0].id;
-        syncUrl(currentListId);
-      }
-      await loadList(currentListId);
-    })();
+    // Initial load: the summaries + the selected list (or the top one, when none is selected). untrack: the
+    // load reads (and writes) the state's runes synchronously, and this one-time setup must not subscribe to
+    // them (memory svelte5-setup-effect-async-loader-loop).
+    untrack(() => void sl.load());
     // House liveness (quest 76e6f169 — this island previously refreshed only on
     // visibilitychange): interval poll while visible + immediate refetch on re-show.
-    // The loadSeq guards make a stale poll response harmless.
-    const liveness = startLiveness(() => {
-      if (currentListId != null) void loadList(currentListId);
-      void loadLists();
-    });
+    // A poll during a pending write is deferred to its settle; a stale one is dropped.
+    const liveness = startLiveness(() => void sl.load());
     return () => liveness.stop();
   });
 </script>
