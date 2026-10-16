@@ -8,8 +8,9 @@
 // We wrap the mutable state in a class instance and export the instance.
 //
 // Parity-first ⇒ versionless / last-write-wins. The page does NOT poll (no
-// liveness). Every mutation `await`s then refreshes; a `loadSeq` guard drops a
-// stale reload that resolves after a newer one (memory fca-island-async-race-guards).
+// liveness). Load and write ordering live in a Resource (quest 41337b6f): every
+// write runs inside its window, and the list refresh a write asks for runs once
+// when it settles.
 // There is no autosave/draft here (all actions are explicit buttons), so the
 // flush-before-delete guard from that memory does not apply.
 //
@@ -19,7 +20,8 @@
 // envelope, so a business "no" is `isValid:false` / `success:false`, not a throw.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { InviteDto, ConnectedDto } from './types';
+import type { InviteDto, ConnectedDto, ConnectionsDto } from './types';
+import { Resource } from '$lib/data/resource.svelte';
 import {
   ApiError,
   getConnections,
@@ -86,8 +88,29 @@ class ConnectionsStore {
    * error state — the dashboard pattern).
    */
   loaded = $state(false);
-  /** Monotonic load id — a slower older response must not overwrite a newer one. */
-  private seq = 0;
+  /**
+   * Load + write ordering (quest 41337b6f): the Resource drops a superseded load, dispatches none while
+   * a write is pending (it is owed and runs once at settle), and retires one already in flight when a
+   * write starts — so a GET that overlaps a generate/cancel/accept/disconnect never commits.
+   */
+  #resource = new Resource<ConnectionsDto>({
+    fetch: () => getConnections(),
+    commit: (dto) => {
+      this.activeInvite = dto.activeInvite;
+      this.connected = dto.connected;
+      this.loaded = true;
+    },
+    onLoadStart: () => {
+      if (!this.loaded) this.loading = true; // spinner only on the FIRST load
+      this.error = null;
+    },
+    onLoadError: (e) => {
+      this.error = describe(e, 'load connections');
+    },
+    onLoadIdle: () => {
+      this.loading = false;
+    },
+  });
 
   /** Whether the Submit button is enabled (parity: exactly 6 chars + not mid-validate). */
   get canSubmit(): boolean {
@@ -96,21 +119,7 @@ class ConnectionsStore {
 
   /** Load the active invite + connected list. Spinner only on the FIRST load; reloads refresh in place. */
   async load(): Promise<void> {
-    const s = ++this.seq;
-    try {
-      if (!this.loaded) this.loading = true;
-      this.error = null;
-      const dto = await getConnections();
-      if (s !== this.seq) return; // a newer load superseded this one
-      this.activeInvite = dto.activeInvite;
-      this.connected = dto.connected;
-      this.loaded = true;
-    } catch (e) {
-      if (s !== this.seq) return;
-      this.error = describe(e, 'load connections');
-    } finally {
-      if (s === this.seq) this.loading = false;
-    }
+    await this.#resource.load();
   }
 
   // ── Share section ───────────────────────────────────────────────────────────
@@ -118,7 +127,14 @@ class ConnectionsStore {
   async generate(): Promise<void> {
     this.generating = true;
     try {
-      this.activeInvite = await generateInvite();
+      // reload 'never' (parity: the response IS the new invite); a load it retired is still owed.
+      await this.#resource.run({
+        call: () => generateInvite(),
+        commit: (invite) => {
+          this.activeInvite = invite;
+        },
+        reload: 'never',
+      });
     } catch (e) {
       showToast({ message: describe(e, 'create invite'), kind: 'error' });
     } finally {
@@ -128,8 +144,13 @@ class ConnectionsStore {
 
   async cancelActiveInvite(): Promise<void> {
     try {
-      await cancelInvite();
-      this.activeInvite = null;
+      await this.#resource.run({
+        call: () => cancelInvite(),
+        commit: () => {
+          this.activeInvite = null;
+        },
+        reload: 'never',
+      });
     } catch (e) {
       showToast({ message: describe(e, 'cancel invite'), kind: 'error' });
     }
@@ -185,7 +206,13 @@ class ConnectionsStore {
   async accept(): Promise<void> {
     this.accepting = true;
     try {
-      const res = await acceptCode(this.enteredCode);
+      // reload 'always': the connected list refreshes once the write settles (the outcome is a 200
+      // envelope, so a business "no" refreshes too — harmless, and it converges on server truth).
+      const code = this.enteredCode;
+      const res = await this.#resource.run({ call: () => acceptCode(code) });
+      // The outcome is shown at once; the list refresh is NOT awaited. Waiting on it (council r3) let a
+      // stalled GET hold the confirm open with its buttons disabled, and hide a business "no" — and a
+      // refresh deferred behind another pending write wasn't awaited anyway (slim-review on fca#151).
       if (res.success) {
         showToast({
           message: `You're now connected with ${res.connectedHouseholdName}! Browse their recipes from your Recipes page.`,
@@ -194,7 +221,6 @@ class ConnectionsStore {
         this.showConfirm = false;
         this.pendingHouseholdName = null;
         this.enteredCode = '';
-        await this.load(); // refresh the connected list
       } else {
         // Accept failure returns to the ENTRY view with the mapped error (review R-B3).
         this.codeError = mapValidationError(res.error);
@@ -223,11 +249,16 @@ class ConnectionsStore {
     if (!target) return;
     this.disconnecting = true;
     try {
-      await disconnect(target.householdId);
+      // The confirmed disconnect drops its row at once (council r3: no "Stop Sharing" left on a row the
+      // toast says is gone); reload 'always' then refreshes the list, success or failure.
+      await this.#resource.run({
+        call: () => disconnect(target.householdId),
+        commit: () => {
+          this.connected = this.connected.filter((c) => c.householdId !== target.householdId);
+        },
+      });
       showToast({ message: `Stopped sharing with ${target.householdName}`, kind: 'success' });
-      await this.load();
     } catch (e) {
-      if (e instanceof ApiError) await this.load(); // reconcile to truth on a 4xx
       showToast({ message: describe(e, 'disconnect'), kind: 'error' });
     } finally {
       this.disconnectTarget = null;
