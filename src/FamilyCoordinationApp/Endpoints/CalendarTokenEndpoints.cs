@@ -28,7 +28,80 @@ public static class CalendarTokenEndpoints
         management.MapDelete("/shared", RevokeShared);
         management.MapGet("", GetStatus);
         app.MapGet("/api/calendar/meal-plan.ics", GetFeed).AllowAnonymous();
+
+        // The member's chores feed (quest 3bdbcab7): the same per-member capability, Feed = Chores. No shared link.
+        var chores = app.MapGroup("/api/chores/calendar-token")
+            .RequireTenant()
+            .DisableAntiforgery();
+        chores.MapPost("", CreateOrRotateChores);
+        chores.MapDelete("", RevokeChores);
+        chores.MapGet("", GetChoresStatus);
+        app.MapGet(ChoresFeedPath, GetChoresFeed).AllowAnonymous();
         return app;
+    }
+
+    private const string ChoresFeedPath = "/api/calendar/chores.ics";
+
+    private static async Task<IResult> CreateOrRotateChores(
+        HttpContext httpContext,
+        CallerScope caller,
+        IHouseholdCalendarTokenService tokenService,
+        CancellationToken ct)
+    {
+        var created = await tokenService.CreateOrRotateAsync(caller.HouseholdId, caller.UserId, CalendarFeed.Chores, ct);
+        var url = UriHelper.BuildAbsolute(
+            httpContext.Request.Scheme,
+            httpContext.Request.Host,
+            httpContext.Request.PathBase,
+            ChoresFeedPath,
+            QueryString.Create("token", created.Token));
+        return Results.Ok(new { token = created.Token, url });
+    }
+
+    private static async Task<IResult> RevokeChores(
+        CallerScope caller,
+        IHouseholdCalendarTokenService tokenService,
+        CancellationToken ct)
+    {
+        await tokenService.RevokeAsync(caller.UserId, CalendarFeed.Chores, ct);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> GetChoresStatus(
+        CallerScope caller,
+        IHouseholdCalendarTokenService tokenService,
+        CancellationToken ct)
+    {
+        var active = await tokenService.GetActiveAsync(caller.UserId, CalendarFeed.Chores, ct);
+        return Results.Ok(new { active = active is not null, createdAt = active?.CreatedAt });
+    }
+
+    private static async Task<IResult> GetChoresFeed(
+        string? token,
+        IHouseholdCalendarTokenService tokenService,
+        IChoreCalendarFeedService choreFeed,
+        ICalendarWriter calendarWriter,
+        TimeProvider timeProvider,
+        IHouseholdClock clock,
+        ITenantContext tenant,
+        CancellationToken ct)
+    {
+        var calendarToken = await tokenService.ResolveActiveAsync(token, CalendarFeed.Chores, ct);
+        // A chores token always names its member (the resolve refuses a userless one for this feed).
+        if (calendarToken?.UserId is not { } userId) return CalendarNotFoundResult.Instance;
+
+        // One instant for the whole response: the dates, "today" and the stamp can't straddle a midnight.
+        var nowUtc = timeProvider.GetUtcNow();
+        var timeZone = clock.TimeZone(calendarToken.HouseholdId);
+        // The anonymous feed has no caller: the token's household is the tenant (as for the meal feed).
+        IReadOnlyList<ChoreCalendarEvent> events;
+        using (tenant.RunAs(calendarToken.HouseholdId))
+        {
+            events = await choreFeed.GetEventsAsync(userId, nowUtc.UtcDateTime, timeZone, ct);
+        }
+        var today = ChoreStatusCalculator.LocalDate(nowUtc.UtcDateTime, timeZone);
+        var content = calendarWriter.WriteChores(calendarToken.HouseholdId, userId, today, events, nowUtc);
+        return new CalendarResult(content);
     }
 
     private static async Task<IResult> CreateOrRotate(

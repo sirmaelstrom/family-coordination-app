@@ -9,6 +9,8 @@ import {
   primaryActionLabel,
   ROTATE_CONFIRM,
   REVOKE_CONFIRM,
+  CHORES_ROTATE_CONFIRM,
+  CHORES_REVOKE_CONFIRM,
   sharedLinkLine,
   statusLine,
 } from './feed-ops';
@@ -19,6 +21,14 @@ describe('per-member copy', () => {
     expect(ROTATE_CONFIRM.message).toMatch(/Other members’ links are not affected/);
     expect(REVOKE_CONFIRM.message).toMatch(/Other members’ links are not affected/);
     expect(REVOKE_CONFIRM.message).not.toMatch(/everyone/);
+  });
+
+  it('the chores card says what its link reads, and its confirms spare the meal link (3bdbcab7)', () => {
+    const revealed = { kind: 'revealed', createdAt: null, url: 'u' } as const;
+    expect(statusLine(revealed, 'chores')).toMatch(/the chores assigned to you/);
+    expect(statusLine(revealed)).toMatch(/the household meal plan/);
+    expect(CHORES_ROTATE_CONFIRM.message).toMatch(/meal-plan link is not affected/);
+    expect(CHORES_REVOKE_CONFIRM.message).toMatch(/meal-plan link is not affected/);
   });
 
   it('the shared-link block shows only while the legacy shared link is active', () => {

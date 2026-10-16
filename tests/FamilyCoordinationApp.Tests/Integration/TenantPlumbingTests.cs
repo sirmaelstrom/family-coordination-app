@@ -189,12 +189,13 @@ public sealed class TenantPlumbingTests(PostgresContainerFixture postgres) : IAs
 
     /// <summary>
     /// The pinned unmarked list (D3): the only /api or /uploads endpoints without <c>RequireTenant()</c>. The digest
-    /// cron and the anonymous feed carry no caller, and the site-admin groups are global.
+    /// cron and the anonymous feeds carry no caller, and the site-admin groups are global.
     /// </summary>
     internal static readonly string[] PinnedUnmarked =
     [
         "/api/chores/digest/run",
         "/api/calendar/meal-plan.ics",
+        "/api/calendar/chores.ics", // the member's chores feed: the token's household is set by RunAs (quest 3bdbcab7)
         "/api/settings/household-requests/",
         "/api/settings/household-requests/{id:int}/approve",
         "/api/settings/household-requests/{id:int}/reject",

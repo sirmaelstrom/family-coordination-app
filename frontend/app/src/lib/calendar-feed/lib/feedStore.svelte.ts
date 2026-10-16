@@ -25,12 +25,15 @@
 
 import type { FeedPhase } from './feed-ops';
 import { copyableUrl, phaseAfterRevoke, phaseFromCreated, phaseFromStatus } from './feed-ops';
-import type { CalendarTokenStatusDto } from './types';
+import type { CalendarTokenCreatedDto, CalendarTokenStatusDto } from './types';
 import {
   ApiError,
   createOrRotateCalendarToken,
+  createOrRotateChoresCalendarToken,
   getCalendarTokenStatus,
+  getChoresCalendarTokenStatus,
   revokeCalendarToken,
+  revokeChoresCalendarToken,
   revokeSharedCalendarToken,
 } from './api';
 import { Resource } from '$lib/data/resource.svelte';
@@ -38,13 +41,30 @@ import { showToast } from '$lib/shared/toast-store.svelte';
 
 type RevealedPhase = Extract<FeedPhase, { kind: 'revealed' }>;
 
+/**
+ * The four calls one feed's card makes (quest 3bdbcab7: the meal feed and the chores feed share the store).
+ * `revokeShared` exists only for the meal feed, the one feed that ever had a household-shared link.
+ */
+export interface FeedApi {
+  getStatus(): Promise<CalendarTokenStatusDto>;
+  createOrRotate(): Promise<CalendarTokenCreatedDto>;
+  revoke(): Promise<void>;
+  revokeShared?: () => Promise<void>;
+}
+
 function describe(e: unknown, action: string): string {
   if (e instanceof ApiError) return e.message || `Couldn't ${action} (HTTP ${e.status}).`;
   if (e instanceof Error) return e.message;
   return `Couldn't ${action}.`;
 }
 
-class FeedStore {
+export class FeedStore {
+  readonly #api: FeedApi;
+
+  constructor(api: FeedApi) {
+    this.#api = api;
+  }
+
   /** What the last status load said: `none` or `active`, never a URL. */
   #status = $state<FeedPhase>({ kind: 'none' });
   /** The copy-once reveal from a create/rotate response, or null. */
@@ -66,7 +86,7 @@ class FeedStore {
   shared = $state<{ active: boolean; createdAt: string | null }>({ active: false, createdAt: null });
 
   #resource = new Resource<CalendarTokenStatusDto>({
-    fetch: () => getCalendarTokenStatus(),
+    fetch: () => this.#api.getStatus(),
     commit: (status) => {
       this.shared = { active: status.sharedLinkActive === true, createdAt: status.sharedLinkCreatedAt ?? null };
       this.#status = phaseFromStatus(status);
@@ -104,7 +124,7 @@ class FeedStore {
       // reload 'always' (the run default): a confirming status load follows the write, and a failure
       // reconciles to server truth (it reloaded on any error before, too).
       await this.#resource.run({
-        call: () => createOrRotateCalendarToken(),
+        call: () => this.#api.createOrRotate(),
         commit: (created) => {
           this.#reveal = phaseFromCreated(created, new Date()) as RevealedPhase;
           this.#status = { kind: 'active', createdAt: this.#reveal.createdAt };
@@ -124,7 +144,7 @@ class FeedStore {
     this.busy = true;
     try {
       await this.#resource.run({
-        call: () => revokeCalendarToken(),
+        call: () => this.#api.revoke(),
         commit: () => {
           this.#reveal = null;
           this.#status = phaseAfterRevoke();
@@ -142,10 +162,12 @@ class FeedStore {
 
   /** Revoke the legacy household-shared link. The caller's own link (and its reveal) is untouched. */
   async revokeShared(): Promise<void> {
+    const revokeShared = this.#api.revokeShared;
+    if (!revokeShared) return; // a feed with no shared link (chores) has nothing to revoke
     this.busy = true;
     try {
       await this.#resource.run({
-        call: () => revokeSharedCalendarToken(),
+        call: () => revokeShared(),
         commit: () => {
           this.shared = { active: false, createdAt: null };
         },
@@ -172,5 +194,19 @@ class FeedStore {
   }
 }
 
-/** The single shared calendar-feed store instance (export the instance, not the runes). */
-export const feedStore = new FeedStore();
+// The calls are wrapped, not passed by reference, so a test's module mock of './api' is what runs.
+
+/** The meal-plan feed card's store (export the instance, not the runes). */
+export const feedStore = new FeedStore({
+  getStatus: () => getCalendarTokenStatus(),
+  createOrRotate: () => createOrRotateCalendarToken(),
+  revoke: () => revokeCalendarToken(),
+  revokeShared: () => revokeSharedCalendarToken(),
+});
+
+/** The chores feed card's store (quest 3bdbcab7): the caller's own chores link. No shared link. */
+export const choresFeedStore = new FeedStore({
+  getStatus: () => getChoresCalendarTokenStatus(),
+  createOrRotate: () => createOrRotateChoresCalendarToken(),
+  revoke: () => revokeChoresCalendarToken(),
+});

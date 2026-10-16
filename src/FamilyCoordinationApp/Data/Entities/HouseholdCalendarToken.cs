@@ -31,5 +31,9 @@ public class HouseholdCalendarToken : Tenancy.ITenantEntity, Tenancy.IAuditable,
 /// <summary>The feed a <see cref="HouseholdCalendarToken"/> opens. Stored as a string.</summary>
 public enum CalendarFeed
 {
+    /// <summary>The household meal plan (every member's link reads the same plan).</summary>
     MealPlan,
+
+    /// <summary>The member's own assigned and claimed chores (quest 3bdbcab7). Always a member link, never shared.</summary>
+    Chores,
 }

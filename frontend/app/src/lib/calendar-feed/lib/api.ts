@@ -31,3 +31,21 @@ export async function revokeCalendarToken(): Promise<void> {
 export async function revokeSharedCalendarToken(): Promise<void> {
   await apiSend<void>(`${BASE}/shared`, 'DELETE');
 }
+
+// ── The caller's chores feed (quest 3bdbcab7): the same contract, Feed = Chores, no shared link ──
+const CHORES_BASE = '/api/chores/calendar-token';
+
+/** Whether the caller has an active chores feed link, and since when. Never the token. */
+export async function getChoresCalendarTokenStatus(): Promise<CalendarTokenStatusDto> {
+  return apiGet<CalendarTokenStatusDto>(CHORES_BASE);
+}
+
+/** Create or rotate the caller's chores link → { token, url } (the only response carrying them). */
+export async function createOrRotateChoresCalendarToken(): Promise<CalendarTokenCreatedDto> {
+  return apiSend<CalendarTokenCreatedDto>(CHORES_BASE, 'POST');
+}
+
+/** Revoke the caller's chores link → 204. Their meal link is another feed and keeps working. */
+export async function revokeChoresCalendarToken(): Promise<void> {
+  await apiSend<void>(CHORES_BASE, 'DELETE');
+}
