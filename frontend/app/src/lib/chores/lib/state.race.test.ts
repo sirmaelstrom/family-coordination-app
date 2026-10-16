@@ -176,11 +176,15 @@ describe('chore board: loads are serialized against pending writes (41337b6f)', 
     const refetch = deferred<ChoreBoardDto>();
     vi.mocked(getBoard).mockReturnValueOnce(refetch.promise);
 
-    await boardStore.remove(2);
-    expect(boardStore.board?.chores.map((c) => c.name)).toEqual(['a', 'b', 'c']);
-    expect(getBoard).toHaveBeenCalledTimes(1);
-    expect(showToast).toHaveBeenCalledWith({ message: 'Something went wrong. Please try again.', kind: 'error' });
-    refetch.resolve(minimalBoard([minimalChore({ id: 1, name: 'a' }), minimalChore({ id: 2, name: 'b' }), minimalChore({ id: 3, name: 'c' })]));
+    try {
+      await boardStore.remove(2);
+      expect(boardStore.board?.chores.map((c) => c.name)).toEqual(['a', 'b', 'c']); // before the refetch lands
+      expect(getBoard).toHaveBeenCalledTimes(1);
+      expect(showToast).toHaveBeenCalledWith({ message: 'Something went wrong. Please try again.', kind: 'error' });
+    } finally {
+      // Always land the refetch, so a failure here can't strand the singleton's settle for the next test.
+      refetch.resolve(minimalBoard([minimalChore({ id: 1, name: 'a' }), minimalChore({ id: 2, name: 'b' }), minimalChore({ id: 3, name: 'c' })]));
+    }
   });
 
   it('a conflicted claim rolls back, refetches, and keeps the chore pending until the refetch lands', async () => {
@@ -188,12 +192,15 @@ describe('chore board: loads are serialized against pending writes (41337b6f)', 
     const refetch = deferred<ChoreBoardDto>();
     vi.mocked(getBoard).mockReturnValueOnce(refetch.promise);
 
-    await boardStore.claim(1);
-    expect(boardStore.board?.chores[0].assignmentKind).toBe('none'); // rolled back
-    expect(boardStore.isPending(1)).toBe(true); // a retry would resend the stale version
-    await boardStore.claim(1);
-    expect(claimChore).toHaveBeenCalledTimes(1);
-    refetch.resolve(minimalBoard([claimed()]));
+    try {
+      await boardStore.claim(1);
+      expect(boardStore.board?.chores[0].assignmentKind).toBe('none'); // rolled back
+      expect(boardStore.isPending(1)).toBe(true); // a retry would resend the stale version
+      await boardStore.claim(1);
+      expect(claimChore).toHaveBeenCalledTimes(1);
+    } finally {
+      refetch.resolve(minimalBoard([claimed()]));
+    }
     await boardStore.settled();
     expect(boardStore.isPending(1)).toBe(false);
     expect(boardStore.board?.chores[0].assignmentKind).toBe('claimed');
