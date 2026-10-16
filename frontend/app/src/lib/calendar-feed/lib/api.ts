@@ -8,7 +8,7 @@ export { ApiError };
 
 const BASE = '/api/meal-plan/calendar-token';
 
-/** #1 Whether the household has an active feed token, and since when. Never the token. */
+/** #1 Whether the caller has an active feed link (and whether the legacy shared one is), and since when. Never the token. */
 export async function getCalendarTokenStatus(): Promise<CalendarTokenStatusDto> {
   return apiGet<CalendarTokenStatusDto>(BASE);
 }
@@ -22,7 +22,12 @@ export async function createOrRotateCalendarToken(): Promise<CalendarTokenCreate
   return apiSend<CalendarTokenCreatedDto>(BASE, 'POST');
 }
 
-/** #3 Revoke the active token → 204. The feed URL stops answering (404, no oracle). */
+/** #3 Revoke the caller's own link → 204. That URL stops answering (404, no oracle); other members' links keep working. */
 export async function revokeCalendarToken(): Promise<void> {
   await apiSend<void>(BASE, 'DELETE');
+}
+
+/** #4 Revoke the legacy household-shared link → 204. Members' own links keep working. */
+export async function revokeSharedCalendarToken(): Promise<void> {
+  await apiSend<void>(`${BASE}/shared`, 'DELETE');
 }

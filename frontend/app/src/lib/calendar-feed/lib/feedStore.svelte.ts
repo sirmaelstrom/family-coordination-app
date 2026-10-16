@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 // Calendar-feed card store (quest 17e38a88). Thin reactive shell over the pure
-// transitions in feed-ops.ts. Household-scoped: the server resolves the
-// household from the cookie; the store never sends an id.
+// transitions in feed-ops.ts. Caller-scoped: the server resolves the member and
+// household from the cookie; the store never sends an id. Each member has their own
+// link (quest 8dba87f4), so the status, rotate and revoke are about the caller's link.
 //
 // ⚠ Svelte 5 rune rule (global CORRECTION): never `export` a reassigned
 // `$state`. The mutable state lives in a class instance; the instance is exported.
@@ -25,7 +26,13 @@
 import type { FeedPhase } from './feed-ops';
 import { copyableUrl, phaseAfterRevoke, phaseFromCreated, phaseFromStatus } from './feed-ops';
 import type { CalendarTokenStatusDto } from './types';
-import { ApiError, createOrRotateCalendarToken, getCalendarTokenStatus, revokeCalendarToken } from './api';
+import {
+  ApiError,
+  createOrRotateCalendarToken,
+  getCalendarTokenStatus,
+  revokeCalendarToken,
+  revokeSharedCalendarToken,
+} from './api';
 import { Resource } from '$lib/data/resource.svelte';
 import { showToast } from '$lib/shared/toast-store.svelte';
 
@@ -51,11 +58,17 @@ class FeedStore {
   /** A mutation is in flight (create/rotate/revoke) — buttons disable. */
   busy = $state(false);
   /** Which confirm dialog is open, if any. */
-  confirm = $state<'rotate' | 'revoke' | null>(null);
+  confirm = $state<'rotate' | 'revoke' | 'revoke-shared' | null>(null);
+  /**
+   * The legacy household-shared link (from before per-member links, quest 8dba87f4): whether
+   * one is still active. Read-only here except for its revoke; it is never revealed or rotated.
+   */
+  shared = $state<{ active: boolean; createdAt: string | null }>({ active: false, createdAt: null });
 
   #resource = new Resource<CalendarTokenStatusDto>({
     fetch: () => getCalendarTokenStatus(),
     commit: (status) => {
+      this.shared = { active: status.sharedLinkActive === true, createdAt: status.sharedLinkCreatedAt ?? null };
       this.#status = phaseFromStatus(status);
       // No active token ⇒ no URL can still work (revoked elsewhere). An active status keeps the reveal:
       // the GET cannot say WHICH token is active, and it may be the write's own confirming load.
@@ -121,6 +134,25 @@ class FeedStore {
     } catch (e) {
       this.#reveal = null;
       showToast({ message: describe(e, 'revoke the subscription link'), kind: 'error' });
+    } finally {
+      this.busy = false;
+      this.confirm = null;
+    }
+  }
+
+  /** Revoke the legacy household-shared link. The caller's own link (and its reveal) is untouched. */
+  async revokeShared(): Promise<void> {
+    this.busy = true;
+    try {
+      await this.#resource.run({
+        call: () => revokeSharedCalendarToken(),
+        commit: () => {
+          this.shared = { active: false, createdAt: null };
+        },
+      });
+      showToast({ message: 'Shared household link revoked.', kind: 'success' });
+    } catch (e) {
+      showToast({ message: describe(e, 'revoke the shared household link'), kind: 'error' });
     } finally {
       this.busy = false;
       this.confirm = null;

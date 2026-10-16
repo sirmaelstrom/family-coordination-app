@@ -12,12 +12,19 @@ vi.mock('./api', async () => {
     getCalendarTokenStatus: vi.fn(),
     createOrRotateCalendarToken: vi.fn(),
     revokeCalendarToken: vi.fn(),
+    revokeSharedCalendarToken: vi.fn(),
   };
 });
 vi.mock('$lib/shared/toast-store.svelte', () => ({ showToast: vi.fn() }));
 
 import { feedStore } from './feedStore.svelte';
-import { ApiError, createOrRotateCalendarToken, getCalendarTokenStatus, revokeCalendarToken } from './api';
+import {
+  ApiError,
+  createOrRotateCalendarToken,
+  getCalendarTokenStatus,
+  revokeCalendarToken,
+  revokeSharedCalendarToken,
+} from './api';
 import { showToast } from '$lib/shared/toast-store.svelte';
 import type { CalendarTokenCreatedDto, CalendarTokenStatusDto } from './types';
 
@@ -150,6 +157,66 @@ describe('feedStore on the Resource (41337b6f slice 2)', () => {
     expect(feedStore.url).toBeNull();
     expect(feedStore.phase.kind).toBe('active');
     expect(getCalendarTokenStatus).toHaveBeenCalledTimes(1);
+    expect(showToast).toHaveBeenCalledWith({ message: 'down', kind: 'error' });
+    expect(feedStore.busy).toBe(false);
+  });
+});
+
+// Quest 8dba87f4: links are per member. The status also reports the legacy household-shared
+// link, which can be revoked from the card without touching the caller's own link or its reveal.
+describe('feedStore: the legacy shared link (8dba87f4)', () => {
+  const ACTIVE_WITH_SHARED: CalendarTokenStatusDto = {
+    ...ACTIVE,
+    sharedLinkActive: true,
+    sharedLinkCreatedAt: '2026-09-04T10:00:00Z',
+  };
+
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    vi.mocked(getCalendarTokenStatus).mockResolvedValueOnce(NONE);
+    await feedStore.load();
+    await flush();
+    vi.resetAllMocks();
+  });
+
+  it('a status load reports the shared link apart from the caller’s own', async () => {
+    vi.mocked(getCalendarTokenStatus).mockResolvedValueOnce({ ...NONE, sharedLinkActive: true, sharedLinkCreatedAt: '2026-09-04T10:00:00Z' });
+
+    await feedStore.load();
+
+    expect(feedStore.phase.kind).toBe('none');
+    expect(feedStore.shared).toEqual({ active: true, createdAt: '2026-09-04T10:00:00Z' });
+  });
+
+  it('revoking the shared link keeps the caller’s revealed URL and calls only the shared route', async () => {
+    vi.mocked(createOrRotateCalendarToken).mockResolvedValueOnce(CREATED);
+    vi.mocked(getCalendarTokenStatus).mockResolvedValueOnce(ACTIVE_WITH_SHARED);
+    await feedStore.createOrRotate();
+    await flush();
+    expect(feedStore.shared.active).toBe(true);
+
+    vi.mocked(revokeSharedCalendarToken).mockResolvedValueOnce(undefined);
+    vi.mocked(getCalendarTokenStatus).mockResolvedValueOnce(ACTIVE);
+    await feedStore.revokeShared();
+    await flush();
+
+    expect(revokeSharedCalendarToken).toHaveBeenCalledTimes(1);
+    expect(revokeCalendarToken).not.toHaveBeenCalled();
+    expect(feedStore.shared.active).toBe(false);
+    expect(feedStore.url).toBe(CREATED.url);
+    expect(showToast).toHaveBeenCalledWith({ message: 'Shared household link revoked.', kind: 'success' });
+  });
+
+  it('a failed shared revoke toasts and reconciles to the status', async () => {
+    vi.mocked(getCalendarTokenStatus).mockResolvedValueOnce(ACTIVE_WITH_SHARED);
+    await feedStore.load();
+    vi.mocked(revokeSharedCalendarToken).mockRejectedValueOnce(new ApiError(503, 'down'));
+    vi.mocked(getCalendarTokenStatus).mockResolvedValueOnce(ACTIVE_WITH_SHARED);
+
+    await feedStore.revokeShared();
+    await flush();
+
+    expect(feedStore.shared.active).toBe(true);
     expect(showToast).toHaveBeenCalledWith({ message: 'down', kind: 'error' });
     expect(feedStore.busy).toBe(false);
   });

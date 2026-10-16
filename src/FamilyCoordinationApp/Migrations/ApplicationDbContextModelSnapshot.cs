@@ -475,6 +475,11 @@ namespace FamilyCoordinationApp.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Feed")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<int>("HouseholdId")
                         .HasColumnType("integer");
 
@@ -486,6 +491,9 @@ namespace FamilyCoordinationApp.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<int?>("UserId")
+                        .HasColumnType("integer");
+
                     b.Property<uint>("Version")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
@@ -494,14 +502,17 @@ namespace FamilyCoordinationApp.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("HouseholdId")
-                        .IsUnique()
-                        .HasFilter("\"RevokedAt\" IS NULL");
-
                     b.HasIndex("TokenHash")
                         .IsUnique();
 
+                    b.HasIndex("UserId");
+
                     b.HasIndex("HouseholdId", "RevokedAt");
+
+                    b.HasIndex("HouseholdId", "UserId", "Feed")
+                        .IsUnique()
+                        .HasDatabaseName("IX_HouseholdCalendarTokens_Active_HouseholdId_UserId_Feed")
+                        .HasFilter("\"RevokedAt\" IS NULL");
 
                     b.ToTable("HouseholdCalendarTokens", (string)null);
                 });
@@ -1391,7 +1402,14 @@ namespace FamilyCoordinationApp.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
                     b.Navigation("Household");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.HouseholdChoreDigestSettings", b =>
