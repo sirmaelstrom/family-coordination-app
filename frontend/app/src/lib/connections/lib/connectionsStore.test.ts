@@ -92,24 +92,33 @@ describe('connectionsStore on the Resource (41337b6f slice 2)', () => {
     expect(connectionsStore.activeInvite).toBeNull();
   });
 
-  it('accept keeps the confirm up until the refreshed list has landed, then refreshes once', async () => {
+  it('a business "no" from accept shows at once, even while the refresh stalls', async () => {
+    connectionsStore.setCode('xyz789');
+    connectionsStore.showConfirm = true;
+    vi.mocked(acceptCode).mockResolvedValueOnce({ success: false, connectedHouseholdName: null, error: 'expired' });
+    const refresh = deferred<ConnectionsDto>();
+    vi.mocked(getConnections).mockReturnValueOnce(refresh.promise); // a stalled refresh
+
+    await connectionsStore.accept();
+
+    expect(connectionsStore.codeError).toBe('This code has expired. Ask them to create a new one.');
+    expect(connectionsStore.showConfirm).toBe(false);
+    expect(connectionsStore.accepting).toBe(false);
+    refresh.resolve(dto(null, []));
+    await flush();
+  });
+
+  it('accept closes the confirm on success and refreshes the list once after the write settles', async () => {
     connectionsStore.setCode('xyz789');
     connectionsStore.showConfirm = true;
     vi.mocked(acceptCode).mockResolvedValueOnce({ success: true, connectedHouseholdName: 'Others', error: null });
-    const refresh = deferred<ConnectionsDto>();
-    vi.mocked(getConnections).mockReturnValueOnce(refresh.promise);
+    vi.mocked(getConnections).mockResolvedValueOnce(dto(null, [OTHER]));
 
-    const accepting = connectionsStore.accept();
+    await connectionsStore.accept();
+    expect(connectionsStore.showConfirm).toBe(false);
     await flush();
-    expect(getConnections).toHaveBeenCalledTimes(1); // dispatched at settle
-    expect(connectionsStore.accepting).toBe(true); // ...and awaited, as before the migration
-    expect(connectionsStore.showConfirm).toBe(true);
-
-    refresh.resolve(dto(null, [OTHER]));
-    await accepting;
 
     expect(acceptCode).toHaveBeenCalledWith('XYZ789');
-    expect(connectionsStore.showConfirm).toBe(false);
     expect(getConnections).toHaveBeenCalledTimes(1);
     expect(connectionsStore.connected).toEqual([OTHER]);
     expect(connectionsStore.enteredCode).toBe('');

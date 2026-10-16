@@ -210,9 +210,9 @@ class ConnectionsStore {
       // envelope, so a business "no" refreshes too — harmless, and it converges on server truth).
       const code = this.enteredCode;
       const res = await this.#resource.run({ call: () => acceptCode(code) });
-      // As before the migration, the confirm stays up (accepting) until the refreshed list has landed,
-      // so the new connection is listed when it closes (council r3).
-      await this.#resource.settled();
+      // The outcome is shown at once; the list refresh is NOT awaited. Waiting on it (council r3) let a
+      // stalled GET hold the confirm open with its buttons disabled, and hide a business "no" — and a
+      // refresh deferred behind another pending write wasn't awaited anyway (slim-review on fca#151).
       if (res.success) {
         showToast({
           message: `You're now connected with ${res.connectedHouseholdName}! Browse their recipes from your Recipes page.`,
