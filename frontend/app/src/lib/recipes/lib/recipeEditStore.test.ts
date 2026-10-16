@@ -91,7 +91,11 @@ describe('recipe draft base version (0c97a292)', () => {
 
     expect(updateRecipe).toHaveBeenCalledTimes(1);
     expect(vi.mocked(updateRecipe).mock.calls[0][1].version).toBe(3);
-    expect(getRecipe).not.toHaveBeenCalled();
+    // No GET before the save: the token is the draft's base, never a live fetch. The 409 itself now fetches the
+    // latest version once, AFTER the PUT, for the conflict diff (quest adfe3d57); that call is the only one.
+    const putAt = vi.mocked(updateRecipe).mock.invocationCallOrder[0];
+    expect(vi.mocked(getRecipe).mock.invocationCallOrder.filter((at) => at < putAt)).toEqual([]);
+    expect(getRecipe).toHaveBeenCalledTimes(1);
   });
 
   it('a 409 on the restored draft\'s save shows the reload banner (the server half is RecipesEndpointTests)', async () => {
@@ -415,5 +419,132 @@ describe('recipe draft recovery (adfe3d57)', () => {
     await discarding;
     expect(deleteDraft).toHaveBeenCalledTimes(1);
     expect(recipeEditStore.hasDraft).toBe(false);
+  });
+});
+
+// Quest adfe3d57 part 2, operator answer (c): after a 409, show a field-level diff of mine vs the latest version
+// first, then let the user keep mine (an explicit overwrite with THAT version's token) or take theirs.
+describe('recipe conflict diff, then keep mine or take theirs (adfe3d57)', () => {
+  const assign = vi.fn();
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.stubGlobal('window', { location: { assign } });
+    vi.mocked(getCategories).mockResolvedValue([]);
+    vi.mocked(deleteDraft).mockResolvedValue(undefined);
+    vi.mocked(saveDraft).mockResolvedValue(undefined);
+    recipeEditStore.init({ userId: 1, recipeId: RECIPE_ID } as never);
+    vi.mocked(getDraft).mockResolvedValue(null);
+    vi.mocked(getRecipe).mockResolvedValueOnce(full(5));
+    await recipeEditStore.load(RECIPE_ID);
+    recipeEditStore.form.name = 'Soup, mine';
+    recipeEditStore.form.servings = 6;
+    recipeEditStore.onEdit();
+  });
+
+  afterEach(() => {
+    recipeEditStore.teardown();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  function theirs(version: number): RecipeFullDto {
+    return { ...full(version), name: 'Soup, theirs', description: 'Now with leeks' };
+  }
+
+  it('a 409 fetches the latest version and shows exactly the fields that differ', async () => {
+    vi.mocked(updateRecipe).mockRejectedValueOnce(new ApiError(409, 'conflict'));
+    vi.mocked(getRecipe).mockResolvedValueOnce(theirs(7));
+
+    await recipeEditStore.save();
+
+    expect(recipeEditStore.conflict).toBe(true);
+    expect(recipeEditStore.conflictDiff?.fields).toEqual([
+      { field: 'name', label: 'Name', yours: 'Soup, mine', theirs: 'Soup, theirs' },
+      { field: 'description', label: 'Description', yours: '', theirs: 'Now with leeks' },
+      { field: 'servings', label: 'Servings', yours: '6', theirs: '2' },
+    ]);
+    expect(recipeEditStore.conflictDiff?.ingredients).toBeNull();
+  });
+
+  it('keep mine saves over exactly the version the diff showed', async () => {
+    vi.mocked(updateRecipe).mockRejectedValueOnce(new ApiError(409, 'conflict'));
+    vi.mocked(getRecipe).mockResolvedValueOnce(theirs(7));
+    await recipeEditStore.save();
+    vi.mocked(updateRecipe).mockResolvedValueOnce(theirs(8) as never);
+
+    await recipeEditStore.keepMine();
+
+    expect(updateRecipe).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(updateRecipe).mock.calls[0][1].version).toBe(5); // the stale base that conflicted
+    expect(vi.mocked(updateRecipe).mock.calls[1][1]).toMatchObject({ version: 7, name: 'Soup, mine', servings: 6 });
+    expect(deleteDraft).toHaveBeenCalled();
+    expect(assign).toHaveBeenCalledWith('/recipes');
+  });
+
+  it('a save landing after the diff makes keep mine conflict again and refresh the diff; nothing unseen is overwritten', async () => {
+    vi.mocked(updateRecipe).mockRejectedValueOnce(new ApiError(409, 'conflict'));
+    vi.mocked(getRecipe).mockResolvedValueOnce(theirs(7));
+    await recipeEditStore.save();
+    vi.mocked(updateRecipe).mockRejectedValueOnce(new ApiError(409, 'conflict')); // v8 landed after the diff
+    vi.mocked(getRecipe).mockResolvedValueOnce({ ...theirs(8), servings: 10 });
+
+    await recipeEditStore.keepMine();
+
+    expect(vi.mocked(updateRecipe).mock.calls[1][1].version).toBe(7);
+    expect(recipeEditStore.conflict).toBe(true);
+    expect(recipeEditStore.conflictDiff?.fields.find((f) => f.field === 'servings')?.theirs).toBe('10');
+    expect(assign).not.toHaveBeenCalled();
+
+    vi.mocked(updateRecipe).mockResolvedValueOnce(theirs(9) as never);
+    await recipeEditStore.keepMine();
+    expect(vi.mocked(updateRecipe).mock.calls[2][1].version).toBe(8);
+  });
+
+  it('no diff, no keep mine: when the latest version cannot be fetched, keep mine does nothing', async () => {
+    vi.mocked(updateRecipe).mockRejectedValueOnce(new ApiError(409, 'conflict'));
+    vi.mocked(getRecipe).mockRejectedValueOnce(new ApiError(503, 'down'));
+    await recipeEditStore.save();
+
+    expect(recipeEditStore.conflict).toBe(true);
+    expect(recipeEditStore.conflictDiff).toBeNull();
+    expect(recipeEditStore.conflictGone).toBe(false);
+
+    await recipeEditStore.keepMine();
+    expect(updateRecipe).toHaveBeenCalledTimes(1);
+  });
+
+  it('a 404 for the latest version says the recipe is gone', async () => {
+    vi.mocked(updateRecipe).mockRejectedValueOnce(new ApiError(409, 'conflict'));
+    vi.mocked(getRecipe).mockRejectedValueOnce(new ApiError(404, 'gone'));
+
+    await recipeEditStore.save();
+
+    expect(recipeEditStore.conflictDiff).toBeNull();
+    expect(recipeEditStore.conflictGone).toBe(true);
+  });
+
+  it('the diff follows the form while the user keeps typing', async () => {
+    vi.mocked(updateRecipe).mockRejectedValueOnce(new ApiError(409, 'conflict'));
+    vi.mocked(getRecipe).mockResolvedValueOnce(theirs(7));
+    await recipeEditStore.save();
+
+    recipeEditStore.form.name = 'Soup, theirs';
+
+    expect(recipeEditStore.conflictDiff?.fields.map((f) => f.field)).toEqual(['description', 'servings']);
+  });
+
+  it('take theirs is the existing reload, and it clears the diff', async () => {
+    vi.mocked(updateRecipe).mockRejectedValueOnce(new ApiError(409, 'conflict'));
+    vi.mocked(getRecipe).mockResolvedValueOnce(theirs(7));
+    await recipeEditStore.save();
+    vi.mocked(getRecipe).mockResolvedValueOnce(theirs(7));
+
+    await recipeEditStore.reloadAfterConflict();
+
+    expect(recipeEditStore.conflict).toBe(false);
+    expect(recipeEditStore.conflictDiff).toBeNull();
+    expect(recipeEditStore.form.name).toBe('Soup, theirs');
+    expect(vi.mocked(saveDraft).mock.calls.at(-1)?.[0]).toMatchObject({ name: 'Soup, mine' }); // mine kept as a draft
   });
 });

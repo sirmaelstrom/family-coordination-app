@@ -17,6 +17,7 @@
   import { untrack } from 'svelte';
   import type { ShellContext } from './lib/types';
   import { recipeEditStore } from './lib/recipeEditStore.svelte';
+  import { isEmptyDiff } from './lib/conflictDiff';
   import BasicInfoSection from './lib/components/BasicInfoSection.svelte';
   import ImageSection from './lib/components/ImageSection.svelte';
   import IngredientEntry from './lib/components/IngredientEntry.svelte';
@@ -71,21 +72,93 @@
     <div class="rc-loading-bar"><span></span></div>
   {:else}
     {#if store.conflict}
-      <!-- Stale-version 409: NON-destructive — the form (and the user's typing) stays; Reload refetches
-           the latest (typed state is preserved as the draft first, see reloadAfterConflict). -->
+      <!-- Stale-version 409: NON-destructive — the form (and the user's typing) stays. The banner first shows
+           what differs from the latest saved version (quest adfe3d57, answer (c)), then offers Keep mine (save over
+           exactly the version shown) or Use theirs (reloadAfterConflict: the typed state is kept as a draft). -->
       <div class="rc-conflict-banner" role="alert">
-        <span class="rc-conflict-text">
-          This recipe changed — reload to get the latest. Your edits stay on screen until you reload (reloading
-          keeps them as a draft).
-        </span>
-        <button
-          type="button"
-          class="rc-btn-conflict"
-          onclick={() => store.reloadAfterConflict()}
-          disabled={store.reloading || store.discarding}
-        >
-          {store.reloading ? 'Reloading…' : 'Reload'}
-        </button>
+        {#if store.conflictLoading}
+          <span class="rc-conflict-text">Someone else saved this recipe while you were editing. Loading their version…</span>
+        {:else if store.conflictDiff}
+          {@const diff = store.conflictDiff}
+          <div class="rc-conflict-body">
+            <p class="rc-conflict-text">
+              Someone else saved this recipe while you were editing.
+              {#if isEmptyDiff(diff)}
+                Their version has the same content as yours.
+              {:else}
+                Here is what differs:
+              {/if}
+            </p>
+            {#if diff.fields.length > 0}
+              <table class="rc-diff">
+                <thead>
+                  <tr><th scope="col">Field</th><th scope="col">Yours</th><th scope="col">Theirs</th></tr>
+                </thead>
+                <tbody>
+                  {#each diff.fields as row (row.field)}
+                    <tr>
+                      <th scope="row">{row.label}</th>
+                      <td class="rc-diff-value">{row.yours || '(empty)'}</td>
+                      <td class="rc-diff-value">{row.theirs || '(empty)'}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+            {#if diff.ingredients}
+              <div class="rc-diff-ingredients">
+                <strong>Ingredients:</strong>
+                {#if diff.ingredients.reorderedOnly}
+                  the same ingredients, in a different order.
+                {:else}
+                  <ul>
+                    {#each diff.ingredients.onlyYours as line, i (`y${i}`)}
+                      <li><span class="rc-diff-tag">only yours</span> {line}</li>
+                    {/each}
+                    {#each diff.ingredients.onlyTheirs as line, i (`t${i}`)}
+                      <li><span class="rc-diff-tag">only theirs</span> {line}</li>
+                    {/each}
+                  </ul>
+                {/if}
+              </div>
+            {/if}
+            <div class="rc-conflict-actions">
+              <button
+                type="button"
+                class="rc-btn-conflict"
+                onclick={() => store.keepMine()}
+                disabled={store.saving || store.reloading || store.discarding}
+              >
+                {store.saving ? 'Saving…' : 'Keep mine (replace theirs)'}
+              </button>
+              <button
+                type="button"
+                class="rc-btn-conflict"
+                onclick={() => store.reloadAfterConflict()}
+                disabled={store.saving || store.reloading || store.discarding}
+              >
+                {store.reloading ? 'Loading…' : 'Use theirs (keep mine as a draft)'}
+              </button>
+            </div>
+          </div>
+        {:else}
+          <span class="rc-conflict-text">
+            {#if store.conflictGone}
+              This recipe was removed while you were editing.
+            {:else}
+              This recipe changed — reload to get the latest. Your edits stay on screen until you reload (reloading
+              keeps them as a draft).
+            {/if}
+          </span>
+          <button
+            type="button"
+            class="rc-btn-conflict"
+            onclick={() => store.reloadAfterConflict()}
+            disabled={store.reloading || store.discarding}
+          >
+            {store.reloading ? 'Reloading…' : 'Reload'}
+          </button>
+        {/if}
       </div>
     {/if}
 
@@ -297,6 +370,56 @@
   }
   .rc-conflict-text {
     flex: 1 1 240px;
+    margin: 0;
+  }
+  .rc-conflict-body {
+    flex: 1 1 100%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .rc-diff {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  .rc-diff th,
+  .rc-diff td {
+    text-align: left;
+    vertical-align: top;
+    padding: 4px 8px 4px 0;
+    border-bottom: 1px solid var(--color-line);
+  }
+  .rc-diff thead th {
+    font-weight: 500;
+    color: var(--color-text-muted);
+  }
+  .rc-diff tbody th {
+    width: 28%;
+    font-weight: 500;
+  }
+  .rc-diff-value {
+    overflow-wrap: anywhere;
+    white-space: pre-line;
+    display: -webkit-box;
+    -webkit-line-clamp: 6;
+    line-clamp: 6;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .rc-diff-ingredients ul {
+    margin: 4px 0 0;
+    padding-left: 18px;
+  }
+  .rc-diff-tag {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+  }
+  .rc-conflict-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
   }
   .rc-btn-conflict {
     font: inherit;
