@@ -154,7 +154,7 @@ runnable without Docker (`--filter "kind!=integration"`).
   household usage exists to calibrate any descriptive band. *Mitigation (E5):* ship descriptive-only (neutral
   shares + equal-share reference), all bands as tunable constants (P4), tuned post-launch. This is the
   operator-accepted consequence of bundling dark.
-- **GAP-4 — Real cron scheduling on the darktower is deploy-time.** The endpoint + due-logic are
+- **GAP-4 — Real cron scheduling on the production host is deploy-time.** The endpoint + due-logic are
   integration-tested by *invoking* the endpoint; the actual cron entry firing on schedule is verified manually
   post-deploy (and is trivially observable via `LastSentAt` + a Discord post). *Acceptable:* cron correctness
   is an ops concern, not app logic; the app logic (idempotent self-selection of due households) is covered.
