@@ -60,6 +60,7 @@ public static class FieldLengths
     public static class HouseholdCalendarToken
     {
         public const int TokenHash = 64;
+        public const int Feed = 20;
     }
 
     public static class HouseholdChoreDigestSettings

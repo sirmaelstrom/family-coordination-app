@@ -27,6 +27,7 @@ public sealed class ConcurrencyOutcomeTests(PostgresContainerFixture postgres) :
     private const int Inviting = 1;
     private const int Accepting = 2;
     private const int Third = 3;
+    private const int InvitingUser = 1; // the seeded member of Inviting; calendar links are per member (quest 8dba87f4)
     private const string Code = "ABC234";
     private static readonly DateTime Now = new(2026, 10, 12, 12, 0, 0, DateTimeKind.Utc);
 
@@ -140,10 +141,10 @@ public sealed class ConcurrencyOutcomeTests(PostgresContainerFixture postgres) :
     [Fact]
     public async Task A_double_clicked_calendar_revoke_succeeds()
     {
-        await CallerTokens().CreateOrRotateAsync(Inviting);
-        var interleaved = new InterleavingDbContextFactory(_connectionString, () => CallerTokens().RevokeAsync(Inviting));
+        await CallerTokens().CreateOrRotateAsync(Inviting, InvitingUser, CalendarFeed.MealPlan);
+        var interleaved = new InterleavingDbContextFactory(_connectionString, () => CallerTokens().RevokeAsync(InvitingUser, CalendarFeed.MealPlan));
 
-        await Tokens(interleaved).RevokeAsync(Inviting);
+        await Tokens(interleaved).RevokeAsync(InvitingUser, CalendarFeed.MealPlan);
 
         await using var check = _plain.CreateDbContext();
         (await check.HouseholdCalendarTokens.CountAsync(t => t.RevokedAt == null)).Should().Be(0);
@@ -152,11 +153,11 @@ public sealed class ConcurrencyOutcomeTests(PostgresContainerFixture postgres) :
     [Fact]
     public async Task A_rotation_landing_under_a_revoke_is_still_a_conflict()
     {
-        await CallerTokens().CreateOrRotateAsync(Inviting);
+        await CallerTokens().CreateOrRotateAsync(Inviting, InvitingUser, CalendarFeed.MealPlan);
         var interleaved = new InterleavingDbContextFactory(_connectionString,
-            async () => await CallerTokens().CreateOrRotateAsync(Inviting));
+            async () => await CallerTokens().CreateOrRotateAsync(Inviting, InvitingUser, CalendarFeed.MealPlan));
 
-        var act = () => Tokens(interleaved).RevokeAsync(Inviting);
+        var act = () => Tokens(interleaved).RevokeAsync(InvitingUser, CalendarFeed.MealPlan);
 
         await act.Should().ThrowAsync<ConcurrencyConflictException>("the revoke never saw the new active token");
         await using var check = _plain.CreateDbContext();

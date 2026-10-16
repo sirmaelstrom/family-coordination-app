@@ -1,3 +1,4 @@
+using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Calendar;
 using FamilyCoordinationApp.Services.Dtos;
@@ -8,7 +9,11 @@ using Microsoft.AspNetCore.Http.Extensions;
 
 namespace FamilyCoordinationApp.Endpoints;
 
-/// <summary>Authenticated management of the household calendar capability and its anonymous feed.</summary>
+/// <summary>
+/// Authenticated management of the caller's own meal-plan calendar capability, and its anonymous feed. Each member
+/// has their own link (quest 8dba87f4): create, rotate and revoke touch only the caller's link. The legacy
+/// household-shared link, if one is still active, is reported and can be revoked, never rotated.
+/// </summary>
 public static class CalendarTokenEndpoints
 {
     public static IEndpointRouteBuilder MapCalendarTokenEndpoints(this IEndpointRouteBuilder app)
@@ -20,6 +25,7 @@ public static class CalendarTokenEndpoints
 
         management.MapPost("", CreateOrRotate);
         management.MapDelete("", Revoke);
+        management.MapDelete("/shared", RevokeShared);
         management.MapGet("", GetStatus);
         app.MapGet("/api/calendar/meal-plan.ics", GetFeed).AllowAnonymous();
         return app;
@@ -31,7 +37,7 @@ public static class CalendarTokenEndpoints
         IHouseholdCalendarTokenService tokenService,
         CancellationToken ct)
     {
-        var created = await tokenService.CreateOrRotateAsync(caller.HouseholdId, ct);
+        var created = await tokenService.CreateOrRotateAsync(caller.HouseholdId, caller.UserId, CalendarFeed.MealPlan, ct);
         var url = UriHelper.BuildAbsolute(
             httpContext.Request.Scheme,
             httpContext.Request.Host,
@@ -46,7 +52,16 @@ public static class CalendarTokenEndpoints
         IHouseholdCalendarTokenService tokenService,
         CancellationToken ct)
     {
-        await tokenService.RevokeAsync(caller.HouseholdId, ct);
+        await tokenService.RevokeAsync(caller.UserId, CalendarFeed.MealPlan, ct);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> RevokeShared(
+        CallerScope caller,
+        IHouseholdCalendarTokenService tokenService,
+        CancellationToken ct)
+    {
+        await tokenService.RevokeSharedAsync(CalendarFeed.MealPlan, ct);
         return Results.NoContent();
     }
 
@@ -55,8 +70,15 @@ public static class CalendarTokenEndpoints
         IHouseholdCalendarTokenService tokenService,
         CancellationToken ct)
     {
-        var active = await tokenService.GetActiveAsync(caller.HouseholdId, ct);
-        return Results.Ok(new { active = active is not null, createdAt = active?.CreatedAt });
+        var active = await tokenService.GetActiveAsync(caller.UserId, CalendarFeed.MealPlan, ct);
+        var shared = await tokenService.GetActiveSharedAsync(CalendarFeed.MealPlan, ct);
+        return Results.Ok(new
+        {
+            active = active is not null,
+            createdAt = active?.CreatedAt,
+            sharedLinkActive = shared is not null,
+            sharedLinkCreatedAt = shared?.CreatedAt,
+        });
     }
 
     private static async Task<IResult> GetFeed(
@@ -70,7 +92,7 @@ public static class CalendarTokenEndpoints
         ITenantContext tenant,
         CancellationToken ct)
     {
-        var calendarToken = await tokenService.ResolveActiveAsync(token, ct);
+        var calendarToken = await tokenService.ResolveActiveAsync(token, CalendarFeed.MealPlan, ct);
         if (calendarToken is null) return CalendarNotFoundResult.Instance;
 
         var nowUtc = timeProvider.GetUtcNow();

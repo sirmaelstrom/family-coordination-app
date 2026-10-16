@@ -1,7 +1,8 @@
 <script lang="ts">
-  // Calendar-feed card (quest 17e38a88): a settings surface where any household
-  // member creates, copies, rotates, and revokes the household meal-plan feed
-  // link. Fronts /api/meal-plan/calendar-token (fca#114). Loads the status ONCE;
+  // Calendar-feed card (quest 17e38a88): a settings surface where each household
+  // member creates, copies, rotates, and revokes their OWN meal-plan feed link
+  // (per-member links, quest 8dba87f4), and can revoke the legacy shared link while
+  // one is active. Fronts /api/meal-plan/calendar-token (fca#114). Loads the status ONCE;
   // no polling (a settings surface, parity with the connections island).
   import { untrack } from 'svelte';
   import type { ShellContext } from './lib/types';
@@ -9,15 +10,20 @@
   import {
     CLIENT_HOWTO,
     REVOKE_CONFIRM,
+    REVOKE_SHARED_CONFIRM,
     ROTATE_CONFIRM,
     describeCreatedAt,
     postIsRotate,
     primaryActionLabel,
+    sharedLinkLine,
     statusLine,
   } from './lib/feed-ops';
   import ConfirmDialog from '$lib/shared/ConfirmDialog.svelte';
 
   let { ctx }: { ctx: ShellContext } = $props();
+
+  /** The legacy shared-link block's copy, or null while no shared link is active. */
+  const sharedLine = $derived(sharedLinkLine({ sharedLinkActive: store.shared.active }));
 
   // ⚠ Loop safety (memory svelte5-setup-effect-async-loader-loop): untrack() gives
   // the one-time setup effect zero reactive deps so it runs exactly once.
@@ -52,8 +58,8 @@
       <h2 class="cal-card-title">Subscribe to the meal plan</h2>
       <p class="cal-card-sub">
         Add the household meal plan to your phone or calendar app. It shows the current week and the next three,
-        one all-day event per meal, and updates on its own. The link is shared by the whole household — anyone
-        in the household can rotate or revoke it.
+        one all-day event per meal, and updates on its own. The link is yours: every member has their own, and
+        rotating or revoking yours does not affect anyone else's.
       </p>
 
       <p class="cal-status" data-phase={store.phase.kind}>{statusLine(store.phase)}</p>
@@ -77,6 +83,21 @@
         {/if}
       </div>
     </section>
+
+    {#if sharedLine}
+      <section class="cal-card" data-testid="cal-shared-link">
+        <h2 class="cal-card-title">Older shared link</h2>
+        <p class="cal-status">{sharedLine}</p>
+        {#if store.shared.createdAt}
+          <p class="cal-created">{describeCreatedAt(store.shared.createdAt)}</p>
+        {/if}
+        <div class="cal-actions">
+          <button type="button" class="cal-btn-danger" disabled={store.busy} onclick={() => (store.confirm = 'revoke-shared')}>
+            Revoke shared link
+          </button>
+        </div>
+      </section>
+    {/if}
 
     <section class="cal-card">
       <h2 class="cal-card-title">How to add it</h2>
@@ -106,6 +127,15 @@
   confirmLabel={REVOKE_CONFIRM.confirmLabel}
   onCancel={() => (store.confirm = null)}
   onConfirm={() => void store.revoke()}
+/>
+<ConfirmDialog
+  open={store.confirm === 'revoke-shared'}
+  danger
+  title={REVOKE_SHARED_CONFIRM.title}
+  message={REVOKE_SHARED_CONFIRM.message}
+  confirmLabel={REVOKE_SHARED_CONFIRM.confirmLabel}
+  onCancel={() => (store.confirm = null)}
+  onConfirm={() => void store.revokeShared()}
 />
 
 <style>
