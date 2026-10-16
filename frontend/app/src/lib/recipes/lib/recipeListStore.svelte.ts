@@ -7,9 +7,14 @@
 //
 // Parity-first ⇒ versionless / last-write-wins. Search is SERVER-side + debounced
 // (D9); the favorites filter is CLIENT-side over the loaded set; favoriteRecipeIds
-// arrive with the same payload (one round-trip). On any 4xx/network error we
-// reconcile (re-run the current query) + a calm toast. Liveness re-runs the
-// current query while the tab is visible.
+// arrive with the same payload (one round-trip). Liveness re-runs the current
+// query while the tab is visible.
+//
+// Ordering lives in a Resource (quest 41337b6f): no load is dispatched while a
+// favorite/delete write is pending (it is owed and runs once at settle), and a
+// load already in flight when a write starts is retired. Writes go through
+// mutate(): a 409/other 4xx undoes + reconciles + a calm toast; a 5xx/network
+// failure undoes with an error toast and no reconcile.
 //
 // Owns ONLY list-view files (spec §6 store split) — the edit view has its own
 // store (recipeEditStore.svelte.ts), so WP-5 / WP-6 never collide.
@@ -20,6 +25,8 @@ import type {
   RecipeListItemDto,
   ShellContext,
 } from './types';
+import type { RecipeListDto } from './types';
+import { Resource } from '$lib/data/resource.svelte';
 import {
   ApiError,
   listRecipes,
@@ -49,9 +56,38 @@ class RecipeListStore {
 
   /** True once the first load has resolved — gates the skeleton so search/liveness don't reflash it. */
   private hasLoaded = false;
-  /** Monotonic load id — search / connected-switch / liveness / reconcile all call load(); a slower
-   *  older response must NOT overwrite a newer one, so each load only applies if it's still the latest. */
-  private loadSeq = 0;
+  /** Load + write ordering. Search / connected-switch / liveness / reconcile all call load(); the
+   *  Resource applies only the latest load, and none that overlaps a pending favorite/delete write. */
+  #resource = new Resource<{ connected: number | null; dto: RecipeListDto }>({
+    fetch: async () => {
+      const connected = this.selectedConnectedId;
+      const dto =
+        connected == null
+          ? await listRecipes(this.query)
+          : await listConnectedRecipes(connected, this.query);
+      return { connected, dto };
+    },
+    commit: ({ connected, dto }) => {
+      this.recipes = dto.recipes;
+      this.favoriteIds = connected == null ? new Set(dto.favoriteRecipeIds) : new Set();
+      this.hasLoaded = true;
+    },
+    onLoadStart: () => {
+      if (!this.hasLoaded) this.loading = true; // spinner only on the FIRST load
+      this.error = null;
+    },
+    onLoadError: (e) => {
+      this.error =
+        e instanceof ApiError
+          ? `Failed to load recipes (HTTP ${e.status}).`
+          : e instanceof Error
+            ? e.message
+            : String(e);
+    },
+    onLoadIdle: () => {
+      this.loading = false;
+    },
+  });
   /** The list refetch hook (ListApp's loader), shared by liveness + error reconcile. */
   private refresh: (() => Promise<void>) | null = null;
 
@@ -92,33 +128,7 @@ class RecipeListStore {
    * refresh in place (no skeleton reflash).
    */
   async load(): Promise<void> {
-    const seq = ++this.loadSeq;
-    try {
-      if (!this.hasLoaded) this.loading = true;
-      this.error = null;
-      if (this.selectedConnectedId == null) {
-        const dto = await listRecipes(this.query);
-        if (seq !== this.loadSeq) return; // a newer load superseded this one
-        this.recipes = dto.recipes;
-        this.favoriteIds = new Set(dto.favoriteRecipeIds);
-      } else {
-        const dto = await listConnectedRecipes(this.selectedConnectedId, this.query);
-        if (seq !== this.loadSeq) return;
-        this.recipes = dto.recipes;
-        this.favoriteIds = new Set();
-      }
-      this.hasLoaded = true;
-    } catch (e) {
-      if (seq !== this.loadSeq) return; // don't surface an error from a superseded load
-      this.error =
-        e instanceof ApiError
-          ? `Failed to load recipes (HTTP ${e.status}).`
-          : e instanceof Error
-            ? e.message
-            : String(e);
-    } finally {
-      if (seq === this.loadSeq) this.loading = false;
-    }
+    await this.#resource.load();
   }
 
   /** Load the connected-household selector chips (non-critical: failure ⇒ no selector). */
@@ -153,54 +163,61 @@ class RecipeListStore {
   }
 
   /**
-   * Toggle a favorite (own household only). Optimistic Set toggle, then POST and
-   * reconcile to the server's authoritative state; on error revert + (4xx) refetch.
+   * Toggle a favorite (own household only). Optimistic Set toggle, then POST and adopt the server's
+   * answer; on failure the heart flips back (and a 409/4xx refetches).
    */
   async toggleFavorite(id: number): Promise<void> {
     if (this.selectedConnectedId != null) return;
     const had = this.favoriteIds.has(id);
-    // Retire any in-flight load BEFORE the optimistic write. A load that started earlier still holds
-    // the pre-toggle favorites and would otherwise land afterwards and overwrite this heart back to
-    // its old state — the optimistic update is a newer truth than any response already in flight.
-    this.loadSeq++;
-    this.favoriteIds = toggled(this.favoriteIds, id, !had);
-    try {
-      const res = await apiToggleFavorite(id);
-      this.favoriteIds = toggled(this.favoriteIds, id, res.isFavorite);
-    } catch (e) {
-      this.favoriteIds = toggled(this.favoriteIds, id, had); // revert
-      if (e instanceof ApiError) {
-        await this.reconcile();
-        showToast({ message: 'That recipe changed — the list was refreshed.', kind: 'info' });
-      } else {
-        showToast({ message: "Couldn't update that favorite right now.", kind: 'error' });
-      }
-    }
+    await this.#resource.mutate({
+      key: `fav:${id}`,
+      optimistic: () => {
+        this.favoriteIds = toggled(this.favoriteIds, id, !had);
+        return () => {
+          this.favoriteIds = toggled(this.favoriteIds, id, had);
+        };
+      },
+      call: () => apiToggleFavorite(id),
+      commit: (res) => {
+        this.favoriteIds = toggled(this.favoriteIds, id, res.isFavorite);
+      },
+      messages: {
+        conflict: 'That recipe changed — the list was refreshed.',
+        rejected: 'That recipe changed — the list was refreshed.',
+        failed: "Couldn't update that favorite right now.",
+      },
+    });
   }
 
   /**
-   * Delete a recipe (own household only). Optimistic removal from the grid, then
-   * DELETE; on a 4xx reconcile to truth, on
-   * network/5xx restore the card.
+   * Delete a recipe (own household only). Optimistic removal from the grid, then DELETE. On failure
+   * the ONE card goes back at its index (an item-scoped undo: a whole-array restore would also erase
+   * what other writes did meanwhile); a 409/4xx also refetches the truth.
    */
   async deleteRecipe(id: number): Promise<void> {
-    const prev = this.recipes;
-    // Retire any in-flight load BEFORE the optimistic removal — an earlier load still carries the
-    // deleted recipe and would resurrect the card when it lands. Same reason as toggleFavorite.
-    this.loadSeq++;
-    this.recipes = this.recipes.filter((r) => r.recipeId !== id);
-    try {
-      await apiDeleteRecipe(id);
-      showToast({ message: 'Recipe deleted.', kind: 'success' });
-    } catch (e) {
-      if (e instanceof ApiError) {
-        await this.reconcile();
-        showToast({ message: 'That recipe changed — the list was refreshed.', kind: 'info' });
-      } else {
-        this.recipes = prev;
-        showToast({ message: "Couldn't delete that recipe right now.", kind: 'error' });
-      }
-    }
+    const outcome = await this.#resource.mutate({
+      key: `del:${id}`,
+      optimistic: () => {
+        const index = this.recipes.findIndex((r) => r.recipeId === id);
+        if (index < 0) return;
+        const removed = this.recipes[index];
+        this.recipes = this.recipes.filter((r) => r.recipeId !== id);
+        return () => {
+          if (this.recipes.some((r) => r.recipeId === id)) return;
+          const restored = [...this.recipes];
+          restored.splice(Math.min(index, restored.length), 0, removed);
+          this.recipes = restored;
+        };
+      },
+      call: () => apiDeleteRecipe(id),
+      messages: {
+        conflict: 'That recipe changed — the list was refreshed.',
+        rejected: 'That recipe changed — the list was refreshed.',
+        failed: "Couldn't delete that recipe right now.",
+      },
+    });
+    // The success toast sits outside the write window, so it can never take a failure path.
+    if (outcome === 'ok') showToast({ message: 'Recipe deleted.', kind: 'success' });
   }
 }
 
