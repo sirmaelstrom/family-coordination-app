@@ -336,6 +336,24 @@ describe('ShoppingListState on one Resource (41337b6f slice 8)', () => {
     expect(sl.loading).toBe(false);
   });
 
+  it('an item write opens the SUMMARIES window too: a summaries GET answered mid-write never commits', async () => {
+    const poll = deferred<ShoppingListSummaryDto[]>();
+    const patch = deferred<ShoppingListItemDto>();
+    vi.mocked(listLists).mockReturnValueOnce(poll.promise).mockResolvedValue([summary(1), summary(2)]);
+    vi.mocked(getList).mockResolvedValue(listDto(1, [item(1, { isChecked: true, version: 11 })]));
+    vi.mocked(patchItem).mockReturnValueOnce(patch.promise);
+
+    const polling = sl.load();
+    const checking = sl.setChecked(sl.list!.items[0], true);
+    poll.resolve([{ ...summary(1), uncheckedCount: 1 }]); // pre-check counts, answered while the PATCH is out
+    await polling;
+    expect(sl.lists.map((l) => l.id)).toEqual([1, 2]); // not replaced mid-write
+    patch.resolve(item(1, { isChecked: true, version: 11 }));
+    await checking;
+    await sl.settled();
+    expect(listLists).toHaveBeenCalledTimes(2); // the retired summaries load is owed once at settle
+  });
+
   it('summaries that answer AFTER the list still land (slim-review delta on fca#160)', async () => {
     const slow = deferred<ShoppingListSummaryDto[]>();
     vi.mocked(listLists).mockReturnValueOnce(slow.promise);
