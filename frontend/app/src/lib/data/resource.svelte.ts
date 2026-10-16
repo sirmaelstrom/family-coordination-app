@@ -158,7 +158,9 @@ export class Resource<T> {
    * An optimistic (or plain) write. Resolves after settle — including the reconcile load it triggers,
    * if any (that attempt, not global quiescence: a newer load started meanwhile may still be in flight)
    * — with the server outcome; never rejects for a server error. A throwing callback is rethrown after
-   * settle. The failure toast shows after settle, so "…was refreshed" copy is true when it appears.
+   * settle. The failure toast shows after settle, so when this is the last pending write, "…was
+   * refreshed" copy is true when it appears. (With another write still pending, the reconcile waits for
+   * that one; the toast does not — a hung reconcile GET must not withhold the failure message.)
    */
   async mutate<R>(spec: MutationSpec<R>): Promise<MutationOutcome> {
     const { key } = spec;
