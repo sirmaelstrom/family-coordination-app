@@ -63,6 +63,8 @@ export class ShoppingListState {
 
   /** Item ids moved by a reorder that is still on the wire (the Resource keys only one write each). */
   #reordering = $state<ReadonlySet<number>>(new Set());
+  /** Items of a failed reorder: pending until the next load lands (commit or error) and resyncs them. */
+  #awaitingRefresh = $state<ReadonlySet<number>>(new Set());
   /** True once the current load reached an end (commit or error) — a load a write RETIRED did not. */
   #loadEnded = false;
   readonly #onListChange: (listId: number) => void;
@@ -85,6 +87,7 @@ export class ShoppingListState {
     },
     commit: ({ listId, lists: fetchedLists, list, notFound }) => {
       this.#loadEnded = true;
+      this.#awaitingRefresh = new Set(); // the refresh landed: a failed reorder's items are resynced
       const lists = fetchedLists ?? this.lists;
       this.lists = lists;
       if (listId == null) {
@@ -115,6 +118,7 @@ export class ShoppingListState {
     },
     onLoadError: (e) => {
       this.#loadEnded = true;
+      this.#awaitingRefresh = new Set(); // a failed refresh releases them too (holding on would lock them for good)
       this.error = e instanceof Error ? e.message : String(e);
     },
     onLoadIdle: () => {
@@ -135,6 +139,7 @@ export class ShoppingListState {
     const merged = new Set<number>();
     for (const k of this.#resource.pendingKeys) if (typeof k === 'number') merged.add(k);
     for (const id of this.#reordering) merged.add(id);
+    for (const id of this.#awaitingRefresh) merged.add(id);
     return merged;
   }
 
@@ -177,7 +182,7 @@ export class ShoppingListState {
   }
 
   #isPending(id: number): boolean {
-    return this.#resource.isPending(id) || this.#reordering.has(id);
+    return this.#resource.isPending(id) || this.#reordering.has(id) || this.#awaitingRefresh.has(id);
   }
 
   // ── Item writes ─────────────────────────────────────────────────────────────
@@ -299,21 +304,30 @@ export class ShoppingListState {
       reordered.map((item, index) => [item.id, { heldVersion: item.version, sortOrder: index, category }]),
     );
     const movedIds = reordered.map((item) => item.id);
+    // A drop that moves an item another write still holds (an earlier reorder still on the wire, a tap) is
+    // not sent: the two writes would release each other's guards and leave stale tokens (council r7
+    // challenge). Put the server's order back instead — the load is owed until those writes settle.
+    if (movedIds.some((id) => this.#isPending(id))) {
+      showToast({ message: 'Still saving the last change — the list was refreshed.', kind: 'info' });
+      void this.load();
+      return;
+    }
     this.#reordering = new Set([...this.#reordering, ...movedIds]);
-    let outcome: MutationOutcome = 'ok';
+    let released = false;
     try {
-      outcome = await this.#resource.mutate({
+      const outcome = await this.#resource.mutate({
         call: () => updateSortOrders(listId, updates),
         // Adopt the answered tokens only where the reorder read the row at the token this tab held.
         commit: (result) => adoptReorderVersions(this.#rowsOf(listId), sent, result.items),
         reload: 'on-error',
         messages: { conflict: LIST_CHANGED, rejected: LIST_CHANGED, failed: "Couldn't save the new order — refreshed." },
       });
+      released = outcome === 'ok';
     } finally {
-      // A failed reorder leaves rows whose order/tokens are unsaved: keep them pending until the refresh it
-      // started has landed, so no tap sends an unreconciled token meanwhile (council r7). A success releases
-      // them at once (the answer brought their tokens).
-      if (outcome !== 'ok') await this.#resource.settled();
+      // A failed reorder (or a throwing adopt) leaves rows whose order/tokens are unsaved: they stay pending
+      // until a load lands — the refresh it asked for, which runs when the LAST pending write settles, maybe
+      // not this one (council r7 + challenge NC1). A success releases them now (the answer brought the tokens).
+      if (!released) this.#awaitingRefresh = new Set([...this.#awaitingRefresh, ...movedIds]);
       const next = new Set(this.#reordering);
       for (const id of movedIds) next.delete(id);
       this.#reordering = next;

@@ -268,7 +268,45 @@ describe('ShoppingListState on one Resource (41337b6f slice 8)', () => {
       refresh.resolve(listDto(1, two));
     }
     await reordering;
+    await sl.settled(); // released when the refresh lands, not when the write returns
     expect(sl.pendingIds.size).toBe(0);
+  });
+
+  it('a failed reorder that settles while ANOTHER write is pending still holds its items until the refresh lands', async () => {
+    sl.list = listDto(1, [item(1), item(2), item(3)]);
+    const check = deferred<ShoppingListItemDto>();
+    vi.mocked(patchItem).mockReturnValueOnce(check.promise);
+    vi.mocked(updateSortOrders).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const refresh = deferred<ShoppingListDto>();
+    vi.mocked(listLists).mockResolvedValue([summary(1)]);
+    vi.mocked(getList).mockReturnValueOnce(refresh.promise);
+
+    const checking = sl.setChecked(sl.list.items[2], true); // item 3's write keeps the window open
+    await sl.reorder('Other', [sl.list.items[1], sl.list.items[0]]); // fails; no refresh can start yet
+    expect(sl.pendingIds.has(1) && sl.pendingIds.has(2)).toBe(true);
+    check.resolve(item(3, { isChecked: true, version: 11 }));
+    await checking; // the last write settles: now the refresh starts
+    expect(sl.pendingIds.has(1)).toBe(true);
+    refresh.resolve(listDto(1, [item(1), item(2), item(3, { isChecked: true, version: 11 })]));
+    await sl.settled();
+    expect(sl.pendingIds.size).toBe(0);
+  });
+
+  it('a drop that moves an item another write still holds is not sent; the list refreshes instead', async () => {
+    sl.list = listDto(1, [item(1), item(2)]);
+    const check = deferred<ShoppingListItemDto>();
+    vi.mocked(patchItem).mockReturnValueOnce(check.promise);
+    vi.mocked(listLists).mockResolvedValue([summary(1)]);
+    vi.mocked(getList).mockResolvedValue(listDto(1, [item(1, { isChecked: true, version: 11 }), item(2)]));
+
+    const checking = sl.setChecked(sl.list.items[0], true);
+    await sl.reorder('Other', [sl.list.items[1], sl.list.items[0]]); // item 1 is still saving
+    expect(updateSortOrders).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith({ message: 'Still saving the last change — the list was refreshed.', kind: 'info' });
+    check.resolve(item(1, { isChecked: true, version: 11 }));
+    await checking;
+    await sl.settled();
+    expect(getList).toHaveBeenCalledTimes(1); // the owed refresh puts the server's order back
   });
 
   it('an edit during a reorder is refused (it would carry the pre-reorder token)', async () => {
