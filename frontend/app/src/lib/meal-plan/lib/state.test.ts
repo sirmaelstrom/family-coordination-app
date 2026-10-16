@@ -108,15 +108,19 @@ describe('meal-plan writes vs loads (41337b6f)', () => {
   it('S4: a failed remove after a week change splices nothing into the new week', async () => {
     const del = deferred<void>();
     vi.mocked(removeEntry).mockReturnValueOnce(del.promise);
-    vi.mocked(getBoard).mockResolvedValue(board(W2, [entry(9, W2)]));
+    const nextWeek = deferred<MealPlanBoardDto>();
+    vi.mocked(getBoard).mockReturnValueOnce(nextWeek.promise);
 
     const removing = store.removeEntry(1, 1, 11);
     const stepping = store.changeWeek(1);
     del.reject(new TypeError('Failed to fetch'));
+    await new Promise((r) => setTimeout(r, 0)); // the undo has run; the new week's GET is pending
+    expect(store.weekStart).toBe(W2);
+    expect(ids()).toEqual([2]); // nothing spliced back while the user looks at another week
+
+    nextWeek.resolve(board(W2, [entry(9, W2)]));
     await removing;
     await stepping;
-
-    expect(store.weekStart).toBe(W2);
     expect(ids()).toEqual([9]);
     expect(showToast).not.toHaveBeenCalled(); // a failure on a week the user has left is moot
   });
