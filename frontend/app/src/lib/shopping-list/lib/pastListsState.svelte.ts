@@ -26,7 +26,17 @@ export class PastListsState {
   archived = $state<ArchivedListSummaryDto[]>([]);
   activeLists = $state<ShoppingListSummaryDto[]>([]);
   favoritesOnly = $state(false);
-  loading = $state(true);
+  /** The first list load is outstanding. */
+  #firstLoading = $state(true);
+  /** The favorites filter the shown rows were loaded with (null before the first load lands). */
+  #loadedFilter = $state<boolean | null>(null);
+  /**
+   * "Loading…" replaces the rows until the first load lands, and while the shown rows belong to the
+   * OTHER filter (slim-review delta on fca#153: rows of the old filter must not stay actionable under
+   * the new one). Any other load — the reload after a write, success or failure — refreshes in place,
+   * so a stalled reload after a failed delete never takes the rows away (slim-review on fca#153).
+   */
+  loading = $derived(this.#firstLoading || (this.#loadedFilter !== null && this.#loadedFilter !== this.favoritesOnly));
   error = $state<string | null>(null);
 
   /** The expanded list's read-only detail, or null when collapsed. */
@@ -38,32 +48,29 @@ export class PastListsState {
 
   /** The list the detail Resource fetches: set on expand, cleared on collapse or on its delete. */
   #detailTarget: number | null = null;
-  /** The lists have loaded once — later loads refresh in place. */
-  #listsLoaded = false;
-
-  #lists = new Resource<[ArchivedListSummaryDto[], ShoppingListSummaryDto[]]>({
-    fetch: () => Promise.all([listArchived(this.favoritesOnly), listLists()]),
-    commit: ([past, active]) => {
+  #lists = new Resource<{ filter: boolean; past: ArchivedListSummaryDto[]; active: ShoppingListSummaryDto[] }>({
+    fetch: async () => {
+      const filter = this.favoritesOnly;
+      const [past, active] = await Promise.all([listArchived(filter), listLists()]);
+      return { filter, past, active };
+    },
+    commit: ({ filter, past, active }) => {
       this.archived = past;
       this.activeLists = active;
-      this.#listsLoaded = true;
+      this.#loadedFilter = filter;
       // Favorites-first is the server's sort for actives too — default the pick target to the top.
       if (this.targetListId == null || !active.some((l) => l.id === this.targetListId)) {
         this.targetListId = active[0]?.id ?? null;
       }
     },
     onLoadStart: () => {
-      // "Loading…" replaces the rows only until the first load lands; later loads (a filter flip, the
-      // reload after a write) refresh in place, so a stalled reload after a failed delete never takes
-      // the rows away (slim-review on fca#153).
-      if (!this.#listsLoaded) this.loading = true;
       this.error = null;
     },
     onLoadError: (e) => {
       this.error = message(e);
     },
     onLoadIdle: () => {
-      this.loading = false;
+      this.#firstLoading = false;
     },
   });
 

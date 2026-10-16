@@ -117,6 +117,22 @@ describe('PastListsState on two Resources (41337b6f slice 4)', () => {
     await flush();
   });
 
+  it("a filter flip hides the old filter's rows until the new rows land", async () => {
+    const favs = deferred<ArchivedListSummaryDto[]>();
+    vi.mocked(listArchived).mockReturnValueOnce(favs.promise); // a stalled filter load
+    vi.mocked(listLists).mockResolvedValue([ACTIVE]);
+
+    past.favoritesOnly = true;
+    const loading = past.load();
+    expect(listArchived).toHaveBeenCalledWith(true);
+    expect(past.loading).toBe(true); // the unfiltered rows are not shown under "Favorites only"
+
+    favs.resolve([{ ...row(2), isFavorite: true }]);
+    await loading;
+    expect(past.loading).toBe(false);
+    expect(past.archived.map((l) => l.id)).toEqual([2]);
+  });
+
   it('a collapse supersedes an expand still in flight', async () => {
     vi.mocked(getArchivedList).mockResolvedValueOnce(detailOf(1));
     await past.toggleDetail(1);
