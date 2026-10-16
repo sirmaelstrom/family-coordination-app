@@ -6,7 +6,7 @@
   interface Props {
     category: string;
     items: ShoppingListItemDto[];
-    pendingIds: Set<number>;
+    pendingIds: ReadonlySet<number>;
     dragEnabled: boolean;
     onToggle: (item: ShoppingListItemDto) => void;
     onQuantity: (item: ShoppingListItemDto, delta: number) => void;
