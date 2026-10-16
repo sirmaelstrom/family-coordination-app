@@ -112,6 +112,7 @@ builder.Services.AddScoped<IMealPlanService, MealPlanService>();
 builder.Services.AddScoped<IMealPlanBoardService, MealPlanBoardService>();
 builder.Services.AddScoped<IHouseholdCalendarTokenService, HouseholdCalendarTokenService>();
 builder.Services.AddSingleton<ICalendarWriter, CalendarWriter>();
+builder.Services.AddScoped<IChoreCalendarFeedService, ChoreCalendarFeedService>();
 // Recipes island (strangler): the single recipe→DTO projection (list card / full detail / parsed ingredient).
 builder.Services.AddScoped<IRecipeProjectionService, RecipeProjectionService>();
 // Dashboard island (strangler): the read-only aggregate (chore summary + shopping summary + today's meals).

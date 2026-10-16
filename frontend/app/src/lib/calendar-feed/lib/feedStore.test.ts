@@ -13,16 +13,22 @@ vi.mock('./api', async () => {
     createOrRotateCalendarToken: vi.fn(),
     revokeCalendarToken: vi.fn(),
     revokeSharedCalendarToken: vi.fn(),
+    getChoresCalendarTokenStatus: vi.fn(),
+    createOrRotateChoresCalendarToken: vi.fn(),
+    revokeChoresCalendarToken: vi.fn(),
   };
 });
 vi.mock('$lib/shared/toast-store.svelte', () => ({ showToast: vi.fn() }));
 
-import { feedStore } from './feedStore.svelte';
+import { choresFeedStore, feedStore } from './feedStore.svelte';
 import {
   ApiError,
   createOrRotateCalendarToken,
+  createOrRotateChoresCalendarToken,
   getCalendarTokenStatus,
+  getChoresCalendarTokenStatus,
   revokeCalendarToken,
+  revokeChoresCalendarToken,
   revokeSharedCalendarToken,
 } from './api';
 import { showToast } from '$lib/shared/toast-store.svelte';
@@ -219,5 +225,47 @@ describe('feedStore: the legacy shared link (8dba87f4)', () => {
     expect(feedStore.shared.active).toBe(true);
     expect(showToast).toHaveBeenCalledWith({ message: 'down', kind: 'error' });
     expect(feedStore.busy).toBe(false);
+  });
+});
+
+// Quest 3bdbcab7: the chores card is a second instance of the same store over the chores routes.
+describe('choresFeedStore (3bdbcab7)', () => {
+  const CHORES_CREATED: CalendarTokenCreatedDto = { token: 'c', url: 'https://example.test/api/calendar/chores.ics?token=c' };
+
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    vi.mocked(getChoresCalendarTokenStatus).mockResolvedValueOnce(NONE);
+    await choresFeedStore.load();
+    await flush();
+    vi.resetAllMocks();
+  });
+
+  it('create, status and revoke go to the chores routes only, and the meal card is untouched', async () => {
+    vi.mocked(createOrRotateChoresCalendarToken).mockResolvedValueOnce(CHORES_CREATED);
+    vi.mocked(getChoresCalendarTokenStatus).mockResolvedValueOnce(ACTIVE);
+
+    await choresFeedStore.createOrRotate();
+    await flush();
+
+    expect(choresFeedStore.url).toBe(CHORES_CREATED.url);
+    expect(createOrRotateCalendarToken).not.toHaveBeenCalled();
+    expect(getCalendarTokenStatus).not.toHaveBeenCalled();
+    expect(feedStore.url).not.toBe(CHORES_CREATED.url);
+
+    vi.mocked(revokeChoresCalendarToken).mockResolvedValueOnce(undefined);
+    vi.mocked(getChoresCalendarTokenStatus).mockResolvedValueOnce(NONE);
+    await choresFeedStore.revoke();
+    await flush();
+
+    expect(revokeChoresCalendarToken).toHaveBeenCalledTimes(1);
+    expect(revokeCalendarToken).not.toHaveBeenCalled();
+    expect(choresFeedStore.phase.kind).toBe('none');
+  });
+
+  it('has no shared link to revoke', async () => {
+    await choresFeedStore.revokeShared();
+
+    expect(revokeSharedCalendarToken).not.toHaveBeenCalled();
+    expect(choresFeedStore.busy).toBe(false);
   });
 });

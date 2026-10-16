@@ -56,16 +56,25 @@ export function primaryActionLabel(phase: FeedPhase): string {
  * deliberately explicit that the link is NOT re-readable, because the natural
  * expectation ("show me my link") is exactly what the server refuses.
  */
-export function statusLine(phase: FeedPhase): string {
+export function statusLine(phase: FeedPhase, feed: FeedKind = 'meal'): string {
   switch (phase.kind) {
     case 'none':
       return 'You have no subscription link yet. Create one, then add it to your phone or Google Calendar.';
     case 'active':
       return 'Your subscription link is active. For security it is shown only once, when it is created — if you need it again, rotate it (your old link stops working).';
     case 'revealed':
-      return 'Copy this link now — it will not be shown again. Anyone with the link can read the household meal plan.';
+      return `Copy this link now — it will not be shown again. Anyone with the link can read ${READS[feed]}.`;
   }
 }
+
+/** Which feed a card is for (quest 3bdbcab7 adds the caller's chores). */
+export type FeedKind = 'meal' | 'chores';
+
+/** What anyone holding the link can read, per feed. */
+const READS: Record<FeedKind, string> = {
+  meal: 'the household meal plan',
+  chores: 'the chores assigned to you',
+};
 
 /** Confirm-dialog copy for the destructive actions. Each touches only the caller's own link. */
 export const ROTATE_CONFIRM = {
@@ -79,6 +88,21 @@ export const REVOKE_CONFIRM = {
   title: 'Revoke your subscription link',
   message:
     'This stops your link. Calendars you subscribed with it stop updating. Other members’ links are not affected. You can create a new link at any time.',
+  confirmLabel: 'Revoke',
+} as const;
+
+/** Confirm-dialog copy for the chores card (quest 3bdbcab7). */
+export const CHORES_ROTATE_CONFIRM = {
+  title: 'Rotate your chores link',
+  message:
+    'This creates a new chores link and immediately stops your current one. Calendars you subscribed with the old link stop updating until you re-subscribe them. Your meal-plan link is not affected. Continue?',
+  confirmLabel: 'Rotate',
+} as const;
+
+export const CHORES_REVOKE_CONFIRM = {
+  title: 'Revoke your chores link',
+  message:
+    'This stops your chores link. Calendars you subscribed with it stop updating. Your meal-plan link is not affected. You can create a new link at any time.',
   confirmLabel: 'Revoke',
 } as const;
 

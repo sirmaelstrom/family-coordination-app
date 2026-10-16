@@ -24,6 +24,45 @@ public sealed class CalendarWriterTests
         calendar.Should().EndWith("END:VCALENDAR\r\n");
     }
 
+    // ── Chores feed (quest 3bdbcab7) ──
+
+    [Fact]
+    public void WriteChores_OneAllDayEventPerChore_WithAStablePerChoreUid()
+    {
+        var today = new DateOnly(2026, 6, 7);
+        var events = new[]
+        {
+            new ChoreCalendarEvent(5, "Water plants", "Back porch, too", new DateOnly(2026, 6, 12), Overdue: false, AssignmentKind.Assigned, 41),
+            new ChoreCalendarEvent(9, "Mail", null, today, Overdue: true, AssignmentKind.Claimed, 7),
+        };
+
+        var calendar = _writer.WriteChores(3, 1, today, events, new DateTimeOffset(2026, 6, 7, 23, 30, 0, TimeSpan.Zero));
+
+        calendar.Should().Contain("X-WR-CALNAME:My Chores\r\n");
+        calendar.Split("BEGIN:VEVENT").Length.Should().Be(3);
+        calendar.Should().Contain("UID:chore-3-5@family-coordination-app\r\n");
+        calendar.Should().Contain("DTSTART;VALUE=DATE:20260612\r\nDTEND;VALUE=DATE:20260613\r\n");
+        calendar.Should().Contain("SEQUENCE:41\r\n");
+        calendar.Should().Contain("SUMMARY:Water plants\r\n");
+        calendar.Should().Contain("DESCRIPTION:Back porch\\, too\\n\\nAssigned to you\r\n");
+        calendar.Should().Contain("UID:chore-3-9@family-coordination-app\r\n");
+        calendar.Should().Contain("SUMMARY:Overdue: Mail\r\n");
+        calendar.Should().Contain("DESCRIPTION:Claimed by you\r\n");
+        calendar.IndexOf("Overdue: Mail", StringComparison.Ordinal)
+            .Should().BeLessThan(calendar.IndexOf("Water plants", StringComparison.Ordinal), "events are ordered by date");
+    }
+
+    [Fact]
+    public void WriteChores_NoChores_WritesOnePlaceholderToday()
+    {
+        var calendar = _writer.WriteChores(3, 1, new DateOnly(2026, 6, 7), [], DateTimeOffset.UnixEpoch);
+
+        calendar.Split("BEGIN:VEVENT").Length.Should().Be(2);
+        calendar.Should().Contain("UID:chores-3-1-empty@family-coordination-app\r\n");
+        calendar.Should().Contain("DTSTART;VALUE=DATE:20260607\r\n");
+        calendar.Should().Contain("SUMMARY:No chores assigned to you\r\n");
+    }
+
     [Fact]
     public void WriteMealPlan_FoldsLongUtf8LinesAt75Octets_WithContinuationSpace()
     {

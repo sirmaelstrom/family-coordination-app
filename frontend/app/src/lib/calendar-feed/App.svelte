@@ -2,12 +2,15 @@
   // Calendar-feed card (quest 17e38a88): a settings surface where each household
   // member creates, copies, rotates, and revokes their OWN meal-plan feed link
   // (per-member links, quest 8dba87f4), and can revoke the legacy shared link while
-  // one is active. Fronts /api/meal-plan/calendar-token (fca#114). Loads the status ONCE;
+  // one is active. Fronts /api/meal-plan/calendar-token (fca#114). A second card does the
+  // same for the member's chores feed (/api/chores/calendar-token, quest 3bdbcab7). Loads each status ONCE;
   // no polling (a settings surface, parity with the connections island).
   import { untrack } from 'svelte';
   import type { ShellContext } from './lib/types';
-  import { feedStore as store } from './lib/feedStore.svelte';
+  import { feedStore as store, choresFeedStore as chores, type FeedStore } from './lib/feedStore.svelte';
   import {
+    CHORES_REVOKE_CONFIRM,
+    CHORES_ROTATE_CONFIRM,
     CLIENT_HOWTO,
     REVOKE_CONFIRM,
     REVOKE_SHARED_CONFIRM,
@@ -17,6 +20,7 @@
     primaryActionLabel,
     sharedLinkLine,
     statusLine,
+    type FeedKind,
   } from './lib/feed-ops';
   import ConfirmDialog from '$lib/shared/ConfirmDialog.svelte';
 
@@ -31,17 +35,41 @@
     untrack(() => {
       void ctx; // household resolved server-side from the cookie
       void store.load();
+      void chores.load();
     });
   });
 
-  function onPrimary(): void {
-    if (postIsRotate(store.phase)) {
-      store.confirm = 'rotate';
+  function onPrimary(s: FeedStore): void {
+    if (postIsRotate(s.phase)) {
+      s.confirm = 'rotate';
     } else {
-      void store.createOrRotate();
+      void s.createOrRotate();
     }
   }
 </script>
+
+{#snippet feedControls(s: FeedStore, kind: FeedKind)}
+  <p class="cal-status" data-phase={s.phase.kind}>{statusLine(s.phase, kind)}</p>
+  {#if s.phase.kind !== 'none' && s.phase.createdAt}
+    <p class="cal-created">{describeCreatedAt(s.phase.createdAt)}</p>
+  {/if}
+
+  {#if s.url}
+    <div class="cal-reveal">
+      <input class="cal-url" type="text" readonly value={s.url} aria-label="Subscription link" onfocus={(e) => (e.currentTarget as HTMLInputElement).select()} />
+      <button type="button" class="cal-btn-primary" onclick={() => void s.copyUrl()}>📋 Copy link</button>
+    </div>
+  {/if}
+
+  <div class="cal-actions">
+    <button type="button" class={s.url ? 'cal-btn-outline' : 'cal-btn-primary'} disabled={s.busy} onclick={() => onPrimary(s)}>
+      {primaryActionLabel(s.phase)}
+    </button>
+    {#if s.phase.kind !== 'none'}
+      <button type="button" class="cal-btn-danger" disabled={s.busy} onclick={() => (s.confirm = 'revoke')}>Revoke link</button>
+    {/if}
+  </div>
+{/snippet}
 
 <div class="cal-page">
   <h1 class="cal-title">Calendar Feed</h1>
@@ -62,26 +90,26 @@
         rotating or revoking yours does not affect anyone else's.
       </p>
 
-      <p class="cal-status" data-phase={store.phase.kind}>{statusLine(store.phase)}</p>
-      {#if store.phase.kind !== 'none' && store.phase.createdAt}
-        <p class="cal-created">{describeCreatedAt(store.phase.createdAt)}</p>
-      {/if}
+      {@render feedControls(store, 'meal')}
+    </section>
 
-      {#if store.url}
-        <div class="cal-reveal">
-          <input class="cal-url" type="text" readonly value={store.url} aria-label="Subscription link" onfocus={(e) => (e.currentTarget as HTMLInputElement).select()} />
-          <button type="button" class="cal-btn-primary" onclick={() => void store.copyUrl()}>📋 Copy link</button>
+    <section class="cal-card" data-testid="cal-chores-feed">
+      <h2 class="cal-card-title">Subscribe to your chores</h2>
+      <p class="cal-card-sub">
+        Add the chores assigned to you, or that you claimed, to your calendar: one all-day event per chore on the day
+        it is next due. An overdue chore shows on today. A chore that repeats some days after it was last done moves
+        when it is done again. Your calendar app refreshes on its own schedule, so it can be up to a day behind the app.
+      </p>
+      {#if !chores.loaded && chores.loading}
+        <p class="cal-status">Loading…</p>
+      {:else if !chores.loaded && chores.error}
+        <div class="cal-inline-error" role="alert">
+          <span>{chores.error}</span>
+          <button type="button" class="cal-btn-outline" onclick={() => void chores.load()}>Retry</button>
         </div>
+      {:else}
+        {@render feedControls(chores, 'chores')}
       {/if}
-
-      <div class="cal-actions">
-        <button type="button" class={store.url ? 'cal-btn-outline' : 'cal-btn-primary'} disabled={store.busy} onclick={onPrimary}>
-          {primaryActionLabel(store.phase)}
-        </button>
-        {#if store.phase.kind !== 'none'}
-          <button type="button" class="cal-btn-danger" disabled={store.busy} onclick={() => (store.confirm = 'revoke')}>Revoke link</button>
-        {/if}
-      </div>
     </section>
 
     {#if sharedLine}
@@ -127,6 +155,24 @@
   confirmLabel={REVOKE_CONFIRM.confirmLabel}
   onCancel={() => (store.confirm = null)}
   onConfirm={() => void store.revoke()}
+/>
+<ConfirmDialog
+  open={chores.confirm === 'rotate'}
+  danger
+  title={CHORES_ROTATE_CONFIRM.title}
+  message={CHORES_ROTATE_CONFIRM.message}
+  confirmLabel={CHORES_ROTATE_CONFIRM.confirmLabel}
+  onCancel={() => (chores.confirm = null)}
+  onConfirm={() => void chores.createOrRotate()}
+/>
+<ConfirmDialog
+  open={chores.confirm === 'revoke'}
+  danger
+  title={CHORES_REVOKE_CONFIRM.title}
+  message={CHORES_REVOKE_CONFIRM.message}
+  confirmLabel={CHORES_REVOKE_CONFIRM.confirmLabel}
+  onCancel={() => (chores.confirm = null)}
+  onConfirm={() => void chores.revoke()}
 />
 <ConfirmDialog
   open={store.confirm === 'revoke-shared'}

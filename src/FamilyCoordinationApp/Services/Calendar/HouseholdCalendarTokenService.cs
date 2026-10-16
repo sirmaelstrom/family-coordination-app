@@ -102,15 +102,17 @@ public sealed class HouseholdCalendarTokenService(
         var hash = HashForLookup(token);
 
         await using var context = await dbFactory.CreateDbContextAsync(ct);
-        // TENANT-SCOPE-OK: capability lookup by globally unique token hash is the scope source. The anonymous feed
-        // (CalendarTokenEndpoints GetFeed, unmarked) has no tenant until this row names one. The bypass is
-        // query-wide, so the User navigation is read unfiltered too; its predicate pins that user to the token's
-        // own household and requires the member to be enabled (quest 8dba87f4).
+        // Only the meal plan ever had a household-shared (userless) link; every other feed is personal (3bdbcab7).
+        var sharedAllowed = feed == CalendarFeed.MealPlan;
+        // TENANT-SCOPE-OK: capability lookup by globally unique token hash is the scope source. The anonymous feeds
+        // (CalendarTokenEndpoints GetFeed and GetChoresFeed, unmarked) have no tenant until this row names one. The
+        // bypass is query-wide, so the User navigation is read unfiltered too; its predicate pins that user to the
+        // token's own household and requires the member to be enabled (quest 8dba87f4).
         return await context.HouseholdCalendarTokens
             .IgnoreQueryFilters(["Tenant"])
             .AsNoTracking()
             .Where(calendarToken => calendarToken.TokenHash == hash && calendarToken.Feed == feed && calendarToken.RevokedAt == null
-                && (calendarToken.UserId == null
+                && ((calendarToken.UserId == null && sharedAllowed)
                     || (calendarToken.User!.HouseholdId == calendarToken.HouseholdId && calendarToken.User.IsWhitelisted)))
             .FirstOrDefaultAsync(ct);
     }
