@@ -327,6 +327,26 @@ describe('ShoppingListState on one Resource (41337b6f slice 8)', () => {
     expect(sl.error).toBeNull();
   });
 
+  it('a stalled summaries GET never holds the selected list off screen (slim-review on fca#160)', async () => {
+    vi.mocked(listLists).mockReturnValueOnce(new Promise(() => {})); // never answers
+    vi.mocked(getList).mockResolvedValueOnce(listDto(2));
+    await sl.selectList(2);
+    expect(sl.list?.id).toBe(2);
+    expect(sl.lists.map((l) => l.id)).toEqual([1, 2]); // the previous switcher stays
+    expect(sl.loading).toBe(false);
+  });
+
+  it('the 404 fallback tries each list once — stale summaries end in "not found", not an endless cycle', async () => {
+    // Lists 1 and 2 are both gone, and the summaries GET keeps failing (the switcher still shows them).
+    vi.mocked(listLists).mockRejectedValue(new TypeError('Failed to fetch'));
+    vi.mocked(getList).mockRejectedValue(new ApiError(404, 'gone'));
+    await sl.load();
+    for (let i = 0; i < 6; i++) await flush();
+    expect(getList).toHaveBeenCalledTimes(2); // list 1, then list 2 — and no more
+    expect(sl.error).toBe('Shopping list not found.');
+    expect(sl.list).toBeNull();
+  });
+
   it('a first load retired by a write keeps the spinner (no "No active shopping lists" flash)', async () => {
     const first = deferred<ShoppingListSummaryDto[]>();
     vi.mocked(listLists).mockReturnValueOnce(first.promise);

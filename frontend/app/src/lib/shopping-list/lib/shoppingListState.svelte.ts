@@ -65,6 +65,8 @@ export class ShoppingListState {
   #reordering = $state<ReadonlySet<number>>(new Set());
   /** Items of a failed reorder: pending until the next load lands (commit or error) and resyncs them. */
   #awaitingRefresh = $state<ReadonlySet<number>>(new Set());
+  /** List ids that answered 404 since the last list loaded — the fallback never picks one twice. */
+  #fallbackTried = new Set<number>();
   /** True once the current load reached an end (commit or error) — a load a write RETIRED did not. */
   #loadEnded = false;
   readonly #onListChange: (listId: number) => void;
@@ -77,13 +79,19 @@ export class ShoppingListState {
       // (null = unchanged) rather than discard a list that loaded (council r7 — no availability regression
       // from loading them together).
       const listsP = listLists().catch(() => null);
+      let list: ShoppingListDto;
       try {
-        const [lists, list] = await Promise.all([listsP, getList(listId)]);
-        return { listId, lists, list, notFound: false };
+        list = await getList(listId);
       } catch (e) {
         if (!(e instanceof ApiError && e.status === 404)) throw e;
+        // The fallback needs the summaries: wait for them here (as the old 404 path did).
         return { listId, lists: await listsP, list: null, notFound: true };
       }
+      // The list never waits on the summaries (slim-review on fca#160: `apiFetch` has no timeout, so a stalled
+      // summaries GET would hold the selected list off screen): take them only if they have already answered,
+      // else keep the previous switcher until the next load (a liveness tick or a write's refresh).
+      const lists = await Promise.race([listsP, Promise.resolve(null)]);
+      return { listId, lists, list, notFound: false };
     },
     commit: ({ listId, lists: fetchedLists, list, notFound }) => {
       this.#loadEnded = true;
@@ -100,7 +108,10 @@ export class ShoppingListState {
       if (notFound) {
         // The list is gone (archived / deleted elsewhere): fall back to another one. A newer selection made
         // while this load was out superseded it (the Resource dropped it), so this can't hijack that choice.
-        const fallback = lists.find((l) => l.id !== listId)?.id ?? null;
+        // Each id that 404'd is remembered until a list loads, so stale summaries (their own GET failing) can't
+        // bounce the fallback between gone lists forever (slim-review on fca#160).
+        this.#fallbackTried.add(listId);
+        const fallback = lists.find((l) => !this.#fallbackTried.has(l.id))?.id ?? null;
         if (fallback != null) {
           this.#switchTo(fallback);
           return;
@@ -109,6 +120,7 @@ export class ShoppingListState {
         this.error = 'Shopping list not found.';
         return;
       }
+      this.#fallbackTried.clear();
       this.list = list;
     },
     onLoadStart: () => {
