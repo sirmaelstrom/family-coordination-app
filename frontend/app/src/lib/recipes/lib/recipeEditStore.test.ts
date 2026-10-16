@@ -312,6 +312,48 @@ describe('recipe draft recovery (adfe3d57)', () => {
     expect(getRecipe).not.toHaveBeenCalled();
   });
 
+  it('discard does nothing while a conflict reload is saving its draft, and reload does nothing during a discard', async () => {
+    vi.mocked(getDraft).mockResolvedValue(draft(3));
+    vi.mocked(updateRecipe).mockRejectedValue(new ApiError(409, 'conflict'));
+    await recipeEditStore.load(RECIPE_ID);
+    await recipeEditStore.save();
+
+    // Reload's own draft PUT is pending: a discard now would DELETE before that PUT lands.
+    let releaseSave!: () => void;
+    vi.mocked(saveDraft).mockReturnValue(new Promise<void>((r) => (releaseSave = r)));
+    vi.mocked(getRecipe).mockResolvedValue(full(5));
+    const reloading = recipeEditStore.reloadAfterConflict();
+    await recipeEditStore.discardDraft();
+    expect(deleteDraft).not.toHaveBeenCalled();
+    releaseSave();
+    await reloading;
+
+    // The reverse: a discard whose DELETE is pending blocks a reload (its saveDraft would re-create the draft).
+    vi.mocked(saveDraft).mockClear();
+    vi.mocked(updateRecipe).mockRejectedValue(new ApiError(409, 'conflict'));
+    await recipeEditStore.save();
+    let releaseDelete!: () => void;
+    vi.mocked(deleteDraft).mockReturnValue(new Promise<void>((r) => (releaseDelete = r)));
+    const discarding = recipeEditStore.discardDraft();
+    await Promise.resolve();
+    await recipeEditStore.reloadAfterConflict();
+    expect(saveDraft).not.toHaveBeenCalled();
+    releaseDelete();
+    await discarding;
+  });
+
+  it('a non-404 failure loading the recipe after a discard stays on the page', async () => {
+    vi.mocked(getDraft).mockResolvedValue(draft(3));
+    await recipeEditStore.load(RECIPE_ID);
+    vi.mocked(getRecipe).mockRejectedValue(new ApiError(500, 'boom'));
+
+    await recipeEditStore.discardDraft();
+
+    expect(deleteDraft).toHaveBeenCalledWith(RECIPE_ID);
+    expect(assign).not.toHaveBeenCalled();
+    expect(recipeEditStore.error).toMatch(/couldn't be loaded/);
+  });
+
   it('discard waits out an in-flight autosave so it cannot re-create the draft', async () => {
     vi.useFakeTimers();
     vi.mocked(getDraft).mockResolvedValue(draft(3));

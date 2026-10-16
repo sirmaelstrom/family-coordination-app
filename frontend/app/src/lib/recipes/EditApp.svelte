@@ -82,7 +82,7 @@
           type="button"
           class="rc-btn-conflict"
           onclick={() => store.reloadAfterConflict()}
-          disabled={store.reloading}
+          disabled={store.reloading || store.discarding}
         >
           {store.reloading ? 'Reloading…' : 'Reload'}
         </button>
@@ -141,7 +141,7 @@
             type="button"
             class="rc-btn-ghost"
             onclick={() => (discardOpen = true)}
-            disabled={store.discarding || store.saving}
+            disabled={store.discarding || store.saving || store.reloading}
           >
             {store.discarding ? 'Discarding…' : 'Discard draft'}
           </button>

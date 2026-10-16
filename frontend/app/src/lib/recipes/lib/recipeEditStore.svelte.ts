@@ -486,7 +486,9 @@ class RecipeEditStore {
    * would restore the very edits that just conflicted instead of showing the latest server state).
    */
   async reloadAfterConflict(): Promise<void> {
-    if (this.recipeId == null || this.reloading) return;
+    // Not during a discard: this method's own saveDraft would land after the discard's delete and bring the
+    // discarded edits back (slim-review on fca#149).
+    if (this.recipeId == null || this.reloading || this.discarding) return;
     this.reloading = true;
     try {
       if (this.form.name.trim()) {
@@ -534,7 +536,9 @@ class RecipeEditStore {
    * latest version, not their edits. If the delete fails the form and draft stay as they were.
    */
   async discardDraft(): Promise<void> {
-    if (this.discarding || this.saving || this.deleting) return;
+    // Not during a conflict reload either: its saveDraft is not an autosave, so flushAutosave() can't wait it out,
+    // and it would re-create the draft after this delete (slim-review on fca#149).
+    if (this.discarding || this.saving || this.deleting || this.reloading) return;
     this.discarding = true; // set first: a timer-fired autosave now bails on the discarding guard
     await this.flushAutosave(); // wait out any in-flight draft save so it can't re-create the draft after the delete
     try {
@@ -552,11 +556,12 @@ class RecipeEditStore {
         try {
           this.applyFull(await getRecipe(this.recipeId)); // also refreshes serverVersion for the next save
         } catch (e) {
-          if (e instanceof ApiError) {
+          if (e instanceof ApiError && e.status === 404) {
             this.dirty = false;
             showToast({ message: 'That recipe was removed — returning to the list.', kind: 'info' });
             this.navigateToList();
           } else {
+            // Any other failure (a 500, the network) says nothing about the recipe being gone: stay on the page.
             this.error = "Draft discarded, but the recipe couldn't be loaded. Please reload the page.";
           }
           return;
