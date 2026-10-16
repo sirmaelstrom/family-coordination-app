@@ -22,6 +22,9 @@
 
   let { ctx }: { ctx: ShellContext } = $props();
 
+  /** The legacy shared-link block's copy, or null while no shared link is active. */
+  const sharedLine = $derived(sharedLinkLine({ sharedLinkActive: store.shared.active }));
+
   // ⚠ Loop safety (memory svelte5-setup-effect-async-loader-loop): untrack() gives
   // the one-time setup effect zero reactive deps so it runs exactly once.
   $effect(() => {
@@ -81,10 +84,10 @@
       </div>
     </section>
 
-    {#if sharedLinkLine({ sharedLinkActive: store.shared.active })}
+    {#if sharedLine}
       <section class="cal-card" data-testid="cal-shared-link">
         <h2 class="cal-card-title">Older shared link</h2>
-        <p class="cal-status">{sharedLinkLine({ sharedLinkActive: store.shared.active })}</p>
+        <p class="cal-status">{sharedLine}</p>
         {#if store.shared.createdAt}
           <p class="cal-created">{describeCreatedAt(store.shared.createdAt)}</p>
         {/if}

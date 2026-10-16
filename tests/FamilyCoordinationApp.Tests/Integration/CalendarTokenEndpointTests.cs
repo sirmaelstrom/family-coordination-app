@@ -205,6 +205,42 @@ public sealed class CalendarTokenEndpointTests(PostgresContainerFixture postgres
     }
 
     [Fact]
+    public async Task DeletedMembersLink_IsAnEmpty404()
+    {
+        const string email = "carol@household-a.test";
+        (await ClientA.PostAsJsonAsync("/api/settings/members", new { email }, Json)).StatusCode.Should().Be(HttpStatusCode.OK);
+        var carol = await CreateTokenAsync(_factory.CreateClientAs(email));
+        int carolId;
+        await using (var context = await new PostgresDbContextFactory(_factory.ConnectionString).CreateDbContextAsync())
+        {
+            carolId = await context.Users.Where(user => user.Email == email).Select(user => user.Id).SingleAsync();
+        }
+
+        (await ClientA.DeleteAsync($"/api/settings/members/{carolId}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var response = await _factory.CreateAnonymousClient().GetAsync(carol.url);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+        await using var check = await new PostgresDbContextFactory(_factory.ConnectionString).CreateDbContextAsync();
+        (await check.HouseholdCalendarTokens.CountAsync(token => token.UserId == carolId))
+            .Should().Be(0, "the member's links go with the member (FK cascade)");
+    }
+
+    [Fact]
+    public async Task CreatingALinkForAUserOfAnotherHousehold_IsRefused()
+    {
+        var service = new HouseholdCalendarTokenService(
+            new PostgresDbContextFactory(_factory.ConnectionString, TestTenancy.Caller(ChoresWebAppFactory.HouseholdAId)),
+            Services.TestClocks.System);
+
+        var act = () => service.CreateOrRotateAsync(ChoresWebAppFactory.HouseholdAId, ChoresWebAppFactory.UserBId, CalendarFeed.MealPlan);
+
+        await act.Should().ThrowAsync<FamilyCoordinationApp.Services.HouseholdMembershipException>();
+        await using var context = await new PostgresDbContextFactory(_factory.ConnectionString).CreateDbContextAsync();
+        (await context.HouseholdCalendarTokens.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
     public async Task MemberLinkFromAnotherHousehold_IsAnEmpty404()
     {
         // A row naming household A but a user of household B (not writable through the API: the user is the caller).

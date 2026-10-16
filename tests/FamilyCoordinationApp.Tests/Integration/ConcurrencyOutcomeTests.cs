@@ -142,9 +142,9 @@ public sealed class ConcurrencyOutcomeTests(PostgresContainerFixture postgres) :
     public async Task A_double_clicked_calendar_revoke_succeeds()
     {
         await CallerTokens().CreateOrRotateAsync(Inviting, InvitingUser, CalendarFeed.MealPlan);
-        var interleaved = new InterleavingDbContextFactory(_connectionString, () => CallerTokens().RevokeAsync(Inviting, InvitingUser, CalendarFeed.MealPlan));
+        var interleaved = new InterleavingDbContextFactory(_connectionString, () => CallerTokens().RevokeAsync(InvitingUser, CalendarFeed.MealPlan));
 
-        await Tokens(interleaved).RevokeAsync(Inviting, InvitingUser, CalendarFeed.MealPlan);
+        await Tokens(interleaved).RevokeAsync(InvitingUser, CalendarFeed.MealPlan);
 
         await using var check = _plain.CreateDbContext();
         (await check.HouseholdCalendarTokens.CountAsync(t => t.RevokedAt == null)).Should().Be(0);
@@ -157,7 +157,7 @@ public sealed class ConcurrencyOutcomeTests(PostgresContainerFixture postgres) :
         var interleaved = new InterleavingDbContextFactory(_connectionString,
             async () => await CallerTokens().CreateOrRotateAsync(Inviting, InvitingUser, CalendarFeed.MealPlan));
 
-        var act = () => Tokens(interleaved).RevokeAsync(Inviting, InvitingUser, CalendarFeed.MealPlan);
+        var act = () => Tokens(interleaved).RevokeAsync(InvitingUser, CalendarFeed.MealPlan);
 
         await act.Should().ThrowAsync<ConcurrencyConflictException>("the revoke never saw the new active token");
         await using var check = _plain.CreateDbContext();

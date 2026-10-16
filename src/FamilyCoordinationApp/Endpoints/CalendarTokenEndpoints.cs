@@ -52,7 +52,7 @@ public static class CalendarTokenEndpoints
         IHouseholdCalendarTokenService tokenService,
         CancellationToken ct)
     {
-        await tokenService.RevokeAsync(caller.HouseholdId, caller.UserId, CalendarFeed.MealPlan, ct);
+        await tokenService.RevokeAsync(caller.UserId, CalendarFeed.MealPlan, ct);
         return Results.NoContent();
     }
 
@@ -61,7 +61,7 @@ public static class CalendarTokenEndpoints
         IHouseholdCalendarTokenService tokenService,
         CancellationToken ct)
     {
-        await tokenService.RevokeSharedAsync(caller.HouseholdId, CalendarFeed.MealPlan, ct);
+        await tokenService.RevokeSharedAsync(CalendarFeed.MealPlan, ct);
         return Results.NoContent();
     }
 
@@ -70,8 +70,8 @@ public static class CalendarTokenEndpoints
         IHouseholdCalendarTokenService tokenService,
         CancellationToken ct)
     {
-        var active = await tokenService.GetActiveAsync(caller.HouseholdId, caller.UserId, CalendarFeed.MealPlan, ct);
-        var shared = await tokenService.GetActiveSharedAsync(caller.HouseholdId, CalendarFeed.MealPlan, ct);
+        var active = await tokenService.GetActiveAsync(caller.UserId, CalendarFeed.MealPlan, ct);
+        var shared = await tokenService.GetActiveSharedAsync(CalendarFeed.MealPlan, ct);
         return Results.Ok(new
         {
             active = active is not null,

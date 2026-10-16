@@ -19,12 +19,16 @@ public class HouseholdCalendarTokenConfiguration : IEntityTypeConfiguration<Hous
         builder.Property(token => token.CreatedAt).IsRequired();
         builder.Property(token => token.Version).IsRowVersion();
 
-        // Enums stored as strings (codebase convention). The migration that added the column filled the rows that
-        // existed with 'MealPlan', the only feed there was.
+        // Enums stored as strings (codebase convention). The column default filled the rows that existed when the
+        // column was added ('MealPlan', the only feed there was) and keeps an insert that names no feed valid. The
+        // sentinel is a value no code holds, so EF always sends the property: MealPlan, the CLR default, is written
+        // explicitly rather than left to the column default.
         builder.Property(token => token.Feed)
             .IsRequired()
             .HasConversion<string>()
-            .HasMaxLength(FieldLengths.HouseholdCalendarToken.Feed);
+            .HasMaxLength(FieldLengths.HouseholdCalendarToken.Feed)
+            .HasDefaultValue(CalendarFeed.MealPlan)
+            .HasSentinel((CalendarFeed)(-1));
 
         builder.HasIndex(token => token.TokenHash).IsUnique();
         builder.HasIndex(token => new { token.HouseholdId, token.RevokedAt });

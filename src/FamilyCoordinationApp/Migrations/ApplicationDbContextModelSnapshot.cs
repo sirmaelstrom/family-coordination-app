@@ -477,8 +477,10 @@ namespace FamilyCoordinationApp.Migrations
 
                     b.Property<string>("Feed")
                         .IsRequired()
+                        .ValueGeneratedOnAdd()
                         .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("MealPlan");
 
                     b.Property<int>("HouseholdId")
                         .HasColumnType("integer");

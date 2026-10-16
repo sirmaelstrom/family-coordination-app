@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace FamilyCoordinationApp.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20261016052157_AddMemberCalendarLinks")]
+    [Migration("20261016055623_AddMemberCalendarLinks")]
     partial class AddMemberCalendarLinks
     {
         /// <inheritdoc />
@@ -480,8 +480,10 @@ namespace FamilyCoordinationApp.Migrations
 
                     b.Property<string>("Feed")
                         .IsRequired()
+                        .ValueGeneratedOnAdd()
                         .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("MealPlan");
 
                     b.Property<int>("HouseholdId")
                         .HasColumnType("integer");

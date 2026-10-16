@@ -33,6 +33,10 @@ public sealed class HouseholdCalendarTokenService(
             // TENANT-SCOPE-OK: the advisory lock is keyed by the authenticated caller's household id.
             await context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({householdId})", ct);
 
+            // The member must belong to the tenant's household (the Users read is Tenant-filtered), so the row the
+            // write step stamps with that household names a user of it: the feed's resolve requires exactly that.
+            await HouseholdMembership.EnsureMemberAsync(context, householdId, userId, ct);
+
             // Only the caller's own link for this feed: another member's link, and the legacy shared link, stay
             // active (quest 8dba87f4).
             await context.HouseholdCalendarTokens
@@ -58,10 +62,10 @@ public sealed class HouseholdCalendarTokenService(
         }
     }
 
-    public Task RevokeAsync(int householdId, int userId, CalendarFeed feed, CancellationToken ct = default) =>
+    public Task RevokeAsync(int userId, CalendarFeed feed, CancellationToken ct = default) =>
         RevokeWhereAsync(userId, feed, ct);
 
-    public Task RevokeSharedAsync(int householdId, CalendarFeed feed, CancellationToken ct = default) =>
+    public Task RevokeSharedAsync(CalendarFeed feed, CancellationToken ct = default) =>
         RevokeWhereAsync(userId: null, feed, ct);
 
     private async Task RevokeWhereAsync(int? userId, CalendarFeed feed, CancellationToken ct)
@@ -111,7 +115,7 @@ public sealed class HouseholdCalendarTokenService(
             .FirstOrDefaultAsync(ct);
     }
 
-    public async Task<HouseholdCalendarToken?> GetActiveAsync(int householdId, int userId, CalendarFeed feed, CancellationToken ct = default)
+    public async Task<HouseholdCalendarToken?> GetActiveAsync(int userId, CalendarFeed feed, CancellationToken ct = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(ct);
         return await context.HouseholdCalendarTokens
@@ -121,7 +125,7 @@ public sealed class HouseholdCalendarTokenService(
             .FirstOrDefaultAsync(ct);
     }
 
-    public async Task<HouseholdCalendarToken?> GetActiveSharedAsync(int householdId, CalendarFeed feed, CancellationToken ct = default)
+    public async Task<HouseholdCalendarToken?> GetActiveSharedAsync(CalendarFeed feed, CancellationToken ct = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(ct);
         return await context.HouseholdCalendarTokens
