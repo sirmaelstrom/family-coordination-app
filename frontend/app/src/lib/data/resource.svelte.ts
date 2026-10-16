@@ -14,7 +14,7 @@
 //   • settle   — when the last write settles, ONE load starts if one is owed or a reconcile is due, so
 //                the view converges on server truth without waiting for the next liveness tick. The
 //                write resolves without awaiting it (a stalled GET must not hold its outcome); settled()
-//                waits for it.
+//                waits for it — or for the newer load that superseded it — to finish as current.
 //   • mutate() — optimistic patch (synchronous) → call → commit, or undo + the 409 / other-4xx /
 //                5xx-network three-way branch through the ApiError getters (never a raw status).
 //
@@ -126,10 +126,12 @@ export class Resource<T> {
   }
 
   /**
-   * Resolves once the reconciled view has landed: a load has finished as current (committed or failed)
-   * after the last settle started its owed/reconcile load — that load, or a newer one that superseded
-   * it. Immediately when no settle load is outstanding. Writes don't wait for it (a stalled GET must not
-   * withhold a write's outcome or its toast); callers and tests that need the reconciled view do.
+   * Resolves once a load has finished as current — committed, failed, or its start hook threw — after
+   * the last settle started its owed/reconcile load: that load, or a newer one that superseded it. So
+   * it marks "the reconcile attempt is over", not "fresh data is on screen" (a failure resolves it too).
+   * Immediately when no settle load is outstanding. Writes that keep arriving keep moving it later.
+   * Writes don't wait for it (a stalled GET must not withhold a write's outcome or its toast); callers
+   * and tests that need the reconciled view do.
    */
   settled(): Promise<void> {
     return this.#settleWaiter?.promise ?? Promise.resolve();
