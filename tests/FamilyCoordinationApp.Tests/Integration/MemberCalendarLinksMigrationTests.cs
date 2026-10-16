@@ -48,6 +48,10 @@ public sealed class MemberCalendarLinksMigrationTests(PostgresContainerFixture p
         rows.Should().HaveCount(3);
         rows.Should().OnlyContain(row => row.UserId == null && row.Feed == CalendarFeed.MealPlan);
         rows.Select(row => row.RevokedAt).Should().Equal(revokedAt, revokedAt, null);
+        // The stored text, not the mapped enum: EF's string-to-enum converter reads an unparseable value (an empty
+        // default, say) as default(CalendarFeed), which is MealPlan, so the assertion above could not see it.
+        (await context.Database.SqlQueryRaw<string>("""SELECT "Feed" AS "Value" FROM "HouseholdCalendarTokens" """).ToListAsync())
+            .Should().Equal("MealPlan", "MealPlan", "MealPlan");
         (await context.Database.GetPendingMigrationsAsync()).Should().BeEmpty();
     }
 }
