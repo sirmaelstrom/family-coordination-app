@@ -164,7 +164,7 @@ describe('meal-plan writes vs loads (41337b6f)', () => {
     expect(getBoard).toHaveBeenCalledTimes(1);
     expect(store.board!.entries.find((e) => e.entryId === 1)!.version).toBe(50);
     expect(showToast).toHaveBeenCalledWith({
-      message: 'That meal just changed — the plan was refreshed. Try again.',
+      message: 'That meal just changed — refreshing the plan. Try again in a moment.',
       kind: 'info',
     });
   });

@@ -53,7 +53,9 @@ import { Resource, type MutationOutcome } from '$lib/data/resource.svelte';
 /** The pending-write key for one entry (a second action on it while pending is skipped). */
 const entryKey = (mealPlanId: number, entryId: number): string => `entry:${mealPlanId}:${entryId}`;
 
-const STALE_MEAL = 'That meal just changed — the plan was refreshed. Try again.';
+// The toast shows as the refresh STARTS (a write doesn't wait for its reconcile GET), so the copy says
+// "refreshing", and the entry stays locked until the refresh lands (slim-review delta on fca#150).
+const STALE_MEAL = 'That meal just changed — refreshing the plan. Try again in a moment.';
 const FAILED = 'Something went wrong. Please try again.';
 
 /** The board's three rendered meal rows (Snack is implicit — only shown if data exists). */
@@ -240,8 +242,8 @@ class MealPlanStore {
       },
     });
     this.notify(outcome, targetWeek, {
-      conflict: "Couldn't add that meal — the plan was refreshed.",
-      rejected: "Couldn't add that meal — the plan was refreshed.",
+      conflict: "Couldn't add that meal — refreshing the plan.",
+      rejected: "Couldn't add that meal — refreshing the plan.",
       failed: "Couldn't add that meal right now.",
     });
   }
@@ -316,7 +318,7 @@ class MealPlanStore {
     // it.) The copy says what we know — the meal changed — and the reconcile shows server truth.
     this.notify(outcome, targetWeek, {
       conflict: STALE_MEAL,
-      rejected: "Couldn't move that meal — the plan was refreshed.",
+      rejected: "Couldn't move that meal — refreshing the plan.",
       failed: FAILED,
     });
   }
@@ -354,7 +356,7 @@ class MealPlanStore {
     });
     this.notify(outcome, targetWeek, {
       conflict: STALE_MEAL,
-      rejected: "Couldn't change the servings — the plan was refreshed.",
+      rejected: "Couldn't change the servings — refreshing the plan.",
       failed: FAILED,
     });
   }
@@ -397,7 +399,7 @@ class MealPlanStore {
     // Any other 4xx (a missing entry is a clean 404 since PR #90) reconciles to truth.
     this.notify(outcome, targetWeek, {
       conflict: STALE_MEAL,
-      rejected: 'That meal changed — the plan was refreshed.',
+      rejected: 'That meal changed — refreshing the plan.',
       failed: FAILED,
     });
   }

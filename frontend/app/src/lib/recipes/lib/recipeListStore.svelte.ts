@@ -182,8 +182,8 @@ class RecipeListStore {
         this.favoriteIds = toggled(this.favoriteIds, id, res.isFavorite);
       },
       messages: {
-        conflict: 'That recipe changed — the list was refreshed.',
-        rejected: 'That recipe changed — the list was refreshed.',
+        conflict: 'That recipe changed — refreshing the list.',
+        rejected: 'That recipe changed — refreshing the list.',
         failed: "Couldn't update that favorite right now.",
       },
     });
@@ -211,8 +211,8 @@ class RecipeListStore {
       },
       call: () => apiDeleteRecipe(id),
       messages: {
-        conflict: 'That recipe changed — the list was refreshed.',
-        rejected: 'That recipe changed — the list was refreshed.',
+        conflict: 'That recipe changed — refreshing the list.',
+        rejected: 'That recipe changed — refreshing the list.',
         failed: "Couldn't delete that recipe right now.",
       },
     });

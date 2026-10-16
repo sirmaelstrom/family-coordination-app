@@ -348,6 +348,22 @@ describe('Resource — throwing hooks never strand the window (code council r2)'
     spy.mockRestore();
   });
 
+  it('a conflicted key stays pending until its reconcile has landed (no stale-version retry)', async () => {
+    const h = harness();
+    expect(await h.res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) })).toBe('conflict');
+    expect(h.res.isPending('e1')).toBe(true); // the old row (and version) is back until the GET lands
+    const retry = vi.fn(async () => {});
+    expect(await h.res.mutate({ key: 'e1', call: retry })).toBe('skipped');
+    expect(retry).not.toHaveBeenCalled();
+    h.fetches[0].resolve('fresh');
+    await h.res.settled();
+    expect(h.res.isPending('e1')).toBe(false);
+    expect(await h.res.mutate({ key: 'e1', call: retry })).toBe('ok');
+    // A 5xx/network failure has no reconcile to wait for: its key is released at once.
+    expect(await h.res.mutate({ key: 'e2', call: () => Promise.reject(new TypeError('net')) })).toBe('failed');
+    expect(h.res.isPending('e2')).toBe(false);
+  });
+
   it("a stalled reconcile GET withholds neither the write's outcome nor its toast (slim-review fca#150)", async () => {
     const fetch = vi.fn(() => new Promise<string>(() => {})); // apiFetch has no timeout
     const res = new Resource<string>({ fetch, commit: () => {} });

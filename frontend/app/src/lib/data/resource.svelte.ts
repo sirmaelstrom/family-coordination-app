@@ -98,6 +98,8 @@ export class Resource<T> {
   #reconcileDue = false;
   /** The settle load started by the last write to settle, while it runs. */
   #drain: Promise<void> | null = null;
+  /** Keys of conflicted/rejected writes, still pending until the next settle load finishes. */
+  #heldKeys = new Set<Key>();
   readonly #options: ResourceOptions<T>;
 
   constructor(options: ResourceOptions<T>) {
@@ -223,7 +225,12 @@ export class Resource<T> {
       localError ??= { error: e };
       this.#reconcileDue = true;
     } finally {
-      this.#settle(key);
+      // A rejected/conflicted key stays pending until the reconcile load that follows has finished: until
+      // then the undo has put back the OLD row (and its stale version), so a retry would just 409 again.
+      // The write itself still resolves now (slim-review delta on fca#150).
+      const hold = key !== undefined && this.#reconcileDue && (outcome === 'conflict' || outcome === 'rejected');
+      if (hold) this.#heldKeys.add(key);
+      this.#settle(hold ? undefined : key);
     }
     const message = outcome === 'ok' ? undefined : spec.messages?.[outcome as 'conflict' | 'rejected' | 'failed'];
     if (message) showToast({ message, kind: outcome === 'failed' ? 'error' : 'info' });
@@ -296,6 +303,8 @@ export class Resource<T> {
     if (this.#writes === 0 && (this.#owed || this.#reconcileDue)) {
       this.#owed = false;
       this.#reconcileDue = false;
+      const released = [...this.#heldKeys];
+      this.#heldKeys.clear();
       const drain = this.load().then(
         () => undefined,
         (e) => {
@@ -307,6 +316,12 @@ export class Resource<T> {
       this.#drain = drain;
       void drain.then(() => {
         if (this.#drain === drain) this.#drain = null;
+        if (released.length) {
+          // The reconcile has landed (or failed): the held keys may be retried with a fresh version.
+          const next = new Set(this.#pendingKeys);
+          for (const k of released) next.delete(k);
+          this.#pendingKeys = next;
+        }
       });
     }
   }
