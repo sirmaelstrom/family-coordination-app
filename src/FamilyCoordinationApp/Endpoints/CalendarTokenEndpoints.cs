@@ -90,14 +90,17 @@ public static class CalendarTokenEndpoints
         // A chores token always names its member (the resolve refuses a userless one for this feed).
         if (calendarToken?.UserId is not { } userId) return CalendarNotFoundResult.Instance;
 
+        // One instant for the whole response: the dates, "today" and the stamp can't straddle a midnight.
+        var nowUtc = timeProvider.GetUtcNow();
+        var timeZone = clock.TimeZone(calendarToken.HouseholdId);
         // The anonymous feed has no caller: the token's household is the tenant (as for the meal feed).
         IReadOnlyList<ChoreCalendarEvent> events;
         using (tenant.RunAs(calendarToken.HouseholdId))
         {
-            events = await choreFeed.GetEventsAsync(calendarToken.HouseholdId, userId, ct);
+            events = await choreFeed.GetEventsAsync(userId, nowUtc.UtcDateTime, timeZone, ct);
         }
-        var content = calendarWriter.WriteChores(
-            calendarToken.HouseholdId, userId, clock.Today(calendarToken.HouseholdId), events, timeProvider.GetUtcNow());
+        var today = ChoreStatusCalculator.LocalDate(nowUtc.UtcDateTime, timeZone);
+        var content = calendarWriter.WriteChores(calendarToken.HouseholdId, userId, today, events, nowUtc);
         return new CalendarResult(content);
     }
 

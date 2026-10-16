@@ -31,6 +31,12 @@ public sealed class ChoresCalendarFeedTests(PostgresContainerFixture postgres) :
     private const int OtherMembers = 103;   // A2 assigned
     private const int DoneMine = 104;       // A assigned, Status Done
     private const int FixedOverdue = 105;   // A assigned; Fixed Mondays, last done 2026-05-25 → slot 2026-06-01 missed
+    private const int Snoozed = 106;        // A assigned; Flexible 7d, done 2026-06-05 (→ 06-12), snoozed until 2026-06-20
+    private const int NeverDone = 107;      // A assigned; Flexible 5d, never completed → due today, not overdue
+    private const int OneOffDone = 108;     // A assigned; OneOff with a completion but still Active → no next-due
+    private const int UnderSpecSnoozed = 109; // A assigned; Fixed with no cadence, snoozed until 2026-06-15
+    private const int ClaimedRecurring = 111; // A claimed; Flexible 2d → completing returns it to the pile
+    private const int ForeignAssignedToA = 110; // household B's chore whose assignee id is A's (only the Tenant filter excludes it)
 
     public async Task InitializeAsync()
     {
@@ -47,8 +53,26 @@ public sealed class ChoresCalendarFeedTests(PostgresContainerFixture postgres) :
             NewChore(DoneMine, "Finished one-off", RecurrenceMode.OneOff, ChoresWebAppFactory.UserAId, AssignmentKind.Assigned,
                 anchorDate: new DateOnly(2026, 6, 9), status: ChoreStatus.Done),
             NewChore(FixedOverdue, "Take out recycling", RecurrenceMode.Fixed, ChoresWebAppFactory.UserAId, AssignmentKind.Assigned,
-                daysOfWeek: ChoreDaysOfWeek.Monday, lastCompletedAt: new DateTime(2026, 5, 25, 17, 0, 0, DateTimeKind.Utc)));
+                daysOfWeek: ChoreDaysOfWeek.Monday, lastCompletedAt: new DateTime(2026, 5, 25, 17, 0, 0, DateTimeKind.Utc)),
+            NewChore(Snoozed, "Clean gutters", RecurrenceMode.Flexible, ChoresWebAppFactory.UserAId, AssignmentKind.Assigned,
+                intervalDays: 7, lastCompletedAt: new DateTime(2026, 6, 5, 17, 0, 0, DateTimeKind.Utc), snoozedUntil: new DateOnly(2026, 6, 20)),
+            NewChore(NeverDone, "Wipe counters", RecurrenceMode.Flexible, ChoresWebAppFactory.UserAId, AssignmentKind.Assigned,
+                intervalDays: 5),
+            NewChore(OneOffDone, "Return library books", RecurrenceMode.OneOff, ChoresWebAppFactory.UserAId, AssignmentKind.Assigned,
+                anchorDate: new DateOnly(2026, 6, 9), lastCompletedAt: new DateTime(2026, 6, 6, 17, 0, 0, DateTimeKind.Utc)),
+            NewChore(UnderSpecSnoozed, "Someday task", RecurrenceMode.Fixed, ChoresWebAppFactory.UserAId, AssignmentKind.Assigned,
+                snoozedUntil: new DateOnly(2026, 6, 15)),
+            NewChore(ClaimedRecurring, "Feed the cat", RecurrenceMode.Flexible, ChoresWebAppFactory.UserAId, AssignmentKind.Claimed,
+                intervalDays: 2));
         await context.SaveChangesAsync();
+
+        await using var foreign = await new PostgresDbContextFactory(
+            _factory.ConnectionString, TestTenancy.Caller(ChoresWebAppFactory.HouseholdBId, ChoresWebAppFactory.UserBId)).CreateDbContextAsync();
+        var forged = NewChore(ForeignAssignedToA, "Household B chore naming A", RecurrenceMode.Flexible, ChoresWebAppFactory.UserAId,
+            AssignmentKind.Assigned, intervalDays: 3);
+        forged.EnteredByUserId = ChoresWebAppFactory.UserBId;
+        foreign.Chores.Add(forged);
+        await foreign.SaveChangesAsync();
     }
 
     public async Task DisposeAsync() => await _factory.DisposeAsync();
@@ -74,6 +98,50 @@ public sealed class ChoresCalendarFeedTests(PostgresContainerFixture postgres) :
         calendar.Should().NotContain("Finished one-off", "a done chore has no event");
         calendar.Should().NotContain("Pile chore", "an unassigned chore is nobody's");
         calendar.Should().NotContain("Household B private chore");
+        calendar.Should().NotContain("Household B chore naming A", "only the Tenant filter excludes this one: its assignee id is A's");
+    }
+
+    [Fact]
+    public async Task Dates_FollowTheCalculator_ForSnoozeNeverDoneAndSatisfiedOneOffs()
+    {
+        var link = await CreateChoresLinkAsync(ClientA);
+
+        var calendar = await _factory.CreateAnonymousClient().GetStringAsync(link.url);
+
+        Event(calendar, Snoozed).Should().Contain("DTSTART;VALUE=DATE:20260620", "the snooze floor is later than the natural 06-12");
+        Event(calendar, NeverDone).Should().Contain("DTSTART;VALUE=DATE:20260607").And.Contain("SUMMARY:Wipe counters",
+            "a never-done Flexible chore is due today, not overdue");
+        Event(calendar, OneOffDone).Should().BeEmpty("a satisfied one-off has no next-due");
+        Event(calendar, UnderSpecSnoozed).Should().Contain("DTSTART;VALUE=DATE:20260615",
+            "no cadence, but the calculator answers the snooze floor; the feed keeps parity with the board");
+    }
+
+    [Fact]
+    public async Task CompletingThroughTheApi_SlidesAnAssignedChore_AndDropsAClaimedOneBackToThePile()
+    {
+        var link = await CreateChoresLinkAsync(ClientA);
+        var anonymous = _factory.CreateAnonymousClient();
+
+        await CompleteAsync(FlexibleMine);
+        await CompleteAsync(ClaimedRecurring);
+
+        var calendar = await anonymous.GetStringAsync(link.url);
+        Event(calendar, FlexibleMine).Should().Contain("DTSTART;VALUE=DATE:20260614", "completed local 2026-06-07, every 7 days; still assigned");
+        Event(calendar, ClaimedRecurring).Should().BeEmpty("completing a claimed recurring chore returns it to the pile");
+    }
+
+    private async Task CompleteAsync(int choreId)
+    {
+        uint version;
+        await using (var context = await new PostgresDbContextFactory(_factory.ConnectionString).CreateDbContextAsync())
+        {
+            version = await context.Chores
+                .Where(chore => chore.HouseholdId == ChoresWebAppFactory.HouseholdAId && chore.ChoreId == choreId)
+                .Select(chore => chore.Version)
+                .SingleAsync();
+        }
+        var response = await ClientA.PostAsJsonAsync($"/api/chores/{choreId}/complete", new { note = (string?)null, photoPath = (string?)null, version }, Json);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
@@ -247,8 +315,10 @@ public sealed class ChoresCalendarFeedTests(PostgresContainerFixture postgres) :
         DateOnly? anchorDate = null,
         ChoreDaysOfWeek? daysOfWeek = null,
         DateTime? lastCompletedAt = null,
-        ChoreStatus status = ChoreStatus.Active) => new()
+        ChoreStatus status = ChoreStatus.Active,
+        DateOnly? snoozedUntil = null) => new()
         {
+            SnoozedUntil = snoozedUntil,
             ChoreId = choreId,
             Name = name,
             RecurrenceMode = mode,

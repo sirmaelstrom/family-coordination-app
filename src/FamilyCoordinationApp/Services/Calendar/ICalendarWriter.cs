@@ -24,5 +24,4 @@ public sealed record ChoreCalendarEvent(
     string? Description,
     DateOnly Date,
     bool Overdue,
-    AssignmentKind AssignmentKind,
-    uint Version);
+    AssignmentKind AssignmentKind);

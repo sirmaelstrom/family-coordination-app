@@ -48,6 +48,19 @@
   }
 </script>
 
+{#snippet feedBody(s: FeedStore, kind: FeedKind)}
+  {#if !s.loaded && s.loading}
+    <p class="cal-loading">Loading…</p>
+  {:else if !s.loaded && s.error}
+    <div class="cal-inline-error" role="alert">
+      <span>{s.error}</span>
+      <button type="button" class="cal-btn-outline" onclick={() => void s.load()}>Retry</button>
+    </div>
+  {:else}
+    {@render feedControls(s, kind)}
+  {/if}
+{/snippet}
+
 {#snippet feedControls(s: FeedStore, kind: FeedKind)}
   <p class="cal-status" data-phase={s.phase.kind}>{statusLine(s.phase, kind)}</p>
   {#if s.phase.kind !== 'none' && s.phase.createdAt}
@@ -56,7 +69,7 @@
 
   {#if s.url}
     <div class="cal-reveal">
-      <input class="cal-url" type="text" readonly value={s.url} aria-label="Subscription link" onfocus={(e) => (e.currentTarget as HTMLInputElement).select()} />
+      <input class="cal-url" type="text" readonly value={s.url} aria-label={kind === 'chores' ? 'Chores subscription link' : 'Meal plan subscription link'} onfocus={(e) => (e.currentTarget as HTMLInputElement).select()} />
       <button type="button" class="cal-btn-primary" onclick={() => void s.copyUrl()}>📋 Copy link</button>
     </div>
   {/if}
@@ -74,68 +87,50 @@
 <div class="cal-page">
   <h1 class="cal-title">Calendar Feed</h1>
 
-  {#if !store.loaded && store.loading}
-    <div class="cal-loading">Loading…</div>
-  {:else if !store.loaded && store.error}
-    <div class="cal-inline-error" role="alert">
-      <span>{store.error}</span>
-      <button type="button" class="cal-btn-outline" onclick={() => void store.load()}>Retry</button>
-    </div>
-  {:else}
-    <section class="cal-card">
-      <h2 class="cal-card-title">Subscribe to the meal plan</h2>
-      <p class="cal-card-sub">
-        Add the household meal plan to your phone or calendar app. It shows the current week and the next three,
-        one all-day event per meal, and updates on its own. The link is yours: every member has their own, and
-        rotating or revoking yours does not affect anyone else's.
-      </p>
+  <!-- Each card has its own loading/error boundary: one feed's failed status load must not hide the other's controls. -->
+  <section class="cal-card" data-testid="cal-meal-feed">
+    <h2 class="cal-card-title">Subscribe to the meal plan</h2>
+    <p class="cal-card-sub">
+      Add the household meal plan to your phone or calendar app. It shows the current week and the next three,
+      one all-day event per meal, and updates on its own. The link is yours: every member has their own, and
+      rotating or revoking yours does not affect anyone else's.
+    </p>
+    {@render feedBody(store, 'meal')}
+  </section>
 
-      {@render feedControls(store, 'meal')}
-    </section>
+  <section class="cal-card" data-testid="cal-chores-feed">
+    <h2 class="cal-card-title">Subscribe to your chores</h2>
+    <p class="cal-card-sub">
+      Add the chores assigned to you, or that you claimed, to your calendar: one all-day event per chore on the day
+      it is next due. An overdue chore shows on today. A chore that repeats some days after it was last done moves
+      when it is done again. Your calendar app refreshes on its own schedule, so it can be up to a day behind the app.
+    </p>
+    {@render feedBody(chores, 'chores')}
+  </section>
 
-    <section class="cal-card" data-testid="cal-chores-feed">
-      <h2 class="cal-card-title">Subscribe to your chores</h2>
-      <p class="cal-card-sub">
-        Add the chores assigned to you, or that you claimed, to your calendar: one all-day event per chore on the day
-        it is next due. An overdue chore shows on today. A chore that repeats some days after it was last done moves
-        when it is done again. Your calendar app refreshes on its own schedule, so it can be up to a day behind the app.
-      </p>
-      {#if !chores.loaded && chores.loading}
-        <p class="cal-status">Loading…</p>
-      {:else if !chores.loaded && chores.error}
-        <div class="cal-inline-error" role="alert">
-          <span>{chores.error}</span>
-          <button type="button" class="cal-btn-outline" onclick={() => void chores.load()}>Retry</button>
-        </div>
-      {:else}
-        {@render feedControls(chores, 'chores')}
+  {#if sharedLine}
+    <section class="cal-card" data-testid="cal-shared-link">
+      <h2 class="cal-card-title">Older shared link</h2>
+      <p class="cal-status">{sharedLine}</p>
+      {#if store.shared.createdAt}
+        <p class="cal-created">{describeCreatedAt(store.shared.createdAt)}</p>
       {/if}
-    </section>
-
-    {#if sharedLine}
-      <section class="cal-card" data-testid="cal-shared-link">
-        <h2 class="cal-card-title">Older shared link</h2>
-        <p class="cal-status">{sharedLine}</p>
-        {#if store.shared.createdAt}
-          <p class="cal-created">{describeCreatedAt(store.shared.createdAt)}</p>
-        {/if}
-        <div class="cal-actions">
-          <button type="button" class="cal-btn-danger" disabled={store.busy} onclick={() => (store.confirm = 'revoke-shared')}>
-            Revoke shared link
-          </button>
-        </div>
-      </section>
-    {/if}
-
-    <section class="cal-card">
-      <h2 class="cal-card-title">How to add it</h2>
-      <ul class="cal-howto">
-        {#each CLIENT_HOWTO as row (row.client)}
-          <li><strong>{row.client}:</strong> {row.steps}</li>
-        {/each}
-      </ul>
+      <div class="cal-actions">
+        <button type="button" class="cal-btn-danger" disabled={store.busy} onclick={() => (store.confirm = 'revoke-shared')}>
+          Revoke shared link
+        </button>
+      </div>
     </section>
   {/if}
+
+  <section class="cal-card">
+    <h2 class="cal-card-title">How to add it</h2>
+    <ul class="cal-howto">
+      {#each CLIENT_HOWTO as row (row.client)}
+        <li><strong>{row.client}:</strong> {row.steps}</li>
+      {/each}
+    </ul>
+  </section>
 </div>
 
 <ConfirmDialog

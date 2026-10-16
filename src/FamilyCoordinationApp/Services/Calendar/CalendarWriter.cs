@@ -80,8 +80,9 @@ public sealed class CalendarWriter : ICalendarWriter
             Append(builder, $"UID:chore-{householdId}-{chore.ChoreId}@family-coordination-app");
             Append(builder, $"DTSTAMP:{nowUtc.UtcDateTime:yyyyMMdd'T'HHmmss'Z'}");
             Append(builder, $"DTSTART;VALUE=DATE:{chore.Date:yyyyMMdd}");
+            // No SEQUENCE, as in the meal feed: the date slides with no row change, and xmin is no revision counter
+            // (unsigned, wraps). Subscribed clients take the event as published under its UID.
             Append(builder, $"DTEND;VALUE=DATE:{chore.Date.AddDays(1):yyyyMMdd}");
-            Append(builder, $"SEQUENCE:{chore.Version}");
             Append(builder, $"SUMMARY:{Escape(summary)}");
             Append(builder, $"DESCRIPTION:{Escape(description)}");
             Append(builder, "END:VEVENT");
