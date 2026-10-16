@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Quest 41337b6f, slice 4 (spec §5 row 7): the two POLLING admin stores on the Resource. These are
 // write-then-reload stores with no optimistic patch, so the old seq guard already kept a pre-write
-// poll from landing after the post-write reload — the "parity pin" tests hold that (they pass on
-// origin/master too). What changes is that a poll tick during a pending write is no longer
-// dispatched at all; one load runs at settle (red on origin/master).
+// poll from landing after the post-write reload — the "parity pin" test holds that (it passes on
+// origin/master too). What changes: a poll in flight when a write starts is retired, so a pre-write
+// answer no longer flashes onto the screen mid-write; and a poll tick during a pending write is not
+// dispatched at all — one load runs at settle. Both are red on origin/master.
 
 // The REAL ApiError: the Resource classifies failures through its getters.
 vi.mock('./api', async () => {
@@ -78,7 +79,7 @@ describe('feedbackStore on the Resource (41337b6f slice 4)', () => {
     vi.resetAllMocks();
   });
 
-  it('parity pin: a poll answered while a resolve is pending leaves the list as it was; one reload follows the write', async () => {
+  it('a poll answered WHILE a resolve is pending never commits (the write-start retire); one reload follows', async () => {
     const poll = deferred<FeedbackListDto>();
     const write = deferred<void>();
     vi.mocked(getFeedback).mockReturnValueOnce(poll.promise).mockResolvedValueOnce(feedback(true));
@@ -86,9 +87,13 @@ describe('feedbackStore on the Resource (41337b6f slice 4)', () => {
 
     const polling = feedbackStore.load();
     const resolving = feedbackStore.markResolved(1);
-    poll.resolve(feedback(false)); // pre-write truth, answered before the POST's response
+    // Pre-write server truth that differs from the screen (a second item arrived meanwhile), answered
+    // before the POST's response: if it committed, the list would show two items mid-write.
+    const stale = feedback(false);
+    stale.items.push({ ...item(false), id: 2, message: 'stale' });
+    poll.resolve(stale);
     await polling;
-    expect(feedbackStore.items[0].isResolved).toBe(false); // unchanged — but the stale poll did not commit
+    expect(feedbackStore.items.map((i) => i.id)).toEqual([1]);
     expect(feedbackStore.loading).toBe(false);
 
     write.resolve();
@@ -164,5 +169,6 @@ describe('householdRequestsStore on the Resource (41337b6f slice 4)', () => {
     expect(householdRequestsStore.creating).toBe(false);
     expect(showToast).toHaveBeenCalledWith({ message: 'That email already has a household.', kind: 'error' });
     await flush();
+    expect(getHouseholdRequests).toHaveBeenCalledTimes(1); // delta: a refused create now reconciles too
   });
 });

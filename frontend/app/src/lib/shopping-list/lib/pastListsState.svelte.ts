@@ -169,11 +169,6 @@ export class PastListsState {
           }
         },
       });
-      const target = this.activeLists.find((l) => l.id === targetListId);
-      showToast({
-        message: `Added ${added} item${added === 1 ? '' : 's'} to ${target?.name ?? 'the list'}`,
-        kind: 'success',
-      });
     } catch (e) {
       this.error = message(e);
       if (added > 0) {
@@ -182,8 +177,15 @@ export class PastListsState {
           kind: 'info',
         });
       }
+      return;
     } finally {
       this.adding = false;
     }
+    // Outside the write's error handler (council r4): a throwing toast is not an add failure.
+    const target = this.activeLists.find((l) => l.id === targetListId);
+    showToast({
+      message: `Added ${added} item${added === 1 ? '' : 's'} to ${target?.name ?? 'the list'}`,
+      kind: 'success',
+    });
   }
 }
