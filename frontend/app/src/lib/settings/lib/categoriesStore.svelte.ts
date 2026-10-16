@@ -107,10 +107,14 @@ class CategoriesStore {
    * Persist a new order (parity: reorder commits immediately). Optimistic local reorder, then persist.
    * On a 409/other 4xx the old order comes back and the lists reload; on a 5xx/network failure the old
    * order comes back with no reload (spec §5 row 6). The undo is scoped: it applies only while this
-   * reorder's order is still the latest, so it never erases a later drag.
+   * reorder's order is still the latest, so it never erases a later drag. When a later drag overlapped
+   * it, no local snapshot is known to be the saved order (both may fail — slim-review on fca#152), so
+   * the failure reloads the server order instead; while another write is pending that load is owed
+   * and runs once at its settle.
    */
   async reorder(orderedIds: number[]): Promise<void> {
-    await this.#resource.mutate({
+    let overlapped = false;
+    const outcome = await this.#resource.mutate({
       optimistic: () => {
         const byId = new Map(this.active.map((c) => [c.categoryId, c]));
         const next = orderedIds.map((id) => byId.get(id)).filter((c): c is CategoryDto => c != null);
@@ -120,6 +124,7 @@ class CategoriesStore {
         this.active = next;
         return () => {
           if (this.#reorderGen === gen) this.active = previous;
+          else overlapped = true;
         };
       },
       call: () => updateSortOrder(orderedIds),
@@ -129,6 +134,8 @@ class CategoriesStore {
         failed: "Couldn't save that order right now.",
       },
     });
+    // A 409/4xx already reconciles; a 5xx/network failure whose undo stood down must too.
+    if (outcome === 'failed' && overlapped) void this.load();
   }
 }
 

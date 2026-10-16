@@ -82,16 +82,51 @@ describe('categoriesStore on the Resource (41337b6f slice 3)', () => {
     expect(showToast).toHaveBeenCalledWith({ message: 'The categories changed — refreshing the order.', kind: 'info' });
   });
 
-  it("a failed reorder's undo never erases a later drag", async () => {
+  it("a failed reorder's undo never erases a later drag; the overlap reloads the server order", async () => {
     const first = deferred<void>();
     vi.mocked(updateSortOrder).mockReturnValueOnce(first.promise).mockResolvedValueOnce(undefined);
+    vi.mocked(getCategories).mockResolvedValueOnce(list(B, C, A)); // the second order was saved
     const failing = categoriesStore.reorder([3, 1, 2]);
     await categoriesStore.reorder([2, 3, 1]); // a second drag lands while the first is pending
     expect(names()).toEqual(['Dairy', 'Bakery', 'Produce']);
     first.reject(new TypeError('Failed to fetch'));
     await failing;
+    expect(names()).toEqual(['Dairy', 'Bakery', 'Produce']); // the undo stood down
     await flush();
+    expect(getCategories).toHaveBeenCalledTimes(1);
     expect(names()).toEqual(['Dairy', 'Bakery', 'Produce']);
+  });
+
+  it('two overlapping reorders that both fail end on the server order, not a never-saved one', async () => {
+    const first = deferred<void>();
+    const second = deferred<void>();
+    vi.mocked(updateSortOrder).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    vi.mocked(getCategories).mockResolvedValueOnce(list(A, B, C)); // neither order was saved
+    const a = categoriesStore.reorder([3, 1, 2]);
+    const b = categoriesStore.reorder([2, 3, 1]);
+    for (const [d, p] of [[first, a], [second, b]] as const) {
+      d.reject(new TypeError('Failed to fetch'));
+      await p;
+    }
+    await flush();
+    expect(getCategories).toHaveBeenCalledTimes(1);
+    expect(names()).toEqual(['Produce', 'Dairy', 'Bakery']);
+  });
+
+  it('...in either failure order', async () => {
+    const first = deferred<void>();
+    const second = deferred<void>();
+    vi.mocked(updateSortOrder).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    vi.mocked(getCategories).mockResolvedValueOnce(list(A, B, C));
+    const a = categoriesStore.reorder([3, 1, 2]);
+    const b = categoriesStore.reorder([2, 3, 1]);
+    second.reject(new ApiError(503, 'down'));
+    await b;
+    first.reject(new ApiError(503, 'down'));
+    await a;
+    await flush();
+    expect(getCategories).toHaveBeenCalledTimes(1);
+    expect(names()).toEqual(['Produce', 'Dairy', 'Bakery']);
   });
 
   it('a successful update reloads once and toasts after the write', async () => {
