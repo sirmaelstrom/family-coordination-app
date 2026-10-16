@@ -42,11 +42,11 @@ const dto = (activeInvite: InviteDto | null, connected: ConnectedDto[] = []): Co
 
 describe('connectionsStore on the Resource (41337b6f slice 2)', () => {
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks(); // also drops unconsumed *Once answers, so none leaks into the next step
     vi.mocked(getConnections).mockResolvedValueOnce(dto(null));
     await connectionsStore.load();
     await flush();
-    vi.clearAllMocks();
+    vi.resetAllMocks(); // also drops unconsumed *Once answers, so none leaks into the next step
   });
 
   it('a load in flight when generate starts never lands over the new invite; it is owed once', async () => {

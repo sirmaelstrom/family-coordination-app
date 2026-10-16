@@ -39,12 +39,12 @@ const CREATED: CalendarTokenCreatedDto = { token: 't', url: 'https://example.tes
 
 describe('feedStore on the Resource (41337b6f slice 2)', () => {
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks(); // also drops unconsumed *Once answers, so none leaks into the next step
     // The store is a singleton: start every test from a loaded "no token" card.
     vi.mocked(getCalendarTokenStatus).mockResolvedValueOnce(NONE);
     await feedStore.load();
     await flush();
-    vi.clearAllMocks();
+    vi.resetAllMocks(); // also drops unconsumed *Once answers, so none leaks into the next step
   });
 
   it('the URL a create reveals survives the confirming status load the write owes', async () => {
@@ -79,7 +79,7 @@ describe('feedStore on the Resource (41337b6f slice 2)', () => {
     vi.mocked(getCalendarTokenStatus).mockResolvedValueOnce(ACTIVE);
     await feedStore.createOrRotate();
     await flush();
-    vi.clearAllMocks();
+    vi.resetAllMocks(); // also drops unconsumed *Once answers, so none leaks into the next step
 
     const del = deferred<void>();
     vi.mocked(revokeCalendarToken).mockReturnValueOnce(del.promise);
@@ -115,7 +115,7 @@ describe('feedStore on the Resource (41337b6f slice 2)', () => {
     vi.mocked(getCalendarTokenStatus).mockResolvedValueOnce(ACTIVE);
     await feedStore.createOrRotate();
     await flush();
-    vi.clearAllMocks();
+    vi.resetAllMocks(); // also drops unconsumed *Once answers, so none leaks into the next step
 
     vi.mocked(createOrRotateCalendarToken).mockRejectedValueOnce(new ApiError(503, 'down'));
     vi.mocked(getCalendarTokenStatus).mockResolvedValueOnce(ACTIVE);
