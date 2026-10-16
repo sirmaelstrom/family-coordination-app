@@ -23,7 +23,7 @@ postgres:
 ```
 
 `${POSTGRES_DATA_PATH}` comes from `.env` (generated each deploy from the
-darktower-only `.env.local`). The danger: **if that path is ever unset, empty,
+production-host-only `.env.local`). The danger: **if that path is ever unset, empty,
 wrong, or an empty directory, postgres runs `initdb` and starts a brand-new empty
 cluster with no error.** The old data still exists on disk at the *real* path, but
 the app is now talking to an empty database — so it looks like "all data is gone."
@@ -73,7 +73,7 @@ skipped automatically in that case.)
 
 ## Recovery — restoring from a backup
 
-Backups live at `~/data/db-backups/` on the darktower. To restore one into the
+Backups live at `~/data/db-backups/` on the production host. To restore one into the
 running container:
 
 ```sh

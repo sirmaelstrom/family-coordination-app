@@ -99,7 +99,7 @@ discipline applies.
 **Chosen: B**, and **flagged as the one explicit ratification gate** because it reverses v1.0 **MN1** ("no
 `BackgroundService`/`IHostedService`"). The endpoint approach honors MN1's *spirit* — the app remains
 request-driven, the schedule lives in cron — and forecloses nothing: a future `BackgroundService` could call
-the same `DigestService.RunDueAsync`. Deploy wires a darktower cron (hourly) hitting the endpoint with the
+the same `DigestService.RunDueAsync`. Deploy wires a production-host cron (hourly) hitting the endpoint with the
 token. **If the operator prefers the hosted service**, only the trigger changes; the builder/sender/service
 are identical. *Sign-off recorded at the council/review gate.*
 
