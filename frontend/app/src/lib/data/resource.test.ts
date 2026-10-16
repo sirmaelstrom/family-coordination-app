@@ -364,6 +364,146 @@ describe('Resource — throwing hooks never strand the window (code council r2)'
     expect(h.res.isPending('e2')).toBe(false);
   });
 
+  // Council r3 (fca#151) and r4 (fca#153): the hold follows the CURRENT load, not the reconcile promise.
+  it('a superseded reconcile does not release a held key; the load that supersedes it does', async () => {
+    const h = harness();
+    expect(await h.res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) })).toBe('conflict');
+    const b = h.res.load(); // a liveness tick supersedes the reconcile (fetches[0])
+    h.fetches[0].resolve('reconcile, superseded');
+    await tick();
+    expect(h.res.isPending('e1')).toBe(true); // nothing fresh has landed yet
+    h.fetches[1].resolve('fresh');
+    expect(await b).toBe('committed');
+    expect(h.res.isPending('e1')).toBe(false);
+    expect(h.committed).toEqual(['fresh']);
+  });
+
+  it('a stalled superseded reconcile does not keep the key locked once a newer load has landed', async () => {
+    const h = harness();
+    expect(await h.res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) })).toBe('conflict');
+    const b = h.res.load(); // supersedes the reconcile, which never answers
+    h.fetches[1].resolve('fresh');
+    expect(await b).toBe('committed');
+    expect(h.res.isPending('e1')).toBe(false);
+  });
+
+  it("a reconcile retired by another write holds the key until that write's owed load lands", async () => {
+    const h = harness();
+    expect(await h.res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) })).toBe('conflict');
+    const w = deferred<void>();
+    const writing = h.res.mutate({ key: 'e2', call: () => w.promise }); // retires the reconcile (fetches[0])
+    h.fetches[0].resolve('stale reconcile');
+    await tick();
+    expect(h.res.isPending('e1')).toBe(true);
+    w.resolve();
+    expect(await writing).toBe('ok');
+    expect(h.fetch).toHaveBeenCalledTimes(2); // the owed load at e2's settle
+    expect(h.res.isPending('e1')).toBe(true);
+    h.fetches[1].resolve('fresh');
+    await h.res.settled();
+    expect(h.res.isPending('e1')).toBe(false);
+    expect(h.committed).toEqual(['fresh']);
+  });
+
+  it('settled() follows the load that superseded the settle load, in both response orders (council r5)', async () => {
+    const pending = (p: Promise<void>) => Promise.race([p.then(() => 'settled'), tick().then(() => 'pending')]);
+    // (a) the superseded settle load answers first: settled() still waits for the successor.
+    // The promise taken BEFORE the successor lands is the one asserted (slim-review on fca#155): a fresh
+    // settled() call afterwards would pass even if the original promise were orphaned.
+    const h = harness();
+    await h.res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) });
+    const s1 = h.res.settled();
+    const b = h.res.load();
+    h.fetches[0].resolve('superseded');
+    expect(await pending(s1)).toBe('pending');
+    h.fetches[1].resolve('fresh');
+    await b;
+    expect(await pending(s1)).toBe('settled');
+    // (b) the superseded settle load stalls: the successor landing resolves settled().
+    const g = harness();
+    await g.res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) });
+    const s2 = g.res.settled();
+    const c = g.res.load();
+    g.fetches[1].resolve('fresh');
+    await c;
+    expect(await pending(s2)).toBe('settled');
+  });
+
+  it("an older settle load's handler never finishes the waiter a newer settle owns (slim-review on fca#155)", async () => {
+    const pending = (p: Promise<void>) => Promise.race([p.then(() => 'settled'), tick().then(() => 'pending')]);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let throwStart = true;
+    const fetches: Deferred<string>[] = [];
+    const res = new Resource<string>({
+      fetch: () => {
+        const d = deferred<string>();
+        fetches.push(d);
+        return d.promise;
+      },
+      commit: () => {},
+      onLoadStart: () => {
+        if (throwStart) {
+          throwStart = false;
+          throw new Error('start boom');
+        }
+      },
+    });
+    // Two writes whose calls THROW synchronously with a 409, back to back (astra's repro): each mutate
+    // settles before returning, so they are two separate settles. The first settle's load throws at its
+    // start hook; the second settle's load is in flight when the first's rejection handler runs.
+    const conflict = (): Promise<void> => {
+      throw new ApiError(409, 'c');
+    };
+    const first = res.mutate({ key: 'e1', call: conflict });
+    const second = res.mutate({ key: 'e2', call: conflict });
+    await first;
+    await second;
+    const s = res.settled();
+    await tick();
+    expect(fetches).toHaveLength(1); // the newer settle's reconcile is in flight
+    expect(res.isPending('e2')).toBe(true);
+    expect(await pending(s)).toBe('pending');
+    fetches[0].resolve('fresh');
+    await s;
+    expect(res.isPending('e2')).toBe(false);
+    spy.mockRestore();
+  });
+
+  it('a held key is released when the reconcile start hook or commit throws', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let throwStart = false;
+    let throwCommit = false;
+    const fetch = vi.fn(async () => 'v');
+    const res = new Resource<string>({
+      fetch,
+      commit: () => {
+        if (throwCommit) throw new Error('commit boom');
+      },
+      onLoadStart: () => {
+        if (throwStart) throw new Error('start boom');
+      },
+    });
+    throwStart = true;
+    await res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) });
+    await res.settled();
+    expect(res.isPending('e1')).toBe(false);
+    throwStart = false;
+    throwCommit = true;
+    await res.mutate({ key: 'e2', call: () => Promise.reject(new ApiError(409, 'c')) });
+    await res.settled();
+    expect(res.isPending('e2')).toBe(false);
+    expect(spy).toHaveBeenCalledTimes(2);
+    spy.mockRestore();
+  });
+
+  it('a failed reconcile releases the key (holding on would lock it for good)', async () => {
+    const h = harness();
+    expect(await h.res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) })).toBe('conflict');
+    h.fetches[0].reject(new TypeError('net'));
+    await h.res.settled();
+    expect(h.res.isPending('e1')).toBe(false);
+  });
+
   it("a stalled reconcile GET withholds neither the write's outcome nor its toast (slim-review fca#150)", async () => {
     const fetch = vi.fn(() => new Promise<string>(() => {})); // apiFetch has no timeout
     const res = new Resource<string>({ fetch, commit: () => {} });

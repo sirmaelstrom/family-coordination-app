@@ -14,7 +14,7 @@
 //   • settle   — when the last write settles, ONE load starts if one is owed or a reconcile is due, so
 //                the view converges on server truth without waiting for the next liveness tick. The
 //                write resolves without awaiting it (a stalled GET must not hold its outcome); settled()
-//                waits for it.
+//                waits for it — or for the newer load that superseded it — to finish as current.
 //   • mutate() — optimistic patch (synchronous) → call → commit, or undo + the 409 / other-4xx /
 //                5xx-network three-way branch through the ApiError getters (never a raw status).
 //
@@ -96,9 +96,24 @@ export class Resource<T> {
   #owed = false;
   /** A write asked for a reconcile — run one at settle. */
   #reconcileDue = false;
-  /** The settle load started by the last write to settle, while it runs. */
-  #drain: Promise<void> | null = null;
-  /** Keys of conflicted/rejected writes, still pending until the next settle load finishes. */
+  /**
+   * What `settled()` waits for: opened when a settle starts its owed/reconcile load, resolved when a
+   * load finishes as CURRENT after it — the settle load itself (once its error, if any, is reported),
+   * or the newer load that superseded it (council r5: a superseded settle load must not resolve it
+   * early, and a stalled superseded one must not keep it open once a successor has landed).
+   */
+  #settleWaiter: { promise: Promise<void>; resolve: () => void } | null = null;
+  /** The id of the load the last settle started (its completion is reported through its own chain). */
+  #settleLoadId = 0;
+  /**
+   * Keys of conflicted/rejected writes, still pending until a CURRENT load has finished (committed or
+   * failed) — not until a particular promise does. The reconcile load the settle starts may be
+   * superseded by a newer load (an explicit load, or another write's owed load); the hold then passes
+   * to whichever load finishes as current, so a superseded reconcile never releases a key before
+   * fresh state has landed, and a stalled superseded one never keeps it locked after (council r3/r4).
+   * Any load that finishes as current started after the hold: a load in flight when the write began
+   * was retired by it, and none can start while a write is pending.
+   */
   #heldKeys = new Set<Key>();
   readonly #options: ResourceOptions<T>;
 
@@ -111,12 +126,15 @@ export class Resource<T> {
   }
 
   /**
-   * Resolves once the settle load (the owed / reconcile load a write started when it settled) has
-   * finished — immediately when none is running. Writes don't wait for it (a stalled GET must not
-   * withhold a write's outcome or its toast); callers and tests that need the reconciled view do.
+   * Resolves once a load has finished as current — committed, failed, or its start hook threw — after
+   * the last settle started its owed/reconcile load: that load, or a newer one that superseded it. So
+   * it marks "the reconcile attempt is over", not "fresh data is on screen" (a failure resolves it too).
+   * Immediately when no settle load is outstanding. Writes that keep arriving keep moving it later.
+   * Writes don't wait for it (a stalled GET must not withhold a write's outcome or its toast); callers
+   * and tests that need the reconciled view do.
    */
   settled(): Promise<void> {
-    return this.#drain ?? Promise.resolve();
+    return this.#settleWaiter?.promise ?? Promise.resolve();
   }
 
   isPending(key: Key): boolean {
@@ -140,8 +158,10 @@ export class Resource<T> {
     try {
       this.#options.onLoadStart?.();
     } catch (e) {
-      // A throwing hook must not strand `loading`/`current`: nothing was dispatched, so stand down.
+      // A throwing hook must not strand `loading`/`current`: nothing was dispatched, so stand down. It
+      // was the current load, so it also ends any hold (else a held key could never be retried).
       if (this.#current === id) this.#current = null;
+      this.#currentDone(id);
       this.#idle();
       throw e;
     }
@@ -154,6 +174,7 @@ export class Resource<T> {
       try {
         this.#options.onLoadError?.(e);
       } finally {
+        this.#currentDone(id); // a failed reconcile releases too: holding on would lock the key for good
         this.#idle();
       }
       return 'failed';
@@ -164,6 +185,7 @@ export class Resource<T> {
       this.#options.commit(value);
       this.hasLoaded = true;
     } finally {
+      this.#currentDone(id); // after the commit: a retry now carries the fresh version
       this.#idle();
     }
     return 'committed';
@@ -303,27 +325,51 @@ export class Resource<T> {
     if (this.#writes === 0 && (this.#owed || this.#reconcileDue)) {
       this.#owed = false;
       this.#reconcileDue = false;
-      const released = [...this.#heldKeys];
-      this.#heldKeys.clear();
-      const drain = this.load().then(
-        () => undefined,
+      let resolve!: () => void;
+      const waiter = (this.#settleWaiter ??= { promise: new Promise<void>((r) => (resolve = r)), resolve: () => resolve() });
+      this.#settleLoadId = this.#seq + 1; // the id load() is about to take (no write is pending)
+      const settleId = this.#settleLoadId;
+      // Only the LATEST settle's chain may finish the shared waiter: an older settle load's handler can
+      // run after a newer settle has taken the waiter over (slim-review on fca#155).
+      const finish = () => {
+        if (this.#settleLoadId === settleId) this.#finishSettle(waiter);
+      };
+      this.load().then(
+        (outcome) => {
+          // Superseded: the newer load that replaced it resolves the waiter when it lands.
+          if (outcome !== 'superseded') finish();
+        },
         (e) => {
           // A throwing load callback during the settle reconcile must not surface as the WRITE's result or
           // error (the write already happened), nor as an unhandled rejection. Reported, not swallowed.
           console.error('Resource: the reconcile load after a write failed', e);
+          finish();
         },
       );
-      this.#drain = drain;
-      void drain.then(() => {
-        if (this.#drain === drain) this.#drain = null;
-        if (released.length) {
-          // The reconcile has landed (or failed): the held keys may be retried with a fresh version.
-          const next = new Set(this.#pendingKeys);
-          for (const k of released) next.delete(k);
-          this.#pendingKeys = next;
-        }
-      });
     }
+  }
+
+  #finishSettle(waiter: { resolve: () => void }): void {
+    if (this.#settleWaiter === waiter) this.#settleWaiter = null;
+    waiter.resolve();
+  }
+
+  /**
+   * A load finished as current (committed, failed, or its start hook threw): the held keys may be
+   * retried with a fresh version, and — unless it is the settle load, which reports through its own
+   * chain — it resolves a waiting `settled()`.
+   */
+  #currentDone(id: number): void {
+    this.#releaseHeld();
+    if (this.#settleWaiter && id !== this.#settleLoadId) this.#finishSettle(this.#settleWaiter);
+  }
+
+  #releaseHeld(): void {
+    if (this.#heldKeys.size === 0) return;
+    const next = new Set(this.#pendingKeys);
+    for (const k of this.#heldKeys) next.delete(k);
+    this.#heldKeys.clear();
+    this.#pendingKeys = next;
   }
 
   /** Bump the load id. Only a load REALLY in flight is owed — no request in flight, no extra request. */
