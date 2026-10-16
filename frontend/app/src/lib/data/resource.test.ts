@@ -405,6 +405,53 @@ describe('Resource — throwing hooks never strand the window (code council r2)'
     expect(h.committed).toEqual(['fresh']);
   });
 
+  it('settled() follows the load that superseded the settle load, in both response orders (council r5)', async () => {
+    const pending = (p: Promise<void>) => Promise.race([p.then(() => 'settled'), tick().then(() => 'pending')]);
+    // (a) the superseded settle load answers first: settled() still waits for the successor.
+    const h = harness();
+    await h.res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) });
+    const b = h.res.load();
+    h.fetches[0].resolve('superseded');
+    expect(await pending(h.res.settled())).toBe('pending');
+    h.fetches[1].resolve('fresh');
+    await b;
+    expect(await pending(h.res.settled())).toBe('settled');
+    // (b) the superseded settle load stalls: the successor landing resolves settled().
+    const g = harness();
+    await g.res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) });
+    const c = g.res.load();
+    g.fetches[1].resolve('fresh');
+    await c;
+    expect(await pending(g.res.settled())).toBe('settled');
+  });
+
+  it('a held key is released when the reconcile start hook or commit throws', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let throwStart = false;
+    let throwCommit = false;
+    const fetch = vi.fn(async () => 'v');
+    const res = new Resource<string>({
+      fetch,
+      commit: () => {
+        if (throwCommit) throw new Error('commit boom');
+      },
+      onLoadStart: () => {
+        if (throwStart) throw new Error('start boom');
+      },
+    });
+    throwStart = true;
+    await res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) });
+    await res.settled();
+    expect(res.isPending('e1')).toBe(false);
+    throwStart = false;
+    throwCommit = true;
+    await res.mutate({ key: 'e2', call: () => Promise.reject(new ApiError(409, 'c')) });
+    await res.settled();
+    expect(res.isPending('e2')).toBe(false);
+    expect(spy).toHaveBeenCalledTimes(2);
+    spy.mockRestore();
+  });
+
   it('a failed reconcile releases the key (holding on would lock it for good)', async () => {
     const h = harness();
     expect(await h.res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) })).toBe('conflict');
