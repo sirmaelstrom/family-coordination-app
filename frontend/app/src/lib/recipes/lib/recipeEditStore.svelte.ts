@@ -12,7 +12,9 @@
 //
 // Concurrency: the full-form save echoes the xmin token (`version` from GET);
 // a 409 means someone else saved since we loaded → non-destructive conflict
-// banner + an explicit Reload action (reloadAfterConflict). Other 4xx during
+// banner that first shows a field-level diff against the latest version
+// (quest adfe3d57), then offers keep-mine (keepMine: save over THAT version's
+// token) or use-theirs (reloadAfterConflict). Other 4xx during
 // save/delete keep the old calm "this recipe changed" → back-to-list path.
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -38,6 +40,7 @@ import {
 } from './api';
 import { base } from '$app/paths';
 import { showToast } from '$lib/shared/toast-store.svelte';
+import { diffRecipe, type RecipeConflictDiff } from './conflictDiff';
 
 /** The bound form model (text fields are strings; trimmed/null-on-save). */
 export interface RecipeEditModel {
@@ -117,6 +120,19 @@ class RecipeEditStore {
   conflict = $state(false);
   /** Reload-after-conflict in progress (disables the banner button). */
   reloading = $state(false);
+  /** After a 409: the latest saved recipe, fetched for the diff (quest adfe3d57, answer (c)). */
+  private conflictLatest = $state<RecipeFullDto | null>(null);
+  /**
+   * The field-level diff of the form against that latest version, or null while it loads or when it couldn't
+   * be fetched. Derived, so it follows the form if the user keeps typing. Keep-mine is offered only with a diff.
+   */
+  conflictDiff = $derived<RecipeConflictDiff | null>(
+    this.conflictLatest ? diffRecipe(this.form, this.ingredients, this.conflictLatest) : null,
+  );
+  /** The latest version's fetch for the diff is in flight. */
+  conflictLoading = $state(false);
+  /** The latest-version fetch answered 404: the recipe was deleted meanwhile. */
+  conflictGone = $state(false);
   /** A draft is known to exist for this editor (restored on load, autosaved, or kept by a conflict reload).
    *  Shows the Discard-draft control (quest adfe3d57). */
   hasDraft = $state(false);
@@ -155,6 +171,7 @@ class RecipeEditStore {
     this.loading = true;
     this.error = null;
     this.conflict = false;
+    this.clearConflictDiff();
     this.hasDraft = false;
     this.serverVersion = null;
     try {
@@ -435,6 +452,42 @@ class RecipeEditStore {
   // ── Save / Delete / Cancel ───────────────────────────────────────────────────
 
   async save(): Promise<void> {
+    await this.saveWith(null);
+  }
+
+  /**
+   * Keep mine (quest adfe3d57, answer (c)): after a 409 and its diff, save the form over the version the diff
+   * showed, using that version's token. Offered only with a diff in hand: no overwrite of a version the user
+   * hasn't seen. If someone saved again since the diff was fetched, this answers 409 too and the diff refreshes.
+   */
+  async keepMine(): Promise<void> {
+    const shown = this.conflictLatest;
+    if (!this.conflict || shown == null) return;
+    if (this.saving || this.reloading || this.discarding || this.deleting) return;
+    await this.saveWith(shown.version);
+  }
+
+  /** Fetch the latest saved recipe for the conflict diff. Any failure leaves no diff (so no keep-mine). */
+  private async loadConflictDiff(): Promise<void> {
+    if (this.recipeId == null) return;
+    this.conflictLoading = true;
+    try {
+      this.conflictLatest = await getRecipe(this.recipeId);
+    } catch (e) {
+      this.conflictLatest = null;
+      this.conflictGone = e instanceof ApiError && e.status === 404;
+    } finally {
+      this.conflictLoading = false;
+    }
+  }
+
+  private clearConflictDiff(): void {
+    this.conflictLatest = null;
+    this.conflictGone = false;
+    this.conflictLoading = false;
+  }
+
+  private async saveWith(overrideVersion: number | null): Promise<void> {
     const name = this.form.name.trim();
     if (!name) {
       showToast({ message: 'Recipe name is required.', kind: 'error' });
@@ -444,8 +497,10 @@ class RecipeEditStore {
     await this.flushAutosave(); // wait out any in-flight draft save before we deleteDraft
     this.error = null;
     this.conflict = false;
+    this.clearConflictDiff();
     try {
       const body = this.buildWriteRequest();
+      if (overrideVersion != null) body.version = overrideVersion;
       if (this.recipeId != null) {
         await updateRecipe(this.recipeId, body);
       } else {
@@ -460,8 +515,10 @@ class RecipeEditStore {
       // reads as "the recipe changed" and navigates away.
       if (e instanceof ApiError && e.isConflict) {
         // Stale xmin token — someone else saved since we loaded. NON-destructive: keep the form (and
-        // dirty, so the nav-lock still guards) and show the reload banner instead of navigating away.
+        // dirty, so the nav-lock still guards) and show the conflict banner instead of navigating away. The
+        // banner first shows what differs (answer (c)), then offers keep-mine or use-theirs.
         this.conflict = true;
+        await this.loadConflictDiff();
       } else if (e instanceof ApiError && e.isClientRejection) {
         // Other 4xx (e.g. a 404 from a concurrent delete). On a 404 the recipe is gone, so its draft can never
         // save: delete it, or the draft-first load reopens it on every visit (quest adfe3d57). Other 4xx keep it.
@@ -501,6 +558,7 @@ class RecipeEditStore {
       const full = await getRecipe(this.recipeId);
       this.applyFull(full); // also refreshes serverVersion for the next save
       this.conflict = false;
+      this.clearConflictDiff();
       this.error = null;
       this.dirty = false;
       // The draft saved above keeps the conflicted base (serverVersion was still the old token), so reopening the
@@ -550,6 +608,7 @@ class RecipeEditStore {
       this.hasDraft = false;
       this.autosaveStatus = 'none';
       this.conflict = false;
+      this.clearConflictDiff();
       this.error = null;
       if (this.recipeId != null) {
         try {
