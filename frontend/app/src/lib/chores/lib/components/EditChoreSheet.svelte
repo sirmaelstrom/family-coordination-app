@@ -20,6 +20,7 @@
   import type { EffortTier, RecurrenceMode, MemberDto, RoomRollupDto, ChoreDto } from '../types';
   import type { UpdateChoreRequest } from '../api';
   import { boardStore } from '../state.svelte';
+  import type { MutationOutcome } from '$lib/data/resource.svelte';
   import { uploadChorePhoto, createRoom, uploadRoomPhoto } from '../api';
   import { showToast } from '$lib/shared/toast-store.svelte';
   import { minFloorDate } from '../dates';
@@ -434,6 +435,7 @@
       // claim/hand-off + roster endpoints. Apply it AFTER the metadata save:
       // boardStore.edit just refreshed this chore's version in the board, so the
       // follow-on read carries a fresh xmin (no self-409).
+      let assigned: MutationOutcome = 'ok';
       if (requiredCount === 1) {
         // Single-person: a member target lands a deliberate Assigned via hand-off;
         // clearing back to "Up for grabs" returns a held chore to the pile.
@@ -441,16 +443,20 @@
           chore.assignmentKind !== 'none' ? (chore.assigneeUserId ?? null) : null;
         if (assignTo !== currentAssignee) {
           if (assignTo === null) {
-            if (currentAssignee !== null) await boardStore.handOff(chore.id, null);
+            if (currentAssignee !== null) assigned = await boardStore.handOff(chore.id, null);
           } else {
-            await boardStore.handOff(chore.id, assignTo);
+            assigned = await boardStore.handOff(chore.id, assignTo);
           }
         }
       } else {
         // Multi-person: reconcile the named roster to the chosen set (adds/removes
         // via the roster endpoints, diffed against the pre-edit roster).
-        await boardStore.applyRosterSelection(chore.id, originalRoster, assignedUserIds);
+        assigned = await boardStore.applyRosterSelection(chore.id, originalRoster, assignedUserIds);
       }
+
+      // The details saved, but the assignment step didn't fully go through (its toast says why): keep
+      // the sheet open with the user's selection rather than read as done (council r6 challenge).
+      if (assigned !== 'ok') return;
 
       onClose();
     } finally {
