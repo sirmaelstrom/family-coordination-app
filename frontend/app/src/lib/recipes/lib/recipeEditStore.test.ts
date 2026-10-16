@@ -323,10 +323,13 @@ describe('recipe draft recovery (adfe3d57)', () => {
     vi.mocked(saveDraft).mockReturnValue(new Promise<void>((r) => (releaseSave = r)));
     vi.mocked(getRecipe).mockResolvedValue(full(5));
     const reloading = recipeEditStore.reloadAfterConflict();
-    await recipeEditStore.discardDraft();
-    expect(deleteDraft).not.toHaveBeenCalled();
-    releaseSave();
-    await reloading;
+    try {
+      await recipeEditStore.discardDraft();
+      expect(deleteDraft).not.toHaveBeenCalled();
+    } finally {
+      releaseSave(); // settle the store even on failure, so its flags don't leak into later tests
+      await reloading;
+    }
 
     // The reverse: a discard whose DELETE is pending blocks a reload (its saveDraft would re-create the draft).
     vi.mocked(saveDraft).mockClear();
@@ -335,11 +338,14 @@ describe('recipe draft recovery (adfe3d57)', () => {
     let releaseDelete!: () => void;
     vi.mocked(deleteDraft).mockReturnValue(new Promise<void>((r) => (releaseDelete = r)));
     const discarding = recipeEditStore.discardDraft();
-    await Promise.resolve();
-    await recipeEditStore.reloadAfterConflict();
-    expect(saveDraft).not.toHaveBeenCalled();
-    releaseDelete();
-    await discarding;
+    try {
+      await Promise.resolve();
+      await recipeEditStore.reloadAfterConflict();
+      expect(saveDraft).not.toHaveBeenCalled();
+    } finally {
+      releaseDelete();
+      await discarding;
+    }
   });
 
   it('a non-404 failure loading the recipe after a discard stays on the page', async () => {
