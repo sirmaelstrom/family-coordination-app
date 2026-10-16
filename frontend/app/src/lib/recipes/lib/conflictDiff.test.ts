@@ -99,6 +99,10 @@ describe('diffIngredients', () => {
     const diff = diffIngredients([ing('rice', { quantity: 1, unit: 'cup' })], [ing('cup rice', { quantity: 1 })]);
     expect(diff).not.toBeNull();
     expect(diff?.reorderedOnly).toBe(false);
+    // ...and the user can SEE the difference: lines that read alike are spelled out field by field.
+    expect(diff?.onlyYours).toEqual(['quantity: 1; unit: cup; name: rice; notes: (none); group: (none); category: Pantry']);
+    expect(diff?.onlyTheirs).toEqual(['quantity: 1; unit: (none); name: cup rice; notes: (none); group: (none); category: Pantry']);
+    expect(diff?.onlyYours[0]).not.toBe(diff?.onlyTheirs[0]);
   });
 
   it('the same lines in another order is a reorder, not a change of content', () => {

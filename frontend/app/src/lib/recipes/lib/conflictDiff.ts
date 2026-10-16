@@ -124,9 +124,31 @@ export function diffIngredients(
   const mine = yours.map(ingredientKey);
   const latest = theirs.map(ingredientKey);
   if (mine.length === latest.length && mine.every((key, i) => key === latest[i])) return null;
-  const onlyYours = minus(yours, theirs).map(ingredientLine);
-  const onlyTheirs = minus(theirs, yours).map(ingredientLine);
+  const mineOnly = minus(yours, theirs);
+  const theirsOnly = minus(theirs, yours);
+  // Two different ingredients can read alike as a line (1 + "cup rice" vs 1 cup + "rice"). When a line would
+  // appear on both sides, spell every listed ingredient out field by field, so the difference is visible before
+  // Keep mine replaces the ingredients wholesale (slim-review delta on fca#159).
+  let onlyYours = mineOnly.map(ingredientLine);
+  let onlyTheirs = theirsOnly.map(ingredientLine);
+  if (onlyYours.some((line) => onlyTheirs.includes(line))) {
+    onlyYours = mineOnly.map(ingredientDetail);
+    onlyTheirs = theirsOnly.map(ingredientDetail);
+  }
   return { onlyYours, onlyTheirs, reorderedOnly: onlyYours.length === 0 && onlyTheirs.length === 0 };
+}
+
+/** One ingredient spelled out field by field, for when two differ but share a display line. */
+export function ingredientDetail(i: DiffableIngredient): string {
+  const fields: Array<[string, string | number | null]> = [
+    ['quantity', norm(i.quantity)],
+    ['unit', norm(i.unit)],
+    ['name', norm(i.name)],
+    ['notes', norm(i.notes)],
+    ['group', norm(i.groupName)],
+    ['category', norm(i.category)],
+  ];
+  return fields.map(([label, value]) => `${label}: ${value == null ? '(none)' : value}`).join('; ');
 }
 
 /**
