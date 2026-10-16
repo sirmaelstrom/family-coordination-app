@@ -38,19 +38,25 @@ export class PastListsState {
 
   /** The list the detail Resource fetches: set on expand, cleared on collapse or on its delete. */
   #detailTarget: number | null = null;
+  /** The lists have loaded once — later loads refresh in place. */
+  #listsLoaded = false;
 
   #lists = new Resource<[ArchivedListSummaryDto[], ShoppingListSummaryDto[]]>({
     fetch: () => Promise.all([listArchived(this.favoritesOnly), listLists()]),
     commit: ([past, active]) => {
       this.archived = past;
       this.activeLists = active;
+      this.#listsLoaded = true;
       // Favorites-first is the server's sort for actives too — default the pick target to the top.
       if (this.targetListId == null || !active.some((l) => l.id === this.targetListId)) {
         this.targetListId = active[0]?.id ?? null;
       }
     },
     onLoadStart: () => {
-      this.loading = true;
+      // "Loading…" replaces the rows only until the first load lands; later loads (a filter flip, the
+      // reload after a write) refresh in place, so a stalled reload after a failed delete never takes
+      // the rows away (slim-review on fca#153).
+      if (!this.#listsLoaded) this.loading = true;
       this.error = null;
     },
     onLoadError: (e) => {

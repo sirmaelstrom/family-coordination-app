@@ -102,6 +102,21 @@ describe('PastListsState on two Resources (41337b6f slice 4)', () => {
     expect(listArchived).toHaveBeenCalledTimes(2);
   });
 
+  it('a failed delete keeps the rows on screen while its reload is outstanding', async () => {
+    vi.mocked(deleteList).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const reload = deferred<ArchivedListSummaryDto[]>();
+    vi.mocked(listArchived).mockReturnValueOnce(reload.promise); // a stalled reconcile
+    vi.mocked(listLists).mockResolvedValue([ACTIVE]);
+
+    await past.remove(1);
+    expect(listArchived).toHaveBeenCalledTimes(1);
+    expect(past.loading).toBe(false); // no "Loading…" swap — the rows stay usable
+    expect(past.archived.map((l) => l.id)).toEqual([1, 2]);
+    expect(past.error).toBe('Failed to fetch');
+    reload.resolve([row(1), row(2)]);
+    await flush();
+  });
+
   it('a collapse supersedes an expand still in flight', async () => {
     vi.mocked(getArchivedList).mockResolvedValueOnce(detailOf(1));
     await past.toggleDetail(1);
