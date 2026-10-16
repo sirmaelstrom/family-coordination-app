@@ -117,6 +117,11 @@ class RecipeEditStore {
   conflict = $state(false);
   /** Reload-after-conflict in progress (disables the banner button). */
   reloading = $state(false);
+  /** A draft is known to exist for this editor (restored on load, autosaved, or kept by a conflict reload).
+   *  Shows the Discard-draft control (quest adfe3d57). */
+  hasDraft = $state(false);
+  /** Discard-draft in progress (disables the control; a timer-fired autosave bails on it). */
+  discarding = $state(false);
 
   /** The recipe id (null = new). Set from the shell context. */
   recipeId = $state<number | null>(null);
@@ -149,11 +154,13 @@ class RecipeEditStore {
     this.loading = true;
     this.error = null;
     this.conflict = false;
+    this.hasDraft = false;
     this.serverVersion = null;
     try {
       const draft = await getDraft(recipeId);
       if (draft) {
         this.applyDraft(draft);
+        this.hasDraft = true;
         showToast({ message: 'Restored from draft', kind: 'info' });
         if (recipeId != null && draft.baseVersion != null) {
           // The draft carries the token its edits started from (quest 0c97a292). Save with THAT, not the live
@@ -283,9 +290,9 @@ class RecipeEditStore {
   }
 
   private async runAutosave(): Promise<void> {
-    // Skip if: the draft endpoint requires a non-blank name, OR a save/delete is underway (that path
+    // Skip if: the draft endpoint requires a non-blank name, OR a save/delete/discard is underway (that path
     // owns the draft lifecycle and will deleteDraft — autosaving now would resurrect it).
-    if (!this.form.name.trim() || this.saving || this.deleting) {
+    if (!this.form.name.trim() || this.saving || this.deleting || this.discarding) {
       this.autosaveStatus = 'none';
       return;
     }
@@ -293,6 +300,7 @@ class RecipeEditStore {
     const inFlight = (async () => {
       try {
         await saveDraft(this.buildDraftBody());
+        this.hasDraft = true;
         this.autosaveStatus = 'saved';
         if (this.savedClearTimer) clearTimeout(this.savedClearTimer);
         this.savedClearTimer = setTimeout(() => {
@@ -456,7 +464,9 @@ class RecipeEditStore {
         // dirty, so the nav-lock still guards) and show the reload banner instead of navigating away.
         this.conflict = true;
       } else if (e instanceof ApiError) {
-        // Other 4xx (e.g. a 404 from a concurrent delete).
+        // Other 4xx (e.g. a 404 from a concurrent delete). On a 404 the recipe is gone, so its draft can never
+        // save: delete it, or the draft-first load reopens it on every visit (quest adfe3d57). Other 4xx keep it.
+        if (e.status === 404) await this.safeDeleteDraft();
         this.error = 'This recipe changed since you opened it.';
         this.dirty = false;
         showToast({ message: 'This recipe changed — returning to the list.', kind: 'info' });
@@ -482,6 +492,7 @@ class RecipeEditStore {
       if (this.form.name.trim()) {
         try {
           await saveDraft(this.buildDraftBody()); // preserve what the user typed (draft needs a name)
+          this.hasDraft = true;
         } catch {
           /* best-effort — reload anyway */
         }
@@ -500,7 +511,12 @@ class RecipeEditStore {
       });
     } catch (e) {
       if (e instanceof ApiError) {
-        // The recipe was deleted meanwhile — nothing to reload into.
+        // The recipe was deleted meanwhile — nothing to reload into. On a 404 the draft just saved above is an
+        // orphan that could never save, so delete it (same reason as save()'s 404 branch).
+        if (e.status === 404) {
+          await this.flushAutosave(); // a late autosave PUT must not re-create it after the delete
+          await this.safeDeleteDraft();
+        }
         this.dirty = false;
         showToast({ message: 'That recipe was removed — returning to the list.', kind: 'info' });
         this.navigateToList();
@@ -509,6 +525,50 @@ class RecipeEditStore {
       }
     } finally {
       this.reloading = false;
+    }
+  }
+
+  /**
+   * Explicit discard (quest adfe3d57): delete this editor's draft and show the saved recipe again (or a blank
+   * form for a new one). It is the way out of a draft whose save keeps answering 409 when the user wants the
+   * latest version, not their edits. If the delete fails the form and draft stay as they were.
+   */
+  async discardDraft(): Promise<void> {
+    if (this.discarding || this.saving || this.deleting) return;
+    this.discarding = true; // set first: a timer-fired autosave now bails on the discarding guard
+    await this.flushAutosave(); // wait out any in-flight draft save so it can't re-create the draft after the delete
+    try {
+      try {
+        await deleteDraft(this.recipeId);
+      } catch {
+        showToast({ message: "Couldn't discard the draft. Please try again.", kind: 'error' });
+        return;
+      }
+      this.hasDraft = false;
+      this.autosaveStatus = 'none';
+      this.conflict = false;
+      this.error = null;
+      if (this.recipeId != null) {
+        try {
+          this.applyFull(await getRecipe(this.recipeId)); // also refreshes serverVersion for the next save
+        } catch (e) {
+          if (e instanceof ApiError) {
+            this.dirty = false;
+            showToast({ message: 'That recipe was removed — returning to the list.', kind: 'info' });
+            this.navigateToList();
+          } else {
+            this.error = "Draft discarded, but the recipe couldn't be loaded. Please reload the page.";
+          }
+          return;
+        }
+      } else {
+        this.form = { ...blankForm(), recipeType: 'main', servings: 4 };
+        this.ingredients = [];
+      }
+      this.dirty = false;
+      showToast({ message: 'Draft discarded.', kind: 'info' });
+    } finally {
+      this.discarding = false;
     }
   }
 

@@ -36,6 +36,7 @@
   let bulkOpen = $state(false);
   let pickerOpen = $state(false);
   let deleteOpen = $state(false);
+  let discardOpen = $state(false);
 
   function handleBeforeUnload(e: BeforeUnloadEvent): void {
     if (store.dirty) {
@@ -134,8 +135,24 @@
       </div>
 
       <div class="rc-footer-actions">
+        {#if store.hasDraft}
+          <!-- Discard the autosaved draft and show the saved recipe again (quest adfe3d57). Cancel keeps the draft. -->
+          <button
+            type="button"
+            class="rc-btn-ghost"
+            onclick={() => (discardOpen = true)}
+            disabled={store.discarding || store.saving}
+          >
+            {store.discarding ? 'Discarding…' : 'Discard draft'}
+          </button>
+        {/if}
         <button type="button" class="rc-btn-ghost" onclick={() => store.cancel()}>Cancel</button>
-        <button type="button" class="rc-btn-solid" onclick={() => store.save()} disabled={store.saving}>
+        <button
+          type="button"
+          class="rc-btn-solid"
+          onclick={() => store.save()}
+          disabled={store.saving || store.discarding}
+        >
           {store.saving ? 'Saving…' : store.isEdit ? 'Save Changes' : 'Create Recipe'}
         </button>
       </div>
@@ -166,6 +183,21 @@
   onConfirm={() => {
     deleteOpen = false;
     store.delete();
+  }}
+/>
+
+<ConfirmDialog
+  open={discardOpen}
+  danger
+  title="Discard Draft"
+  message={store.isEdit
+    ? 'Discard your unsaved edits and show the saved recipe? This cannot be undone.'
+    : 'Discard this unsaved recipe and start over? This cannot be undone.'}
+  confirmLabel="Discard"
+  onCancel={() => (discardOpen = false)}
+  onConfirm={() => {
+    discardOpen = false;
+    store.discardDraft();
   }}
 />
 
