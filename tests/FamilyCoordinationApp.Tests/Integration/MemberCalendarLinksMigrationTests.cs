@@ -45,7 +45,10 @@ public sealed class MemberCalendarLinksMigrationTests(PostgresContainerFixture p
             .OrderBy(token => token.TokenHash)
             .Select(token => new { token.TokenHash, token.UserId, token.Feed, token.RevokedAt })
             .ToListAsync();
-        rows.Should().HaveCount(3);
+        rows.Select(row => row.TokenHash).Should().Equal(
+            "AAAA000000000000000000000000000000000000000000000000000000000001",
+            "AAAA000000000000000000000000000000000000000000000000000000000002",
+            "AAAA000000000000000000000000000000000000000000000000000000000003");
         rows.Should().OnlyContain(row => row.UserId == null && row.Feed == CalendarFeed.MealPlan);
         rows.Select(row => row.RevokedAt).Should().Equal(revokedAt, revokedAt, null);
         // The stored text, not the mapped enum: EF's string-to-enum converter reads an unparseable value (an empty
