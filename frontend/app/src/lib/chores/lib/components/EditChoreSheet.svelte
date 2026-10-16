@@ -367,6 +367,11 @@
     }
     localError = null;
     submitting = true;
+    // The concurrency token and the assignment/roster baseline come from the CURRENT board chore, not the
+    // object the sheet opened with (slim-review on fca#158): the sheet now stays open after a conflict or a
+    // failed assignment step, and the board has since replaced that object — a retry built from it would
+    // resend the old version and 409 every time. The form's own fields (the user's selections) are kept.
+    const live = boardStore.choresById.get(chore.id) ?? chore;
 
     try {
       // Edit-photo flow (council C4): if the user picked a new file, upload it
@@ -401,7 +406,7 @@
         icon: choreIcon,
         ownerUserId,
         requiredCount,
-        version: chore.version,
+        version: live.version,
         photoPath: resolvedPhotoPath,
         // Next-due floor (snooze). For a recurring chore it's the "Next due date" field above (blank ⇒ clear).
         // For a OneOff there is no floor field — the "Due date" (anchorDate) IS the reschedule lever (sheet
@@ -417,7 +422,7 @@
 
       // Snapshot the roster BEFORE the save so the multi-person reconcile diffs
       // against the chore's pre-edit roster (the PUT response carries an empty one).
-      const originalRoster = chore.roster.map((m) => ({ userId: m.userId, state: m.state }));
+      const originalRoster = live.roster.map((m) => ({ userId: m.userId, state: m.state }));
 
       const edited = await boardStore.edit(chore.id, body);
       // Stop on anything but success, keeping the sheet open with the user's selections (council r6,
@@ -440,7 +445,7 @@
         // Single-person: a member target lands a deliberate Assigned via hand-off;
         // clearing back to "Up for grabs" returns a held chore to the pile.
         const currentAssignee =
-          chore.assignmentKind !== 'none' ? (chore.assigneeUserId ?? null) : null;
+          live.assignmentKind !== 'none' ? (live.assigneeUserId ?? null) : null;
         if (assignTo !== currentAssignee) {
           if (assignTo === null) {
             if (currentAssignee !== null) assigned = await boardStore.handOff(chore.id, null);
