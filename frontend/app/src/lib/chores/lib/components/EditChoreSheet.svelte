@@ -20,7 +20,6 @@
   import type { EffortTier, RecurrenceMode, MemberDto, RoomRollupDto, ChoreDto } from '../types';
   import type { UpdateChoreRequest } from '../api';
   import { boardStore } from '../state.svelte';
-  import type { MutationOutcome } from '$lib/data/resource.svelte';
   import { uploadChorePhoto, createRoom, uploadRoomPhoto } from '../api';
   import { showToast } from '$lib/shared/toast-store.svelte';
   import { minFloorDate } from '../dates';
@@ -367,11 +366,6 @@
     }
     localError = null;
     submitting = true;
-    // The concurrency token and the assignment/roster baseline come from the CURRENT board chore, not the
-    // object the sheet opened with (slim-review on fca#158): the sheet now stays open after a conflict or a
-    // failed assignment step, and the board has since replaced that object — a retry built from it would
-    // resend the old version and 409 every time. The form's own fields (the user's selections) are kept.
-    const live = boardStore.choresById.get(chore.id) ?? chore;
 
     try {
       // Edit-photo flow (council C4): if the user picked a new file, upload it
@@ -406,7 +400,7 @@
         icon: choreIcon,
         ownerUserId,
         requiredCount,
-        version: live.version,
+        version: chore.version,
         photoPath: resolvedPhotoPath,
         // Next-due floor (snooze). For a recurring chore it's the "Next due date" field above (blank ⇒ clear).
         // For a OneOff there is no floor field — the "Due date" (anchorDate) IS the reschedule lever (sheet
@@ -422,13 +416,23 @@
 
       // Snapshot the roster BEFORE the save so the multi-person reconcile diffs
       // against the chore's pre-edit roster (the PUT response carries an empty one).
-      const originalRoster = live.roster.map((m) => ({ userId: m.userId, state: m.state }));
+      const originalRoster = chore.roster.map((m) => ({ userId: m.userId, state: m.state }));
 
       const edited = await boardStore.edit(chore.id, body);
-      // Stop on anything but success, keeping the sheet open with the user's selections (council r6,
-      // quest 41337b6f). A conflict/rejection has already rolled back, toasted and started the board
-      // refresh — and it keeps the chore pending until that refresh lands, so the assignment step
-      // below would only be skipped. 'skipped' means a write on this chore is still in flight.
+      // Never run the assignment step after an edit that didn't go through (council r6, quest 41337b6f):
+      // a conflict/rejection keeps the chore pending until its board refresh lands, so the step would
+      // only be skipped silently.
+      //  • conflict / rejected — someone else changed the chore; the store rolled back, toasted and is
+      //    refreshing the board. CLOSE the sheet: its form and its concurrency token both describe the
+      //    old chore, and resubmitting them under a newer token would silently overwrite the other
+      //    member's change (slim-review delta on fca#158). Reopening builds the form from fresh data —
+      //    the pre-migration flow, minus the skipped assignment.
+      //  • failed (5xx / network) — nothing was written, the token is still current: stay open, retry.
+      //  • skipped — a write on this chore is still in flight: stay open, say so.
+      if (edited === 'conflict' || edited === 'rejected') {
+        onClose();
+        return;
+      }
       if (edited !== 'ok') {
         if (edited === 'skipped') {
           showToast({ message: 'That chore is still saving — try again in a moment.', kind: 'info' });
@@ -440,29 +444,28 @@
       // claim/hand-off + roster endpoints. Apply it AFTER the metadata save:
       // boardStore.edit just refreshed this chore's version in the board, so the
       // follow-on read carries a fresh xmin (no self-409).
-      let assigned: MutationOutcome = 'ok';
       if (requiredCount === 1) {
         // Single-person: a member target lands a deliberate Assigned via hand-off;
         // clearing back to "Up for grabs" returns a held chore to the pile.
         const currentAssignee =
-          live.assignmentKind !== 'none' ? (live.assigneeUserId ?? null) : null;
+          chore.assignmentKind !== 'none' ? (chore.assigneeUserId ?? null) : null;
         if (assignTo !== currentAssignee) {
           if (assignTo === null) {
-            if (currentAssignee !== null) assigned = await boardStore.handOff(chore.id, null);
+            if (currentAssignee !== null) await boardStore.handOff(chore.id, null);
           } else {
-            assigned = await boardStore.handOff(chore.id, assignTo);
+            await boardStore.handOff(chore.id, assignTo);
           }
         }
       } else {
         // Multi-person: reconcile the named roster to the chosen set (adds/removes
-        // via the roster endpoints, diffed against the pre-edit roster).
-        assigned = await boardStore.applyRosterSelection(chore.id, originalRoster, assignedUserIds);
+        // via the roster endpoints, diffed against the pre-edit roster). The loop waits out a
+        // conflicted/rejected op's refresh before the next one, so none is skipped.
+        await boardStore.applyRosterSelection(chore.id, originalRoster, assignedUserIds);
       }
 
-      // The details saved, but the assignment step didn't fully go through (its toast says why): keep
-      // the sheet open with the user's selection rather than read as done (council r6 challenge).
-      if (assigned !== 'ok') return;
-
+      // Close even when an assignment op didn't go through: its own toast says so, and the edit has
+      // advanced the chore's version, so this form could no longer be resubmitted safely (slim-review on
+      // fca#158 — a kept-open sheet would 409 on every retry, or overwrite under a rebased token).
       onClose();
     } finally {
       submitting = false;
