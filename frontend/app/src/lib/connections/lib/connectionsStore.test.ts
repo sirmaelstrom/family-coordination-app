@@ -104,6 +104,7 @@ describe('connectionsStore on the Resource (41337b6f slice 2)', () => {
     expect(connectionsStore.codeError).toBe('This code has expired. Ask them to create a new one.');
     expect(connectionsStore.showConfirm).toBe(false);
     expect(connectionsStore.accepting).toBe(false);
+    expect(getConnections).toHaveBeenCalledTimes(1); // the refresh WAS dispatched; nothing waited on it
     refresh.resolve(dto(null, []));
     await flush();
   });
