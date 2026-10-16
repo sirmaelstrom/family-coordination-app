@@ -336,6 +336,34 @@ describe('ShoppingListState on one Resource (41337b6f slice 8)', () => {
     expect(sl.loading).toBe(false);
   });
 
+  it('summaries that answer AFTER the list still land (slim-review delta on fca#160)', async () => {
+    const slow = deferred<ShoppingListSummaryDto[]>();
+    vi.mocked(listLists).mockReturnValueOnce(slow.promise);
+    vi.mocked(getList).mockResolvedValueOnce(listDto(1));
+    const loading = sl.load();
+    await flush();
+    expect(sl.list?.id).toBe(1); // the list is on screen without waiting
+    slow.resolve([summary(1), summary(2), summary(3)]);
+    await loading;
+    expect(sl.lists.map((l) => l.id)).toEqual([1, 2, 3]); // and the late summaries are not discarded
+  });
+
+  it('a first visit with no list shows the spinner until the top list loads, never the empty state', async () => {
+    const slowLists = deferred<ShoppingListSummaryDto[]>();
+    vi.mocked(listLists).mockReturnValueOnce(slowLists.promise);
+    vi.mocked(getList).mockResolvedValueOnce(listDto(4));
+    const s = new ShoppingListState(null);
+    const loading = s.load();
+    await flush();
+    expect(s.loading).toBe(true);
+    expect(getList).not.toHaveBeenCalled();
+    slowLists.resolve([summary(4)]);
+    await loading;
+    await flush();
+    expect(s.list?.id).toBe(4);
+    expect(s.loading).toBe(false);
+  });
+
   it('the 404 fallback tries each list once — stale summaries end in "not found", not an endless cycle', async () => {
     // Lists 1 and 2 are both gone, and the summaries GET keeps failing (the switcher still shows them).
     vi.mocked(listLists).mockRejectedValue(new TypeError('Failed to fetch'));

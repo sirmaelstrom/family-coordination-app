@@ -3,20 +3,23 @@
 // of the component (spec §5 row 11, A8) so its ordering is unit-testable (quest
 // 41337b6f). One instance per App mount (not a singleton).
 //
-// ONE Resource owns WHEN a response may land, and it loads the list AND the list
-// summaries together: every write here changes both (an item write moves the
-// summaries' item / unchecked counts; a list write moves the switcher), and the
-// old code retired both counters on every write. While ANY write is pending no
-// load is dispatched (it is owed and runs once at settle), and a load already in
-// flight when a write starts is retired — so no GET that overlaps a write can
-// commit, in either response order (the fca#103 residual; the old per-callsite
+// TWO Resources own WHEN a response may land (spec §5 row 11):
+//   • #detail    — the list on screen (getList);
+//   • #summaries — the switcher's list summaries (listLists).
+// They load independently, so neither answer waits on the other (slim-review on
+// fca#160: a stalled summaries GET must not hold the selected list off screen,
+// and slow summaries must still land). Every write runs inside BOTH windows
+// (#mutate / #run nest the detail write in a summaries run): an item write moves
+// the summaries' counts, a list write moves the switcher, and the old code retired
+// both counters on every write. While ANY write is pending no load of either is
+// dispatched (it is owed and runs once at settle), and a load already in flight
+// when a write starts is retired — so no GET that overlaps a write can commit, in
+// either response order (the fca#103 residual; the old per-callsite
 // `listLoadSeq`/`listsLoadSeq` + retireInFlightLoads() closed only the
 // in-flight-at-start and answered-after-the-response orderings).
 //
-// Writes go through `mutate` (optimistic item check / quantity / favorite; plain
-// add / edit / delete / reorder) or `run` (list-level actions that reload). The
-// 409 / other-4xx / 5xx-network branch is the Resource's, through the ApiError
-// getters — no raw status compare. Item tokens: lib/itemSync.ts rules, unchanged.
+// The 409 / other-4xx / 5xx-network branch is the Resource's, through the
+// ApiError getters — no raw status compare. Item tokens: lib/itemSync.ts rules.
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { ShoppingListDto, ShoppingListItemDto, ShoppingListSummaryDto } from './types';
@@ -38,14 +41,18 @@ import {
   type SortOrderUpdate,
 } from './api';
 import { adoptItem, adoptReorderVersions } from './itemSync';
-import { Resource, type MutationOutcome } from '$lib/data/resource.svelte';
+import {
+  Resource,
+  type MutationOutcome,
+  type MutationSpec,
+  type ReloadPolicy,
+  type RunSpec,
+} from '$lib/data/resource.svelte';
 import { showToast } from '$lib/shared/toast-store.svelte';
 
-/** What one load fetched: the summaries, and the list it was asked for (null when none / not found). */
-interface Loaded {
+/** What one detail load fetched: the list it was asked for (null when none selected / not found). */
+interface LoadedList {
   listId: number | null;
-  /** null when the summaries GET failed but the list itself loaded (the switcher keeps its last value). */
-  lists: ShoppingListSummaryDto[] | null;
   list: ShoppingListDto | null;
   notFound: boolean;
 }
@@ -63,61 +70,43 @@ export class ShoppingListState {
 
   /** Item ids moved by a reorder that is still on the wire (the Resource keys only one write each). */
   #reordering = $state<ReadonlySet<number>>(new Set());
-  /** Items of a failed reorder: pending until the next load lands (commit or error) and resyncs them. */
+  /** Items of a failed reorder: pending until the next detail load lands (commit or error) and resyncs them. */
   #awaitingRefresh = $state<ReadonlySet<number>>(new Set());
   /** List ids that answered 404 since the last list loaded — the fallback never picks one twice. */
   #fallbackTried = new Set<number>();
-  /** True once the current load reached an end (commit or error) — a load a write RETIRED did not. */
+  /** True once the current detail load reached an end (commit or error) — a load a write RETIRED did not. */
   #loadEnded = false;
+  /** A detail load answered 404 for this list and waits on fresh summaries to pick a fallback. */
+  #fallbackFrom: number | null = null;
+  /** The summaries have loaded once (a first visit with no list selected picks the top one then). */
+  #summariesLoaded = false;
   readonly #onListChange: (listId: number) => void;
 
-  #resource = new Resource<Loaded>({
+  #detail = new Resource<LoadedList>({
     fetch: async () => {
       const listId = this.currentListId;
-      if (listId == null) return { listId, lists: await listLists(), list: null, notFound: false };
-      // The summaries are secondary to the list on screen: a failed summaries GET keeps the previous switcher
-      // (null = unchanged) rather than discard a list that loaded (council r7 — no availability regression
-      // from loading them together).
-      const listsP = listLists().catch(() => null);
-      let list: ShoppingListDto;
+      if (listId == null) return { listId, list: null, notFound: false };
       try {
-        list = await getList(listId);
+        return { listId, list: await getList(listId), notFound: false };
       } catch (e) {
         if (!(e instanceof ApiError && e.status === 404)) throw e;
-        // The fallback needs the summaries: wait for them here (as the old 404 path did).
-        return { listId, lists: await listsP, list: null, notFound: true };
+        return { listId, list: null, notFound: true };
       }
-      // The list never waits on the summaries (slim-review on fca#160: `apiFetch` has no timeout, so a stalled
-      // summaries GET would hold the selected list off screen): take them only if they have already answered,
-      // else keep the previous switcher until the next load (a liveness tick or a write's refresh).
-      const lists = await Promise.race([listsP, Promise.resolve(null)]);
-      return { listId, lists, list, notFound: false };
     },
-    commit: ({ listId, lists: fetchedLists, list, notFound }) => {
+    commit: ({ listId, list, notFound }) => {
       this.#loadEnded = true;
       this.#awaitingRefresh = new Set(); // the refresh landed: a failed reorder's items are resynced
-      const lists = fetchedLists ?? this.lists;
-      this.lists = lists;
       if (listId == null) {
-        // No list selected (first visit): default to the top one, then load it.
         this.list = null;
-        const first = lists[0]?.id ?? null;
-        if (first != null) this.#switchTo(first);
         return;
       }
       if (notFound) {
-        // The list is gone (archived / deleted elsewhere): fall back to another one. A newer selection made
-        // while this load was out superseded it (the Resource dropped it), so this can't hijack that choice.
-        // Each id that 404'd is remembered until a list loads, so stale summaries (their own GET failing) can't
-        // bounce the fallback between gone lists forever (slim-review on fca#160).
+        // The list is gone (archived / deleted elsewhere): fall back to another one, chosen from FRESH
+        // summaries (as the old 404 path reloaded them first). A newer selection made meanwhile wins: the
+        // fallback only applies while this list is still the selected one.
         this.#fallbackTried.add(listId);
-        const fallback = lists.find((l) => !this.#fallbackTried.has(l.id))?.id ?? null;
-        if (fallback != null) {
-          this.#switchTo(fallback);
-          return;
-        }
-        this.list = null;
-        this.error = 'Shopping list not found.';
+        this.#fallbackFrom = listId;
+        queueMicrotask(() => void this.#summaries.load());
         return;
       }
       this.#fallbackTried.clear();
@@ -140,42 +129,94 @@ export class ShoppingListState {
     },
   });
 
+  #summaries = new Resource<ShoppingListSummaryDto[]>({
+    fetch: () => listLists(),
+    commit: (lists) => {
+      this.lists = lists;
+      const first = !this.#summariesLoaded;
+      this.#summariesLoaded = true;
+      // A first visit with no list selected: default to the top one, then load it.
+      if (first && this.currentListId == null) {
+        const top = lists[0]?.id ?? null;
+        if (top != null) this.#switchTo(top);
+        else this.loading = false; // no lists at all: "No active shopping lists"
+      }
+      this.#maybeFallBack();
+    },
+    onLoadError: () => this.#maybeFallBack(), // stale summaries still allow a fallback (each id tried once)
+  });
+
   constructor(initialListId: number | null, onListChange: (listId: number) => void = () => {}) {
     this.currentListId = initialListId;
     this.#onListChange = onListChange;
+  }
+
+  /** After a 404, once summaries have answered (or failed): switch to an untried list, or report "not found". */
+  #maybeFallBack(): void {
+    const from = this.#fallbackFrom;
+    if (from == null) return;
+    this.#fallbackFrom = null;
+    if (this.currentListId !== from) return; // the user picked another list meanwhile
+    const fallback = this.lists.find((l) => !this.#fallbackTried.has(l.id))?.id ?? null;
+    if (fallback != null) {
+      this.#switchTo(fallback);
+      return;
+    }
+    this.list = null;
+    this.error = 'Shopping list not found.';
   }
 
   /** Items with a write in flight — a second tap would carry the same token and 409 against the first. */
   get pendingIds(): ReadonlySet<number> {
     // Item ids only — the list-level 'favorite' key is not an item.
     const merged = new Set<number>();
-    for (const k of this.#resource.pendingKeys) if (typeof k === 'number') merged.add(k);
+    for (const k of this.#detail.pendingKeys) if (typeof k === 'number') merged.add(k);
     for (const id of this.#reordering) merged.add(id);
     for (const id of this.#awaitingRefresh) merged.add(id);
     return merged;
   }
 
-  /** Load the current list + the summaries (initial load, list switch, liveness, Retry). */
+  /** Load the list on screen and the summaries, independently (initial load, list switch, liveness, Retry). */
   async load(): Promise<void> {
-    await this.#resource.load();
+    const summaries = this.#summaries.load();
+    // With no list selected there is no detail to load yet: the summaries pick the top list and load it (or,
+    // with no lists at all, stand the spinner down) — no "No active shopping lists" flash in between.
+    if (this.currentListId == null) {
+      await summaries;
+      return;
+    }
+    await Promise.all([this.#detail.load(), summaries]);
   }
 
-  /** Resolves once the refresh a write started has finished. */
-  settled(): Promise<void> {
-    return this.#resource.settled();
+  /** Resolves once the refreshes the writes started have finished. */
+  async settled(): Promise<void> {
+    await Promise.all([this.#detail.settled(), this.#summaries.settled()]);
   }
 
   async selectList(id: number): Promise<void> {
     this.currentListId = id;
     this.#onListChange(id);
-    await this.load();
+    await this.#detail.load();
   }
 
   /** Point at another list and load it (queued: called from inside a commit). */
   #switchTo(id: number): void {
     this.currentListId = id;
     this.#onListChange(id);
-    queueMicrotask(() => void this.load());
+    queueMicrotask(() => void this.#detail.load());
+  }
+
+  /**
+   * A write inside BOTH windows: the detail write (mutate) nested in a summaries run. `summariesReload` says
+   * whether the switcher reloads after it ('never' for item writes, as before — a summaries load already in
+   * flight is still retired and owed; 'always' for list-level writes).
+   */
+  #mutate<R>(spec: MutationSpec<R>, summariesReload: ReloadPolicy = 'never'): Promise<MutationOutcome> {
+    return this.#summaries.run({ call: () => this.#detail.mutate(spec), reload: summariesReload });
+  }
+
+  #run<R>(spec: RunSpec<R>): Promise<R> {
+    return this.#summaries.run({ call: () => this.#detail.run(spec), reload: 'always' });
   }
 
   /**
@@ -194,7 +235,7 @@ export class ShoppingListState {
   }
 
   #isPending(id: number): boolean {
-    return this.#resource.isPending(id) || this.#reordering.has(id) || this.#awaitingRefresh.has(id);
+    return this.#detail.isPending(id) || this.#reordering.has(id) || this.#awaitingRefresh.has(id);
   }
 
   // ── Item writes ─────────────────────────────────────────────────────────────
@@ -205,7 +246,7 @@ export class ShoppingListState {
     if (!this.list || listId == null || this.#isPending(item.id)) return 'skipped';
     const prev = { isChecked: item.isChecked, checkedAt: item.checkedAt };
     const sentVersion = item.version;
-    return this.#resource.mutate({
+    return this.#mutate({
       key: item.id,
       optimistic: () => {
         item.isChecked = target;
@@ -226,7 +267,7 @@ export class ShoppingListState {
     if (next < 1) return;
     const prev = item.quantity;
     const sentVersion = item.version;
-    await this.#resource.mutate({
+    await this.#mutate({
       key: item.id,
       optimistic: () => {
         item.quantity = next;
@@ -244,7 +285,7 @@ export class ShoppingListState {
   async addItem(value: Parameters<typeof addItem>[1]): Promise<MutationOutcome> {
     const listId = this.#shownListId();
     if (listId == null || !this.list) return 'skipped';
-    return this.#resource.mutate({
+    return this.#mutate({
       call: () => addItem(listId, value),
       commit: (created) => {
         if (this.list?.id === listId) this.list.items = [...this.list.items, created];
@@ -267,7 +308,7 @@ export class ShoppingListState {
   ): Promise<MutationOutcome> {
     const listId = this.#shownListId();
     if (listId == null || !this.list || this.#isPending(initial.id)) return 'skipped'; // incl. a reorder in flight
-    return this.#resource.mutate({
+    return this.#mutate({
       key: initial.id,
       call: () =>
         patchItem(listId, initial.id, {
@@ -293,7 +334,7 @@ export class ShoppingListState {
   async deleteItem(item: ShoppingListItemDto): Promise<void> {
     const listId = this.#shownListId();
     if (listId == null || !this.list || this.#isPending(item.id)) return;
-    await this.#resource.mutate({
+    await this.#mutate({
       key: item.id,
       call: () => deleteItem(listId, item.id),
       commit: () => {
@@ -327,7 +368,7 @@ export class ShoppingListState {
     this.#reordering = new Set([...this.#reordering, ...movedIds]);
     let released = false;
     try {
-      const outcome = await this.#resource.mutate({
+      const outcome = await this.#mutate({
         call: () => updateSortOrders(listId, updates),
         // Adopt the answered tokens only where the reorder read the row at the token this tab held.
         commit: (result) => adoptReorderVersions(this.#rowsOf(listId), sent, result.items),
@@ -353,7 +394,7 @@ export class ShoppingListState {
     const list = this.list;
     if (listId == null || !list) return;
     const prev = list.isFavorite;
-    await this.#resource.mutate({
+    await this.#mutate({
       key: 'favorite',
       optimistic: () => {
         list.isFavorite = !prev;
@@ -365,14 +406,13 @@ export class ShoppingListState {
       commit: (r) => {
         list.isFavorite = r.isFavorite;
       },
-      reload: 'always', // the switcher's favorites-first order changes
       messages: { conflict: LIST_CHANGED, rejected: LIST_CHANGED, failed: "Couldn't update the favorite right now." },
-    });
+    }, 'always'); // the switcher's favorites-first order changes: the summaries reload after it
   }
 
   /** A list-level write that reloads afterwards; rejects with the write's own error (the caller surfaces it). */
   async #listWrite<R>(call: () => Promise<R>, commit?: (result: R) => void): Promise<R> {
-    return this.#resource.run({ call, commit });
+    return this.#run({ call, commit });
   }
 
   async regenerate(): Promise<boolean> {
