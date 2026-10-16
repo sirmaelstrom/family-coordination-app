@@ -259,7 +259,11 @@ export class Resource<T> {
       // A rejected/conflicted key stays pending until the reconcile load that follows has finished: until
       // then the undo has put back the OLD row (and its stale version), so a retry would just 409 again.
       // The write itself still resolves now (slim-review delta on fca#150).
-      const hold = key !== undefined && this.#reconcileDue && (outcome === 'conflict' || outcome === 'rejected');
+      // Hold only when THIS write asked for the reconcile (its own policy, or its own throwing undo) —
+      // not because another concurrent write did (council r6): a `reload: 'never'` rejection has no
+      // refresh of its own to wait for.
+      const ownReconcile = reloadsAfter(spec.reload ?? 'on-reject', outcome) || localError !== null;
+      const hold = key !== undefined && ownReconcile && (outcome === 'conflict' || outcome === 'rejected');
       if (hold) this.#heldKeys.add(key);
       this.#settle(hold ? undefined : key);
     }

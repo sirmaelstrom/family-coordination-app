@@ -64,7 +64,7 @@ import {
   type CompleteRequest,
 } from './api';
 import { showToast } from '$lib/shared/toast-store.svelte';
-import { Resource } from '$lib/data/resource.svelte';
+import { Resource, type MutationOutcome } from '$lib/data/resource.svelte';
 
 const REJECTED_MESSAGE = "That didn't go through — the board has been refreshed.";
 const FAILED_MESSAGE = 'Something went wrong. Please try again.';
@@ -217,7 +217,10 @@ class BoardStore {
             : String(e);
     },
     onLoadIdle: () => {
-      this.loading = false;
+      // A FIRST load retired by a write (e.g. a default-view save during the initial load) leaves no
+      // board and no error — keep the spinner until the owed load lands, rather than flash the
+      // empty-board copy (council r6). A failed load has set `error`, so it stands the spinner down.
+      if (this.board != null || this.error != null) this.loading = false;
     },
   });
 
@@ -850,6 +853,17 @@ class BoardStore {
     await this.#resource.load();
   }
 
+  /**
+   * A non-chore write that changes the board payload (room create / edit / delete / reorder) — inside
+   * the board's write window, then one board refetch, success or failure (run's reload 'always'). It
+   * used to be call-the-API-then-reloadBoard() outside the window, so a liveness GET that overlapped the
+   * write could land afterwards with the pre-write rooms (council r6). Rejects with the write's own
+   * error only: a refetch problem can no longer read as "the write failed".
+   */
+  runBoardWrite<R>(call: () => Promise<R>): Promise<R> {
+    return this.#resource.run({ call });
+  }
+
   /** Resolves once the reconcile a write started has finished (tests and callers needing the truth). */
   settled(): Promise<void> {
     return this.#resource.settled();
@@ -904,16 +918,25 @@ class BoardStore {
     choreId: number,
     call: (chore: ChoreDto) => Promise<ChoreDto>,
     conflictMessage: string,
-  ): Promise<void> {
-    if (this.isPending(choreId)) return; // double-submit guard (before the snapshot)
+  ): Promise<MutationOutcome> {
+    if (this.isPending(choreId)) return 'skipped'; // double-submit guard (before the snapshot)
     const chore = this.choreById(choreId);
-    if (!chore) return;
+    if (!chore) return 'skipped';
     // The version the request carries is the pre-mutation one, captured here (spec §4.3).
     const snapshot: ChoreDto = { ...chore };
-    await this.#resource.mutate({
+    return this.#resource.mutate({
       key: choreId,
       call: () => call(snapshot),
-      commit: (updated) => this.applyChore(updated),
+      // Take the response's fresh VERSION (and assignment fields), but keep the board's roster and
+      // co-sign progress: the single-chore response carries an empty roster and completedCount=0, and
+      // the write resolves before the reconcile lands (council r6) — so applying it whole would show
+      // "0 of N" / an empty roster until the GET answers, or for good if that GET fails.
+      commit: (updated) => {
+        const current = this.choreById(choreId);
+        this.applyChore(
+          current ? { ...updated, roster: current.roster, completedCount: current.completedCount } : updated,
+        );
+      },
       reload: 'always',
       messages: { conflict: conflictMessage, rejected: REJECTED_MESSAGE, failed: FAILED_MESSAGE },
     });
@@ -934,23 +957,28 @@ class BoardStore {
     patch: Partial<ChoreDto>,
     call: (chore: ChoreDto) => Promise<ChoreDto>,
     conflictMessage: string,
-  ): Promise<void> {
+  ): Promise<MutationOutcome> {
     // Double-submit guard: ignore if a mutation is already in flight (mutate's key check would skip it
     // too; checking first keeps the snapshot from being taken off an optimistic patch).
-    if (this.isPending(choreId)) return;
+    if (this.isPending(choreId)) return 'skipped';
     const chore = this.choreById(choreId);
-    if (!chore) return;
+    if (!chore) return 'skipped';
 
-    // Snapshot the fields we touch so we can roll back precisely; the request carries ITS version.
+    // The request carries the snapshot's version. The undo restores ONLY the fields this patch wrote
+    // (council r6): an un-keyed subtask write may change the same chore's checklist meanwhile, and a
+    // whole-object restore would resurrect a subtask that write deleted.
     const snapshot: ChoreDto = { ...chore };
-    await this.#resource.mutate({
+    const before = Object.fromEntries(
+      Object.keys(patch).map((k) => [k, snapshot[k as keyof ChoreDto]]),
+    ) as Partial<ChoreDto>;
+    return this.#resource.mutate({
       key: choreId,
       optimistic: () => {
         Object.assign(chore, patch);
-        // Roll back the optimistic patch, regardless of failure mode (item-scoped: this chore only).
+        // Roll back the optimistic patch, regardless of failure mode (item- AND field-scoped).
         return () => {
           const current = this.choreById(choreId);
-          if (current) Object.assign(current, snapshot);
+          if (current) Object.assign(current, before);
         };
       },
       call: () => call(snapshot),
@@ -1134,8 +1162,8 @@ class BoardStore {
   }
 
   /** Assign a named member to a multi-person chore's roster (Assigned — from the edit sheet). */
-  async assign(choreId: number, subjectUserId: number): Promise<void> {
-    await this.runMultiPersonMutation(
+  async assign(choreId: number, subjectUserId: number): Promise<MutationOutcome> {
+    return this.runMultiPersonMutation(
       choreId,
       (c) => assignRoster(c.id, subjectUserId, c.version),
       'That chore changed — board refreshed.',
@@ -1147,8 +1175,8 @@ class BoardStore {
    * only the chore's creator or owner may remove someone else (anyone may remove
    * themselves via `leave`). A rejected remove reconciles + surfaces a notice.
    */
-  async removeFromRoster(choreId: number, subjectUserId: number): Promise<void> {
-    await this.runMultiPersonMutation(
+  async removeFromRoster(choreId: number, subjectUserId: number): Promise<MutationOutcome> {
+    return this.runMultiPersonMutation(
       choreId,
       (c) => leaveRoster(c.id, subjectUserId, c.version),
       'That chore changed — board refreshed.',
@@ -1164,37 +1192,46 @@ class BoardStore {
    * carries a fresh version (every roster mutation reconciles the board). Adding
    * is unguarded; removing OTHERS is creator/owner-only server-side, so a rejected
    * remove just surfaces a gentle notice and the board reconciles to the truth.
+   *
+   * A conflicted/rejected op keeps the chore's key pending until its reconcile lands (quest 41337b6f),
+   * so the loop WAITS for that reconcile before the next op — which then carries the fresh version, as
+   * the old awaited reconcile gave it — instead of being skipped silently (council r6). Returns 'ok'
+   * when every op went through, else the first other outcome.
    */
   async applyRosterSelection(
     choreId: number,
     originalRoster: { userId: number; state: RosterState }[],
     selectedUserIds: number[],
-  ): Promise<void> {
+  ): Promise<MutationOutcome> {
     const selected = new Set(selectedUserIds);
     const currentIds = new Set(originalRoster.map((m) => m.userId));
     const toAdd = selectedUserIds.filter((id) => !currentIds.has(id));
     const toRemove = originalRoster
       .filter((m) => m.state !== 'done' && !selected.has(m.userId))
       .map((m) => m.userId);
-    for (const id of toAdd) {
-      await this.assign(choreId, id);
+    const ops = [
+      ...toAdd.map((id) => () => this.assign(choreId, id)),
+      ...toRemove.map((id) => () => this.removeFromRoster(choreId, id)),
+    ];
+    let result: MutationOutcome = 'ok';
+    for (const op of ops) {
+      const outcome = await op();
+      if (outcome === 'conflict' || outcome === 'rejected') await this.settled();
+      if (outcome !== 'ok' && result === 'ok') result = outcome;
     }
-    for (const id of toRemove) {
-      await this.removeFromRoster(choreId, id);
-    }
+    return result;
   }
 
   /**
    * Hand a chore off to another member, or back to the pile (targetUserId null).
    */
-  async handOff(choreId: number, targetUserId: number | null): Promise<void> {
+  async handOff(choreId: number, targetUserId: number | null): Promise<MutationOutcome> {
     const toPile = targetUserId == null;
     const call = (c: ChoreDto) => handOffChore(c.id, { targetUserId, version: c.version });
     if (this.isMultiPerson(choreId)) {
-      await this.runMultiPersonMutation(choreId, call, 'That chore changed — board refreshed.');
-      return;
+      return this.runMultiPersonMutation(choreId, call, 'That chore changed — board refreshed.');
     }
-    await this.runOptimistic(
+    return this.runOptimistic(
       choreId,
       toPile
         ? { assigneeUserId: null, assignmentKind: 'none', claimedAt: null, isClaimStale: false }
@@ -1244,7 +1281,7 @@ class BoardStore {
    * room/recurrence change could affect the board the digest reads, even if the
    * equity endpoint caches on completions).
    */
-  async edit(choreId: number, body: UpdateChoreRequest): Promise<void> {
+  async edit(choreId: number, body: UpdateChoreRequest): Promise<MutationOutcome> {
     // Optimistic patch: apply the editable fields we can preview before the
     // round-trip. We intentionally don't touch assignee/assignment fields (D6).
     const patch: Partial<ChoreDto> = {
@@ -1257,7 +1294,7 @@ class BoardStore {
     // Phase 13: mirror the room membership set optimistically ONLY when the edit carries it
     // (undefined = preserve; the server keeps the existing memberships).
     if (body.roomIds !== undefined) patch.roomIds = body.roomIds;
-    await this.runOptimistic(
+    const outcome = await this.runOptimistic(
       choreId,
       patch,
       (_snapshot) => updateChore(choreId, body),
@@ -1266,6 +1303,9 @@ class BoardStore {
     // On the happy path `runOptimistic` replaced the chore with the returned DTO
     // but did NOT call setBoard, so invalidate equity manually here.
     this.invalidateEquity();
+    // The edit sheet stops on anything but 'ok' (council r6): after a conflict the chore stays pending
+    // until the reconcile lands, so a follow-on assignment would otherwise be skipped silently.
+    return outcome;
   }
 
   /**
@@ -1419,13 +1459,26 @@ class BoardStore {
       return;
     }
     const message = "Couldn't save the new order — the list was refreshed.";
+    const previousOrder = chore.subtasks.map((s) => [s.id, s.sortOrder] as const);
     await this.#resource.mutate({
       optimistic: () => {
         reordered.forEach((s, i) => (s.sortOrder = i)); // optimistic in-place
         chore.subtasks = reordered;
+        // Undo puts the old order back on the items still present (council r6: if the refetch fails
+        // too, the rejected order must not stay on screen); the refetch then brings server truth.
+        return () => {
+          const current = this.choreById(choreId);
+          if (!current) return;
+          const byIdNow = new Map(current.subtasks.map((s) => [s.id, s]));
+          for (const [id, sortOrder] of previousOrder) {
+            const s = byIdNow.get(id);
+            if (s) s.sortOrder = sortOrder;
+          }
+          current.subtasks = sortSubtasks(current.subtasks);
+        };
       },
       call: () => reorderSubtasks(choreId, orderedIds),
-      reload: 'on-error', // the refetch is the rollback, as before
+      reload: 'on-error', // and the refetch reconciles, as before
       messages: { conflict: message, rejected: message, failed: message },
     });
   }
@@ -1471,9 +1524,19 @@ class BoardStore {
     const item = chore.subtasks.find((s) => s.id === subtaskId);
     if (!item) return;
     const message = "Couldn't remove that item — the list was refreshed.";
+    const index = chore.subtasks.findIndex((s) => s.id === subtaskId);
     await this.#resource.mutate({
       optimistic: () => {
         chore.subtasks = chore.subtasks.filter((s) => s.id !== subtaskId); // optimistic
+        // Undo re-inserts the item at its index if it is still absent (council r6: if the refetch
+        // fails too, the item must not stay deleted on screen).
+        return () => {
+          const current = this.choreById(choreId);
+          if (!current || current.subtasks.some((s) => s.id === subtaskId)) return;
+          const restored = [...current.subtasks];
+          restored.splice(Math.min(index, restored.length), 0, item);
+          current.subtasks = restored;
+        };
       },
       call: () => deleteSubtask(choreId, subtaskId),
       reload: 'on-error',

@@ -11,9 +11,9 @@
   //    existing photo, send the current photoPath unchanged; to remove it, send
   //    null. No file ever goes in the JSON body.
   //
-  // A room change is not a chore mutation (no optimistic path), so on success we
-  // refetch the ONE board payload via boardStore.reloadBoard() — the dashboard
-  // cover / drill hero then render the new photo authoritatively.
+  // A room change is not a chore mutation (no optimistic path), so it runs through
+  // boardStore.runBoardWrite(): inside the board's write window, then one board
+  // refetch — the dashboard cover / drill hero then render the new photo authoritatively.
   // ───────────────────────────────────────────────────────────────────────
   import type { RoomRollupDto } from '../types';
   import type { RoomUpsertRequest } from '../api';
@@ -114,9 +114,9 @@
         icon: roomIcon,
         photoPath: resolvedPhotoPath,
       };
-      await updateRoom(roomId, body);
-      // Refetch so the dashboard cover / drill hero reflect the change.
-      await boardStore.reloadBoard();
+      // In the board's write window; the board refetches afterwards so the dashboard cover / drill hero
+      // reflect the change.
+      await boardStore.runBoardWrite(() => updateRoom(roomId, body));
       showToast({ message: 'Room updated.', kind: 'success' });
       onClose();
     } catch {

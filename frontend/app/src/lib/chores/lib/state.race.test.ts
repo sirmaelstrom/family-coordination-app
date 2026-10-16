@@ -13,13 +13,30 @@ vi.mock('./api', async (importOriginal) => ({
   getBoard: vi.fn(),
   claimChore: vi.fn(),
   deleteChore: vi.fn(),
+  updateChore: vi.fn(),
+  handOffChore: vi.fn(),
+  assignRoster: vi.fn(),
   updateSubtask: vi.fn(),
+  deleteSubtask: vi.fn(),
+  reorderSubtasks: vi.fn(),
   setDefaultView: vi.fn(),
 }));
 vi.mock('$lib/shared/toast-store.svelte', () => ({ showToast: vi.fn() }));
 
 import { boardStore } from './state.svelte';
-import { ApiError, claimChore, deleteChore, getBoard, setDefaultView, updateSubtask } from './api';
+import {
+  ApiError,
+  assignRoster,
+  claimChore,
+  deleteChore,
+  deleteSubtask,
+  getBoard,
+  handOffChore,
+  reorderSubtasks,
+  setDefaultView,
+  updateChore,
+  updateSubtask,
+} from './api';
 import { showToast } from '$lib/shared/toast-store.svelte';
 import type { ChoreBoardDto, ChoreDto } from './types';
 
@@ -226,6 +243,116 @@ describe('chore board: loads are serialized against pending writes (41337b6f)', 
     await toggling;
     await boardStore.settled();
     expect(boardStore.board?.chores[0].subtasks[0].isDone).toBe(true);
+  });
+
+  // ── council r6 ────────────────────────────────────────────────────────────────────────────────
+
+  it('a conflicted edit returns its outcome, so the edit sheet can stop before its assignment step', async () => {
+    vi.mocked(updateChore).mockRejectedValueOnce(new ApiError(409, 'stale'));
+    const refetch = deferred<ChoreBoardDto>();
+    vi.mocked(getBoard).mockReturnValueOnce(refetch.promise);
+    try {
+      const outcome = await boardStore.edit(1, { name: 'Dishes!', version: 7 } as never);
+      expect(outcome).toBe('conflict');
+      // What the sheet would have done next: it is skipped while the chore is held — which is why the
+      // sheet must stop on a non-'ok' edit rather than carry on and close.
+      expect(await boardStore.handOff(1, 42)).toBe('skipped');
+      expect(handOffChore).not.toHaveBeenCalled();
+    } finally {
+      refetch.resolve(minimalBoard());
+    }
+  });
+
+  it('a roster selection waits out a rejected op before the next, instead of skipping it', async () => {
+    const multi = minimalChore({ requiredCount: 2 });
+    boardStore.setBoard(minimalBoard([multi]));
+    vi.mocked(assignRoster)
+      .mockRejectedValueOnce(new ApiError(400, 'no'))
+      .mockResolvedValueOnce(minimalChore({ requiredCount: 2, version: 9 }));
+    vi.mocked(getBoard).mockResolvedValue(minimalBoard([minimalChore({ requiredCount: 2, version: 8 })]));
+
+    const outcome = await boardStore.applyRosterSelection(1, [], [5, 6]);
+
+    expect(assignRoster).toHaveBeenCalledTimes(2); // the second op was sent, not skipped
+    expect(vi.mocked(assignRoster).mock.calls[1][2]).toBe(8); // with the version the reconcile brought
+    expect(outcome).toBe('rejected');
+  });
+
+  it("a multi-person write keeps the board's roster and co-sign progress until the reconcile lands", async () => {
+    const roster = [{ userId: 5, state: 'in' }] as unknown as ChoreDto['roster'];
+    boardStore.setBoard(minimalBoard([minimalChore({ requiredCount: 2, completedCount: 1, roster })]));
+    vi.mocked(assignRoster).mockResolvedValueOnce(minimalChore({ requiredCount: 2, completedCount: 0, roster: [], version: 8 }));
+    const refetch = deferred<ChoreBoardDto>();
+    vi.mocked(getBoard).mockReturnValueOnce(refetch.promise);
+    try {
+      await boardStore.assign(1, 6);
+      const card = boardStore.board?.chores[0];
+      expect(card?.version).toBe(8); // the fresh version is taken
+      expect(card?.completedCount).toBe(1); // not the response's 0
+      expect(card?.roster).toEqual(roster); // not the response's empty roster
+    } finally {
+      refetch.resolve(minimalBoard([minimalChore({ requiredCount: 2, completedCount: 1, roster, version: 8 })]));
+    }
+  });
+
+  it("a failed claim's undo restores only the claim fields — a concurrent subtask delete stays deleted", async () => {
+    const sub = { id: 9, title: 'rinse', isDone: false, sortOrder: 0, completedByUserId: null, completedAt: null };
+    boardStore.setBoard(minimalBoard([minimalChore({ subtasks: [sub] as ChoreDto['subtasks'] })]));
+    const claim = deferred<ChoreDto>();
+    vi.mocked(claimChore).mockReturnValueOnce(claim.promise);
+    vi.mocked(deleteSubtask).mockResolvedValueOnce(undefined);
+
+    const claiming = boardStore.claim(1);
+    await boardStore.removeSubtask(1, 9); // un-keyed, lands while the claim is pending
+    claim.reject(new TypeError('Failed to fetch')); // network: undo, no reconcile
+    await claiming;
+
+    expect(boardStore.board?.chores[0].assignmentKind).toBe('none');
+    expect(boardStore.board?.chores[0].subtasks).toHaveLength(0);
+  });
+
+  it('a failed subtask reorder or removal is undone locally, even if the refetch never lands', async () => {
+    const subs = [
+      { id: 1, title: 'a', isDone: false, sortOrder: 0, completedByUserId: null, completedAt: null },
+      { id: 2, title: 'b', isDone: false, sortOrder: 1, completedByUserId: null, completedAt: null },
+    ] as ChoreDto['subtasks'];
+    boardStore.setBoard(minimalBoard([minimalChore({ subtasks: subs })]));
+    const refetches = [deferred<ChoreBoardDto>(), deferred<ChoreBoardDto>()];
+    vi.mocked(getBoard).mockReturnValueOnce(refetches[0].promise).mockReturnValueOnce(refetches[1].promise);
+    vi.mocked(reorderSubtasks).mockRejectedValueOnce(new ApiError(503, 'down'));
+    vi.mocked(deleteSubtask).mockRejectedValueOnce(new ApiError(503, 'down'));
+    try {
+      await boardStore.reorderSubtasks(1, [2, 1]);
+      expect(boardStore.board?.chores[0].subtasks.map((s) => s.title)).toEqual(['a', 'b']);
+      refetches[0].reject(new TypeError('net')); // the reconcile fails too
+      await boardStore.settled();
+      await boardStore.removeSubtask(1, 1);
+      expect(boardStore.board?.chores[0].subtasks.map((s) => s.title)).toEqual(['a', 'b']);
+    } finally {
+      refetches[0].resolve(minimalBoard());
+      refetches[1].resolve(minimalBoard([minimalChore({ subtasks: subs })]));
+    }
+  });
+
+  it('a first load retired by a write keeps the spinner until the owed load lands (no empty-board flash)', async () => {
+    boardStore.board = null;
+    boardStore.loading = true;
+    const first = deferred<ChoreBoardDto>();
+    const patch = deferred<{ view: string | null }>();
+    vi.mocked(getBoard).mockReturnValueOnce(first.promise).mockResolvedValueOnce(minimalBoard());
+    vi.mocked(setDefaultView).mockReturnValueOnce(patch.promise);
+
+    const loading = boardStore.loadBoard();
+    const saving = boardStore.saveDefaultView('mine'); // retires the first load
+    expect(boardStore.loading).toBe(true);
+    first.resolve(minimalBoard());
+    await loading;
+    expect(boardStore.loading).toBe(true);
+    patch.resolve({ view: 'mine' });
+    await saving;
+    await boardStore.settled();
+    expect(boardStore.board).not.toBeNull();
+    expect(boardStore.loading).toBe(false);
   });
 
   it('a liveness GET that overlaps the default-view PATCH never flips the default back', async () => {

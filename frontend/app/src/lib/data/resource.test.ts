@@ -218,6 +218,20 @@ describe('Resource.mutate — optimistic, commit, the three-way branch', () => {
     expect(r.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("a rejected 'never' write is not held just because another write asked for a reconcile (council r6)", async () => {
+    const h = harness();
+    const other = deferred<void>();
+    const reconciling = h.res.mutate({ key: 'a', call: () => other.promise, reload: 'always' });
+    expect(await h.res.mutate({ key: 'b', call: () => Promise.reject(new ApiError(400, 'r')), reload: 'never' })).toBe(
+      'rejected',
+    );
+    expect(h.res.isPending('b')).toBe(false); // no refresh of its own to wait for
+    other.resolve();
+    await reconciling;
+    h.fetches[0]?.resolve('truth');
+    await h.res.settled();
+  });
+
   it('a duplicate key is skipped: no optimistic step, no call, no toast', async () => {
     const h = harness();
     const call = deferred<void>();

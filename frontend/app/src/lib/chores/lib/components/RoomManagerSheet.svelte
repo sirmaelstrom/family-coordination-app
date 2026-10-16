@@ -6,8 +6,8 @@
   // General group (roomId === null) is shown as a non-editable reference.
   //
   //  • Reorder: drag rows (svelte-dnd-action — the shopping-list island's house
-  //    pattern). On drop we POST the new order (reorderRooms) then reloadBoard()
-  //    so the dashboard re-sorts authoritatively.
+  //    pattern). On drop we POST the new order (reorderRooms) through
+  //    boardStore.runBoardWrite(), whose board refetch re-sorts the dashboard authoritatively.
   //  • Delete: two-tap confirm. The server (RoomService.DeleteRoomAsync) moves
   //    the room's chores to General and deletes its photo in one write — the
   //    confirm copy says so, using the room's server-computed choreCount.
@@ -17,7 +17,8 @@
   //    onEditRoom — we do NOT duplicate that surface.
   //
   // A room change is not a chore mutation (no xmin / optimistic path); every
-  // mutation is call-the-API then boardStore.reloadBoard(), matching RoomEditSheet.
+  // mutation goes through boardStore.runBoardWrite() — inside the board's write window,
+  // then one board refetch (quest 41337b6f) — matching RoomEditSheet.
   // ───────────────────────────────────────────────────────────────────────
   import type { RoomGroup } from '../state.svelte';
   import type { RoomRollupDto } from '../types';
@@ -65,7 +66,7 @@
   }
 
   // Re-derive the working list whenever the board changes and we're not dragging
-  // (covers reloadBoard() after add / delete / reorder / a delegated edit).
+  // (covers the board refetch after add / delete / reorder / a delegated edit).
   $effect(() => {
     if (!dragging) syncRows();
   });
@@ -90,13 +91,13 @@
     rows = e.detail.items;
     const ordered = rows.map((r) => r.id);
     try {
-      await reorderRooms(ordered);
-      await boardStore.reloadBoard();
+      // In the board's write window; the board refetches afterwards, success or failure.
+      await boardStore.runBoardWrite(() => reorderRooms(ordered));
     } catch {
       showToast({ message: "Couldn't save the new order — refreshed.", kind: 'info' });
-      await boardStore.reloadBoard();
     } finally {
       // Release the drag guard last so the resync lands on the server order.
+      await boardStore.settled();
       dragging = false;
     }
   }
@@ -115,8 +116,8 @@
     if (deletingId !== null) return;
     deletingId = row.id;
     try {
-      await deleteRoom(row.id);
-      await boardStore.reloadBoard();
+      // A refresh problem after a successful delete no longer reads as "couldn't delete" (council r6).
+      await boardStore.runBoardWrite(() => deleteRoom(row.id));
       showToast({ message: `“${row.rollup.name}” deleted.`, kind: 'success' });
     } catch {
       showToast({ message: "Couldn't delete the room. Please try again.", kind: 'error' });
@@ -160,8 +161,7 @@
     addError = null;
     adding = true;
     try {
-      await createRoom({ name: trimmed, icon: newIcon });
-      await boardStore.reloadBoard();
+      await boardStore.runBoardWrite(() => createRoom({ name: trimmed, icon: newIcon }));
       resetAdd();
     } catch {
       addError = "Couldn't create the room — try again.";

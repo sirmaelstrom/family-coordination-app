@@ -73,7 +73,9 @@
   // once at settle), and a GET already in flight when a write starts is retired — so a pre-mutation
   // snapshot can never land after the write and undo it, in either response order.
   function loadBoard() {
-    void store.loadBoard();
+    // A load never rejects for a failed GET (that sets store.error); only a throwing callback — a
+    // programming error — rejects. Report it rather than leave an unhandled rejection (council r6).
+    store.loadBoard().catch((e) => console.error('chores: the board load threw', e));
   }
 
   // ── Card action handlers (optimistic mutations live in the store) ─────────

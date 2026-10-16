@@ -418,7 +418,17 @@
       // against the chore's pre-edit roster (the PUT response carries an empty one).
       const originalRoster = chore.roster.map((m) => ({ userId: m.userId, state: m.state }));
 
-      await boardStore.edit(chore.id, body);
+      const edited = await boardStore.edit(chore.id, body);
+      // Stop on anything but success, keeping the sheet open with the user's selections (council r6,
+      // quest 41337b6f). A conflict/rejection has already rolled back, toasted and started the board
+      // refresh — and it keeps the chore pending until that refresh lands, so the assignment step
+      // below would only be skipped. 'skipped' means a write on this chore is still in flight.
+      if (edited !== 'ok') {
+        if (edited === 'skipped') {
+          showToast({ message: 'That chore is still saving — try again in a moment.', kind: 'info' });
+        }
+        return;
+      }
 
       // Assignment isn't part of the PUT contract — it moves via the dedicated
       // claim/hand-off + roster endpoints. Apply it AFTER the metadata save:
