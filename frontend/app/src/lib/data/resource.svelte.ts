@@ -98,7 +98,15 @@ export class Resource<T> {
   #reconcileDue = false;
   /** The settle load started by the last write to settle, while it runs. */
   #drain: Promise<void> | null = null;
-  /** Keys of conflicted/rejected writes, still pending until the next settle load finishes. */
+  /**
+   * Keys of conflicted/rejected writes, still pending until a CURRENT load has finished (committed or
+   * failed) — not until a particular promise does. The reconcile load the settle starts may be
+   * superseded by a newer load (an explicit load, or another write's owed load); the hold then passes
+   * to whichever load finishes as current, so a superseded reconcile never releases a key before
+   * fresh state has landed, and a stalled superseded one never keeps it locked after (council r3/r4).
+   * Any load that finishes as current started after the hold: a load in flight when the write began
+   * was retired by it, and none can start while a write is pending.
+   */
   #heldKeys = new Set<Key>();
   readonly #options: ResourceOptions<T>;
 
@@ -140,8 +148,10 @@ export class Resource<T> {
     try {
       this.#options.onLoadStart?.();
     } catch (e) {
-      // A throwing hook must not strand `loading`/`current`: nothing was dispatched, so stand down.
+      // A throwing hook must not strand `loading`/`current`: nothing was dispatched, so stand down. It
+      // was the current load, so it also ends any hold (else a held key could never be retried).
       if (this.#current === id) this.#current = null;
+      this.#releaseHeld();
       this.#idle();
       throw e;
     }
@@ -154,6 +164,7 @@ export class Resource<T> {
       try {
         this.#options.onLoadError?.(e);
       } finally {
+        this.#releaseHeld(); // a failed reconcile releases too: holding on would lock the key for good
         this.#idle();
       }
       return 'failed';
@@ -164,6 +175,7 @@ export class Resource<T> {
       this.#options.commit(value);
       this.hasLoaded = true;
     } finally {
+      this.#releaseHeld(); // after the commit: a retry now carries the fresh version
       this.#idle();
     }
     return 'committed';
@@ -303,8 +315,6 @@ export class Resource<T> {
     if (this.#writes === 0 && (this.#owed || this.#reconcileDue)) {
       this.#owed = false;
       this.#reconcileDue = false;
-      const released = [...this.#heldKeys];
-      this.#heldKeys.clear();
       const drain = this.load().then(
         () => undefined,
         (e) => {
@@ -316,14 +326,17 @@ export class Resource<T> {
       this.#drain = drain;
       void drain.then(() => {
         if (this.#drain === drain) this.#drain = null;
-        if (released.length) {
-          // The reconcile has landed (or failed): the held keys may be retried with a fresh version.
-          const next = new Set(this.#pendingKeys);
-          for (const k of released) next.delete(k);
-          this.#pendingKeys = next;
-        }
       });
     }
+  }
+
+  /** A current load has finished: the held keys may be retried with a fresh version. */
+  #releaseHeld(): void {
+    if (this.#heldKeys.size === 0) return;
+    const next = new Set(this.#pendingKeys);
+    for (const k of this.#heldKeys) next.delete(k);
+    this.#heldKeys.clear();
+    this.#pendingKeys = next;
   }
 
   /** Bump the load id. Only a load REALLY in flight is owed — no request in flight, no extra request. */

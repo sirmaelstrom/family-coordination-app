@@ -364,6 +364,55 @@ describe('Resource — throwing hooks never strand the window (code council r2)'
     expect(h.res.isPending('e2')).toBe(false);
   });
 
+  // Council r3 (fca#151) and r4 (fca#153): the hold follows the CURRENT load, not the reconcile promise.
+  it('a superseded reconcile does not release a held key; the load that supersedes it does', async () => {
+    const h = harness();
+    expect(await h.res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) })).toBe('conflict');
+    const b = h.res.load(); // a liveness tick supersedes the reconcile (fetches[0])
+    h.fetches[0].resolve('reconcile, superseded');
+    await tick();
+    expect(h.res.isPending('e1')).toBe(true); // nothing fresh has landed yet
+    h.fetches[1].resolve('fresh');
+    expect(await b).toBe('committed');
+    expect(h.res.isPending('e1')).toBe(false);
+    expect(h.committed).toEqual(['fresh']);
+  });
+
+  it('a stalled superseded reconcile does not keep the key locked once a newer load has landed', async () => {
+    const h = harness();
+    expect(await h.res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) })).toBe('conflict');
+    const b = h.res.load(); // supersedes the reconcile, which never answers
+    h.fetches[1].resolve('fresh');
+    expect(await b).toBe('committed');
+    expect(h.res.isPending('e1')).toBe(false);
+  });
+
+  it("a reconcile retired by another write holds the key until that write's owed load lands", async () => {
+    const h = harness();
+    expect(await h.res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) })).toBe('conflict');
+    const w = deferred<void>();
+    const writing = h.res.mutate({ key: 'e2', call: () => w.promise }); // retires the reconcile (fetches[0])
+    h.fetches[0].resolve('stale reconcile');
+    await tick();
+    expect(h.res.isPending('e1')).toBe(true);
+    w.resolve();
+    expect(await writing).toBe('ok');
+    expect(h.fetch).toHaveBeenCalledTimes(2); // the owed load at e2's settle
+    expect(h.res.isPending('e1')).toBe(true);
+    h.fetches[1].resolve('fresh');
+    await h.res.settled();
+    expect(h.res.isPending('e1')).toBe(false);
+    expect(h.committed).toEqual(['fresh']);
+  });
+
+  it('a failed reconcile releases the key (holding on would lock it for good)', async () => {
+    const h = harness();
+    expect(await h.res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) })).toBe('conflict');
+    h.fetches[0].reject(new TypeError('net'));
+    await h.res.settled();
+    expect(h.res.isPending('e1')).toBe(false);
+  });
+
   it("a stalled reconcile GET withholds neither the write's outcome nor its toast (slim-review fca#150)", async () => {
     const fetch = vi.fn(() => new Promise<string>(() => {})); // apiFetch has no timeout
     const res = new Resource<string>({ fetch, commit: () => {} });
