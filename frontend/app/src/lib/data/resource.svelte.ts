@@ -328,16 +328,22 @@ export class Resource<T> {
       let resolve!: () => void;
       const waiter = (this.#settleWaiter ??= { promise: new Promise<void>((r) => (resolve = r)), resolve: () => resolve() });
       this.#settleLoadId = this.#seq + 1; // the id load() is about to take (no write is pending)
+      const settleId = this.#settleLoadId;
+      // Only the LATEST settle's chain may finish the shared waiter: an older settle load's handler can
+      // run after a newer settle has taken the waiter over (slim-review on fca#155).
+      const finish = () => {
+        if (this.#settleLoadId === settleId) this.#finishSettle(waiter);
+      };
       this.load().then(
         (outcome) => {
           // Superseded: the newer load that replaced it resolves the waiter when it lands.
-          if (outcome !== 'superseded') this.#finishSettle(waiter);
+          if (outcome !== 'superseded') finish();
         },
         (e) => {
           // A throwing load callback during the settle reconcile must not surface as the WRITE's result or
           // error (the write already happened), nor as an unhandled rejection. Reported, not swallowed.
           console.error('Resource: the reconcile load after a write failed', e);
-          this.#finishSettle(waiter);
+          finish();
         },
       );
     }

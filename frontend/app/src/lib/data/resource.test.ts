@@ -408,21 +408,65 @@ describe('Resource — throwing hooks never strand the window (code council r2)'
   it('settled() follows the load that superseded the settle load, in both response orders (council r5)', async () => {
     const pending = (p: Promise<void>) => Promise.race([p.then(() => 'settled'), tick().then(() => 'pending')]);
     // (a) the superseded settle load answers first: settled() still waits for the successor.
+    // The promise taken BEFORE the successor lands is the one asserted (slim-review on fca#155): a fresh
+    // settled() call afterwards would pass even if the original promise were orphaned.
     const h = harness();
     await h.res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) });
+    const s1 = h.res.settled();
     const b = h.res.load();
     h.fetches[0].resolve('superseded');
-    expect(await pending(h.res.settled())).toBe('pending');
+    expect(await pending(s1)).toBe('pending');
     h.fetches[1].resolve('fresh');
     await b;
-    expect(await pending(h.res.settled())).toBe('settled');
+    expect(await pending(s1)).toBe('settled');
     // (b) the superseded settle load stalls: the successor landing resolves settled().
     const g = harness();
     await g.res.mutate({ key: 'e1', call: () => Promise.reject(new ApiError(409, 'c')) });
+    const s2 = g.res.settled();
     const c = g.res.load();
     g.fetches[1].resolve('fresh');
     await c;
-    expect(await pending(g.res.settled())).toBe('settled');
+    expect(await pending(s2)).toBe('settled');
+  });
+
+  it("an older settle load's handler never finishes the waiter a newer settle owns (slim-review on fca#155)", async () => {
+    const pending = (p: Promise<void>) => Promise.race([p.then(() => 'settled'), tick().then(() => 'pending')]);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let throwStart = true;
+    const fetches: Deferred<string>[] = [];
+    const res = new Resource<string>({
+      fetch: () => {
+        const d = deferred<string>();
+        fetches.push(d);
+        return d.promise;
+      },
+      commit: () => {},
+      onLoadStart: () => {
+        if (throwStart) {
+          throwStart = false;
+          throw new Error('start boom');
+        }
+      },
+    });
+    // Two writes whose calls THROW synchronously with a 409, back to back (astra's repro): each mutate
+    // settles before returning, so they are two separate settles. The first settle's load throws at its
+    // start hook; the second settle's load is in flight when the first's rejection handler runs.
+    const conflict = (): Promise<void> => {
+      throw new ApiError(409, 'c');
+    };
+    const first = res.mutate({ key: 'e1', call: conflict });
+    const second = res.mutate({ key: 'e2', call: conflict });
+    await first;
+    await second;
+    const s = res.settled();
+    await tick();
+    expect(fetches).toHaveLength(1); // the newer settle's reconcile is in flight
+    expect(res.isPending('e2')).toBe(true);
+    expect(await pending(s)).toBe('pending');
+    fetches[0].resolve('fresh');
+    await s;
+    expect(res.isPending('e2')).toBe(false);
+    spy.mockRestore();
   });
 
   it('a held key is released when the reconcile start hook or commit throws', async () => {
