@@ -196,6 +196,46 @@ describe('Resource.mutate — optimistic, commit, the three-way branch', () => {
     expect(h.fetch).toHaveBeenCalledTimes(2);
   });
 
+  it("reload policy 'on-error': every failure reconciles (409, 4xx, 5xx, network), a success does not", async () => {
+    const failures = [new ApiError(409, 'c'), new ApiError(404, 'r'), new ApiError(503, 'f'), new TypeError('net')];
+    for (const [i, e] of failures.entries()) {
+      const h = harness();
+      await h.res.mutate({ call: () => Promise.reject(e), reload: 'on-error' });
+      expect(h.fetch, `failure #${i}`).toHaveBeenCalledTimes(1);
+      h.fetches[0].resolve('truth');
+      await h.res.settled();
+    }
+    const ok = harness();
+    expect(await ok.res.mutate({ call: async () => 1, reload: 'on-error' })).toBe('ok');
+    expect(ok.fetch).not.toHaveBeenCalled();
+    // run() honours it too: a failure reconciles, a success doesn't.
+    const r = harness();
+    await expect(r.res.run({ call: () => Promise.reject(new TypeError('net')), reload: 'on-error' })).rejects.toThrow('net');
+    expect(r.fetch).toHaveBeenCalledTimes(1);
+    r.fetches[0].resolve('truth');
+    await r.res.settled();
+    await r.res.run({ call: async () => 1, reload: 'on-error' });
+    expect(r.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("a rejected 'never' write is not held just because another write asked for a reconcile (council r6)", async () => {
+    const h = harness();
+    const other = deferred<void>();
+    const open = h.res.mutate({ key: 'a', call: () => other.promise }); // keeps the window open
+    // Another write's 409 has asked for a reconcile (it is owed at the last settle)…
+    expect(await h.res.mutate({ key: 'c', call: () => Promise.reject(new ApiError(409, 'c')) })).toBe('conflict');
+    // …so a 'never' rejection settling now must not be held on THAT write's reconcile.
+    expect(await h.res.mutate({ key: 'b', call: () => Promise.reject(new ApiError(400, 'r')), reload: 'never' })).toBe(
+      'rejected',
+    );
+    expect(h.res.isPending('c')).toBe(true); // its own reconcile is still to come
+    expect(h.res.isPending('b')).toBe(false); // no refresh of its own to wait for
+    other.resolve();
+    await open;
+    h.fetches[0]?.resolve('truth');
+    await h.res.settled();
+  });
+
   it('a duplicate key is skipped: no optimistic step, no call, no toast', async () => {
     const h = harness();
     const call = deferred<void>();

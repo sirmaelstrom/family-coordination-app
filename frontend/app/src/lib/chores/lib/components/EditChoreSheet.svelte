@@ -418,7 +418,27 @@
       // against the chore's pre-edit roster (the PUT response carries an empty one).
       const originalRoster = chore.roster.map((m) => ({ userId: m.userId, state: m.state }));
 
-      await boardStore.edit(chore.id, body);
+      const edited = await boardStore.edit(chore.id, body);
+      // Never run the assignment step after an edit that didn't go through (council r6, quest 41337b6f):
+      // a conflict/rejection keeps the chore pending until its board refresh lands, so the step would
+      // only be skipped silently.
+      //  • conflict / rejected — someone else changed the chore; the store rolled back, toasted and is
+      //    refreshing the board. CLOSE the sheet: its form and its concurrency token both describe the
+      //    old chore, and resubmitting them under a newer token would silently overwrite the other
+      //    member's change (slim-review delta on fca#158). Reopening builds the form from fresh data —
+      //    the pre-migration flow, minus the skipped assignment.
+      //  • failed (5xx / network) — nothing was written, the token is still current: stay open, retry.
+      //  • skipped — a write on this chore is still in flight: stay open, say so.
+      if (edited === 'conflict' || edited === 'rejected') {
+        onClose();
+        return;
+      }
+      if (edited !== 'ok') {
+        if (edited === 'skipped') {
+          showToast({ message: 'That chore is still saving — try again in a moment.', kind: 'info' });
+        }
+        return;
+      }
 
       // Assignment isn't part of the PUT contract — it moves via the dedicated
       // claim/hand-off + roster endpoints. Apply it AFTER the metadata save:
@@ -438,10 +458,14 @@
         }
       } else {
         // Multi-person: reconcile the named roster to the chosen set (adds/removes
-        // via the roster endpoints, diffed against the pre-edit roster).
+        // via the roster endpoints, diffed against the pre-edit roster). The loop waits out a
+        // conflicted/rejected op's refresh before the next one, so none is skipped.
         await boardStore.applyRosterSelection(chore.id, originalRoster, assignedUserIds);
       }
 
+      // Close even when an assignment op didn't go through: its own toast says so, and the edit has
+      // advanced the chore's version, so this form could no longer be resubmitted safely (slim-review on
+      // fca#158 — a kept-open sheet would 409 on every retry, or overwrite under a rebased token).
       onClose();
     } finally {
       submitting = false;

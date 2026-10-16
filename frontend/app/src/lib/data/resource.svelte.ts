@@ -29,7 +29,15 @@ import { showToast } from '$lib/shared/toast-store.svelte';
 
 export type LoadOutcome = 'committed' | 'superseded' | 'deferred' | 'failed';
 export type MutationOutcome = 'ok' | 'conflict' | 'rejected' | 'failed' | 'skipped';
-export type ReloadPolicy = 'on-reject' | 'always' | 'never';
+/**
+ * When a write reconciles (reloads) at settle:
+ *   'on-reject' — after a 409 or another 4xx (the mutate default);
+ *   'on-error'  — after ANY failure (409, 4xx, 5xx, network), never after a success — for stores whose
+ *                 rollback is "refetch the truth" whatever went wrong (chores subtasks + remove);
+ *   'always'    — after every outcome, success included (the run default: write-then-reload stores);
+ *   'never'     — no reconcile (a load the write retired is still owed).
+ */
+export type ReloadPolicy = 'on-reject' | 'on-error' | 'always' | 'never';
 type Key = string | number;
 
 export interface ResourceOptions<T> {
@@ -77,6 +85,7 @@ export function classifyFailure(e: unknown): 'conflict' | 'rejected' | 'failed' 
 function reloadsAfter(policy: ReloadPolicy, outcome: MutationOutcome): boolean {
   if (policy === 'always') return true;
   if (policy === 'never') return false;
+  if (policy === 'on-error') return outcome !== 'ok' && outcome !== 'skipped';
   return outcome === 'conflict' || outcome === 'rejected';
 }
 
@@ -250,7 +259,11 @@ export class Resource<T> {
       // A rejected/conflicted key stays pending until the reconcile load that follows has finished: until
       // then the undo has put back the OLD row (and its stale version), so a retry would just 409 again.
       // The write itself still resolves now (slim-review delta on fca#150).
-      const hold = key !== undefined && this.#reconcileDue && (outcome === 'conflict' || outcome === 'rejected');
+      // Hold only when THIS write asked for the reconcile (its own policy, or its own throwing undo) —
+      // not because another concurrent write did (council r6): a `reload: 'never'` rejection has no
+      // refresh of its own to wait for.
+      const ownReconcile = reloadsAfter(spec.reload ?? 'on-reject', outcome) || localError !== null;
+      const hold = key !== undefined && ownReconcile && (outcome === 'conflict' || outcome === 'rejected');
       if (hold) this.#heldKeys.add(key);
       this.#settle(hold ? undefined : key);
     }

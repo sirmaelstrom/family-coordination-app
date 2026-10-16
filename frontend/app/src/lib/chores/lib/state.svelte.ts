@@ -36,6 +36,7 @@ import { CHORE_LENSES } from './types';
 import { showsFitsMe, fitsCapacity } from './capacity-fit';
 import {
   ApiError,
+  getBoard,
   claimChore,
   takeChore,
   dropChore,
@@ -63,6 +64,10 @@ import {
   type CompleteRequest,
 } from './api';
 import { showToast } from '$lib/shared/toast-store.svelte';
+import { Resource, type MutationOutcome } from '$lib/data/resource.svelte';
+
+const REJECTED_MESSAGE = "That didn't go through — the board has been refreshed.";
+const FAILED_MESSAGE = 'Something went wrong. Please try again.';
 
 /** One attention bucket of the unified board (Falling behind / Due now / Coming up). */
 export interface NeedsAttentionSection {
@@ -187,11 +192,37 @@ class BoardStore {
   savingCapacity = $state(false);
 
   /**
-   * Chore ids with an in-flight mutation. Drives per-card disabled state +
-   * double-submit prevention (M-in-flight). A `Set` swapped by reference so the
-   * `$state` reactivity fires.
+   * The board's load + write ordering (quest 41337b6f — the loader moved here from App.svelte, and
+   * with it the old beginLoad/isCurrentLoad/retireInFlightLoads token). Liveness, the initial load,
+   * Retry, the room-admin reload and every post-write reconcile go through it. While ANY chore write
+   * is pending no board GET is dispatched (it is owed and runs once at settle), and a GET already in
+   * flight when a write starts is retired — so no GET that overlaps a write can commit, in either
+   * response order (the fca#103 residual). Pending write keys (chore ids) drive per-card disabled
+   * state + double-submit prevention (M-in-flight).
    */
-  pendingChoreIds = $state(new Set<number>());
+  #resource = new Resource<ChoreBoardDto>({
+    fetch: () => getBoard(),
+    commit: (next) => this.setBoard(next),
+    onLoadStart: () => {
+      // Keep the spinner only for the FIRST load; liveness refreshes are silent.
+      if (this.board == null) this.loading = true;
+      this.error = null;
+    },
+    onLoadError: (e) => {
+      this.error =
+        e instanceof ApiError
+          ? `Failed to load the chore board (HTTP ${e.status}).`
+          : e instanceof Error
+            ? e.message
+            : String(e);
+    },
+    onLoadIdle: () => {
+      // A FIRST load retired by a write (e.g. a default-view save during the initial load) leaves no
+      // board and no error — keep the spinner until the owed load lands, rather than flash the
+      // empty-board copy (council r6). A failed load has set `error`, so it stands the spinner down.
+      if (this.board != null || this.error != null) this.loading = false;
+    },
+  });
 
   // ── Equity lens (the one non-board fetcher — M11) ─────────────────────────
   //
@@ -260,14 +291,6 @@ class BoardStore {
   ledgerLoaded = $state(false);
   /** Mirrors `equityStale` — see it for why the re-entrancy guard alone loses invalidations. */
   private ledgerStale = false;
-
-  /**
-   * The board refetch hook, wired by App.svelte (`store.setRefresh(loadBoard)`).
-   * The mutation layer calls it to reconcile after a 409 (xmin conflict — M7/M12)
-   * or any other 4xx rejection, so the user sees the true server state. Liveness
-   * shares the SAME loader, so a post-mutation refetch reuses it.
-   */
-  private refresh: (() => Promise<void>) | null = null;
 
   // ── Lookups off the single payload ─────────────────────────────────────
 
@@ -716,25 +739,36 @@ class BoardStore {
     if (this.isDefaultView(lens)) return;
     this.savingDefaultView = true;
     const previous = this.defaultView;
-    // Optimistic: reflect the new default at once.
-    this.defaultView = lens;
-    if (this.board) this.board.userDefaultView = lens;
     try {
-      const result = await setDefaultView(lens);
-      // Server echoes the persisted value; reconcile to it.
-      const confirmed = coerceLens(result.view);
-      this.defaultView = confirmed;
-      if (this.board) this.board.userDefaultView = result.view;
-      showToast({ message: 'This is now your default view.', kind: 'success' });
-    } catch (e) {
-      // Roll back the optimistic default; the lens stays switched (local only).
-      this.defaultView = previous;
-      if (this.board) this.board.userDefaultView = previous;
-      const msg =
-        e instanceof ApiError
-          ? "Couldn't save your default view — it'll stay this session only."
-          : "Couldn't save your default view right now.";
-      showToast({ message: msg, kind: 'info' });
+      // Inside the board's write window (quest 41337b6f): the optimistic default rides on
+      // `board.userDefaultView`, which every board load rewrites (setBoard) — a liveness GET that
+      // overlapped this PATCH used to land after it and flip the default back.
+      const outcome = await this.#resource.mutate({
+        key: 'default-view',
+        optimistic: () => {
+          // Optimistic: reflect the new default at once.
+          this.defaultView = lens;
+          if (this.board) this.board.userDefaultView = lens;
+          // Roll back the optimistic default; the lens stays switched (local only).
+          return () => {
+            this.defaultView = previous;
+            if (this.board) this.board.userDefaultView = previous;
+          };
+        },
+        call: () => setDefaultView(lens),
+        // Server echoes the persisted value; reconcile to it.
+        commit: (result) => {
+          this.defaultView = coerceLens(result.view);
+          if (this.board) this.board.userDefaultView = result.view;
+        },
+        reload: 'never',
+        messages: {
+          conflict: "Couldn't save your default view — it'll stay this session only.",
+          rejected: "Couldn't save your default view — it'll stay this session only.",
+          failed: "Couldn't save your default view right now.",
+        },
+      });
+      if (outcome === 'ok') showToast({ message: 'This is now your default view.', kind: 'success' });
     } finally {
       this.savingDefaultView = false;
     }
@@ -796,36 +830,16 @@ class BoardStore {
   //      illegal transition, or a 404 for a chore someone else deleted): roll
   //      back, refetch to resync, surface a non-alarming toast. Not a crash.
   //   5. NETWORK / 5xx: roll back + error toast; the action can be retried.
+  //
+  // The runners are `Resource.mutate` (quest 41337b6f): the three-way branch goes through the
+  // ApiError getters, the reconcile is ONE board load started when the last pending write settles
+  // (not awaited by the write — a stalled GET must not hold its toast), and a conflicted chore stays
+  // pending until that reconcile has landed, so a retry can't resend the stale version.
   // ─────────────────────────────────────────────────────────────────────────
 
-  /** Wire the board refetch (App.svelte's loader). Used for 409/4xx reconcile. */
-  setRefresh(refresh: () => Promise<void>): void {
-    this.refresh = refresh;
-  }
-
-  // ── Board load token (moved here from App.svelte so MUTATIONS can retire in-flight reads —
-  //    quest fe715e73; the component-local counter could never be reached from the runners) ──
-
-  /** Monotonic load id — liveness poll, post-mutation reconcile and initial load can all be in flight. */
-  private loadSeq = 0;
-
-  /** Begin a load; the caller revalidates with isCurrentLoad before committing the response. */
-  beginLoad(): number {
-    return ++this.loadSeq;
-  }
-
-  /** True iff no newer load has started AND no optimistic mutation has landed since `seq`. */
-  isCurrentLoad(seq: number): boolean {
-    return seq === this.loadSeq;
-  }
-
-  /**
-   * Retire any in-flight board GET. Called before every optimistic write: a response already on the
-   * wire still holds the pre-mutation board and would resurrect a deleted chore or undo a claim
-   * when it lands — the optimistic state is newer truth than anything already in flight.
-   */
-  retireInFlightLoads(): void {
-    this.loadSeq++;
+  /** Load the board — the initial load, liveness, Retry. Deferred (and owed) while a write is pending. */
+  async loadBoard(): Promise<void> {
+    await this.#resource.load();
   }
 
   /**
@@ -836,19 +850,28 @@ class BoardStore {
    * authoritatively. Shares the same loader as liveness + 409 reconcile.
    */
   async reloadBoard(): Promise<void> {
-    await this.reconcile();
+    await this.#resource.load();
+  }
+
+  /**
+   * A non-chore write that changes the board payload (room create / edit / delete / reorder) — inside
+   * the board's write window, then one board refetch, success or failure (run's reload 'always'). It
+   * used to be call-the-API-then-reloadBoard() outside the window, so a liveness GET that overlapped the
+   * write could land afterwards with the pre-write rooms (council r6). Rejects with the write's own
+   * error only: a refetch problem can no longer read as "the write failed".
+   */
+  runBoardWrite<R>(call: () => Promise<R>): Promise<R> {
+    return this.#resource.run({ call });
+  }
+
+  /** Resolves once the reconcile a write started has finished (tests and callers needing the truth). */
+  settled(): Promise<void> {
+    return this.#resource.settled();
   }
 
   /** Is a mutation in flight for this chore? (disable its controls). */
   isPending(choreId: number): boolean {
-    return this.pendingChoreIds.has(choreId);
-  }
-
-  private markPending(choreId: number, on: boolean): void {
-    const next = new Set(this.pendingChoreIds);
-    if (on) next.add(choreId);
-    else next.delete(choreId);
-    this.pendingChoreIds = next;
+    return this.#resource.isPending(choreId);
   }
 
   /** Find a chore by id in the current board (null if the board is unloaded). */
@@ -864,10 +887,6 @@ class BoardStore {
     if (idx >= 0) {
       board.chores[idx] = updated;
     }
-  }
-
-  private async reconcile(): Promise<void> {
-    if (this.refresh) await this.refresh();
   }
 
   /** Is this chore a multi-person (co-sign) chore per the CURRENT board? */
@@ -890,45 +909,37 @@ class BoardStore {
    * The returned DTO is still applied first so the version stays fresh even in
    * the (rare) window before the reconcile lands; the reconcile then overwrites
    * the whole board with authoritative progress.
+   *
+   * `reload: 'always'` — authoritative co-sign progress comes only from the board GET (the
+   * mutation response can't signal "X of N" — it returns completedCount=0), so it reloads after a
+   * success as well as after any failure (incl. the D6 distinctness rejection, a non-409 4xx).
    */
   private async runMultiPersonMutation(
     choreId: number,
     call: (chore: ChoreDto) => Promise<ChoreDto>,
     conflictMessage: string,
-  ): Promise<void> {
-    if (this.pendingChoreIds.has(choreId)) return;
+  ): Promise<MutationOutcome> {
+    if (this.isPending(choreId)) return 'skipped'; // double-submit guard (before the snapshot)
     const chore = this.choreById(choreId);
-    if (!chore) return;
-
+    if (!chore) return 'skipped';
+    // The version the request carries is the pre-mutation one, captured here (spec §4.3).
     const snapshot: ChoreDto = { ...chore };
-    this.markPending(choreId, true);
-    // No optimistic patch here, but the RESPONSE apply + reconcile below are newer truth than any
-    // GET already in flight — retire it or it commits the pre-mutation board over them.
-    this.retireInFlightLoads();
-    try {
-      const updated = await call(snapshot);
-      this.applyChore(updated);
-      this.retireInFlightLoads(); // a GET begun during the request still holds pre-mutation state
-      // Authoritative co-sign progress comes only from the board GET (the
-      // mutation response can't signal "X of N" — it returns completedCount=0).
-      await this.reconcile();
-    } catch (e) {
-      if (e instanceof ApiError && e.isConflict) {
-        await this.reconcile();
-        showToast({ message: conflictMessage, kind: 'info' });
-      } else if (e instanceof ApiError && e.isClientRejection) {
-        // Incl. the D6 distinctness rejection (a non-409 4xx). Resync + notice.
-        await this.reconcile();
-        showToast({
-          message: "That didn't go through — the board has been refreshed.",
-          kind: 'info',
-        });
-      } else {
-        showToast({ message: 'Something went wrong. Please try again.', kind: 'error' });
-      }
-    } finally {
-      this.markPending(choreId, false);
-    }
+    return this.#resource.mutate({
+      key: choreId,
+      call: () => call(snapshot),
+      // Take the response's fresh VERSION (and assignment fields), but keep the board's roster and
+      // co-sign progress: the single-chore response carries an empty roster and completedCount=0, and
+      // the write resolves before the reconcile lands (council r6) — so applying it whole would show
+      // "0 of N" / an empty roster until the GET answers, or for good if that GET fails.
+      commit: (updated) => {
+        const current = this.choreById(choreId);
+        this.applyChore(
+          current ? { ...updated, roster: current.roster, completedCount: current.completedCount } : updated,
+        );
+      },
+      reload: 'always',
+      messages: { conflict: conflictMessage, rejected: REJECTED_MESSAGE, failed: FAILED_MESSAGE },
+    });
   }
 
   /**
@@ -946,50 +957,36 @@ class BoardStore {
     patch: Partial<ChoreDto>,
     call: (chore: ChoreDto) => Promise<ChoreDto>,
     conflictMessage: string,
-  ): Promise<void> {
-    // Double-submit guard: ignore if a mutation is already in flight.
-    if (this.pendingChoreIds.has(choreId)) return;
+  ): Promise<MutationOutcome> {
+    // Double-submit guard: ignore if a mutation is already in flight (mutate's key check would skip it
+    // too; checking first keeps the snapshot from being taken off an optimistic patch).
+    if (this.isPending(choreId)) return 'skipped';
     const chore = this.choreById(choreId);
-    if (!chore) return;
+    if (!chore) return 'skipped';
 
-    // Snapshot the fields we touch so we can roll back precisely. Retire any in-flight board GET
-    // BEFORE the optimistic patch — it still holds the pre-mutation board and would overwrite this
-    // write when it lands (the recipeListStore pattern, PR #88).
+    // The request carries the snapshot's version. The undo restores ONLY the fields this patch wrote
+    // (council r6): an un-keyed subtask write may change the same chore's checklist meanwhile, and a
+    // whole-object restore would resurrect a subtask that write deleted.
     const snapshot: ChoreDto = { ...chore };
-    this.retireInFlightLoads();
-    Object.assign(chore, patch);
-    this.markPending(choreId, true);
-
-    try {
-      const updated = await call(snapshot);
-      this.applyChore(updated);
-      this.retireInFlightLoads(); // a GET begun during the request still holds pre-mutation state
-    } catch (e) {
-      // Roll back the optimistic patch first, regardless of failure mode.
-      const current = this.choreById(choreId);
-      if (current) Object.assign(current, snapshot);
-
-      if (e instanceof ApiError && e.isConflict) {
-        // 409 — xmin concurrency conflict (M7/M12). Refetch + non-alarming notice.
-        await this.reconcile();
-        showToast({ message: conflictMessage, kind: 'info' });
-      } else if (e instanceof ApiError && e.isClientRejection) {
-        // Other 4xx (e.g. a 404 for a chore already gone). Resync + notice.
-        await this.reconcile();
-        showToast({
-          message: "That didn't go through — the board has been refreshed.",
-          kind: 'info',
-        });
-      } else {
-        // Network / 5xx — leave the board as-is (rolled back), allow retry.
-        showToast({
-          message: 'Something went wrong. Please try again.',
-          kind: 'error',
-        });
-      }
-    } finally {
-      this.markPending(choreId, false);
-    }
+    const before = Object.fromEntries(
+      Object.keys(patch).map((k) => [k, snapshot[k as keyof ChoreDto]]),
+    ) as Partial<ChoreDto>;
+    return this.#resource.mutate({
+      key: choreId,
+      optimistic: () => {
+        Object.assign(chore, patch);
+        // Roll back the optimistic patch, regardless of failure mode (item- AND field-scoped).
+        return () => {
+          const current = this.choreById(choreId);
+          if (current) Object.assign(current, before);
+        };
+      },
+      call: () => call(snapshot),
+      commit: (updated) => this.applyChore(updated),
+      // 409 → refetch + non-alarming notice; other 4xx (e.g. a 404 for a chore already gone) → resync +
+      // notice; network / 5xx → rolled back, error toast, retry allowed (the 'on-reject' default).
+      messages: { conflict: conflictMessage, rejected: REJECTED_MESSAGE, failed: FAILED_MESSAGE },
+    });
   }
 
   /** Claim an unclaimed (or stale-claimed) pile chore for the current user. */
@@ -1165,8 +1162,8 @@ class BoardStore {
   }
 
   /** Assign a named member to a multi-person chore's roster (Assigned — from the edit sheet). */
-  async assign(choreId: number, subjectUserId: number): Promise<void> {
-    await this.runMultiPersonMutation(
+  async assign(choreId: number, subjectUserId: number): Promise<MutationOutcome> {
+    return this.runMultiPersonMutation(
       choreId,
       (c) => assignRoster(c.id, subjectUserId, c.version),
       'That chore changed — board refreshed.',
@@ -1178,8 +1175,8 @@ class BoardStore {
    * only the chore's creator or owner may remove someone else (anyone may remove
    * themselves via `leave`). A rejected remove reconciles + surfaces a notice.
    */
-  async removeFromRoster(choreId: number, subjectUserId: number): Promise<void> {
-    await this.runMultiPersonMutation(
+  async removeFromRoster(choreId: number, subjectUserId: number): Promise<MutationOutcome> {
+    return this.runMultiPersonMutation(
       choreId,
       (c) => leaveRoster(c.id, subjectUserId, c.version),
       'That chore changed — board refreshed.',
@@ -1195,37 +1192,46 @@ class BoardStore {
    * carries a fresh version (every roster mutation reconciles the board). Adding
    * is unguarded; removing OTHERS is creator/owner-only server-side, so a rejected
    * remove just surfaces a gentle notice and the board reconciles to the truth.
+   *
+   * A conflicted/rejected op keeps the chore's key pending until its reconcile lands (quest 41337b6f),
+   * so the loop WAITS for that reconcile before the next op — which then carries the fresh version, as
+   * the old awaited reconcile gave it — instead of being skipped silently (council r6). Returns 'ok'
+   * when every op went through, else the first other outcome.
    */
   async applyRosterSelection(
     choreId: number,
     originalRoster: { userId: number; state: RosterState }[],
     selectedUserIds: number[],
-  ): Promise<void> {
+  ): Promise<MutationOutcome> {
     const selected = new Set(selectedUserIds);
     const currentIds = new Set(originalRoster.map((m) => m.userId));
     const toAdd = selectedUserIds.filter((id) => !currentIds.has(id));
     const toRemove = originalRoster
       .filter((m) => m.state !== 'done' && !selected.has(m.userId))
       .map((m) => m.userId);
-    for (const id of toAdd) {
-      await this.assign(choreId, id);
+    const ops = [
+      ...toAdd.map((id) => () => this.assign(choreId, id)),
+      ...toRemove.map((id) => () => this.removeFromRoster(choreId, id)),
+    ];
+    let result: MutationOutcome = 'ok';
+    for (const op of ops) {
+      const outcome = await op();
+      if (outcome === 'conflict' || outcome === 'rejected') await this.settled();
+      if (outcome !== 'ok' && result === 'ok') result = outcome;
     }
-    for (const id of toRemove) {
-      await this.removeFromRoster(choreId, id);
-    }
+    return result;
   }
 
   /**
    * Hand a chore off to another member, or back to the pile (targetUserId null).
    */
-  async handOff(choreId: number, targetUserId: number | null): Promise<void> {
+  async handOff(choreId: number, targetUserId: number | null): Promise<MutationOutcome> {
     const toPile = targetUserId == null;
     const call = (c: ChoreDto) => handOffChore(c.id, { targetUserId, version: c.version });
     if (this.isMultiPerson(choreId)) {
-      await this.runMultiPersonMutation(choreId, call, 'That chore changed — board refreshed.');
-      return;
+      return this.runMultiPersonMutation(choreId, call, 'That chore changed — board refreshed.');
     }
-    await this.runOptimistic(
+    return this.runOptimistic(
       choreId,
       toPile
         ? { assigneeUserId: null, assignmentKind: 'none', claimedAt: null, isClaimStale: false }
@@ -1251,9 +1257,9 @@ class BoardStore {
    * Throws on failure so the dialog can keep itself open + surface the error.
    */
   async create(body: CreateChoreRequest): Promise<ChoreDto> {
-    const created = await createChore(body);
-    await this.reconcile();
-    return created;
+    // run() (reload 'always'): the board refetch starts when the write settles; it is not awaited.
+    // Rejects with the call's error so the dialog can keep itself open.
+    return this.#resource.run({ call: () => createChore(body) });
   }
 
   /**
@@ -1275,7 +1281,7 @@ class BoardStore {
    * room/recurrence change could affect the board the digest reads, even if the
    * equity endpoint caches on completions).
    */
-  async edit(choreId: number, body: UpdateChoreRequest): Promise<void> {
+  async edit(choreId: number, body: UpdateChoreRequest): Promise<MutationOutcome> {
     // Optimistic patch: apply the editable fields we can preview before the
     // round-trip. We intentionally don't touch assignee/assignment fields (D6).
     const patch: Partial<ChoreDto> = {
@@ -1288,7 +1294,7 @@ class BoardStore {
     // Phase 13: mirror the room membership set optimistically ONLY when the edit carries it
     // (undefined = preserve; the server keeps the existing memberships).
     if (body.roomIds !== undefined) patch.roomIds = body.roomIds;
-    await this.runOptimistic(
+    const outcome = await this.runOptimistic(
       choreId,
       patch,
       (_snapshot) => updateChore(choreId, body),
@@ -1297,6 +1303,9 @@ class BoardStore {
     // On the happy path `runOptimistic` replaced the chore with the returned DTO
     // but did NOT call setBoard, so invalidate equity manually here.
     this.invalidateEquity();
+    // The edit sheet stops on anything but 'ok' (council r6): after a conflict the chore stays pending
+    // until the reconcile lands, so a follow-on assignment would otherwise be skipped silently.
+    return outcome;
   }
 
   /**
@@ -1306,50 +1315,52 @@ class BoardStore {
    * On failure: error toast (no board mutation to roll back).
    */
   async seedStarter(): Promise<void> {
+    let result: { seeded: boolean };
     try {
-      const result = await apiSeedStarter();
-      // Refetch the board so new chores appear. setBoard calls invalidateEquity.
-      await this.reconcile();
-      if (result.seeded) {
-        showToast({ message: 'Starter chores added.', kind: 'success' });
-      }
-      // seeded=false is idempotent (already had chores) — refetch is still useful
-      // to keep the board fresh; no toast so there's no noise.
+      // Refetch the board so new chores appear (run's reload 'always'; setBoard calls invalidateEquity).
+      // seeded=false is idempotent (already had chores) — the refetch still keeps the board fresh.
+      result = await this.#resource.run({ call: () => apiSeedStarter() });
     } catch {
       showToast({ message: "Couldn't load starter chores. Please try again.", kind: 'error' });
+      return;
     }
+    // No toast for seeded=false, so there's no noise.
+    if (result.seeded) showToast({ message: 'Starter chores added.', kind: 'success' });
   }
 
-  /** Delete a chore (optimistic removal + rollback/refetch on failure). */
+  /**
+   * Delete a chore: optimistic removal; on ANY failure the card goes back at its index (item-scoped —
+   * the old path appended it, and only on a network failure) and the board refetches ('on-error',
+   * spec §5 row 10: remove keeps "reconcile on any error").
+   */
   async remove(choreId: number): Promise<void> {
-    if (this.pendingChoreIds.has(choreId)) return;
+    if (this.isPending(choreId)) return;
     const board = this.board;
     if (!board) return;
     const idx = board.chores.findIndex((c) => c.id === choreId);
     if (idx < 0) return;
     const removed = board.chores[idx];
 
-    this.retireInFlightLoads();
-    board.chores = board.chores.filter((c) => c.id !== choreId);
-    this.markPending(choreId, true);
-    try {
-      await deleteChore(choreId, removed.version);
-      this.retireInFlightLoads(); // a GET begun during the request could resurrect the chore
-    } catch (e) {
-      // Restore the removed chore, then reconcile / surface.
-      await this.reconcile();
-      if (e instanceof ApiError && (e.isConflict || e.isClientRejection)) {
-        showToast({ message: 'That chore changed — board refreshed.', kind: 'info' });
-      } else {
-        // Network/5xx: the refetch may not have restored it; put it back.
-        if (this.board && !this.board.chores.some((c) => c.id === choreId)) {
-          this.board.chores = [...this.board.chores, removed];
-        }
-        showToast({ message: 'Something went wrong. Please try again.', kind: 'error' });
-      }
-    } finally {
-      this.markPending(choreId, false);
-    }
+    await this.#resource.mutate({
+      key: choreId,
+      optimistic: () => {
+        board.chores = board.chores.filter((c) => c.id !== choreId);
+        return () => {
+          const current = this.board;
+          if (!current || current.chores.some((c) => c.id === choreId)) return;
+          const restored = [...current.chores];
+          restored.splice(Math.min(idx, restored.length), 0, removed);
+          current.chores = restored;
+        };
+      },
+      call: () => deleteChore(choreId, removed.version),
+      reload: 'on-error',
+      messages: {
+        conflict: 'That chore changed — board refreshed.',
+        rejected: 'That chore changed — board refreshed.',
+        failed: FAILED_MESSAGE,
+      },
+    });
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1359,9 +1370,11 @@ class BoardStore {
   // subtask carries no concurrency token, never gates completion, and a check
   // mid-conflict is not worth a 409 dance. The model is simpler: mutate
   // `board.chores[i].subtasks` IN PLACE (deep-reactive per M11), fire the
-  // versionless API call, and on ANY error `reconcile()` (board refetch) + a
-  // calm `info` toast. We do NOT touch `pendingChoreIds` — a subtask op must
-  // never disable the whole card's chore controls. NO Date is built here.
+  // versionless API call, and on ANY error refetch the board (`reload: 'on-error'`)
+  // + a toast. They are UN-KEYED writes (no `key`) — a subtask op must never
+  // disable the whole card's chore controls (spec A4). They still open the board's
+  // write window, so no board GET that overlaps them can commit (quest 41337b6f).
+  // NO Date is built here.
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
@@ -1375,18 +1388,23 @@ class BoardStore {
     if (!chore) return;
     const trimmed = title.trim();
     if (!trimmed) return;
-    try {
-      const created = await createSubtask(choreId, { title: trimmed });      const current = this.choreById(choreId);      if (!current) return;      this.retireInFlightLoads();      current.subtasks = sortSubtasks([...current.subtasks, created]);
-    } catch {
-      await this.reconcile();
-      showToast({ message: "Couldn't add that item — the list was refreshed.", kind: 'info' });
-    }
+    const message = "Couldn't add that item — the list was refreshed.";
+    await this.#resource.mutate({
+      call: () => createSubtask(choreId, { title: trimmed }),
+      commit: (created) => {
+        const current = this.choreById(choreId);
+        if (!current) return;
+        current.subtasks = sortSubtasks([...current.subtasks, created]);
+      },
+      reload: 'on-error',
+      messages: { conflict: message, rejected: message, failed: message },
+    });
   }
 
   /**
    * Toggle a checklist item's done state — the HOT path, so it's optimistic:
    * flip `isDone` in place immediately, then PUT. Replace with the returned DTO
-   * on success; reconcile + calm toast on error.
+   * on success; roll back + reconcile + toast on error.
    */
   async toggleSubtask(choreId: number, subtaskId: number, isDone: boolean): Promise<void> {
     if (!this.board) return;
@@ -1397,32 +1415,35 @@ class BoardStore {
     const previous = item.isDone;
     const previousActor = item.completedByUserId;
     const previousAt = item.completedAt;
-    // Optimistic — must feel instant. Show ME as the actor immediately on a tick; clear on untick.
-    // completedAt stays null until the authoritative DTO swaps in (the store builds NO Date — MN).
-    this.retireInFlightLoads();
-    item.isDone = isDone;    item.completedByUserId = isDone ? this.currentUserId : null;
-    item.completedAt = null;
-    try {
-      const updated = await updateSubtask(choreId, subtaskId, { isDone });
-      this.replaceSubtask(choreId, updated);
-      this.retireInFlightLoads();
-    } catch {
-      // Roll back the optimistic flip + actor, then resync to be safe.
-      const cur = this.choreById(choreId)?.subtasks.find((s) => s.id === subtaskId);
-      if (cur) {
-        cur.isDone = previous;
-        cur.completedByUserId = previousActor;
-        cur.completedAt = previousAt;
-      }
-      await this.reconcile();
-      showToast({ message: "Couldn't update that item — the list was refreshed.", kind: 'info' });
-    }
+    const message = "Couldn't update that item — the list was refreshed.";
+    await this.#resource.mutate({
+      optimistic: () => {
+        // Optimistic — must feel instant. Show ME as the actor immediately on a tick; clear on untick.
+        // completedAt stays null until the authoritative DTO swaps in (the store builds NO Date — MN).
+        item.isDone = isDone;
+        item.completedByUserId = isDone ? this.currentUserId : null;
+        item.completedAt = null;
+        // Roll back the optimistic flip + actor (the reconcile then resyncs to be safe).
+        return () => {
+          const cur = this.choreById(choreId)?.subtasks.find((s) => s.id === subtaskId);
+          if (cur) {
+            cur.isDone = previous;
+            cur.completedByUserId = previousActor;
+            cur.completedAt = previousAt;
+          }
+        };
+      },
+      call: () => updateSubtask(choreId, subtaskId, { isDone }),
+      commit: (updated) => this.replaceSubtask(choreId, updated),
+      reload: 'on-error',
+      messages: { conflict: message, rejected: message, failed: message },
+    });
   }
 
   /**
    * Re-order a chore's checklist (versionless). Apply the new order in place (set each
    * sortOrder to its index so the row order is stable), persist via the bulk reorder
-   * endpoint, and reconcile + calm toast on error. Does NOT touch pendingChoreIds.
+   * endpoint, and reconcile + toast on error. Un-keyed: never disables the card.
    */
   async reorderSubtasks(choreId: number, orderedIds: number[]): Promise<void> {
     if (!this.board) return;
@@ -1434,25 +1455,38 @@ class BoardStore {
       .filter((s): s is ChoreSubtaskDto => s !== undefined);
     // Guard: if the id set doesn't line up (stale), just resync rather than risk dropping items.
     if (reordered.length !== chore.subtasks.length) {
-      await this.reconcile();
+      await this.#resource.load();
       return;
     }
-    this.retireInFlightLoads();
-    reordered.forEach((s, i) => (s.sortOrder = i)); // optimistic in-place
-    chore.subtasks = reordered;
-    try {
-      await reorderSubtasks(choreId, orderedIds);
-      this.retireInFlightLoads();
-    } catch {
-      await this.reconcile();
-      showToast({ message: "Couldn't save the new order — the list was refreshed.", kind: 'info' });
-    }
+    const message = "Couldn't save the new order — the list was refreshed.";
+    const previousOrder = chore.subtasks.map((s) => [s.id, s.sortOrder] as const);
+    await this.#resource.mutate({
+      optimistic: () => {
+        reordered.forEach((s, i) => (s.sortOrder = i)); // optimistic in-place
+        chore.subtasks = reordered;
+        // Undo puts the old order back on the items still present (council r6: if the refetch fails
+        // too, the rejected order must not stay on screen); the refetch then brings server truth.
+        return () => {
+          const current = this.choreById(choreId);
+          if (!current) return;
+          const byIdNow = new Map(current.subtasks.map((s) => [s.id, s]));
+          for (const [id, sortOrder] of previousOrder) {
+            const s = byIdNow.get(id);
+            if (s) s.sortOrder = sortOrder;
+          }
+          current.subtasks = sortSubtasks(current.subtasks);
+        };
+      },
+      call: () => reorderSubtasks(choreId, orderedIds),
+      reload: 'on-error', // and the refetch reconciles, as before
+      messages: { conflict: message, rejected: message, failed: message },
+    });
   }
 
   /**
    * Rename a checklist item (optimistic). A blank/whitespace title is ignored
-   * client-side (no call). Replace with the server DTO on success; reconcile +
-   * calm toast on error.
+   * client-side (no call). Replace with the server DTO on success; roll back +
+   * reconcile + toast on error.
    */
   async renameSubtask(choreId: number, subtaskId: number, title: string): Promise<void> {
     if (!this.board) return;
@@ -1464,22 +1498,24 @@ class BoardStore {
     if (!trimmed) return; // ignore blank rename
     if (trimmed === item.title) return; // no-op
     const previous = item.title;
-    this.retireInFlightLoads();
-    item.title = trimmed; // optimistic
-    try {
-      const updated = await updateSubtask(choreId, subtaskId, { title: trimmed });
-      this.replaceSubtask(choreId, updated);
-      this.retireInFlightLoads();
-    } catch {
-      const cur = this.choreById(choreId)?.subtasks.find((s) => s.id === subtaskId);
-      if (cur) cur.title = previous;
-      await this.reconcile();
-      showToast({ message: "Couldn't rename that item — the list was refreshed.", kind: 'info' });
-    }
+    const message = "Couldn't rename that item — the list was refreshed.";
+    await this.#resource.mutate({
+      optimistic: () => {
+        item.title = trimmed; // optimistic
+        return () => {
+          const cur = this.choreById(choreId)?.subtasks.find((s) => s.id === subtaskId);
+          if (cur) cur.title = previous;
+        };
+      },
+      call: () => updateSubtask(choreId, subtaskId, { title: trimmed }),
+      commit: (updated) => this.replaceSubtask(choreId, updated),
+      reload: 'on-error',
+      messages: { conflict: message, rejected: message, failed: message },
+    });
   }
 
   /**
-   * Remove a checklist item (optimistic splice). Reconcile + calm toast on error.
+   * Remove a checklist item (optimistic splice). Reconcile + toast on error (the refetch restores it).
    */
   async removeSubtask(choreId: number, subtaskId: number): Promise<void> {
     if (!this.board) return;
@@ -1487,15 +1523,25 @@ class BoardStore {
     if (!chore) return;
     const item = chore.subtasks.find((s) => s.id === subtaskId);
     if (!item) return;
-    this.retireInFlightLoads();
-    chore.subtasks = chore.subtasks.filter((s) => s.id !== subtaskId); // optimistic
-    try {
-      await deleteSubtask(choreId, subtaskId);
-      this.retireInFlightLoads();
-    } catch {
-      await this.reconcile();
-      showToast({ message: "Couldn't remove that item — the list was refreshed.", kind: 'info' });
-    }
+    const message = "Couldn't remove that item — the list was refreshed.";
+    const index = chore.subtasks.findIndex((s) => s.id === subtaskId);
+    await this.#resource.mutate({
+      optimistic: () => {
+        chore.subtasks = chore.subtasks.filter((s) => s.id !== subtaskId); // optimistic
+        // Undo re-inserts the item at its index if it is still absent (council r6: if the refetch
+        // fails too, the item must not stay deleted on screen).
+        return () => {
+          const current = this.choreById(choreId);
+          if (!current || current.subtasks.some((s) => s.id === subtaskId)) return;
+          const restored = [...current.subtasks];
+          restored.splice(Math.min(index, restored.length), 0, item);
+          current.subtasks = restored;
+        };
+      },
+      call: () => deleteSubtask(choreId, subtaskId),
+      reload: 'on-error',
+      messages: { conflict: message, rejected: message, failed: message },
+    });
   }
 
   /** Replace one subtask in a chore's list with the authoritative server DTO (kept sorted). */
