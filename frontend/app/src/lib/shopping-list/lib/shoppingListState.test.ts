@@ -242,10 +242,11 @@ describe('ShoppingListState on one Resource (41337b6f slice 8)', () => {
     vi.mocked(listLists).mockResolvedValue([summary(1), summary(2)]);
     const checking = sl.setChecked(sl.list!.items[0], true);
     // While the PATCH is out, list 2 becomes the list on screen (its item 1 is a different item).
-    sl.list = listDto(2, [item(1, { name: 'other list', version: 3 })]);
+    // Same id AND the same token value as the item the PATCH sent — only the list identity tells them apart.
+    sl.list = listDto(2, [item(1, { name: 'other list', version: 10 })]);
     patch.resolve(item(1, { isChecked: true, version: 11 }));
     await checking;
-    expect(sl.list.items[0]).toMatchObject({ name: 'other list', isChecked: false, version: 3 });
+    expect(sl.list.items[0]).toMatchObject({ name: 'other list', isChecked: false, version: 10 });
     await sl.settled();
   });
 
