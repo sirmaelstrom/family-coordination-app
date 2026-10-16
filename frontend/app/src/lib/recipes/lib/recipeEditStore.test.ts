@@ -360,6 +360,31 @@ describe('recipe draft recovery (adfe3d57)', () => {
     expect(recipeEditStore.error).toMatch(/couldn't be loaded/);
   });
 
+  it('discard waits out EVERY in-flight autosave, not only the latest', async () => {
+    vi.useFakeTimers();
+    vi.mocked(getDraft).mockResolvedValue(draft(3));
+    await recipeEditStore.load(RECIPE_ID);
+
+    let releaseSlow!: () => void;
+    vi.mocked(saveDraft).mockReturnValueOnce(new Promise<void>((r) => (releaseSlow = r)));
+    recipeEditStore.onEdit();
+    await vi.advanceTimersByTimeAsync(2000); // slow PUT #1 on the wire
+    recipeEditStore.onEdit();
+    await vi.advanceTimersByTimeAsync(2000); // PUT #2 (default mock) resolves at once
+    expect(saveDraft).toHaveBeenCalledTimes(2);
+
+    vi.mocked(getRecipe).mockResolvedValue(full(5));
+    const discarding = recipeEditStore.discardDraft();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(deleteDraft).not.toHaveBeenCalled(); // PUT #1 could still land after a DELETE
+    } finally {
+      releaseSlow();
+      await discarding;
+    }
+    expect(deleteDraft).toHaveBeenCalledTimes(1);
+  });
+
   it('discard waits out an in-flight autosave so it cannot re-create the draft', async () => {
     vi.useFakeTimers();
     vi.mocked(getDraft).mockResolvedValue(draft(3));

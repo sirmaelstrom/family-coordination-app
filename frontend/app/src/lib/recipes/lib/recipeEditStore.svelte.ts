@@ -135,9 +135,10 @@ class RecipeEditStore {
   private uidSeq = 1;
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedClearTimer: ReturnType<typeof setTimeout> | null = null;
-  /** The in-flight draft-save (if any) — save()/delete() await it before deleteDraft so a late
-   *  autosave can't re-create the draft we just cleared (council race fix). */
-  private autosaveInFlight: Promise<void> | null = null;
+  /** Every in-flight draft-save. save()/delete()/discard await them all before deleteDraft so a late
+   *  autosave can't re-create the draft we just cleared (council race fix). A set, not the latest one:
+   *  a slow PUT can still be on the wire when a newer edit starts a second (slim-review on fca#149). */
+  private autosavesInFlight = new Set<Promise<void>>();
 
   init(ctx: ShellContext): void {
     this.currentUserId = ctx.userId;
@@ -311,9 +312,9 @@ class RecipeEditStore {
         showToast({ message: "Couldn't save draft.", kind: 'info' });
       }
     })();
-    this.autosaveInFlight = inFlight;
+    this.autosavesInFlight.add(inFlight);
     await inFlight;
-    if (this.autosaveInFlight === inFlight) this.autosaveInFlight = null;
+    this.autosavesInFlight.delete(inFlight);
   }
 
   /**
@@ -325,13 +326,8 @@ class RecipeEditStore {
       clearTimeout(this.autosaveTimer);
       this.autosaveTimer = null;
     }
-    if (this.autosaveInFlight) {
-      try {
-        await this.autosaveInFlight;
-      } catch {
-        /* the autosave handles its own errors */
-      }
-    }
+    // Each autosave catches its own errors, so allSettled is belt and braces.
+    await Promise.allSettled([...this.autosavesInFlight]);
   }
 
   // ── Ingredients ────────────────────────────────────────────────────────────
