@@ -1,5 +1,4 @@
 using System.Text;
-using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services.Dtos;
 
 namespace FamilyCoordinationApp.Services.Calendar;
@@ -73,7 +72,12 @@ public sealed class CalendarWriter : ICalendarWriter
             // The UID names the chore, not the date: when a flexible chore's next-due slides (or an overdue one
             // rolls to today), clients move the same event instead of adding another.
             var summary = chore.Overdue ? $"Overdue: {chore.Name}" : chore.Name;
-            var assignment = chore.AssignmentKind == AssignmentKind.Claimed ? "Claimed by you" : "Assigned to you";
+            var assignment = chore.Role switch
+            {
+                ChoreFeedRole.Claimed => "Claimed by you",
+                ChoreFeedRole.Roster => "You're on the roster",
+                _ => "Assigned to you",
+            };
             var description = string.IsNullOrWhiteSpace(chore.Description) ? assignment : $"{chore.Description}\n\n{assignment}";
 
             Append(builder, "BEGIN:VEVENT");

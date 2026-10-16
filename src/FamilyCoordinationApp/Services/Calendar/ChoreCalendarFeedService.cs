@@ -1,5 +1,6 @@
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Data.Entities;
+using FamilyCoordinationApp.Services.Dtos;
 using Microsoft.EntityFrameworkCore;
 
 namespace FamilyCoordinationApp.Services.Calendar;
@@ -39,16 +40,50 @@ public sealed class ChoreCalendarFeedService(
         int userId, DateTime nowUtc, TimeZoneInfo timeZone, CancellationToken ct = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(ct);
-        var chores = await context.Chores
+        // Single-person chores: the assignment trio names the member.
+        var assigned = await context.Chores
             .AsNoTracking()
             .Where(chore => chore.AssigneeUserId == userId
                 && (chore.AssignmentKind == AssignmentKind.Assigned || chore.AssignmentKind == AssignmentKind.Claimed)
                 && chore.Status == ChoreStatus.Active)
             .ToListAsync(ct);
+        var mine = assigned
+            .Select(chore => (Chore: chore, Role: chore.AssignmentKind == AssignmentKind.Claimed ? ChoreFeedRole.Claimed : ChoreFeedRole.Assigned))
+            .ToList();
+
+        // Multi-person chores (RequiredCount > 1) keep no assignee: their roster is folded on read from the
+        // participation events and the completion ledger, exactly as the board does (ChoreRosterCalculator). The
+        // member is on it while Assigned or In; Done means their part of this occurrence is finished.
+        var multiPerson = await context.Chores
+            .AsNoTracking()
+            .Where(chore => chore.RequiredCount > 1 && chore.Status == ChoreStatus.Active)
+            .ToListAsync(ct);
+        if (multiPerson.Count > 0)
+        {
+            var ids = multiPerson.Select(chore => chore.ChoreId).ToList();
+            var participation = (await context.ChoreParticipationEvents.AsNoTracking().Where(e => ids.Contains(e.ChoreId)).ToListAsync(ct))
+                .ToLookup(e => e.ChoreId);
+            var completions = (await context.ChoreCompletions.AsNoTracking().Where(c => ids.Contains(c.ChoreId)).ToListAsync(ct))
+                .ToLookup(c => c.ChoreId);
+            foreach (var chore in multiPerson)
+            {
+                var roster = ChoreRosterCalculator.Fold(
+                    participation[chore.ChoreId],
+                    completions[chore.ChoreId],
+                    chore.LastCompletedAt,
+                    chore.RequiredCount,
+                    recurring: chore.RecurrenceMode != RecurrenceMode.OneOff);
+                if (roster.Members.Any(m => m.UserId == userId && m.State is RosterState.Assigned or RosterState.In)
+                    && mine.All(m => m.Chore.ChoreId != chore.ChoreId))
+                {
+                    mine.Add((chore, ChoreFeedRole.Roster));
+                }
+            }
+        }
 
         var today = ChoreStatusCalculator.LocalDate(nowUtc, timeZone);
-        var events = new List<ChoreCalendarEvent>(chores.Count);
-        foreach (var chore in chores)
+        var events = new List<ChoreCalendarEvent>(mine.Count);
+        foreach (var (chore, role) in mine)
         {
             var nextDueAt = calculator.ComputeNextDueAt(ChoreRecurrenceSnapshot.FromChore(chore), nowUtc, timeZone);
             if (nextDueAt is not { } due) continue;
@@ -61,7 +96,7 @@ public sealed class ChoreCalendarFeedService(
                 chore.Description,
                 overdue ? today : dueDate,
                 overdue,
-                chore.AssignmentKind));
+                role));
         }
 
         return events;

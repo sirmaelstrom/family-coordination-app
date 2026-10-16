@@ -1,4 +1,3 @@
-using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Services.Dtos;
 
 namespace FamilyCoordinationApp.Services.Calendar;
@@ -24,4 +23,17 @@ public sealed record ChoreCalendarEvent(
     string? Description,
     DateOnly Date,
     bool Overdue,
-    AssignmentKind AssignmentKind);
+    ChoreFeedRole Role);
+
+/// <summary>Why a chore is in the member's feed.</summary>
+public enum ChoreFeedRole
+{
+    /// <summary>Assigned to the member (single-person chore).</summary>
+    Assigned,
+
+    /// <summary>Claimed by the member (single-person chore).</summary>
+    Claimed,
+
+    /// <summary>The member is on a multi-person chore's roster (Assigned or In for the current occurrence).</summary>
+    Roster,
+}

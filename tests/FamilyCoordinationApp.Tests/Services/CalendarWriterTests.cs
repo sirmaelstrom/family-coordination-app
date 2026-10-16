@@ -32,8 +32,8 @@ public sealed class CalendarWriterTests
         var today = new DateOnly(2026, 6, 7);
         var events = new[]
         {
-            new ChoreCalendarEvent(5, "Water plants", "Back porch, too", new DateOnly(2026, 6, 12), Overdue: false, AssignmentKind.Assigned),
-            new ChoreCalendarEvent(9, "Mail", null, today, Overdue: true, AssignmentKind.Claimed),
+            new ChoreCalendarEvent(5, "Water plants", "Back porch, too", new DateOnly(2026, 6, 12), Overdue: false, ChoreFeedRole.Assigned),
+            new ChoreCalendarEvent(9, "Mail", null, today, Overdue: true, ChoreFeedRole.Claimed),
         };
 
         var calendar = _writer.WriteChores(3, 1, today, events, new DateTimeOffset(2026, 6, 7, 23, 30, 0, TimeSpan.Zero));
@@ -56,7 +56,7 @@ public sealed class CalendarWriterTests
     public void WriteChores_EscapesTheSummary_AndFoldsLongUtf8Lines()
     {
         var chore = new ChoreCalendarEvent(
-            1, "Sweep; mop, dust\\ " + new string('é', 60), "line one\nline two", new DateOnly(2026, 6, 7), Overdue: true, AssignmentKind.Assigned);
+            1, "Sweep; mop, dust\\ " + new string('é', 60), "line one\nline two", new DateOnly(2026, 6, 7), Overdue: true, ChoreFeedRole.Assigned);
 
         var calendar = _writer.WriteChores(3, 1, new DateOnly(2026, 6, 7), [chore], DateTimeOffset.UnixEpoch);
         var unfolded = calendar.Replace("\r\n ", string.Empty, StringComparison.Ordinal);

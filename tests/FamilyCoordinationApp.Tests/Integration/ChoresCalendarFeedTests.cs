@@ -130,6 +130,35 @@ public sealed class ChoresCalendarFeedTests(PostgresContainerFixture postgres) :
         Event(calendar, ClaimedRecurring).Should().BeEmpty("completing a claimed recurring chore returns it to the pile");
     }
 
+    [Fact]
+    public async Task AMultiPersonChore_IsInTheFeedOfEachMemberOnItsRoster_UntilTheirPartIsDone()
+    {
+        // Created through the API, so the roster lives where production keeps it: participation events, with
+        // no assignee on the chore (slim-review on fca#157).
+        var createResp = await ClientA.PostAsJsonAsync("/api/chores/", new
+        {
+            name = "Move the couch",
+            recurrenceMode = "flexible",
+            intervalDays = 30,
+            effortTier = "standard",
+            requiredCount = 2,
+            assignedUserIds = new[] { ChoresWebAppFactory.UserAId, ChoresWebAppFactory.UserA2Id },
+        }, Json);
+        createResp.StatusCode.Should().Be(HttpStatusCode.Created);
+        var choreId = (await createResp.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("id").GetInt32();
+        var a = await CreateChoresLinkAsync(ClientA);
+        var a2 = await CreateChoresLinkAsync(ClientA2);
+        var anonymous = _factory.CreateAnonymousClient();
+
+        Event(await anonymous.GetStringAsync(a.url), choreId).Should().Contain("SUMMARY:Move the couch").And.Contain("on the roster");
+        Event(await anonymous.GetStringAsync(a2.url), choreId).Should().Contain("SUMMARY:Move the couch");
+
+        await CompleteAsync(choreId); // A does their part; the occurrence still needs A2
+
+        Event(await anonymous.GetStringAsync(a.url), choreId).Should().BeEmpty("A's part of this occurrence is done");
+        Event(await anonymous.GetStringAsync(a2.url), choreId).Should().Contain("SUMMARY:Move the couch");
+    }
+
     private async Task CompleteAsync(int choreId)
     {
         uint version;
