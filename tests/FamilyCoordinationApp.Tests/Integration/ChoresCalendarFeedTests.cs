@@ -144,6 +144,11 @@ public sealed class ChoresCalendarFeedTests(PostgresContainerFixture postgres) :
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+        // The endpoint also refuses a token with no user, so check the resolve itself: it is the one statement that
+        // bypasses the Tenant filter, and it must not hand any caller a userless non-meal token.
+        var service = new FamilyCoordinationApp.Services.Calendar.HouseholdCalendarTokenService(
+            new PostgresDbContextFactory(_factory.ConnectionString), Services.TestClocks.System);
+        (await service.ResolveActiveAsync(token, CalendarFeed.Chores)).Should().BeNull();
     }
 
     [Fact]
