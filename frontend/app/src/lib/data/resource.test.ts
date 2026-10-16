@@ -196,6 +196,28 @@ describe('Resource.mutate — optimistic, commit, the three-way branch', () => {
     expect(h.fetch).toHaveBeenCalledTimes(2);
   });
 
+  it("reload policy 'on-error': every failure reconciles (409, 4xx, 5xx, network), a success does not", async () => {
+    const failures = [new ApiError(409, 'c'), new ApiError(404, 'r'), new ApiError(503, 'f'), new TypeError('net')];
+    for (const [i, e] of failures.entries()) {
+      const h = harness();
+      await h.res.mutate({ call: () => Promise.reject(e), reload: 'on-error' });
+      expect(h.fetch, `failure #${i}`).toHaveBeenCalledTimes(1);
+      h.fetches[0].resolve('truth');
+      await h.res.settled();
+    }
+    const ok = harness();
+    expect(await ok.res.mutate({ call: async () => 1, reload: 'on-error' })).toBe('ok');
+    expect(ok.fetch).not.toHaveBeenCalled();
+    // run() honours it too: a failure reconciles, a success doesn't.
+    const r = harness();
+    await expect(r.res.run({ call: () => Promise.reject(new TypeError('net')), reload: 'on-error' })).rejects.toThrow('net');
+    expect(r.fetch).toHaveBeenCalledTimes(1);
+    r.fetches[0].resolve('truth');
+    await r.res.settled();
+    await r.res.run({ call: async () => 1, reload: 'on-error' });
+    expect(r.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('a duplicate key is skipped: no optimistic step, no call, no toast', async () => {
     const h = harness();
     const call = deferred<void>();

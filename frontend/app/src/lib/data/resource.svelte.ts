@@ -29,7 +29,15 @@ import { showToast } from '$lib/shared/toast-store.svelte';
 
 export type LoadOutcome = 'committed' | 'superseded' | 'deferred' | 'failed';
 export type MutationOutcome = 'ok' | 'conflict' | 'rejected' | 'failed' | 'skipped';
-export type ReloadPolicy = 'on-reject' | 'always' | 'never';
+/**
+ * When a write reconciles (reloads) at settle:
+ *   'on-reject' — after a 409 or another 4xx (the mutate default);
+ *   'on-error'  — after ANY failure (409, 4xx, 5xx, network), never after a success — for stores whose
+ *                 rollback is "refetch the truth" whatever went wrong (chores subtasks + remove);
+ *   'always'    — after every outcome, success included (the run default: write-then-reload stores);
+ *   'never'     — no reconcile (a load the write retired is still owed).
+ */
+export type ReloadPolicy = 'on-reject' | 'on-error' | 'always' | 'never';
 type Key = string | number;
 
 export interface ResourceOptions<T> {
@@ -77,6 +85,7 @@ export function classifyFailure(e: unknown): 'conflict' | 'rejected' | 'failed' 
 function reloadsAfter(policy: ReloadPolicy, outcome: MutationOutcome): boolean {
   if (policy === 'always') return true;
   if (policy === 'never') return false;
+  if (policy === 'on-error') return outcome !== 'ok' && outcome !== 'skipped';
   return outcome === 'conflict' || outcome === 'rejected';
 }
 
