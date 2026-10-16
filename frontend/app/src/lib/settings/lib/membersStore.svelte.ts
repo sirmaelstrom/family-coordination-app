@@ -3,13 +3,16 @@
 // household member list + the caller's id (for "You" + self-gating).
 //
 // Same discipline as the categories store: untrack one-time load (in the App),
-// `loadSeq` guard, await-then-reload mutations, no liveness. The self / last-active
-// / last-user guards are enforced SERVER-side (the source of truth); the client
-// mirror here is only for button visibility (parity WhitelistAdmin).
+// load and write ordering in a Resource (quest 41337b6f: every write runs in its
+// window and the list reloads once when the last write settles), no liveness.
+// The self / last-active / last-user guards are enforced SERVER-side (the source
+// of truth); the client mirror here is only for button visibility (parity
+// WhitelistAdmin).
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { MemberDto } from './types';
+import type { MemberDto, MemberListDto } from './types';
 import { ApiError, getMembers, addMember, setWhitelist, deleteMember } from './api';
+import { Resource } from '$lib/data/resource.svelte';
 import { showToast } from '$lib/shared/toast-store.svelte';
 
 class MembersStore {
@@ -19,69 +22,71 @@ class MembersStore {
   error = $state<string | null>(null);
 
   private hasLoaded = false;
-  private seq = 0;
+
+  #resource = new Resource<MemberListDto>({
+    fetch: () => getMembers(),
+    commit: (dto) => {
+      this.members = dto.members;
+      this.currentUserId = dto.currentUserId;
+      this.hasLoaded = true;
+    },
+    onLoadStart: () => {
+      if (!this.hasLoaded) this.loading = true; // spinner only on the FIRST load
+      this.error = null;
+    },
+    onLoadError: (e) => {
+      this.error = describe(e, 'load members');
+    },
+    onLoadIdle: () => {
+      this.loading = false;
+    },
+  });
 
   /** Active (whitelisted) member count — mirrors the server's last-active guard for button visibility. */
   activeCount = $derived(this.members.filter((m) => m.isWhitelisted).length);
 
   async load(): Promise<void> {
-    const s = ++this.seq;
-    try {
-      if (!this.hasLoaded) this.loading = true;
-      this.error = null;
-      const dto = await getMembers();
-      if (s !== this.seq) return;
-      this.members = dto.members;
-      this.currentUserId = dto.currentUserId;
-      this.hasLoaded = true;
-    } catch (e) {
-      if (s !== this.seq) return;
-      this.error = describe(e, 'load members');
-    } finally {
-      if (s === this.seq) this.loading = false;
-    }
+    await this.#resource.load();
   }
 
   async add(email: string): Promise<boolean> {
     const trimmed = email.trim();
     if (!trimmed) return false;
+    let res;
     try {
-      const res = await addMember(trimmed);
-      await this.load();
-      if (res.outcome === 'created') {
-        showToast({ message: `Added ${res.member.email}.`, kind: 'success' });
-      } else if (res.outcome === 'reenabled') {
-        showToast({ message: `Re-enabled ${res.member.email}.`, kind: 'success' });
-      } else {
-        // alreadyActive — a benign notice, NOT an error (parity: a warning today, review R-A1).
-        showToast({ message: `${res.member.email} already has access.`, kind: 'info' });
-      }
-      return true;
+      // reload 'always' (the run default): the list refreshes once the write settles.
+      res = await this.#resource.run({ call: () => addMember(trimmed) });
     } catch (e) {
       showToast({ message: describe(e, 'add member'), kind: 'error' });
       return false;
     }
+    if (res.outcome === 'created') {
+      showToast({ message: `Added ${res.member.email}.`, kind: 'success' });
+    } else if (res.outcome === 'reenabled') {
+      showToast({ message: `Re-enabled ${res.member.email}.`, kind: 'success' });
+    } else {
+      // alreadyActive — a benign notice, NOT an error (parity: a warning today, review R-A1).
+      showToast({ message: `${res.member.email} already has access.`, kind: 'info' });
+    }
+    return true;
   }
 
   async toggle(userId: number, isWhitelisted: boolean): Promise<void> {
     try {
-      await setWhitelist(userId, isWhitelisted);
-      await this.load();
+      await this.#resource.run({ call: () => setWhitelist(userId, isWhitelisted) });
     } catch (e) {
-      if (e instanceof ApiError) await this.load();
       showToast({ message: describe(e, isWhitelisted ? 'enable member' : 'disable member'), kind: 'error' });
     }
   }
 
   async remove(userId: number): Promise<void> {
     try {
-      await deleteMember(userId);
-      await this.load();
-      showToast({ message: 'Member removed.', kind: 'success' });
+      await this.#resource.run({ call: () => deleteMember(userId) });
     } catch (e) {
-      if (e instanceof ApiError) await this.load();
       showToast({ message: describe(e, 'remove member'), kind: 'error' });
+      return;
     }
+    showToast({ message: 'Member removed.', kind: 'success' });
   }
 }
 
