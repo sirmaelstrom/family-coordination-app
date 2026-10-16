@@ -269,9 +269,14 @@ describe('chore board: loads are serialized against pending writes (41337b6f)', 
     vi.mocked(assignRoster)
       .mockRejectedValueOnce(new ApiError(400, 'no'))
       .mockResolvedValueOnce(minimalChore({ requiredCount: 2, version: 9 }));
-    vi.mocked(getBoard).mockResolvedValue(minimalBoard([minimalChore({ requiredCount: 2, version: 8 })]));
+    // The rejected op's reconcile answers a few ms later — a loop that didn't wait for it would find the
+    // chore still held and skip the second op.
+    vi.mocked(getBoard).mockImplementation(
+      () => new Promise((r) => setTimeout(() => r(minimalBoard([minimalChore({ requiredCount: 2, version: 8 })])), 5)),
+    );
 
     const outcome = await boardStore.applyRosterSelection(1, [], [5, 6]);
+    await boardStore.settled();
 
     expect(assignRoster).toHaveBeenCalledTimes(2); // the second op was sent, not skipped
     expect(vi.mocked(assignRoster).mock.calls[1][2]).toBe(8); // with the version the reconcile brought

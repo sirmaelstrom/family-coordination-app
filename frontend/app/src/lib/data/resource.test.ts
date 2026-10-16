@@ -221,13 +221,17 @@ describe('Resource.mutate — optimistic, commit, the three-way branch', () => {
   it("a rejected 'never' write is not held just because another write asked for a reconcile (council r6)", async () => {
     const h = harness();
     const other = deferred<void>();
-    const reconciling = h.res.mutate({ key: 'a', call: () => other.promise, reload: 'always' });
+    const open = h.res.mutate({ key: 'a', call: () => other.promise }); // keeps the window open
+    // Another write's 409 has asked for a reconcile (it is owed at the last settle)…
+    expect(await h.res.mutate({ key: 'c', call: () => Promise.reject(new ApiError(409, 'c')) })).toBe('conflict');
+    // …so a 'never' rejection settling now must not be held on THAT write's reconcile.
     expect(await h.res.mutate({ key: 'b', call: () => Promise.reject(new ApiError(400, 'r')), reload: 'never' })).toBe(
       'rejected',
     );
+    expect(h.res.isPending('c')).toBe(true); // its own reconcile is still to come
     expect(h.res.isPending('b')).toBe(false); // no refresh of its own to wait for
     other.resolve();
-    await reconciling;
+    await open;
     h.fetches[0]?.resolve('truth');
     await h.res.settled();
   });
