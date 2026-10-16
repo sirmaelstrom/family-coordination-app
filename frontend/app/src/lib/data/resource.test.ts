@@ -245,10 +245,11 @@ describe('Resource — local callback failures are not server failures', () => {
         throw boom;
       },
     });
-    await tick();
+    await expect(writing).rejects.toBe(boom);
     expect(h.fetch).toHaveBeenCalledTimes(1); // the reconcile
     h.fetches[0].resolve('truth');
-    await expect(writing).rejects.toBe(boom);
+    await h.res.settled();
+    expect(h.committed).toEqual(['truth']);
     expect(undo).not.toHaveBeenCalled();
     expect(h.res.isPending('k')).toBe(false);
     expect(h.res.writesPending).toBe(false);
@@ -264,9 +265,10 @@ describe('Resource — local callback failures are not server failures', () => {
       },
       call,
     });
-    await tick();
-    h.fetches[0].resolve('truth');
     await expect(writing).rejects.toBe(boom);
+    expect(h.fetch).toHaveBeenCalledTimes(1); // the reconcile
+    h.fetches[0].resolve('truth');
+    await h.res.settled();
     expect(call).not.toHaveBeenCalled();
     expect(h.res.writesPending).toBe(false);
   });
@@ -280,9 +282,9 @@ describe('Resource — local callback failures are not server failures', () => {
       },
       call: () => Promise.reject(new TypeError('net')),
     });
-    await tick();
-    h.fetches[0].resolve('truth');
     await expect(writing).rejects.toBe(boom);
+    h.fetches[0].resolve('truth');
+    await h.res.settled();
     expect(h.res.writesPending).toBe(false);
   });
 });
@@ -341,19 +343,23 @@ describe('Resource — throwing hooks never strand the window (code council r2)'
       },
     });
     expect(await res.mutate({ call: () => Promise.reject(new ApiError(409, 'c')) })).toBe('conflict');
+    await res.settled();
     expect(spy).toHaveBeenCalledWith('Resource: the reconcile load after a write failed', expect.any(Error));
     spy.mockRestore();
   });
 
-  it('the failure toast shows after the reconcile has committed', async () => {
-    const order: string[] = [];
-    vi.mocked(showToast).mockImplementationOnce(() => {
-      order.push('toast');
-      return 0;
-    });
-    const res = new Resource<string>({ fetch: async () => 'v', commit: () => order.push('commit') });
-    await res.mutate({ call: () => Promise.reject(new ApiError(409, 'c')), messages: { conflict: 'refreshed' } });
-    expect(order).toEqual(['commit', 'toast']);
+  it("a stalled reconcile GET withholds neither the write's outcome nor its toast (slim-review fca#150)", async () => {
+    const fetch = vi.fn(() => new Promise<string>(() => {})); // apiFetch has no timeout
+    const res = new Resource<string>({ fetch, commit: () => {} });
+    const outcome = await Promise.race([
+      res.mutate({ call: () => Promise.reject(new ApiError(409, 'c')), messages: { conflict: 'C' } }),
+      new Promise((r) => setTimeout(() => r('STILL PENDING'), 50)),
+    ]);
+    expect(outcome).toBe('conflict');
+    expect(fetch).toHaveBeenCalledTimes(1); // the reconcile was dispatched…
+    expect(showToast).toHaveBeenCalledWith({ message: 'C', kind: 'info' }); // …and the toast didn't wait for it
+    const settledYet = await Promise.race([res.settled().then(() => 'settled'), tick().then(() => 'pending')]);
+    expect(settledYet).toBe('pending');
   });
 });
 
@@ -379,18 +385,19 @@ describe('Resource.run — the write window without an optimistic step', () => {
     expect(h.fetch).toHaveBeenCalledTimes(2);
     h.fetches[1].resolve('fresh');
     expect(await running).toBe('dto');
+    await h.res.settled();
     expect(order).toEqual(['commit:dto']);
     expect(h.committed).toEqual(['fresh']);
   });
 
-  it('rejects with the call error after settle (and after the reconcile)', async () => {
+  it('rejects with the call error after settle, having started the reconcile', async () => {
     const h = harness();
     const err = new ApiError(400, 'bad');
-    const running = h.res.run({ call: () => Promise.reject(err) });
-    await tick();
-    h.fetches[0].resolve('truth');
-    await expect(running).rejects.toBe(err);
+    await expect(h.res.run({ call: () => Promise.reject(err) })).rejects.toBe(err);
     expect(h.res.writesPending).toBe(false);
+    expect(h.fetch).toHaveBeenCalledTimes(1);
+    h.fetches[0].resolve('truth');
+    await h.res.settled();
     expect(h.committed).toEqual(['truth']);
   });
 });

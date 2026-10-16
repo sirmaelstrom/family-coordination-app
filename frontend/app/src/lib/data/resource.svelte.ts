@@ -11,8 +11,10 @@
 //                retired (and owed). So no GET whose request overlaps a pending write can commit, in
 //                either response order — the fca#103 residual (a stale GET answered BEFORE the write's
 //                response) is closed by construction, not per call site.
-//   • settle   — when the last write settles, ONE load runs if one is owed or a reconcile is due, so
-//                the view converges on server truth without waiting for the next liveness tick.
+//   • settle   — when the last write settles, ONE load starts if one is owed or a reconcile is due, so
+//                the view converges on server truth without waiting for the next liveness tick. The
+//                write resolves without awaiting it (a stalled GET must not hold its outcome); settled()
+//                waits for it.
 //   • mutate() — optimistic patch (synchronous) → call → commit, or undo + the 409 / other-4xx /
 //                5xx-network three-way branch through the ApiError getters (never a raw status).
 //
@@ -94,6 +96,8 @@ export class Resource<T> {
   #owed = false;
   /** A write asked for a reconcile — run one at settle. */
   #reconcileDue = false;
+  /** The settle load started by the last write to settle, while it runs. */
+  #drain: Promise<void> | null = null;
   readonly #options: ResourceOptions<T>;
 
   constructor(options: ResourceOptions<T>) {
@@ -102,6 +106,15 @@ export class Resource<T> {
 
   get writesPending(): boolean {
     return this.#writes > 0;
+  }
+
+  /**
+   * Resolves once the settle load (the owed / reconcile load a write started when it settled) has
+   * finished — immediately when none is running. Writes don't wait for it (a stalled GET must not
+   * withhold a write's outcome or its toast); callers and tests that need the reconciled view do.
+   */
+  settled(): Promise<void> {
+    return this.#drain ?? Promise.resolve();
   }
 
   isPending(key: Key): boolean {
@@ -155,12 +168,11 @@ export class Resource<T> {
   }
 
   /**
-   * An optimistic (or plain) write. Resolves after settle — including the reconcile load it triggers,
-   * if any (that attempt, not global quiescence: a newer load started meanwhile may still be in flight)
-   * — with the server outcome; never rejects for a server error. A throwing callback is rethrown after
-   * settle. The failure toast shows after settle, so when this is the last pending write, "…was
-   * refreshed" copy is true when it appears. (With another write still pending, the reconcile waits for
-   * that one; the toast does not — a hung reconcile GET must not withhold the failure message.)
+   * An optimistic (or plain) write. Resolves when the write has settled — the reconcile load it starts
+   * is NOT awaited (slim-review on fca#150: `apiFetch` has no timeout, so a stalled GET would withhold
+   * the outcome and its toast indefinitely); `settled()` waits for that load. Never rejects for a
+   * server error. A throwing callback is rethrown after settle. The failure toast shows at settle, as
+   * the refresh starts.
    */
   async mutate<R>(spec: MutationSpec<R>): Promise<MutationOutcome> {
     const { key } = spec;
@@ -211,7 +223,7 @@ export class Resource<T> {
       localError ??= { error: e };
       this.#reconcileDue = true;
     } finally {
-      await this.#settle(key);
+      this.#settle(key);
     }
     const message = outcome === 'ok' ? undefined : spec.messages?.[outcome as 'conflict' | 'rejected' | 'failed'];
     if (message) showToast({ message, kind: outcome === 'failed' ? 'error' : 'info' });
@@ -233,7 +245,7 @@ export class Resource<T> {
     } catch (e) {
       // A throwing onLoadIdle (via the retire): settle, reconcile, rethrow — the call is never sent.
       this.#reconcileDue = true;
-      await this.#settle(undefined);
+      this.#settle(undefined);
       throw e;
     }
     try {
@@ -254,7 +266,7 @@ export class Resource<T> {
         if ((spec.reload ?? 'always') === 'always') this.#reconcileDue = true;
       }
     } finally {
-      await this.#settle(undefined);
+      this.#settle(undefined);
     }
     if (localError) throw localError.error;
     if (failure) throw failure.error;
@@ -273,7 +285,8 @@ export class Resource<T> {
     this.#retire();
   }
 
-  async #settle(key: Key | undefined): Promise<void> {
+  /** Close the window; when it was the last write, START the owed/reconcile load (dispatched now, not awaited). */
+  #settle(key: Key | undefined): void {
     this.#writes--;
     if (key !== undefined) {
       const next = new Set(this.#pendingKeys);
@@ -283,13 +296,18 @@ export class Resource<T> {
     if (this.#writes === 0 && (this.#owed || this.#reconcileDue)) {
       this.#owed = false;
       this.#reconcileDue = false;
-      try {
-        await this.load();
-      } catch (e) {
-        // A throwing load callback during the settle reconcile must not replace the WRITE's own result or
-        // error (the write already happened). Reported, not swallowed silently.
-        console.error('Resource: the reconcile load after a write failed', e);
-      }
+      const drain = this.load().then(
+        () => undefined,
+        (e) => {
+          // A throwing load callback during the settle reconcile must not surface as the WRITE's result or
+          // error (the write already happened), nor as an unhandled rejection. Reported, not swallowed.
+          console.error('Resource: the reconcile load after a write failed', e);
+        },
+      );
+      this.#drain = drain;
+      void drain.then(() => {
+        if (this.#drain === drain) this.#drain = null;
+      });
     }
   }
 
