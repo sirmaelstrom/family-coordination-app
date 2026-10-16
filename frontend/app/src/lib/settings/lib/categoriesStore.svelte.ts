@@ -109,12 +109,12 @@ class CategoriesStore {
    * order comes back with no reload (spec §5 row 6). The undo is scoped: it applies only while this
    * reorder's order is still the latest, so it never erases a later drag. When a later drag overlapped
    * it, no local snapshot is known to be the saved order (both may fail — slim-review on fca#152), so
-   * the failure reloads the server order instead; while another write is pending that load is owed
-   * and runs once at its settle.
+   * the failure reloads the server order instead. That load is requested from INSIDE the write window
+   * (the undo runs before settle), so the Resource defers it and coalesces it with any reconcile the
+   * same settle starts — one GET, never two racing ones (slim-review delta on fca#152).
    */
   async reorder(orderedIds: number[]): Promise<void> {
-    let overlapped = false;
-    const outcome = await this.#resource.mutate({
+    await this.#resource.mutate({
       optimistic: () => {
         const byId = new Map(this.active.map((c) => [c.categoryId, c]));
         const next = orderedIds.map((id) => byId.get(id)).filter((c): c is CategoryDto => c != null);
@@ -124,7 +124,7 @@ class CategoriesStore {
         this.active = next;
         return () => {
           if (this.#reorderGen === gen) this.active = previous;
-          else overlapped = true;
+          else void this.#resource.load(); // 'deferred' (this write is still pending): owed at settle
         };
       },
       call: () => updateSortOrder(orderedIds),
@@ -134,8 +134,6 @@ class CategoriesStore {
         failed: "Couldn't save that order right now.",
       },
     });
-    // A 409/4xx already reconciles; a 5xx/network failure whose undo stood down must too.
-    if (outcome === 'failed' && overlapped) void this.load();
   }
 }
 

@@ -113,6 +113,22 @@ describe('categoriesStore on the Resource (41337b6f slice 3)', () => {
     expect(names()).toEqual(['Produce', 'Dairy', 'Bakery']);
   });
 
+  it('a 409 on the newer drag plus a network failure on the older one: exactly one reconcile GET', async () => {
+    const first = deferred<void>();
+    const second = deferred<void>();
+    vi.mocked(updateSortOrder).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    vi.mocked(getCategories).mockResolvedValueOnce(list(B, A, C));
+    const a = categoriesStore.reorder([3, 1, 2]);
+    const b = categoriesStore.reorder([2, 3, 1]);
+    second.reject(new ApiError(409, 'stale'));
+    await b;
+    first.reject(new TypeError('Failed to fetch'));
+    await a;
+    await flush();
+    expect(getCategories).toHaveBeenCalledTimes(1);
+    expect(names()).toEqual(['Dairy', 'Produce', 'Bakery']);
+  });
+
   it('...in either failure order', async () => {
     const first = deferred<void>();
     const second = deferred<void>();
