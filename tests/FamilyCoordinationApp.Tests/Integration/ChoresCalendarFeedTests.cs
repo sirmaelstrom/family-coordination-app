@@ -122,6 +122,31 @@ public sealed class ChoresCalendarFeedTests(PostgresContainerFixture postgres) :
     }
 
     [Fact]
+    public async Task AUserlessChoresToken_NeverResolves()
+    {
+        // No route writes one (a chores link is always the caller's); only the meal plan had a shared link.
+        var token = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32))
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        await using (var context = await new PostgresDbContextFactory(
+                         _factory.ConnectionString, TestTenancy.Caller(ChoresWebAppFactory.HouseholdAId)).CreateDbContextAsync())
+        {
+            context.HouseholdCalendarTokens.Add(new HouseholdCalendarToken
+            {
+                UserId = null,
+                Feed = CalendarFeed.Chores,
+                TokenHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(token))),
+                CreatedAt = Now,
+            });
+            await context.SaveChangesAsync();
+        }
+
+        var response = await _factory.CreateAnonymousClient().GetAsync("/api/calendar/chores.ics?token=" + token);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task RotatingTheChoresLink_KillsOnlyThatLink()
     {
         var first = await CreateChoresLinkAsync(ClientA);
