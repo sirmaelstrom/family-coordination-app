@@ -123,7 +123,10 @@
     rebuildCategories();
   });
 
-  /** Retry / reload the current list (the template's Retry button). */
+  /**
+   * Retry / reload (the template's Retry button). Unconditional: with no list selected yet (a failed first
+   * visit) the load fetches the summaries and picks the top list (council r7: the old guard made Retry inert).
+   */
   function loadList(_listId: number | null) {
     void sl.load();
   }
@@ -180,6 +183,9 @@
       // Close on success. On a 409 (someone else changed the item since this dialog opened) close too: the list
       // refreshes to their version and the user redoes the edit there. Other failures keep the dialog open.
       if (outcome === 'ok' || outcome === 'conflict') itemDialogOpen = false;
+      else if (outcome === 'skipped') {
+        showToast({ message: 'That item is still saving — try again in a moment.', kind: 'info' });
+      }
     } finally {
       itemDialogSubmitting = false;
     }
@@ -341,7 +347,7 @@
       <button
         type="button"
         class="sl-inline-retry"
-        onclick={() => currentListId != null && loadList(currentListId)}
+        onclick={() => loadList(currentListId)}
       >
         Retry
       </button>

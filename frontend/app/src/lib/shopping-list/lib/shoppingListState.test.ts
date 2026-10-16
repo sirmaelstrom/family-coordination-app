@@ -27,7 +27,17 @@ vi.mock('./api', async () => {
 vi.mock('$lib/shared/toast-store.svelte', () => ({ showToast: vi.fn() }));
 
 import { ShoppingListState } from './shoppingListState.svelte';
-import { ApiError, archiveList, createList, getList, listLists, patchItem, updateSortOrders } from './api';
+import {
+  ApiError,
+  addItem,
+  archiveList,
+  createList,
+  deleteItem,
+  getList,
+  listLists,
+  patchItem,
+  updateSortOrders,
+} from './api';
 import { showToast } from '$lib/shared/toast-store.svelte';
 import type { ShoppingListDto, ShoppingListItemDto, ShoppingListSummaryDto } from './types';
 
@@ -205,6 +215,112 @@ describe('ShoppingListState on one Resource (41337b6f slice 8)', () => {
     await sl.settled();
     expect(sl.error).toBe('boom');
     expect(sl.currentListId).toBe(2);
+  });
+
+  // ── council r7 ──────────────────────────────────────────────────────────────────────────────
+
+  it("after a list switch, a delete targets the list ON SCREEN — never the other list's same-numbered item", async () => {
+    // Item ids are per list. The user picks list 2; its load hasn't landed, so list 1's rows are still shown.
+    const pending = deferred<ShoppingListDto>();
+    vi.mocked(listLists).mockResolvedValue([summary(1), summary(2)]);
+    vi.mocked(getList).mockReturnValueOnce(pending.promise);
+    const switching = sl.selectList(2);
+    expect(sl.currentListId).toBe(2);
+    expect(sl.list?.id).toBe(1);
+
+    vi.mocked(deleteItem).mockResolvedValueOnce(undefined);
+    await sl.deleteItem(sl.list!.items[0]); // the shown item 1 — of list 1
+    expect(deleteItem).toHaveBeenCalledWith(1, 1);
+    pending.resolve(listDto(2));
+    await switching;
+    await sl.settled();
+  });
+
+  it("a write's answer never lands on another list's rows", async () => {
+    const patch = deferred<ShoppingListItemDto>();
+    vi.mocked(patchItem).mockReturnValueOnce(patch.promise);
+    vi.mocked(listLists).mockResolvedValue([summary(1), summary(2)]);
+    const checking = sl.setChecked(sl.list!.items[0], true);
+    // While the PATCH is out, list 2 becomes the list on screen (its item 1 is a different item).
+    sl.list = listDto(2, [item(1, { name: 'other list', version: 3 })]);
+    patch.resolve(item(1, { isChecked: true, version: 11 }));
+    await checking;
+    expect(sl.list.items[0]).toMatchObject({ name: 'other list', isChecked: false, version: 3 });
+    await sl.settled();
+  });
+
+  it('a failed reorder keeps its items pending until the refresh lands (no tap with an unreconciled token)', async () => {
+    const two = [item(1), item(2)];
+    sl.list = listDto(1, two);
+    vi.mocked(updateSortOrders).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const refresh = deferred<ShoppingListDto>();
+    vi.mocked(listLists).mockResolvedValue([summary(1)]);
+    vi.mocked(getList).mockReturnValueOnce(refresh.promise);
+
+    const reordering = sl.reorder('Other', [sl.list.items[1], sl.list.items[0]]);
+    await flush();
+    try {
+      expect(sl.pendingIds.has(1)).toBe(true); // the write has failed, but its refresh is still out
+      expect(await sl.setChecked(sl.list.items[0], true)).toBe('skipped');
+      expect(patchItem).not.toHaveBeenCalled();
+    } finally {
+      refresh.resolve(listDto(1, two));
+    }
+    await reordering;
+    expect(sl.pendingIds.size).toBe(0);
+  });
+
+  it('an edit during a reorder is refused (it would carry the pre-reorder token)', async () => {
+    const answer = deferred<{ items: { id: number; versionBefore: number; version: number }[] }>();
+    vi.mocked(updateSortOrders).mockReturnValueOnce(answer.promise as never);
+    const reordering = sl.reorder('Other', [sl.list!.items[0]]);
+    expect(await sl.editItem(sl.list!.items[0], { name: 'x', quantity: 1, unit: null, category: 'Other' })).toBe('skipped');
+    answer.resolve({ items: [{ id: 1, versionBefore: 10, version: 11 }] });
+    await reordering;
+  });
+
+  it('a failed summaries GET keeps the list that loaded (and the previous switcher)', async () => {
+    vi.mocked(listLists).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    vi.mocked(getList).mockResolvedValueOnce(listDto(1, [item(1, { name: 'fresh' })]));
+    await sl.load();
+    expect(sl.list?.items[0].name).toBe('fresh');
+    expect(sl.lists.map((l) => l.id)).toEqual([1, 2]);
+    expect(sl.error).toBeNull();
+  });
+
+  it('a first load retired by a write keeps the spinner (no "No active shopping lists" flash)', async () => {
+    const first = deferred<ShoppingListSummaryDto[]>();
+    vi.mocked(listLists).mockReturnValueOnce(first.promise);
+    const s = new ShoppingListState(7);
+    s.list = listDto(7); // a list object exists so a write can start; loading is still the first load's
+    s.loading = true;
+    const patch = deferred<ShoppingListItemDto>();
+    vi.mocked(patchItem).mockReturnValueOnce(patch.promise);
+    const loading = s.load();
+    const checking = s.setChecked(s.list.items[0], true); // retires the first load
+    expect(s.loading).toBe(true);
+    first.resolve([summary(7)]);
+    vi.mocked(getList).mockResolvedValue(listDto(7));
+    vi.mocked(listLists).mockResolvedValue([summary(7)]);
+    patch.resolve(item(1, { isChecked: true, version: 11 }));
+    await loading;
+    await checking;
+    await s.settled();
+    expect(s.loading).toBe(false);
+  });
+
+  it('the item dialog outcomes: add ok, edit conflict, add rejected', async () => {
+    vi.mocked(addItem).mockResolvedValueOnce(item(5));
+    expect(await sl.addItem({ name: 'eggs', quantity: 12, unit: null, category: 'Dairy' })).toBe('ok');
+    expect(sl.list!.items.map((i) => i.id)).toContain(5);
+    vi.mocked(patchItem).mockRejectedValueOnce(new ApiError(409, 'stale'));
+    vi.mocked(listLists).mockResolvedValue([summary(1)]);
+    vi.mocked(getList).mockResolvedValue(listDto(1));
+    expect(await sl.editItem(sl.list!.items[0], { name: 'x', quantity: 1, unit: null, category: 'Other' })).toBe('conflict');
+    await sl.settled();
+    vi.mocked(addItem).mockRejectedValueOnce(new ApiError(400, 'bad'));
+    expect(await sl.addItem({ name: '', quantity: null, unit: null, category: 'Other' })).toBe('rejected');
+    await sl.settled();
   });
 
   it('a reorder keeps the moved items pending until its answer brings their tokens; a failure refreshes', async () => {

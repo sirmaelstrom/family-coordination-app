@@ -44,13 +44,14 @@ import { showToast } from '$lib/shared/toast-store.svelte';
 /** What one load fetched: the summaries, and the list it was asked for (null when none / not found). */
 interface Loaded {
   listId: number | null;
-  lists: ShoppingListSummaryDto[];
+  /** null when the summaries GET failed but the list itself loaded (the switcher keeps its last value). */
+  lists: ShoppingListSummaryDto[] | null;
   list: ShoppingListDto | null;
   notFound: boolean;
 }
 
 const ITEM_CHANGED = 'That item changed — the list was refreshed.';
-const ITEM_GONE = "That item isn't on the list any more — refreshed.";
+const ITEM_GONE = "That item couldn't be updated — the list was refreshed.";
 const LIST_CHANGED = 'That list changed — refreshed.';
 
 export class ShoppingListState {
@@ -69,8 +70,11 @@ export class ShoppingListState {
   #resource = new Resource<Loaded>({
     fetch: async () => {
       const listId = this.currentListId;
-      const listsP = listLists();
-      if (listId == null) return { listId, lists: await listsP, list: null, notFound: false };
+      if (listId == null) return { listId, lists: await listLists(), list: null, notFound: false };
+      // The summaries are secondary to the list on screen: a failed summaries GET keeps the previous switcher
+      // (null = unchanged) rather than discard a list that loaded (council r7 — no availability regression
+      // from loading them together).
+      const listsP = listLists().catch(() => null);
       try {
         const [lists, list] = await Promise.all([listsP, getList(listId)]);
         return { listId, lists, list, notFound: false };
@@ -79,8 +83,9 @@ export class ShoppingListState {
         return { listId, lists: await listsP, list: null, notFound: true };
       }
     },
-    commit: ({ listId, lists, list, notFound }) => {
+    commit: ({ listId, lists: fetchedLists, list, notFound }) => {
       this.#loadEnded = true;
+      const lists = fetchedLists ?? this.lists;
       this.lists = lists;
       if (listId == null) {
         // No list selected (first visit): default to the top one, then load it.
@@ -126,10 +131,9 @@ export class ShoppingListState {
 
   /** Items with a write in flight — a second tap would carry the same token and 409 against the first. */
   get pendingIds(): ReadonlySet<number> {
-    const keys = this.#resource.pendingKeys;
-    if (this.#reordering.size === 0) return keys as ReadonlySet<number>;
+    // Item ids only — the list-level 'favorite' key is not an item.
     const merged = new Set<number>();
-    for (const k of keys) if (typeof k === 'number') merged.add(k);
+    for (const k of this.#resource.pendingKeys) if (typeof k === 'number') merged.add(k);
     for (const id of this.#reordering) merged.add(id);
     return merged;
   }
@@ -157,6 +161,21 @@ export class ShoppingListState {
     queueMicrotask(() => void this.load());
   }
 
+  /**
+   * The list whose items are ON SCREEN — the one every item and list write targets (council r7). Item ids are
+   * per list, so a write must never go to `currentListId` while the previous list's rows are still shown
+   * (a list switch, create or archive has pointed at a new list whose load hasn't landed yet): deleting shown
+   * item 3 would delete the OTHER list's item 3. Null when no list is shown.
+   */
+  #shownListId(): number | null {
+    return this.list?.id ?? null;
+  }
+
+  /** The rows of `listId` if it is still the list on screen — a write's answer never lands on another list's rows. */
+  #rowsOf(listId: number): ShoppingListItemDto[] | undefined {
+    return this.list?.id === listId ? this.list.items : undefined;
+  }
+
   #isPending(id: number): boolean {
     return this.#resource.isPending(id) || this.#reordering.has(id);
   }
@@ -165,7 +184,7 @@ export class ShoppingListState {
 
   /** Check / uncheck an item. Resolves to the write's outcome ('ok' → the caller may offer Undo). */
   async setChecked(item: ShoppingListItemDto, target: boolean): Promise<MutationOutcome> {
-    const listId = this.currentListId;
+    const listId = this.#shownListId();
     if (!this.list || listId == null || this.#isPending(item.id)) return 'skipped';
     const prev = { isChecked: item.isChecked, checkedAt: item.checkedAt };
     const sentVersion = item.version;
@@ -177,14 +196,14 @@ export class ShoppingListState {
         return () => Object.assign(item, prev);
       },
       call: () => patchItem(listId, item.id, { isChecked: target, version: sentVersion }),
-      commit: (updated) => adoptItem(this.list?.items, item, updated, sentVersion),
+      commit: (updated) => adoptItem(this.#rowsOf(listId), item, updated, sentVersion),
       // 409 (the item changed since this tab read it) / 404 (it's gone) → undo, notice, refresh.
       messages: { conflict: ITEM_CHANGED, rejected: ITEM_GONE, failed: "Couldn't update that item right now." },
     });
   }
 
   async setQuantity(item: ShoppingListItemDto, delta: number): Promise<void> {
-    const listId = this.currentListId;
+    const listId = this.#shownListId();
     if (!this.list || listId == null || item.quantity == null || this.#isPending(item.id)) return;
     const next = item.quantity + delta;
     if (next < 1) return;
@@ -199,23 +218,23 @@ export class ShoppingListState {
         };
       },
       call: () => patchItem(listId, item.id, { quantity: next, version: sentVersion }),
-      commit: (updated) => adoptItem(this.list?.items, item, updated, sentVersion),
+      commit: (updated) => adoptItem(this.#rowsOf(listId), item, updated, sentVersion),
       messages: { conflict: ITEM_CHANGED, rejected: ITEM_GONE, failed: "Couldn't update that item right now." },
     });
   }
 
   /** Add an item (not optimistic: the server assigns the id). */
   async addItem(value: Parameters<typeof addItem>[1]): Promise<MutationOutcome> {
-    const listId = this.currentListId;
+    const listId = this.#shownListId();
     if (listId == null || !this.list) return 'skipped';
     return this.#resource.mutate({
       call: () => addItem(listId, value),
       commit: (created) => {
-        if (this.list && this.currentListId === listId) this.list.items = [...this.list.items, created];
+        if (this.list?.id === listId) this.list.items = [...this.list.items, created];
       },
       messages: {
         conflict: LIST_CHANGED,
-        rejected: "That item couldn't be added — check the details.",
+        rejected: "That item couldn't be added — the list was refreshed.",
         failed: "Couldn't add that item right now.",
       },
     });
@@ -229,8 +248,8 @@ export class ShoppingListState {
     initial: ShoppingListItemDto,
     value: { name: string; quantity: number | null; unit: string | null; category: string },
   ): Promise<MutationOutcome> {
-    const listId = this.currentListId;
-    if (listId == null || !this.list) return 'skipped';
+    const listId = this.#shownListId();
+    if (listId == null || !this.list || this.#isPending(initial.id)) return 'skipped'; // incl. a reorder in flight
     return this.#resource.mutate({
       key: initial.id,
       call: () =>
@@ -242,26 +261,26 @@ export class ShoppingListState {
           category: value.category,
         }),
       commit: (updated) => {
-        const items = this.list?.items;
+        const items = this.#rowsOf(listId);
         const idx = items?.findIndex((i) => i.id === updated.id) ?? -1;
         if (items && idx >= 0) items[idx] = updated;
       },
       messages: {
         conflict: ITEM_CHANGED,
-        rejected: "That item couldn't be saved — check the details.",
+        rejected: "That item couldn't be saved — the list was refreshed.",
         failed: "Couldn't save that item right now.",
       },
     });
   }
 
   async deleteItem(item: ShoppingListItemDto): Promise<void> {
-    const listId = this.currentListId;
+    const listId = this.#shownListId();
     if (listId == null || !this.list || this.#isPending(item.id)) return;
     await this.#resource.mutate({
       key: item.id,
       call: () => deleteItem(listId, item.id),
       commit: () => {
-        if (this.list) this.list.items = this.list.items.filter((i) => i.id !== item.id);
+        if (this.list?.id === listId) this.list.items = this.list.items.filter((i) => i.id !== item.id);
       },
       messages: { conflict: LIST_CHANGED, rejected: ITEM_GONE, failed: "Couldn't delete that item right now." },
     });
@@ -273,7 +292,7 @@ export class ShoppingListState {
    * once the reorder commits (quest 8cf3c806). Any failure refreshes the list (the order on screen is unsaved).
    */
   async reorder(category: string, reordered: ShoppingListItemDto[]): Promise<void> {
-    const listId = this.currentListId;
+    const listId = this.#shownListId();
     if (listId == null) return;
     const updates: SortOrderUpdate[] = reordered.map((item, index) => ({ itemId: item.id, sortOrder: index, category }));
     const sent = new Map(
@@ -281,15 +300,20 @@ export class ShoppingListState {
     );
     const movedIds = reordered.map((item) => item.id);
     this.#reordering = new Set([...this.#reordering, ...movedIds]);
+    let outcome: MutationOutcome = 'ok';
     try {
-      await this.#resource.mutate({
+      outcome = await this.#resource.mutate({
         call: () => updateSortOrders(listId, updates),
         // Adopt the answered tokens only where the reorder read the row at the token this tab held.
-        commit: (result) => adoptReorderVersions(this.list?.items, sent, result.items),
+        commit: (result) => adoptReorderVersions(this.#rowsOf(listId), sent, result.items),
         reload: 'on-error',
         messages: { conflict: LIST_CHANGED, rejected: LIST_CHANGED, failed: "Couldn't save the new order — refreshed." },
       });
     } finally {
+      // A failed reorder leaves rows whose order/tokens are unsaved: keep them pending until the refresh it
+      // started has landed, so no tap sends an unreconciled token meanwhile (council r7). A success releases
+      // them at once (the answer brought their tokens).
+      if (outcome !== 'ok') await this.#resource.settled();
       const next = new Set(this.#reordering);
       for (const id of movedIds) next.delete(id);
       this.#reordering = next;
@@ -299,7 +323,7 @@ export class ShoppingListState {
   // ── List writes ─────────────────────────────────────────────────────────────
 
   async toggleFavorite(): Promise<void> {
-    const listId = this.currentListId;
+    const listId = this.#shownListId();
     const list = this.list;
     if (listId == null || !list) return;
     const prev = list.isFavorite;
@@ -326,13 +350,13 @@ export class ShoppingListState {
   }
 
   async regenerate(): Promise<boolean> {
-    const listId = this.currentListId;
+    const listId = this.#shownListId();
     if (listId == null) return false;
     return this.#surface(async () => {
       await this.#listWrite(
         () => regenerateList(listId),
         (updated) => {
-          if (this.currentListId === listId) this.list = updated;
+          if (this.list?.id === listId) this.list = updated;
         },
       );
       showToast({ message: 'List regenerated from the meal plan', kind: 'success' });
@@ -340,13 +364,13 @@ export class ShoppingListState {
   }
 
   async rename(newName: string): Promise<boolean> {
-    const listId = this.currentListId;
+    const listId = this.#shownListId();
     if (listId == null || !this.list) return false;
     return this.#surface(() =>
       this.#listWrite(
         () => renameList(listId, newName),
         (r) => {
-          if (this.list && this.currentListId === listId) this.list.name = r.name;
+          if (this.list?.id === listId) this.list.name = r.name;
         },
       ),
     );
@@ -373,7 +397,7 @@ export class ShoppingListState {
   }
 
   async clearChecked(): Promise<void> {
-    const listId = this.currentListId;
+    const listId = this.#shownListId();
     if (listId == null) return;
     await this.#surface(async () => {
       const { removed } = await this.#listWrite(() => clearChecked(listId));
@@ -383,7 +407,7 @@ export class ShoppingListState {
 
   /** Archive the current list and move to the next one (the reload at settle loads it). */
   async archive(): Promise<void> {
-    const listId = this.currentListId;
+    const listId = this.#shownListId();
     if (listId == null) return;
     await this.#surface(async () => {
       await this.#listWrite(
