@@ -1,5 +1,6 @@
 import type { DashboardDto, DashboardMealDto, MealType, ShellContext } from './types';
 import { getDashboard } from './api';
+import { Resource } from '$lib/data/resource.svelte';
 
 /** A meal-type group for the Today's Meals card (preserves the server's MealType ordering). */
 export interface MealGroup {
@@ -10,8 +11,8 @@ export interface MealGroup {
 /**
  * The dashboard island store (Svelte-5 rune rule: export the class INSTANCE, never a
  * reassigned `$state`). Read-only — one aggregate GET, then liveness/refocus reconcile.
- * No writes ⇒ no optimistic/draft machinery; the one race guard is `#seq` (a slow earlier
- * load that resolves after a newer one is dropped).
+ * No writes ⇒ no optimistic/draft machinery; the one race guard is the Resource's load ordering
+ * (a slow earlier load that resolves after a newer one is dropped).
  */
 export class DashboardStore {
   data = $state<DashboardDto | null>(null);
@@ -19,8 +20,22 @@ export class DashboardStore {
   error = $state<string | null>(null);
   currentUserId = $state(0);
 
-  // Monotonic load guard — only the newest load's response is applied.
-  #seq = 0;
+  // Load ordering (quest 41337b6f): the Resource drops a superseded response and its error. `loading`
+  // keeps its meaning here — true until the first current load settles, never re-raised by polls.
+  #resource = new Resource<DashboardDto>({
+    fetch: () => getDashboard(),
+    commit: (d) => {
+      this.data = d;
+      this.error = null;
+    },
+    // Keep the last good data (no blank-out) and surface a calm error.
+    onLoadError: (e) => {
+      this.error = e instanceof Error ? e.message : 'Failed to load the dashboard.';
+    },
+    onLoadIdle: () => {
+      this.loading = false;
+    },
+  });
 
   /** "needs attention" = overdue + due-today (display logic, not a wire field). */
   choreAttention = $derived(this.data ? this.data.chores.overdue + this.data.chores.dueToday : 0);
@@ -52,22 +67,10 @@ export class DashboardStore {
 
   /** Load the aggregate. Guarded so an out-of-order (stale) response is ignored. */
   async load(): Promise<void> {
-    const seq = ++this.#seq;
-    try {
-      const d = await getDashboard();
-      if (seq !== this.#seq) return; // superseded by a newer load
-      this.data = d;
-      this.error = null;
-    } catch (e) {
-      if (seq !== this.#seq) return;
-      // Keep the last good data (no blank-out) and surface a calm error.
-      this.error = e instanceof Error ? e.message : 'Failed to load the dashboard.';
-    } finally {
-      if (seq === this.#seq) this.loading = false;
-    }
+    await this.#resource.load();
   }
 
-  /** Liveness tick + error reconcile — just re-load; the seq guard drops stale ticks. */
+  /** Liveness tick + error reconcile — just re-load; the Resource drops stale ticks. */
   reconcile(): void {
     void this.load();
   }
