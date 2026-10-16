@@ -57,4 +57,46 @@ public sealed class MemberCalendarLinksMigrationTests(PostgresContainerFixture p
             .Should().Equal("MealPlan", "MealPlan", "MealPlan");
         (await context.Database.GetPendingMigrationsAsync()).Should().BeEmpty();
     }
+
+    /// <summary>
+    /// Rolling back past the migration (an operator's hand-run <c>Down</c>) must not fail on the data it allowed:
+    /// several active member links in one household, beside the legacy shared one, and a link of another feed.
+    /// Down keeps one active row per household (the shared link when one is active, else the newest member link)
+    /// and revokes the rest, so the old per-household unique index can be rebuilt.
+    /// </summary>
+    [Fact]
+    public async Task Down_ReducesActiveLinksToOnePerHousehold_PreferringTheSharedLink()
+    {
+        var connectionString = await postgres.CreateDatabaseConnectionStringAsync();
+        await using var context = new ApplicationDbContext(PostgresDbContextFactory.BuildOptions(connectionString));
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync();
+
+        await context.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO "Households" ("Id", "Name", "CreatedAt") VALUES
+                (1, 'Shared kept', '2026-09-01T00:00:00Z'),
+                (2, 'Members only', '2026-09-01T00:00:00Z');
+            INSERT INTO "Users" ("Id", "HouseholdId", "Email", "DisplayName", "IsWhitelisted", "CreatedAt", "Initials") VALUES
+                (1, 1, 'a1@x.test', 'A1', true, '2026-09-01T00:00:00Z', 'A'),
+                (2, 1, 'a2@x.test', 'A2', true, '2026-09-01T00:00:00Z', 'A'),
+                (3, 2, 'b1@x.test', 'B1', true, '2026-09-01T00:00:00Z', 'B'),
+                (4, 2, 'b2@x.test', 'B2', true, '2026-09-01T00:00:00Z', 'B');
+            INSERT INTO "HouseholdCalendarTokens" ("HouseholdId", "UserId", "Feed", "TokenHash", "CreatedAt", "RevokedAt") VALUES
+                (1, NULL, 'MealPlan', 'H1-SHARED', '2026-09-04T00:00:00Z', NULL),
+                (1, 1, 'MealPlan', 'H1-A1', '2026-10-01T00:00:00Z', NULL),
+                (1, 2, 'MealPlan', 'H1-A2', '2026-10-02T00:00:00Z', NULL),
+                (2, 3, 'MealPlan', 'H2-B1', '2026-10-01T00:00:00Z', NULL),
+                (2, 4, 'MealPlan', 'H2-B2', '2026-10-03T00:00:00Z', NULL),
+                (2, 4, 'Chores', 'H2-B2-CHORES', '2026-10-04T00:00:00Z', NULL);
+            """);
+
+        await migrator.MigrateAsync(PreviousMigration);
+
+        var active = await context.Database
+            .SqlQueryRaw<string>("""SELECT "TokenHash" AS "Value" FROM "HouseholdCalendarTokens" WHERE "RevokedAt" IS NULL ORDER BY "HouseholdId" """)
+            .ToListAsync();
+        active.Should().Equal(["H1-SHARED", "H2-B2"],
+            "one active link per household: the shared one where it exists, else the newest meal-plan member link; a chores link never becomes a meal-plan link");
+    }
 }

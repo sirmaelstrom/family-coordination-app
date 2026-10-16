@@ -64,6 +64,27 @@ namespace FamilyCoordinationApp.Migrations
                 name: "IX_HouseholdCalendarTokens_UserId",
                 table: "HouseholdCalendarTokens");
 
+            // The old schema holds one active meal-plan link per household, and has no other feed. Reduce to that
+            // before the columns that tell the rows apart are gone: revoke every active non-meal-plan row (it would
+            // otherwise open the meal plan), then keep one active row per household (the legacy shared link if
+            // one is active, else the newest member link) and revoke the rest. Without this the unique index below
+            // fails on any household where two members had links.
+            migrationBuilder.Sql(
+                """
+                UPDATE "HouseholdCalendarTokens"
+                SET "RevokedAt" = now()
+                WHERE "RevokedAt" IS NULL AND "Feed" <> 'MealPlan';
+
+                UPDATE "HouseholdCalendarTokens"
+                SET "RevokedAt" = now()
+                WHERE "RevokedAt" IS NULL
+                  AND "Id" NOT IN (
+                      SELECT DISTINCT ON ("HouseholdId") "Id"
+                      FROM "HouseholdCalendarTokens"
+                      WHERE "RevokedAt" IS NULL
+                      ORDER BY "HouseholdId", ("UserId" IS NULL) DESC, "CreatedAt" DESC, "Id" DESC);
+                """);
+
             migrationBuilder.DropColumn(
                 name: "Feed",
                 table: "HouseholdCalendarTokens");
