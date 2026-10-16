@@ -210,6 +210,9 @@ class ConnectionsStore {
       // envelope, so a business "no" refreshes too — harmless, and it converges on server truth).
       const code = this.enteredCode;
       const res = await this.#resource.run({ call: () => acceptCode(code) });
+      // As before the migration, the confirm stays up (accepting) until the refreshed list has landed,
+      // so the new connection is listed when it closes (council r3).
+      await this.#resource.settled();
       if (res.success) {
         showToast({
           message: `You're now connected with ${res.connectedHouseholdName}! Browse their recipes from your Recipes page.`,
@@ -246,8 +249,14 @@ class ConnectionsStore {
     if (!target) return;
     this.disconnecting = true;
     try {
-      // reload 'always': the list refreshes after the write settles, success or failure.
-      await this.#resource.run({ call: () => disconnect(target.householdId) });
+      // The confirmed disconnect drops its row at once (council r3: no "Stop Sharing" left on a row the
+      // toast says is gone); reload 'always' then refreshes the list, success or failure.
+      await this.#resource.run({
+        call: () => disconnect(target.householdId),
+        commit: () => {
+          this.connected = this.connected.filter((c) => c.householdId !== target.householdId);
+        },
+      });
       showToast({ message: `Stopped sharing with ${target.householdName}`, kind: 'success' });
     } catch (e) {
       showToast({ message: describe(e, 'disconnect'), kind: 'error' });

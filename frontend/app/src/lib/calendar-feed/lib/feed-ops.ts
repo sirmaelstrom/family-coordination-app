@@ -2,8 +2,11 @@
 // Pure state transitions for the calendar-feed card (quest 17e38a88). The
 // store (feedStore.svelte.ts) is a thin reactive shell over these; the part a
 // unit test can pin down is the COPY-ONCE rule: the feed URL exists in the UI
-// state only between the POST response and the next status load or revoke —
-// it is never re-derived from GET, because the server cannot return it.
+// state only from the POST response until the next page (re)load, a revoke, a
+// failed create/rotate, or a status saying no token is active — it is never
+// re-derived from GET, because the server cannot return it. (The store keeps the
+// reveal apart from the status, so the confirming status load a write owes does
+// not erase it — quest 41337b6f.)
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { CalendarTokenStatusDto, CalendarTokenCreatedDto } from './types';
@@ -14,7 +17,7 @@ export type FeedPhase =
   | { kind: 'none' }
   /** GET says a token is active, but the URL is not readable (created earlier, or copied already). */
   | { kind: 'active'; createdAt: string | null }
-  /** The POST response is in hand: the URL is readable exactly until the next load/revoke. */
+  /** The POST response is in hand: the URL is readable until a page (re)load, a revoke, or a failed write. */
   | { kind: 'revealed'; createdAt: string | null; url: string };
 
 /** GET → phase. A status load can never produce a readable URL (copy-once). */

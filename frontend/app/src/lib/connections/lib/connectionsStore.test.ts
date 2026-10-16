@@ -92,19 +92,45 @@ describe('connectionsStore on the Resource (41337b6f slice 2)', () => {
     expect(connectionsStore.activeInvite).toBeNull();
   });
 
-  it('accept refreshes the connected list once, after the write settles', async () => {
+  it('accept keeps the confirm up until the refreshed list has landed, then refreshes once', async () => {
     connectionsStore.setCode('xyz789');
+    connectionsStore.showConfirm = true;
     vi.mocked(acceptCode).mockResolvedValueOnce({ success: true, connectedHouseholdName: 'Others', error: null });
-    vi.mocked(getConnections).mockResolvedValueOnce(dto(null, [OTHER]));
+    const refresh = deferred<ConnectionsDto>();
+    vi.mocked(getConnections).mockReturnValueOnce(refresh.promise);
 
-    await connectionsStore.accept();
+    const accepting = connectionsStore.accept();
     await flush();
+    expect(getConnections).toHaveBeenCalledTimes(1); // dispatched at settle
+    expect(connectionsStore.accepting).toBe(true); // ...and awaited, as before the migration
+    expect(connectionsStore.showConfirm).toBe(true);
+
+    refresh.resolve(dto(null, [OTHER]));
+    await accepting;
 
     expect(acceptCode).toHaveBeenCalledWith('XYZ789');
+    expect(connectionsStore.showConfirm).toBe(false);
     expect(getConnections).toHaveBeenCalledTimes(1);
     expect(connectionsStore.connected).toEqual([OTHER]);
     expect(connectionsStore.enteredCode).toBe('');
     expect(connectionsStore.accepting).toBe(false);
+  });
+
+  it('a confirmed disconnect drops its row at once, before the refresh lands', async () => {
+    connectionsStore.connected = [OTHER];
+    connectionsStore.askDisconnect(OTHER);
+    vi.mocked(disconnect).mockResolvedValueOnce(undefined);
+    const refresh = deferred<ConnectionsDto>();
+    vi.mocked(getConnections).mockReturnValueOnce(refresh.promise); // a stalled refresh
+
+    await connectionsStore.confirmDisconnect();
+
+    expect(connectionsStore.connected).toEqual([]);
+    expect(connectionsStore.disconnectTarget).toBeNull();
+    expect(showToast).toHaveBeenCalledWith({ message: 'Stopped sharing with Others', kind: 'success' });
+    expect(getConnections).toHaveBeenCalledTimes(1);
+    refresh.resolve(dto(null, []));
+    await flush();
   });
 
   it('a failed disconnect toasts and reconciles the list', async () => {

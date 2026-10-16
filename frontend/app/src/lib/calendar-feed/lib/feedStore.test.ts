@@ -74,6 +74,31 @@ describe('feedStore on the Resource (41337b6f slice 2)', () => {
     expect(getCalendarTokenStatus).toHaveBeenCalledTimes(2); // the retired load is owed once at settle
   });
 
+  it('a stale status answered WHILE a rotate is pending never commits (the write-start retire)', async () => {
+    vi.mocked(getCalendarTokenStatus).mockResolvedValueOnce(ACTIVE);
+    await feedStore.load();
+    expect(feedStore.phase.kind).toBe('active');
+    vi.resetAllMocks();
+
+    const stale = deferred<CalendarTokenStatusDto>();
+    const post = deferred<CalendarTokenCreatedDto>();
+    vi.mocked(getCalendarTokenStatus).mockReturnValueOnce(stale.promise).mockResolvedValueOnce(ACTIVE);
+    vi.mocked(createOrRotateCalendarToken).mockReturnValueOnce(post.promise);
+
+    const loading = feedStore.load();
+    const rotating = feedStore.createOrRotate();
+    stale.resolve(NONE); // answered before the POST's response
+    await loading;
+    expect(feedStore.phase.kind).toBe('active'); // the pre-write "none" did not land mid-write
+    expect(feedStore.loading).toBe(false);
+
+    post.resolve(CREATED);
+    await rotating;
+    await flush();
+    expect(feedStore.url).toBe(CREATED.url);
+    expect(getCalendarTokenStatus).toHaveBeenCalledTimes(2); // the retired load, owed once at settle
+  });
+
   it('a load requested while a revoke is pending is deferred, and a stale "active" never resurrects', async () => {
     vi.mocked(createOrRotateCalendarToken).mockResolvedValueOnce(CREATED);
     vi.mocked(getCalendarTokenStatus).mockResolvedValueOnce(ACTIVE);

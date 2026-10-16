@@ -16,7 +16,10 @@
 // the confirming load a write owes at settle must not throw away the URL that
 // write's own response just revealed. The URL is forgotten by a page (re)load
 // (`load()`), a revoke, a failed create/rotate, or a status saying no token is
-// active.
+// active. Accepted limit: the status cannot say WHICH token is active, so a
+// rotation from another device leaves this card's (now dead) URL up until the
+// next page load — the card does not poll. A failed revoke forgets the URL too
+// (as before): a network failure can't prove the DELETE didn't land.
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { FeedPhase } from './feed-ops';
