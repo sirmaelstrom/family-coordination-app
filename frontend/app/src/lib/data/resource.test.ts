@@ -218,11 +218,15 @@ describe('Resource.mutate — optimistic, commit, the three-way branch', () => {
       () => Promise.reject(new TypeError('net')),
     ]) {
       const call = deferred<void>();
+      const before = h.res.pendingKeys;
       const writing = h.res.mutate({ key: 'k', call: () => call.promise, reload: 'never' });
       expect(h.res.isPending('k')).toBe(true);
+      const during = h.res.pendingKeys;
+      expect(during).not.toBe(before); // copy-on-write: an in-place add would not notify readers
       settle().then(call.resolve, call.reject);
       await writing;
       expect(h.res.isPending('k')).toBe(false);
+      expect(h.res.pendingKeys).not.toBe(during);
       expect(h.res.writesPending).toBe(false);
     }
   });

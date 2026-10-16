@@ -108,6 +108,11 @@ export class Resource<T> {
     return this.#pendingKeys.has(key);
   }
 
+  /** The pending keys. A NEW set on every change — that replacement is what makes reads reactive. */
+  get pendingKeys(): ReadonlySet<Key> {
+    return this.#pendingKeys;
+  }
+
   /** Load now — or, while a write is pending, dispatch nothing and owe one load at settle. */
   async load(): Promise<LoadOutcome> {
     if (this.#writes > 0) {
