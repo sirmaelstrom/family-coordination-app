@@ -14,6 +14,7 @@
   import type { MealRecipeSummaryDto, RecipeType } from '../types';
   import { searchRecipes, quickCreateRecipe, ApiError } from '../api';
   import { RECIPE_TYPES, recipeTypeLabel } from '$lib/api/recipeType';
+  import { Resource } from '$lib/data/resource.svelte';
 
   type Mode = 'search' | 'custom' | 'new';
 
@@ -46,7 +47,8 @@
   /** True when the last search request FAILED (vs. genuinely returned nothing) — drives an honest error row. */
   let searchError = $state(false);
   let selectedRecipe = $state<MealRecipeSummaryDto | null>(null);
-  let searchToken = 0; // guards out-of-order debounced responses
+  /** The query the next search fetches (read by the search Resource's fetch). */
+  let searchQuery = '';
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ── Custom mode ──────────────────────────────────────────────────────────
@@ -86,23 +88,30 @@
     }
   }
 
+  // The Resource (quest 41337b6f) drops a stale response — and its error — when a newer keystroke
+  // superseded it, so out-of-order debounced answers can't overwrite the newest results.
+  const search = new Resource<MealRecipeSummaryDto[]>({
+    fetch: () => searchRecipes(searchQuery),
+    commit: (found) => {
+      results = found;
+    },
+    onLoadStart: () => {
+      searching = true;
+      searchError = false;
+    },
+    // A failed search is NOT "no results" — surface it distinctly (council R1).
+    onLoadError: () => {
+      results = [];
+      searchError = true;
+    },
+    onLoadIdle: () => {
+      searching = false;
+    },
+  });
+
   async function runSearch(q: string): Promise<void> {
-    const token = ++searchToken;
-    searching = true;
-    searchError = false;
-    try {
-      const found = await searchRecipes(q);
-      // Drop a stale response (a newer keystroke superseded this one).
-      if (token === searchToken) results = found;
-    } catch {
-      // A failed search is NOT "no results" — surface it distinctly (council R1).
-      if (token === searchToken) {
-        results = [];
-        searchError = true;
-      }
-    } finally {
-      if (token === searchToken) searching = false;
-    }
+    searchQuery = q;
+    await search.load();
   }
 
   function onQueryInput(): void {

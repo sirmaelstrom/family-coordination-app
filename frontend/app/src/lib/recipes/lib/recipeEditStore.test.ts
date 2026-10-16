@@ -4,15 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // draft saves with THAT token, not the live one, so an edit someone saved after the draft began answers 409
 // (the reload banner) instead of being overwritten.
 
-vi.mock('./api', () => {
-  class ApiError extends Error {
-    constructor(
-      public status: number,
-      message: string,
-    ) {
-      super(message);
-    }
-  }
+// The REAL ApiError (quest 41337b6f): the store branches on its getters (isConflict / isClientRejection),
+// which a stand-in class would not have. Fixture change only — every assertion below is unchanged.
+vi.mock('./api', async () => {
+  const { ApiError } = await vi.importActual<typeof import('$lib/api/client')>('$lib/api/client');
   return {
     ApiError,
     getRecipe: vi.fn(),
@@ -33,6 +28,7 @@ vi.mock('$lib/shared/toast-store.svelte', () => ({ showToast: vi.fn() }));
 import { recipeEditStore } from './recipeEditStore.svelte';
 import { ApiError, deleteDraft, getCategories, getDraft, getRecipe, saveDraft, updateRecipe } from './api';
 import type { RecipeDraftData, RecipeFullDto } from './types';
+import { showToast } from '$lib/shared/toast-store.svelte';
 
 const RECIPE_ID = 12;
 
@@ -224,6 +220,20 @@ describe('recipe draft recovery (adfe3d57)', () => {
     await recipeEditStore.save();
 
     expect(deleteDraft).not.toHaveBeenCalled();
+  });
+
+  it('a 5xx on save keeps the form and the draft, with an error toast (not "the recipe changed")', async () => {
+    vi.mocked(getDraft).mockResolvedValue(draft(3));
+    vi.mocked(updateRecipe).mockRejectedValue(new ApiError(503, 'unavailable'));
+
+    await recipeEditStore.load(RECIPE_ID);
+    await recipeEditStore.save();
+
+    expect(assign).not.toHaveBeenCalled();
+    expect(deleteDraft).not.toHaveBeenCalled();
+    expect(recipeEditStore.conflict).toBe(false);
+    expect(recipeEditStore.error).toBeNull();
+    expect(showToast).toHaveBeenLastCalledWith({ message: 'Something went wrong saving. Please try again.', kind: 'error' });
   });
 
   it('a 404 on the conflict reload deletes the draft it just saved', async () => {

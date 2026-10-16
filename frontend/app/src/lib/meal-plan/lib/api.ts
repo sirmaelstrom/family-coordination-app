@@ -14,7 +14,8 @@ const BASE = '/api/meal-plan';
 // quest 79aa83e7). Meal-plan semantics: entry mutations carry the xmin token
 // and a stale one is a 409 (PR #95); every 4xx → refetch the week + calm
 // toast, no automatic retry — the 409 only changes what the toast says
-// (callers branch on `e.status === 409` directly).
+// (the store's Resource selects that copy by its 'conflict' outcome, via the
+// ApiError getters — quest 41337b6f; a 5xx rolls back without a refetch).
 export { ApiError };
 
 // ─── Board read ─────────────────────────────────────────────────────────────

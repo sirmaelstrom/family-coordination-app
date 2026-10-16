@@ -455,11 +455,14 @@ class RecipeEditStore {
       this.dirty = false; // suppress the beforeunload nav-lock before navigating
       this.navigateToList();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 409) {
+      // The three-way branch goes through the ApiError getters (quest 41337b6f, spec C4): a 5xx is neither
+      // a conflict nor a client rejection, so it keeps the form like a network failure — it no longer
+      // reads as "the recipe changed" and navigates away.
+      if (e instanceof ApiError && e.isConflict) {
         // Stale xmin token — someone else saved since we loaded. NON-destructive: keep the form (and
         // dirty, so the nav-lock still guards) and show the reload banner instead of navigating away.
         this.conflict = true;
-      } else if (e instanceof ApiError) {
+      } else if (e instanceof ApiError && e.isClientRejection) {
         // Other 4xx (e.g. a 404 from a concurrent delete). On a 404 the recipe is gone, so its draft can never
         // save: delete it, or the draft-first load reopens it on every visit (quest adfe3d57). Other 4xx keep it.
         if (e.status === 404) await this.safeDeleteDraft();
