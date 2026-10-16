@@ -4,16 +4,18 @@
 // the list GET sets `accessDenied` (the 403 IS the signal — R-C4, no /context
 // endpoint), and the App renders "Access denied".
 //
-// Discipline (memories svelte5-setup-effect-async-loader-loop + fca-island-async-
-// race-guards): onMount one-time load, `loadSeq` monotonic guard on every load
-// (this view POLLS at 30s, so a stale poll response must never clobber a newer
-// one), await-then-reload mutations, reconcile (refetch) on any 4xx. The approve
-// transaction / 409 already-reviewed guard / IDOR live SERVER-side (the source of
-// truth); the client just reflects them.
+// Discipline (memory svelte5-setup-effect-async-loader-loop): onMount one-time
+// load; this view POLLS at 30s. Load and write ordering live in a Resource
+// (quest 41337b6f): a stale poll never clobbers a newer load, no poll that
+// overlaps an approve/reject/create commits, and the list reloads once when the
+// last write settles (success or failure — a 409 already-reviewed reconciles to
+// the truth, R-C3). The approve transaction / 409 guard / IDOR live SERVER-side
+// (the source of truth); the client just reflects them.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { HouseholdRequestDto, HouseholdSummaryDto } from './types';
+import type { HouseholdRequestDto, HouseholdRequestsDto, HouseholdSummaryDto } from './types';
 import { ApiError, getHouseholdRequests, approveRequest, rejectRequest, createHousehold } from './api';
+import { Resource } from '$lib/data/resource.svelte';
 import { showToast } from '$lib/shared/toast-store.svelte';
 
 class HouseholdRequestsStore {
@@ -27,52 +29,54 @@ class HouseholdRequestsStore {
   creating = $state(false);
 
   private hasLoaded = false;
-  private seq = 0;
 
-  async load(): Promise<void> {
-    const s = ++this.seq;
-    try {
-      if (!this.hasLoaded) this.loading = true;
-      this.error = null;
-      const dto = await getHouseholdRequests();
-      if (s !== this.seq) return; // a newer load already applied — drop this stale one
+  #resource = new Resource<HouseholdRequestsDto>({
+    fetch: () => getHouseholdRequests(),
+    commit: (dto) => {
       this.requests = dto.requests;
       this.households = dto.households;
       this.accessDenied = false;
       this.hasLoaded = true;
-    } catch (e) {
-      if (s !== this.seq) return;
+    },
+    onLoadStart: () => {
+      if (!this.hasLoaded) this.loading = true; // spinner only on the FIRST load
+      this.error = null;
+    },
+    onLoadError: (e) => {
       if (e instanceof ApiError && e.status === 403) {
         this.accessDenied = true; // the 403 IS the access-denied signal (R-C4)
       } else {
         this.error = describe(e, 'load household requests');
       }
-    } finally {
-      if (s === this.seq) this.loading = false;
-    }
+    },
+    onLoadIdle: () => {
+      this.loading = false;
+    },
+  });
+
+  async load(): Promise<void> {
+    await this.#resource.load();
   }
 
   async approve(id: number, householdName: string): Promise<void> {
+    let summary: HouseholdSummaryDto;
     try {
-      const summary = await approveRequest(id);
-      await this.load();
-      showToast({ message: `Approved — created “${summary.name}”.`, kind: 'success' });
+      summary = await this.#resource.run({ call: () => approveRequest(id) });
     } catch (e) {
-      // A 409 (already reviewed by another admin / a stale poll) reconciles to the truth, R-C3.
-      if (e instanceof ApiError) await this.load();
       showToast({ message: describe(e, `approve “${householdName}”`), kind: 'error' });
+      return;
     }
+    showToast({ message: `Approved — created “${summary.name}”.`, kind: 'success' });
   }
 
   async reject(id: number, reason: string, requestorName: string): Promise<void> {
     try {
-      await rejectRequest(id, reason);
-      await this.load();
-      showToast({ message: `Rejected request from ${requestorName}.`, kind: 'info' });
+      await this.#resource.run({ call: () => rejectRequest(id, reason) });
     } catch (e) {
-      if (e instanceof ApiError) await this.load();
       showToast({ message: describe(e, 'reject request'), kind: 'error' });
+      return;
     }
+    showToast({ message: `Rejected request from ${requestorName}.`, kind: 'info' });
   }
 
   /**
@@ -83,8 +87,9 @@ class HouseholdRequestsStore {
     if (this.creating) return false;
     this.creating = true;
     try {
-      const summary = await createHousehold(householdName, ownerEmail, ownerDisplayName.trim() || undefined);
-      await this.load();
+      const summary = await this.#resource.run({
+        call: () => createHousehold(householdName, ownerEmail, ownerDisplayName.trim() || undefined),
+      });
       showToast({ message: `Created “${summary.name}” — ${ownerEmail} can now sign in.`, kind: 'success' });
       return true;
     } catch (e) {
