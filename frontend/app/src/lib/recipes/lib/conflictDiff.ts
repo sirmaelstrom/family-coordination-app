@@ -23,11 +23,14 @@ export interface DiffableForm {
   imagePath: string | null;
 }
 
-/** One ingredient as either side holds it (an IngredientRow or a RecipeIngredientFullDto). */
+/** One ingredient as either side holds it (an IngredientRow or a RecipeIngredientFullDto). Every field the save
+ *  body writes is here: keep-mine replaces the ingredients wholesale, so a field left out of the compare could
+ *  be overwritten without being shown (slim-review on fca#159). */
 export interface DiffableIngredient {
   quantity: number | null;
   unit: string | null;
   name: string;
+  category: string;
   notes: string | null;
   groupName: string | null;
 }
@@ -78,7 +81,7 @@ function show(value: string | number | null): string {
   return value == null ? '' : String(value);
 }
 
-/** One ingredient as a display line: `qty unit name, notes [group]`, normalized. */
+/** One ingredient as a display line: `qty unit name, notes [group] · category`, normalized. */
 export function ingredientLine(i: DiffableIngredient): string {
   const parts = [norm(i.quantity), norm(i.unit), norm(i.name)].filter((p) => p != null).map(String);
   let line = parts.join(' ');
@@ -86,18 +89,30 @@ export function ingredientLine(i: DiffableIngredient): string {
   if (notes != null) line += `, ${notes}`;
   const group = norm(i.groupName);
   if (group != null) line += ` [${group}]`;
+  const category = norm(i.category);
+  if (category != null) line += ` · ${category}`;
   return line;
 }
 
-/** Multiset difference a − b over strings. */
-function minus(a: string[], b: string[]): string[] {
+/** The comparison key: every normalized field, structured, so values that merely display alike (1 cup + rice vs
+ *  1 + "cup rice") never compare equal. The display line is derived separately. */
+function ingredientKey(i: DiffableIngredient): string {
+  return JSON.stringify([norm(i.quantity), norm(i.unit), norm(i.name), norm(i.category), norm(i.notes), norm(i.groupName)]);
+}
+
+/** Multiset difference a − b by key, keeping a's items. */
+function minus(a: ReadonlyArray<DiffableIngredient>, b: ReadonlyArray<DiffableIngredient>): DiffableIngredient[] {
   const counts = new Map<string, number>();
-  for (const s of b) counts.set(s, (counts.get(s) ?? 0) + 1);
-  const out: string[] = [];
-  for (const s of a) {
-    const n = counts.get(s) ?? 0;
-    if (n > 0) counts.set(s, n - 1);
-    else out.push(s);
+  for (const item of b) {
+    const key = ingredientKey(item);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const out: DiffableIngredient[] = [];
+  for (const item of a) {
+    const key = ingredientKey(item);
+    const n = counts.get(key) ?? 0;
+    if (n > 0) counts.set(key, n - 1);
+    else out.push(item);
   }
   return out;
 }
@@ -106,11 +121,11 @@ export function diffIngredients(
   yours: ReadonlyArray<DiffableIngredient>,
   theirs: ReadonlyArray<DiffableIngredient>,
 ): IngredientDiff | null {
-  const mine = yours.map(ingredientLine);
-  const latest = theirs.map(ingredientLine);
-  if (mine.length === latest.length && mine.every((line, i) => line === latest[i])) return null;
-  const onlyYours = minus(mine, latest);
-  const onlyTheirs = minus(latest, mine);
+  const mine = yours.map(ingredientKey);
+  const latest = theirs.map(ingredientKey);
+  if (mine.length === latest.length && mine.every((key, i) => key === latest[i])) return null;
+  const onlyYours = minus(yours, theirs).map(ingredientLine);
+  const onlyTheirs = minus(theirs, yours).map(ingredientLine);
   return { onlyYours, onlyTheirs, reorderedOnly: onlyYours.length === 0 && onlyTheirs.length === 0 };
 }
 

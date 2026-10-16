@@ -98,8 +98,8 @@
                   {#each diff.fields as row (row.field)}
                     <tr>
                       <th scope="row">{row.label}</th>
-                      <td class="rc-diff-value">{row.yours || '(empty)'}</td>
-                      <td class="rc-diff-value">{row.theirs || '(empty)'}</td>
+                      <td class="rc-diff-value"><div class="rc-diff-scroll">{row.yours || '(empty)'}</div></td>
+                      <td class="rc-diff-value"><div class="rc-diff-scroll">{row.theirs || '(empty)'}</div></td>
                     </tr>
                   {/each}
                 </tbody>
@@ -399,14 +399,15 @@
     width: 28%;
     font-weight: 500;
   }
+  /* The whole value, never clamped: a difference past the first lines must stay readable before Keep mine
+     (slim-review on fca#159). Long values scroll inside their cell. */
   .rc-diff-value {
     overflow-wrap: anywhere;
     white-space: pre-line;
-    display: -webkit-box;
-    -webkit-line-clamp: 6;
-    line-clamp: 6;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+  }
+  .rc-diff-scroll {
+    max-height: 12em;
+    overflow-y: auto;
   }
   .rc-diff-ingredients ul {
     margin: 4px 0 0;

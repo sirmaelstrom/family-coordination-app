@@ -81,10 +81,24 @@ describe('diffIngredients', () => {
       [ing('salt'), ing('onion', { quantity: 1 }), ing('leek', { notes: 'sliced', groupName: 'Base' })],
     );
     expect(diff).toEqual({
-      onlyYours: ['2 onion', 'salt'],
-      onlyTheirs: ['1 onion', 'leek, sliced [Base]'],
+      onlyYours: ['2 onion · Pantry', 'salt · Pantry'],
+      onlyTheirs: ['1 onion · Pantry', 'leek, sliced [Base] · Pantry'],
       reorderedOnly: false,
     });
+  });
+
+  it('a changed category is a change (keep-mine writes it; slim-review on fca#159)', () => {
+    expect(diffIngredients([ing('kale')], [ing('kale', { category: 'Produce' })])).toEqual({
+      onlyYours: ['kale · Pantry'],
+      onlyTheirs: ['kale · Produce'],
+      reorderedOnly: false,
+    });
+  });
+
+  it('values that merely display alike are still different (structured compare)', () => {
+    const diff = diffIngredients([ing('rice', { quantity: 1, unit: 'cup' })], [ing('cup rice', { quantity: 1 })]);
+    expect(diff).not.toBeNull();
+    expect(diff?.reorderedOnly).toBe(false);
   });
 
   it('the same lines in another order is a reorder, not a change of content', () => {
@@ -99,7 +113,8 @@ describe('diffIngredients', () => {
     expect(diffIngredients([ing('a')], [ing('a')])).toBeNull();
   });
 
-  it('a line names quantity, unit, name, notes and group, trimmed', () => {
-    expect(ingredientLine({ quantity: 1.5, unit: ' cup ', name: ' rice ', notes: ' rinsed ', groupName: ' ' })).toBe('1.5 cup rice, rinsed');
+  it('a line names quantity, unit, name, notes, group and category, trimmed', () => {
+    expect(ingredientLine({ quantity: 1.5, unit: ' cup ', name: ' rice ', category: ' Grains ', notes: ' rinsed ', groupName: ' ' }))
+      .toBe('1.5 cup rice, rinsed · Grains');
   });
 });
