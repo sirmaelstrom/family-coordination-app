@@ -179,9 +179,33 @@ describe('meal-plan writes vs loads (41337b6f)', () => {
     expect(showToast).toHaveBeenCalledWith({ message: 'Something went wrong. Please try again.', kind: 'error' });
   });
 
-  it('the optimistic move is applied synchronously (zoneFinalize releases the drag gate right after)', () => {
-    vi.mocked(moveEntry).mockReturnValueOnce(new Promise(() => {}));
-    void store.moveEntry(1, 2, W1, 'breakfast', 12);
+  it('the optimistic move is applied synchronously (zoneFinalize releases the drag gate right after)', async () => {
+    const patch = deferred<MealPlanEntryDto>();
+    vi.mocked(moveEntry).mockReturnValueOnce(patch.promise);
+    const moving = store.moveEntry(1, 2, W1, 'breakfast', 12);
     expect(store.board!.entries.find((e) => e.entryId === 2)!.mealType).toBe('breakfast');
+    // Settle it: the store is a singleton, and an open write would defer every later test's loads.
+    patch.resolve({ ...entry(2), mealType: 'breakfast', version: 99 });
+    await moving;
+  });
+
+  it('a second drag of an entry whose move is pending is skipped and the zones re-derive from the board', async () => {
+    const patch = deferred<MealPlanEntryDto>();
+    vi.mocked(moveEntry).mockReturnValueOnce(patch.promise);
+    store.rebuildZones();
+    const moving = store.moveEntry(1, 1, W1, 'lunch', 11); // first drag: dinner → lunch, pending
+    store.rebuildZones(); // what App's effect does once the first drag's gate is released
+
+    // Second drag of the same card: lunch → breakfast, dropped into the breakfast zone.
+    const card = store.zoneFor(W1, 'lunch').find((e) => e.entryId === 1)!;
+    await store.zoneFinalize(W1, 'breakfast', [card]);
+
+    expect(moveEntry).toHaveBeenCalledTimes(1); // no second request with the same stale token
+    expect(store.board!.entries.find((e) => e.entryId === 1)!.mealType).toBe('lunch');
+    expect(store.zoneFor(W1, 'breakfast').some((e) => e.entryId === 1)).toBe(false);
+    expect(store.zoneFor(W1, 'lunch').some((e) => e.entryId === 1)).toBe(true);
+
+    patch.resolve({ ...entry(1), mealType: 'lunch', version: 99 });
+    await moving;
   });
 });

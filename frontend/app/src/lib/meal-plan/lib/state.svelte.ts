@@ -308,6 +308,9 @@ class MealPlanStore {
         this.board.entries = replaceEntry(this.board.entries, updated);
       },
     });
+    // Skipped (this entry's earlier write is still pending): zoneFinalize already wrote the dropped card
+    // into the destination zone, and the board didn't change — re-derive the zones from the board.
+    if (outcome === 'skipped') this.rebuildZones();
     // A 409 means the token we sent was stale — usually another member. (A second action on the same entry
     // before the first response lands used to send the same stale token too; the pending key now skips
     // it.) The copy says what we know — the meal changed — and the reconcile shows server truth.

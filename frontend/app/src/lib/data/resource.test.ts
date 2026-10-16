@@ -287,7 +287,84 @@ describe('Resource — local callback failures are not server failures', () => {
   });
 });
 
+describe('Resource — throwing hooks never strand the window (code council r2)', () => {
+  it('a throwing onLoadIdle during a write-start retire still settles mutate and run', async () => {
+    let throwIdle = false;
+    const res = new Resource<string>({
+      // Resolves on a later microtask: still in flight when the write starts synchronously below.
+      fetch: async () => 'x',
+      commit: () => {},
+      onLoadIdle: () => {
+        if (throwIdle) throw new Error('idle hook bug');
+      },
+    });
+    for (const write of [
+      () => res.mutate({ key: 'k', call: async () => 1 }),
+      () => res.run({ call: async () => 1 }),
+    ]) {
+      void res.load(); // a load in flight, so the write's retire calls onLoadIdle
+      throwIdle = true;
+      await expect(write()).rejects.toThrow('idle hook bug');
+      throwIdle = false;
+      expect(res.writesPending).toBe(false);
+      expect(res.isPending('k')).toBe(false);
+      await tick();
+      expect(await res.load()).not.toBe('deferred'); // later loads are not stuck behind a phantom write
+    }
+  });
+
+  it('a throwing onLoadStart leaves nothing stranded', async () => {
+    let throwStart = true;
+    const fetch = vi.fn(async () => 'v');
+    const res = new Resource<string>({
+      fetch,
+      commit: () => {},
+      onLoadStart: () => {
+        if (throwStart) throw new Error('start hook bug');
+      },
+    });
+    await expect(res.load()).rejects.toThrow('start hook bug');
+    expect(res.loading).toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
+    throwStart = false;
+    expect(await res.mutate({ call: async () => 1 })).toBe('ok'); // nothing owed: no phantom load
+    expect(fetch).not.toHaveBeenCalled();
+    expect(await res.load()).toBe('committed');
+  });
+
+  it("a throwing commit in the settle reconcile doesn't replace the write's own outcome", async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = new Resource<string>({
+      fetch: async () => 'v',
+      commit: () => {
+        throw new Error('load commit bug');
+      },
+    });
+    expect(await res.mutate({ call: () => Promise.reject(new ApiError(409, 'c')) })).toBe('conflict');
+    expect(spy).toHaveBeenCalledWith('Resource: the reconcile load after a write failed', expect.any(Error));
+    spy.mockRestore();
+  });
+
+  it('the failure toast shows after the reconcile has committed', async () => {
+    const order: string[] = [];
+    vi.mocked(showToast).mockImplementationOnce(() => {
+      order.push('toast');
+      return 0;
+    });
+    const res = new Resource<string>({ fetch: async () => 'v', commit: () => order.push('commit') });
+    await res.mutate({ call: () => Promise.reject(new ApiError(409, 'c')), messages: { conflict: 'refreshed' } });
+    expect(order).toEqual(['commit', 'toast']);
+  });
+});
+
 describe('Resource.run — the write window without an optimistic step', () => {
+  it("reload 'never': a failure rejects without a reconcile", async () => {
+    const h = harness();
+    await expect(h.res.run({ call: () => Promise.reject(new ApiError(500, 'x')), reload: 'never' })).rejects.toThrow('x');
+    expect(h.fetch).not.toHaveBeenCalled();
+    expect(h.res.writesPending).toBe(false);
+  });
+
   it('defers and retires like mutate, commits inside the window, reloads by default', async () => {
     const h = harness();
     const loading = h.res.load();

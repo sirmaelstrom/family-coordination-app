@@ -122,7 +122,14 @@ export class Resource<T> {
     const id = ++this.#seq;
     this.#current = id;
     this.loading = true;
-    this.#options.onLoadStart?.();
+    try {
+      this.#options.onLoadStart?.();
+    } catch (e) {
+      // A throwing hook must not strand `loading`/`current`: nothing was dispatched, so stand down.
+      if (this.#current === id) this.#current = null;
+      this.#idle();
+      throw e;
+    }
     let value: T;
     try {
       value = await this.#options.fetch();
@@ -148,17 +155,19 @@ export class Resource<T> {
   }
 
   /**
-   * An optimistic (or plain) write. Resolves after settle — including any reconcile it triggers —
-   * with the server outcome; never rejects for a server error. A throwing callback is rethrown after
-   * settle.
+   * An optimistic (or plain) write. Resolves after settle — including the reconcile load it triggers,
+   * if any (that attempt, not global quiescence: a newer load started meanwhile may still be in flight)
+   * — with the server outcome; never rejects for a server error. A throwing callback is rethrown after
+   * settle. The failure toast shows after settle, so "…was refreshed" copy is true when it appears.
    */
   async mutate<R>(spec: MutationSpec<R>): Promise<MutationOutcome> {
     const { key } = spec;
     if (key !== undefined && this.#pendingKeys.has(key)) return 'skipped';
-    this.#enter(key);
     let outcome: MutationOutcome = 'ok';
     let localError: { error: unknown } | null = null;
     try {
+      // Inside the try: a throwing onLoadIdle (via the retire) still reaches settle.
+      this.#enter(key);
       let undo: (() => void) | void = undefined;
       try {
         undo = spec.optimistic?.();
@@ -195,11 +204,15 @@ export class Resource<T> {
           if (spec.reload === 'always') this.#reconcileDue = true;
         }
       }
-      const message = outcome === 'ok' ? undefined : spec.messages?.[outcome as 'conflict' | 'rejected' | 'failed'];
-      if (message) showToast({ message, kind: outcome === 'failed' ? 'error' : 'info' });
+    } catch (e) {
+      // Only #enter/#retire can land here (every callback above is individually guarded).
+      localError ??= { error: e };
+      this.#reconcileDue = true;
     } finally {
       await this.#settle(key);
     }
+    const message = outcome === 'ok' ? undefined : spec.messages?.[outcome as 'conflict' | 'rejected' | 'failed'];
+    if (message) showToast({ message, kind: outcome === 'failed' ? 'error' : 'info' });
     if (localError) throw localError.error;
     return outcome;
   }
@@ -210,10 +223,17 @@ export class Resource<T> {
    * observe the failure; `commit` is applied inside the window.
    */
   async run<R>(spec: RunSpec<R>): Promise<R> {
-    this.#enter(undefined);
     let result: R | undefined;
     let failure: { error: unknown } | null = null;
     let localError: { error: unknown } | null = null;
+    try {
+      this.#enter(undefined);
+    } catch (e) {
+      // A throwing onLoadIdle (via the retire): settle, reconcile, rethrow — the call is never sent.
+      this.#reconcileDue = true;
+      await this.#settle(undefined);
+      throw e;
+    }
     try {
       try {
         result = await spec.call();
@@ -261,7 +281,13 @@ export class Resource<T> {
     if (this.#writes === 0 && (this.#owed || this.#reconcileDue)) {
       this.#owed = false;
       this.#reconcileDue = false;
-      await this.load();
+      try {
+        await this.load();
+      } catch (e) {
+        // A throwing load callback during the settle reconcile must not replace the WRITE's own result or
+        // error (the write already happened). Reported, not swallowed silently.
+        console.error('Resource: the reconcile load after a write failed', e);
+      }
     }
   }
 
