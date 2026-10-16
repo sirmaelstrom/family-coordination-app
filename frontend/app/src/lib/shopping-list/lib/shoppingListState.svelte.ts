@@ -78,8 +78,6 @@ export class ShoppingListState {
   #loadEnded = false;
   /** A detail load answered 404 for this list and waits on fresh summaries to pick a fallback. */
   #fallbackFrom: number | null = null;
-  /** The summaries have loaded once (a first visit with no list selected picks the top one then). */
-  #summariesLoaded = false;
   readonly #onListChange: (listId: number) => void;
 
   #detail = new Resource<LoadedList>({
@@ -133,17 +131,26 @@ export class ShoppingListState {
     fetch: () => listLists(),
     commit: (lists) => {
       this.lists = lists;
-      const first = !this.#summariesLoaded;
-      this.#summariesLoaded = true;
-      // A first visit with no list selected: default to the top one, then load it.
-      if (first && this.currentListId == null) {
+      // No list selected (a first visit, an initially empty household, or after archiving the last list): pick
+      // the top one whenever summaries land — not only on the first load (slim-review delta on fca#160: a list
+      // another member creates later must be picked up by the next liveness tick).
+      if (this.currentListId == null) {
         const top = lists[0]?.id ?? null;
         if (top != null) this.#switchTo(top);
         else this.loading = false; // no lists at all: "No active shopping lists"
       }
       this.#maybeFallBack();
     },
-    onLoadError: () => this.#maybeFallBack(), // stale summaries still allow a fallback (each id tried once)
+    onLoadError: (e) => {
+      // With no list selected there is no detail load to report: the summaries failure IS the page's load
+      // error — stand the spinner down and show it with Retry (slim-review delta on fca#160). With a list on
+      // screen a summaries failure stays silent (the switcher keeps its last value).
+      if (this.currentListId == null) {
+        this.loading = false;
+        this.error = e instanceof Error ? e.message : String(e);
+      }
+      this.#maybeFallBack(); // stale summaries still allow a fallback (each id tried once)
+    },
   });
 
   constructor(initialListId: number | null, onListChange: (listId: number) => void = () => {}) {

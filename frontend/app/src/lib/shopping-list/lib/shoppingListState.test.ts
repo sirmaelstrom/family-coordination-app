@@ -382,6 +382,27 @@ describe('ShoppingListState on one Resource (41337b6f slice 8)', () => {
     expect(s.loading).toBe(false);
   });
 
+  it('a failed first summaries load (no list selected) shows the error and stops the spinner', async () => {
+    vi.mocked(listLists).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const s = new ShoppingListState(null);
+    await s.load();
+    expect(s.loading).toBe(false);
+    expect(s.error).toBe('Failed to fetch');
+  });
+
+  it('an initially empty household picks up a list created later on the next summaries load', async () => {
+    vi.mocked(listLists).mockResolvedValueOnce([]).mockResolvedValueOnce([summary(8)]);
+    vi.mocked(getList).mockResolvedValueOnce(listDto(8));
+    const s = new ShoppingListState(null);
+    await s.load();
+    expect(s.list).toBeNull();
+    expect(s.loading).toBe(false);
+    await s.load(); // a liveness tick after another member created list 8
+    await flush();
+    expect(s.currentListId).toBe(8);
+    expect(s.list?.id).toBe(8);
+  });
+
   it('the 404 fallback tries each list once — stale summaries end in "not found", not an endless cycle', async () => {
     // Lists 1 and 2 are both gone, and the summaries GET keeps failing (the switcher still shows them).
     vi.mocked(listLists).mockRejectedValue(new TypeError('Failed to fetch'));
