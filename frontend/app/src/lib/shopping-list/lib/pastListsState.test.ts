@@ -86,7 +86,7 @@ describe('PastListsState on two Resources (41337b6f slice 4)', () => {
     expect(showToast).toHaveBeenCalledWith({ message: 'List permanently deleted', kind: 'info' });
   });
 
-  it('an archived-list GET in flight during a delete never lists the deleted list again', async () => {
+  it('parity pin: an archived-list GET in flight during a delete never lists the deleted list again', async () => {
     const stale = deferred<ArchivedListSummaryDto[]>();
     vi.mocked(listArchived).mockReturnValueOnce(stale.promise).mockResolvedValueOnce([row(2)]);
     vi.mocked(listLists).mockResolvedValue([ACTIVE]);

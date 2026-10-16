@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Quest 41337b6f, slice 4 (spec §5 row 7): the two POLLING admin stores on the Resource. A 15s/30s
-// poll can be in flight, or fire, while an admin write is pending; before, such a GET was accepted
-// with a current sequence number and could commit pre-write state after the write.
+// Quest 41337b6f, slice 4 (spec §5 row 7): the two POLLING admin stores on the Resource. These are
+// write-then-reload stores with no optimistic patch, so the old seq guard already kept a pre-write
+// poll from landing after the post-write reload — the "parity pin" tests hold that (they pass on
+// origin/master too). What changes is that a poll tick during a pending write is no longer
+// dispatched at all; one load runs at settle (red on origin/master).
 
 // The REAL ApiError: the Resource classifies failures through its getters.
 vi.mock('./api', async () => {
@@ -76,7 +78,7 @@ describe('feedbackStore on the Resource (41337b6f slice 4)', () => {
     vi.resetAllMocks();
   });
 
-  it('a poll answered WHILE a resolve is pending never commits; one reload follows the write', async () => {
+  it('parity pin: a poll answered while a resolve is pending leaves the list as it was; one reload follows the write', async () => {
     const poll = deferred<FeedbackListDto>();
     const write = deferred<void>();
     vi.mocked(getFeedback).mockReturnValueOnce(poll.promise).mockResolvedValueOnce(feedback(true));
@@ -130,7 +132,7 @@ describe('householdRequestsStore on the Resource (41337b6f slice 4)', () => {
     vi.resetAllMocks();
   });
 
-  it('a poll in flight when approve starts, answered after it, never resurrects the pending request', async () => {
+  it('parity pin: a poll in flight when approve starts, answered after it, never resurrects the pending request', async () => {
     const poll = deferred<HouseholdRequestsDto>();
     vi.mocked(getHouseholdRequests).mockReturnValueOnce(poll.promise).mockResolvedValueOnce(requests('approved', [SUMMARY]));
     vi.mocked(approveRequest).mockResolvedValueOnce(SUMMARY);
