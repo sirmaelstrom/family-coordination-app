@@ -99,6 +99,8 @@ builder.Services.AddScoped<SetupService>();
 builder.Services.AddSingleton<SetupCompletionLatch>();
 // Login-time profile refresh (OnCreatingTicket below) — replaces the per-request write in WhitelistedEmailHandler.
 builder.Services.AddScoped<LoginProfileService>();
+// The one allocator for per-household composite-key ids (max+1 plus the unique-violation retry, quest 0328001a).
+builder.Services.AddSingleton<IKeyAllocator, KeyAllocator>();
 builder.Services.AddScoped<IIngredientParser, IngredientParser>();
 builder.Services.AddScoped<ICategoryInferenceService, CategoryInferenceService>();
 builder.Services.AddScoped<IImageService, ImageService>();
@@ -110,6 +112,7 @@ builder.Services.AddScoped<IMealPlanService, MealPlanService>();
 builder.Services.AddScoped<IMealPlanBoardService, MealPlanBoardService>();
 builder.Services.AddScoped<IHouseholdCalendarTokenService, HouseholdCalendarTokenService>();
 builder.Services.AddSingleton<ICalendarWriter, CalendarWriter>();
+builder.Services.AddScoped<IChoreCalendarFeedService, ChoreCalendarFeedService>();
 // Recipes island (strangler): the single recipe→DTO projection (list card / full detail / parsed ingredient).
 builder.Services.AddScoped<IRecipeProjectionService, RecipeProjectionService>();
 // Dashboard island (strangler): the read-only aggregate (chore summary + shopping summary + today's meals).

@@ -35,7 +35,7 @@ Review level: **full** — 11 WPs, new domain (Discord integration, digest engin
 
 ### E8 (DECISION) [decisions] — Digest fires via external cron → endpoint, NOT a BackgroundService (reverses v1.0 MN1)
 
-This is the single place v1.1 deliberately reverses a v1.0 must-not (MN1: no BackgroundService/IHostedService). The chosen mechanism keeps MN1's spirit — the app stays request-driven, the schedule lives in a darktower cron that curls `POST /api/chores/digest/run` with a shared-secret token. It forecloses nothing (a future BackgroundService could call the same RunDueAsync). **This is the ratification gate you asked for.** If you'd rather have an in-process hosted service, only the trigger changes; the builder/sender/orchestration are identical.
+This is the single place v1.1 deliberately reverses a v1.0 must-not (MN1: no BackgroundService/IHostedService). The chosen mechanism keeps MN1's spirit — the app stays request-driven, the schedule lives in a production-host cron that curls `POST /api/chores/digest/run` with a shared-secret token. It forecloses nothing (a future BackgroundService could call the same RunDueAsync). **This is the ratification gate you asked for.** If you'd rather have an in-process hosted service, only the trigger changes; the builder/sender/orchestration are identical.
 
 Triage: ✅ approve · ✏️ revise · ❌ reject
 

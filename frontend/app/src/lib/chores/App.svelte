@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import type { ChoreDto, ShellContext } from './lib/types';
-  import { getBoard, uploadChorePhoto, createSubtask, ApiError } from './lib/api';
+  import { uploadChorePhoto, createSubtask, ApiError } from './lib/api';
   import { boardStore } from './lib/state.svelte';
   import { startLiveness, type LivenessHandle } from '$lib/liveness';
   import { showToast } from '$lib/shared/toast-store.svelte';
@@ -68,31 +68,14 @@
   // the display only, so ChoreLens.All is not churned).
   let historySubview = $state<'ledger' | 'logbook'>('ledger');
 
-  // The board load token lives in the STORE (store.beginLoad/isCurrentLoad — quest fe715e73), so
-  // both race classes are covered: a newer LOAD supersedes an older one, and an optimistic
-  // MUTATION retires any GET already in flight (store.retireInFlightLoads in the runners) —
-  // a pre-mutation snapshot can no longer land after the write and undo it.
-
-  async function loadBoard() {
-    const seq = store.beginLoad();
-    try {
-      // Keep the spinner only for the FIRST load; liveness refreshes are silent.
-      if (store.board == null) store.loading = true;
-      store.error = null;
-      const next = await getBoard();
-      if (!store.isCurrentLoad(seq)) return; // a newer load or a mutation superseded this one
-      store.setBoard(next);
-    } catch (e) {
-      if (!store.isCurrentLoad(seq)) return; // don't surface a superseded load's error
-      if (e instanceof ApiError) {
-        store.error = `Failed to load the chore board (HTTP ${e.status}).`;
-      } else {
-        store.error = e instanceof Error ? e.message : String(e);
-      }
-    } finally {
-      // Only the newest load owns the spinner.
-      if (store.isCurrentLoad(seq)) store.loading = false;
-    }
+  // The board loader lives in the STORE (store.loadBoard — a Resource, quest 41337b6f): a newer load
+  // supersedes an older one, no load is dispatched while a chore write is pending (it is owed and runs
+  // once at settle), and a GET already in flight when a write starts is retired — so a pre-mutation
+  // snapshot can never land after the write and undo it, in either response order.
+  function loadBoard() {
+    // A load never rejects for a failed GET (that sets store.error); only a throwing callback — a
+    // programming error — rejects. Report it rather than leave an unhandled rejection (council r6).
+    store.loadBoard().catch((e) => console.error('chores: the board load threw', e));
   }
 
   // ── Card action handlers (optimistic mutations live in the store) ─────────
@@ -202,10 +185,11 @@
           showToast({ message: "Chore added, but the photo didn't upload.", kind: 'info' });
         }
       }
-      // Refetch once so the new checklist + photo render (store.create reconciled
-      // BEFORE these follow-on writes, so the board doesn't carry them yet).
+      // Refetch once so the new checklist + photo render (store.create's reconcile
+      // was dispatched BEFORE these follow-on writes, so it may not carry them; this
+      // newer load supersedes it).
       if (value.subtasks.length > 0 || value.photo) {
-        await loadBoard();
+        await store.loadBoard();
       }
       quickAddOpen = false;
       showToast({ message: `Added “${created.name}”.`, kind: 'success' });
@@ -230,9 +214,7 @@
     untrack(() => {
       // Seed the viewing user's id once mounted (drives the Mine lens + "You").
       store.currentUserId = ctx.userId;
-      // Wire the board refetch so the mutation layer can reconcile after a 409 /
-      // other 4xx (shares the SAME loader as liveness).
-      store.setRefresh(loadBoard);
+      // The store owns the loader (liveness, Retry and the post-write reconcile share it).
       loadBoard();
       // Liveness: ~20s poll while visible + immediate refetch on refocus; pauses
       // while hidden. NOT Blazor DataNotifier/PollingService (MN2).

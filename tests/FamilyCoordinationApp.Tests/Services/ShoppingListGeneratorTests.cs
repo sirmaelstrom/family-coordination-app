@@ -40,7 +40,8 @@ public class ShoppingListGeneratorTests : IDisposable
             _shoppingListServiceMock.Object,
             _unitConverter,
             _loggerMock.Object,
-            TestClocks.System);
+            TestClocks.System,
+            TestKeys.Allocator);
 
         SeedTestData();
     }

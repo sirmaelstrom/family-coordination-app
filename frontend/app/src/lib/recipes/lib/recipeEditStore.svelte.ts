@@ -12,7 +12,9 @@
 //
 // Concurrency: the full-form save echoes the xmin token (`version` from GET);
 // a 409 means someone else saved since we loaded → non-destructive conflict
-// banner + an explicit Reload action (reloadAfterConflict). Other 4xx during
+// banner that first shows a field-level diff against the latest version
+// (quest adfe3d57), then offers keep-mine (keepMine: save over THAT version's
+// token) or use-theirs (reloadAfterConflict). Other 4xx during
 // save/delete keep the old calm "this recipe changed" → back-to-list path.
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -38,6 +40,7 @@ import {
 } from './api';
 import { base } from '$app/paths';
 import { showToast } from '$lib/shared/toast-store.svelte';
+import { diffRecipe, type RecipeConflictDiff } from './conflictDiff';
 
 /** The bound form model (text fields are strings; trimmed/null-on-save). */
 export interface RecipeEditModel {
@@ -117,6 +120,24 @@ class RecipeEditStore {
   conflict = $state(false);
   /** Reload-after-conflict in progress (disables the banner button). */
   reloading = $state(false);
+  /** After a 409: the latest saved recipe, fetched for the diff (quest adfe3d57, answer (c)). */
+  private conflictLatest = $state<RecipeFullDto | null>(null);
+  /**
+   * The field-level diff of the form against that latest version, or null while it loads or when it couldn't
+   * be fetched. Derived, so it follows the form if the user keeps typing. Keep-mine is offered only with a diff.
+   */
+  conflictDiff = $derived<RecipeConflictDiff | null>(
+    this.conflictLatest ? diffRecipe(this.form, this.ingredients, this.conflictLatest) : null,
+  );
+  /** The latest version's fetch for the diff is in flight. */
+  conflictLoading = $state(false);
+  /** The latest-version fetch answered 404: the recipe was deleted meanwhile. */
+  conflictGone = $state(false);
+  /** A draft is known to exist for this editor (restored on load, autosaved, or kept by a conflict reload).
+   *  Shows the Discard-draft control (quest adfe3d57). */
+  hasDraft = $state(false);
+  /** Discard-draft in progress (disables the control; a timer-fired autosave bails on it). */
+  discarding = $state(false);
 
   /** The recipe id (null = new). Set from the shell context. */
   recipeId = $state<number | null>(null);
@@ -130,9 +151,10 @@ class RecipeEditStore {
   private uidSeq = 1;
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedClearTimer: ReturnType<typeof setTimeout> | null = null;
-  /** The in-flight draft-save (if any) — save()/delete() await it before deleteDraft so a late
-   *  autosave can't re-create the draft we just cleared (council race fix). */
-  private autosaveInFlight: Promise<void> | null = null;
+  /** Every in-flight draft-save. save()/delete()/discard await them all before deleteDraft so a late
+   *  autosave can't re-create the draft we just cleared (council race fix). A set, not the latest one:
+   *  a slow PUT can still be on the wire when a newer edit starts a second (slim-review on fca#149). */
+  private autosavesInFlight = new Set<Promise<void>>();
 
   init(ctx: ShellContext): void {
     this.currentUserId = ctx.userId;
@@ -149,11 +171,14 @@ class RecipeEditStore {
     this.loading = true;
     this.error = null;
     this.conflict = false;
+    this.clearConflictDiff();
+    this.hasDraft = false;
     this.serverVersion = null;
     try {
       const draft = await getDraft(recipeId);
       if (draft) {
         this.applyDraft(draft);
+        this.hasDraft = true;
         showToast({ message: 'Restored from draft', kind: 'info' });
         if (recipeId != null && draft.baseVersion != null) {
           // The draft carries the token its edits started from (quest 0c97a292). Save with THAT, not the live
@@ -283,9 +308,9 @@ class RecipeEditStore {
   }
 
   private async runAutosave(): Promise<void> {
-    // Skip if: the draft endpoint requires a non-blank name, OR a save/delete is underway (that path
+    // Skip if: the draft endpoint requires a non-blank name, OR a save/delete/discard is underway (that path
     // owns the draft lifecycle and will deleteDraft — autosaving now would resurrect it).
-    if (!this.form.name.trim() || this.saving || this.deleting) {
+    if (!this.form.name.trim() || this.saving || this.deleting || this.discarding) {
       this.autosaveStatus = 'none';
       return;
     }
@@ -293,6 +318,7 @@ class RecipeEditStore {
     const inFlight = (async () => {
       try {
         await saveDraft(this.buildDraftBody());
+        this.hasDraft = true;
         this.autosaveStatus = 'saved';
         if (this.savedClearTimer) clearTimeout(this.savedClearTimer);
         this.savedClearTimer = setTimeout(() => {
@@ -303,9 +329,9 @@ class RecipeEditStore {
         showToast({ message: "Couldn't save draft.", kind: 'info' });
       }
     })();
-    this.autosaveInFlight = inFlight;
+    this.autosavesInFlight.add(inFlight);
     await inFlight;
-    if (this.autosaveInFlight === inFlight) this.autosaveInFlight = null;
+    this.autosavesInFlight.delete(inFlight);
   }
 
   /**
@@ -317,13 +343,8 @@ class RecipeEditStore {
       clearTimeout(this.autosaveTimer);
       this.autosaveTimer = null;
     }
-    if (this.autosaveInFlight) {
-      try {
-        await this.autosaveInFlight;
-      } catch {
-        /* the autosave handles its own errors */
-      }
-    }
+    // Each autosave catches its own errors, so allSettled is belt and braces.
+    await Promise.allSettled([...this.autosavesInFlight]);
   }
 
   // ── Ingredients ────────────────────────────────────────────────────────────
@@ -431,6 +452,42 @@ class RecipeEditStore {
   // ── Save / Delete / Cancel ───────────────────────────────────────────────────
 
   async save(): Promise<void> {
+    await this.saveWith(null);
+  }
+
+  /**
+   * Keep mine (quest adfe3d57, answer (c)): after a 409 and its diff, save the form over the version the diff
+   * showed, using that version's token. Offered only with a diff in hand: no overwrite of a version the user
+   * hasn't seen. If someone saved again since the diff was fetched, this answers 409 too and the diff refreshes.
+   */
+  async keepMine(): Promise<void> {
+    const shown = this.conflictLatest;
+    if (!this.conflict || shown == null) return;
+    if (this.saving || this.reloading || this.discarding || this.deleting) return;
+    await this.saveWith(shown.version);
+  }
+
+  /** Fetch the latest saved recipe for the conflict diff. Any failure leaves no diff (so no keep-mine). */
+  private async loadConflictDiff(): Promise<void> {
+    if (this.recipeId == null) return;
+    this.conflictLoading = true;
+    try {
+      this.conflictLatest = await getRecipe(this.recipeId);
+    } catch (e) {
+      this.conflictLatest = null;
+      this.conflictGone = e instanceof ApiError && e.status === 404;
+    } finally {
+      this.conflictLoading = false;
+    }
+  }
+
+  private clearConflictDiff(): void {
+    this.conflictLatest = null;
+    this.conflictGone = false;
+    this.conflictLoading = false;
+  }
+
+  private async saveWith(overrideVersion: number | null): Promise<void> {
     const name = this.form.name.trim();
     if (!name) {
       showToast({ message: 'Recipe name is required.', kind: 'error' });
@@ -440,8 +497,10 @@ class RecipeEditStore {
     await this.flushAutosave(); // wait out any in-flight draft save before we deleteDraft
     this.error = null;
     this.conflict = false;
+    this.clearConflictDiff();
     try {
       const body = this.buildWriteRequest();
+      if (overrideVersion != null) body.version = overrideVersion;
       if (this.recipeId != null) {
         await updateRecipe(this.recipeId, body);
       } else {
@@ -451,12 +510,19 @@ class RecipeEditStore {
       this.dirty = false; // suppress the beforeunload nav-lock before navigating
       this.navigateToList();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 409) {
+      // The three-way branch goes through the ApiError getters (quest 41337b6f, spec C4): a 5xx is neither
+      // a conflict nor a client rejection, so it keeps the form like a network failure — it no longer
+      // reads as "the recipe changed" and navigates away.
+      if (e instanceof ApiError && e.isConflict) {
         // Stale xmin token — someone else saved since we loaded. NON-destructive: keep the form (and
-        // dirty, so the nav-lock still guards) and show the reload banner instead of navigating away.
+        // dirty, so the nav-lock still guards) and show the conflict banner instead of navigating away. The
+        // banner first shows what differs (answer (c)), then offers keep-mine or use-theirs.
         this.conflict = true;
-      } else if (e instanceof ApiError) {
-        // Other 4xx (e.g. a 404 from a concurrent delete).
+        await this.loadConflictDiff();
+      } else if (e instanceof ApiError && e.isClientRejection) {
+        // Other 4xx (e.g. a 404 from a concurrent delete). On a 404 the recipe is gone, so its draft can never
+        // save: delete it, or the draft-first load reopens it on every visit (quest adfe3d57). Other 4xx keep it.
+        if (e.status === 404) await this.safeDeleteDraft();
         this.error = 'This recipe changed since you opened it.';
         this.dirty = false;
         showToast({ message: 'This recipe changed — returning to the list.', kind: 'info' });
@@ -476,12 +542,15 @@ class RecipeEditStore {
    * would restore the very edits that just conflicted instead of showing the latest server state).
    */
   async reloadAfterConflict(): Promise<void> {
-    if (this.recipeId == null || this.reloading) return;
+    // Not during a discard: this method's own saveDraft would land after the discard's delete and bring the
+    // discarded edits back (slim-review on fca#149).
+    if (this.recipeId == null || this.reloading || this.discarding) return;
     this.reloading = true;
     try {
       if (this.form.name.trim()) {
         try {
           await saveDraft(this.buildDraftBody()); // preserve what the user typed (draft needs a name)
+          this.hasDraft = true;
         } catch {
           /* best-effort — reload anyway */
         }
@@ -489,6 +558,7 @@ class RecipeEditStore {
       const full = await getRecipe(this.recipeId);
       this.applyFull(full); // also refreshes serverVersion for the next save
       this.conflict = false;
+      this.clearConflictDiff();
       this.error = null;
       this.dirty = false;
       // The draft saved above keeps the conflicted base (serverVersion was still the old token), so reopening the
@@ -500,7 +570,12 @@ class RecipeEditStore {
       });
     } catch (e) {
       if (e instanceof ApiError) {
-        // The recipe was deleted meanwhile — nothing to reload into.
+        // The recipe was deleted meanwhile — nothing to reload into. On a 404 the draft just saved above is an
+        // orphan that could never save, so delete it (same reason as save()'s 404 branch).
+        if (e.status === 404) {
+          await this.flushAutosave(); // a late autosave PUT must not re-create it after the delete
+          await this.safeDeleteDraft();
+        }
         this.dirty = false;
         showToast({ message: 'That recipe was removed — returning to the list.', kind: 'info' });
         this.navigateToList();
@@ -509,6 +584,54 @@ class RecipeEditStore {
       }
     } finally {
       this.reloading = false;
+    }
+  }
+
+  /**
+   * Explicit discard (quest adfe3d57): delete this editor's draft and show the saved recipe again (or a blank
+   * form for a new one). It is the way out of a draft whose save keeps answering 409 when the user wants the
+   * latest version, not their edits. If the delete fails the form and draft stay as they were.
+   */
+  async discardDraft(): Promise<void> {
+    // Not during a conflict reload either: its saveDraft is not an autosave, so flushAutosave() can't wait it out,
+    // and it would re-create the draft after this delete (slim-review on fca#149).
+    if (this.discarding || this.saving || this.deleting || this.reloading) return;
+    this.discarding = true; // set first: a timer-fired autosave now bails on the discarding guard
+    await this.flushAutosave(); // wait out any in-flight draft save so it can't re-create the draft after the delete
+    try {
+      try {
+        await deleteDraft(this.recipeId);
+      } catch {
+        showToast({ message: "Couldn't discard the draft. Please try again.", kind: 'error' });
+        return;
+      }
+      this.hasDraft = false;
+      this.autosaveStatus = 'none';
+      this.conflict = false;
+      this.clearConflictDiff();
+      this.error = null;
+      if (this.recipeId != null) {
+        try {
+          this.applyFull(await getRecipe(this.recipeId)); // also refreshes serverVersion for the next save
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 404) {
+            this.dirty = false;
+            showToast({ message: 'That recipe was removed — returning to the list.', kind: 'info' });
+            this.navigateToList();
+          } else {
+            // Any other failure (a 500, the network) says nothing about the recipe being gone: stay on the page.
+            this.error = "Draft discarded, but the recipe couldn't be loaded. Please reload the page.";
+          }
+          return;
+        }
+      } else {
+        this.form = { ...blankForm(), recipeType: 'main', servings: 4 };
+        this.ingredients = [];
+      }
+      this.dirty = false;
+      showToast({ message: 'Draft discarded.', kind: 'info' });
+    } finally {
+      this.discarding = false;
     }
   }
 

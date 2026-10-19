@@ -195,42 +195,71 @@ public class IdGenerationHelperTests
         recordedAttempts.Should().BeEquivalentTo(new[] { 1, 2, 3 });
     }
 
-    /// <summary>
-    /// Creates a DbUpdateException that simulates a PostgreSQL unique constraint violation (23505).
-    /// </summary>
-    private static DbUpdateException CreateUniqueViolationException()
+    [Theory]
+    [InlineData("IX_Categories_HouseholdId_Name", "A category with that name already exists.")]
+    [InlineData("IX_Users_Email", "This conflicts with something that already exists. Reload and try again.")]
+    [InlineData(null, "This conflicts with something that already exists. Reload and try again.")]
+    public async Task ExecuteWithRetryAsync_AViolationARetryCannotCure_IsOneAttemptAndAConflict(string? constraint, string message)
     {
-        // PostgresException requires specific construction - we use reflection to set SqlState
-        // since the constructor is internal. We create a mock scenario instead.
-        var postgresException = CreatePostgresException("23505");
+        // Quest d9da6ca4: only an allocated key (or the meal-plan week) is retried; any other unique constraint names a
+        // row that will still be there on the re-run.
+        var attemptCount = 0;
+
+        var act = async () => await FamilyCoordinationApp.Services.IdGenerationHelper.ExecuteWithRetryAsync<string>(
+            async (attempt) =>
+            {
+                attemptCount = attempt;
+                await Task.CompletedTask;
+                throw CreateUniqueViolationException(constraint);
+            },
+            _loggerMock.Object,
+            "TestEntity");
+
+        var thrown = await act.Should().ThrowExactlyAsync<FamilyCoordinationApp.Services.ConflictException>();
+        thrown.Which.ClientMessage.Should().Be(message);
+        thrown.Which.InnerException.Should().BeOfType<DbUpdateException>();
+        attemptCount.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData("PK_Rooms")]
+    [InlineData("IX_MealPlans_HouseholdId_WeekStartDate")]
+    public async Task ExecuteWithRetryAsync_ARetryableConstraint_IsRetriedToTheLimit(string constraint)
+    {
+        var attemptCount = 0;
+
+        var act = async () => await FamilyCoordinationApp.Services.IdGenerationHelper.ExecuteWithRetryAsync<string>(
+            async (attempt) =>
+            {
+                attemptCount = attempt;
+                await Task.CompletedTask;
+                throw CreateUniqueViolationException(constraint);
+            },
+            _loggerMock.Object,
+            "TestEntity");
+
+        await act.Should().ThrowExactlyAsync<InvalidOperationException>();
+        attemptCount.Should().Be(3);
+    }
+
+    /// <summary>
+    /// Creates a DbUpdateException that simulates a PostgreSQL unique constraint violation (23505) on
+    /// <paramref name="constraintName"/> (an allocated key's primary key by default, which the helper retries).
+    /// </summary>
+    private static DbUpdateException CreateUniqueViolationException(string? constraintName = "PK_Recipes")
+    {
+        var postgresException = CreatePostgresException("23505", constraintName);
         return new DbUpdateException("Unique constraint violation", postgresException);
     }
 
-    /// <summary>
-    /// Creates a PostgresException with the specified SQL state code.
-    /// This uses a workaround since PostgresException's constructor is complex.
-    /// </summary>
-    private static PostgresException CreatePostgresException(string sqlState)
-    {
-        // PostgresException can be constructed through its public constructor
-        // that takes a PostgresErrorData-like structure. We'll use the serialization approach.
-        // For testing, we create it via the public constructor available in Npgsql 8+
-
-        // Use the constructor: PostgresException(string messageText, string severity, string invariantSeverity, string sqlState)
-        try
-        {
-            return new PostgresException(
-                messageText: "duplicate key value violates unique constraint",
-                severity: "ERROR",
-                invariantSeverity: "ERROR",
-                sqlState: sqlState);
-        }
-        catch
-        {
-            // Fallback for different Npgsql versions - create via reflection or throw
-            throw new InvalidOperationException($"Could not create PostgresException with SqlState {sqlState}");
-        }
-    }
+    /// <summary>Creates a PostgresException with the specified SQL state code and constraint name.</summary>
+    private static PostgresException CreatePostgresException(string sqlState, string? constraintName) =>
+        new(
+            messageText: "duplicate key value violates unique constraint",
+            severity: "ERROR",
+            invariantSeverity: "ERROR",
+            sqlState: sqlState,
+            constraintName: constraintName);
 
     private class TestEntity
     {

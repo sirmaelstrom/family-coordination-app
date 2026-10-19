@@ -3,7 +3,7 @@ using FamilyCoordinationApp.Services.Dtos;
 
 namespace FamilyCoordinationApp.Services.Calendar;
 
-/// <summary>Small RFC 5545 writer for the all-day meal-plan feed.</summary>
+/// <summary>Small RFC 5545 writer for the all-day meal-plan and chores feeds.</summary>
 public sealed class CalendarWriter : ICalendarWriter
 {
     private const string CrLf = "\r\n";
@@ -39,6 +39,56 @@ public sealed class CalendarWriter : ICalendarWriter
             {
                 Append(builder, $"DESCRIPTION:{Escape(entry.Notes)}");
             }
+            Append(builder, "END:VEVENT");
+        }
+
+        Append(builder, "END:VCALENDAR");
+        return builder.ToString();
+    }
+
+    public string WriteChores(int householdId, int userId, DateOnly today, IEnumerable<ChoreCalendarEvent> chores, DateTimeOffset nowUtc)
+    {
+        var builder = new StringBuilder();
+        Append(builder, "BEGIN:VCALENDAR");
+        Append(builder, "PRODID:-//Family Coordination App//Chores//EN");
+        Append(builder, "VERSION:2.0");
+        Append(builder, "METHOD:PUBLISH");
+        Append(builder, "X-WR-CALNAME:My Chores");
+
+        var ordered = chores.OrderBy(chore => chore.Date).ThenBy(chore => chore.Name, StringComparer.Ordinal).ThenBy(chore => chore.ChoreId).ToList();
+        if (ordered.Count == 0)
+        {
+            Append(builder, "BEGIN:VEVENT");
+            Append(builder, $"UID:chores-{householdId}-{userId}-empty@family-coordination-app");
+            Append(builder, $"DTSTAMP:{nowUtc.UtcDateTime:yyyyMMdd'T'HHmmss'Z'}");
+            Append(builder, $"DTSTART;VALUE=DATE:{today:yyyyMMdd}");
+            Append(builder, $"DTEND;VALUE=DATE:{today.AddDays(1):yyyyMMdd}");
+            Append(builder, "SUMMARY:No chores assigned to you");
+            Append(builder, "END:VEVENT");
+        }
+
+        foreach (var chore in ordered)
+        {
+            // The UID names the chore, not the date: when a flexible chore's next-due slides (or an overdue one
+            // rolls to today), clients move the same event instead of adding another.
+            var summary = chore.Overdue ? $"Overdue: {chore.Name}" : chore.Name;
+            var assignment = chore.Role switch
+            {
+                ChoreFeedRole.Claimed => "Claimed by you",
+                ChoreFeedRole.Roster => "You're on the roster",
+                _ => "Assigned to you",
+            };
+            var description = string.IsNullOrWhiteSpace(chore.Description) ? assignment : $"{chore.Description}\n\n{assignment}";
+
+            Append(builder, "BEGIN:VEVENT");
+            Append(builder, $"UID:chore-{householdId}-{chore.ChoreId}@family-coordination-app");
+            Append(builder, $"DTSTAMP:{nowUtc.UtcDateTime:yyyyMMdd'T'HHmmss'Z'}");
+            Append(builder, $"DTSTART;VALUE=DATE:{chore.Date:yyyyMMdd}");
+            // No SEQUENCE, as in the meal feed: the date slides with no row change, and xmin is no revision counter
+            // (unsigned, wraps). Subscribed clients take the event as published under its UID.
+            Append(builder, $"DTEND;VALUE=DATE:{chore.Date.AddDays(1):yyyyMMdd}");
+            Append(builder, $"SUMMARY:{Escape(summary)}");
+            Append(builder, $"DESCRIPTION:{Escape(description)}");
             Append(builder, "END:VEVENT");
         }
 

@@ -2,24 +2,13 @@
   // Past shopping lists (quest f63bb90a): browse archived lists, reopen, delete, and pick items
   // off into an active list. Read-only by design — editing means reopening. Identity comes from
   // the canonical $lib/session store via ctx (M8); this island never fetches /api/me.
+  // The state and its load/write ordering live in PastListsState (quest 41337b6f): two Resources,
+  // and a delete that runs inside both their windows.
   import { base } from '$app/paths';
   import { goto } from '$app/navigation';
   import type { ShellContext } from '$lib/session.svelte';
-  import type {
-    ArchivedListSummaryDto,
-    ShoppingListDto,
-    ShoppingListSummaryDto,
-  } from './lib/types';
-  import {
-    addItem,
-    deleteList,
-    getArchivedList,
-    listArchived,
-    listLists,
-    restoreList,
-  } from './lib/api';
+  import { PastListsState } from './lib/pastListsState.svelte';
   import ConfirmDialog from '$lib/shared/ConfirmDialog.svelte';
-  import { showToast } from '$lib/shared/toast-store.svelte';
 
   interface Props {
     ctx: ShellContext;
@@ -29,138 +18,18 @@
   // identity of its own yet.
   let {}: Props = $props();
 
-  let archived = $state<ArchivedListSummaryDto[]>([]);
-  let activeLists = $state<ShoppingListSummaryDto[]>([]);
-  let favoritesOnly = $state(false);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
-
-  /** The expanded list's read-only detail, or null when collapsed. */
-  let detail = $state<ShoppingListDto | null>(null);
-  let detailLoading = $state(false);
-  let pickedIds = $state(new Set<number>());
-  let targetListId = $state<number | null>(null);
-  let adding = $state(false);
-
+  const past = new PastListsState();
   let confirmDeleteId = $state<number | null>(null);
 
-  /** Stale-response guards (house pattern): only the latest load may commit. */
-  let loadSeq = 0;
-  let detailSeq = 0;
-
-  async function load(): Promise<void> {
-    const seq = ++loadSeq;
-    try {
-      loading = true;
-      error = null;
-      const [past, active] = await Promise.all([listArchived(favoritesOnly), listLists()]);
-      if (seq !== loadSeq) return;
-      archived = past;
-      activeLists = active;
-      // Favorites-first is the server's sort for actives too — default the pick target to the top.
-      if (targetListId == null || !active.some((l) => l.id === targetListId)) {
-        targetListId = active[0]?.id ?? null;
-      }
-    } catch (e) {
-      if (seq !== loadSeq) return;
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      if (seq === loadSeq) loading = false;
-    }
-  }
-
-  async function toggleDetail(listId: number): Promise<void> {
-    const seq = ++detailSeq;
-    if (detail?.id === listId) {
-      detail = null;
-      pickedIds = new Set();
-      return;
-    }
-    detailLoading = true;
-    try {
-      const loaded = await getArchivedList(listId);
-      if (seq !== detailSeq) return; // a newer expand/collapse superseded this one
-      detail = loaded;
-      pickedIds = new Set();
-    } catch (e) {
-      if (seq !== detailSeq) return;
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      if (seq === detailSeq) detailLoading = false;
-    }
-  }
-
-  function togglePick(itemId: number): void {
-    const next = new Set(pickedIds);
-    if (next.has(itemId)) next.delete(itemId);
-    else next.add(itemId);
-    pickedIds = next;
-  }
-
   async function handleReopen(listId: number): Promise<void> {
-    try {
-      await restoreList(listId);
-      showToast({ message: 'List reopened', kind: 'success' });
-      void goto(`${base}/shopping-list/${listId}`);
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
+    if (await past.reopen(listId)) void goto(`${base}/shopping-list/${listId}`);
   }
 
   async function handleConfirmDelete(): Promise<void> {
     const id = confirmDeleteId;
     confirmDeleteId = null;
     if (id == null) return;
-    try {
-      await deleteList(id);
-      if (detail?.id === id) detail = null;
-      showToast({ message: 'List permanently deleted', kind: 'info' });
-      await load();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-  }
-
-  /**
-   * Copy picked rows into the target ACTIVE list via AddItem — they arrive manual + unchecked.
-   * Each success is removed from the selection AS IT LANDS, so a retry after a partial failure
-   * only re-sends the items that never made it (council round 1: retry-safety).
-   */
-  async function handleAddPicked(): Promise<void> {
-    if (!detail || targetListId == null || pickedIds.size === 0) return;
-    adding = true;
-    const picked = detail.items.filter((i) => pickedIds.has(i.id));
-    let added = 0;
-    try {
-      for (const item of picked) {
-        await addItem(targetListId, {
-          name: item.name,
-          quantity: item.quantity,
-          unit: item.unit,
-          category: item.category,
-        });
-        added += 1;
-        const next = new Set(pickedIds);
-        next.delete(item.id);
-        pickedIds = next;
-      }
-      const target = activeLists.find((l) => l.id === targetListId);
-      showToast({
-        message: `Added ${added} item${added === 1 ? '' : 's'} to ${target?.name ?? 'the list'}`,
-        kind: 'success',
-      });
-      await load();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-      if (added > 0) {
-        showToast({
-          message: `Added ${added} of ${picked.length} — the rest stay selected; retry adds only those.`,
-          kind: 'info',
-        });
-      }
-    } finally {
-      adding = false;
-    }
+    await past.remove(id);
   }
 
   function formatDate(iso: string): string {
@@ -173,8 +42,8 @@
   }
 
   $effect(() => {
-    void favoritesOnly; // re-run on filter flips
-    void load();
+    void past.favoritesOnly; // re-run on filter flips
+    void past.load();
   });
 </script>
 
@@ -185,33 +54,33 @@
       <h1 class="pl-title">Past Lists</h1>
     </div>
     <label class="pl-filter">
-      <input type="checkbox" bind:checked={favoritesOnly} />
+      <input type="checkbox" bind:checked={past.favoritesOnly} />
       Favorites only
     </label>
   </header>
 
-  {#if error}
+  {#if past.error}
     <div class="pl-error" role="alert">
-      <span>{error}</span>
-      <button type="button" onclick={() => load()}>Retry</button>
+      <span>{past.error}</span>
+      <button type="button" onclick={() => past.load()}>Retry</button>
     </div>
   {/if}
 
-  {#if loading}
+  {#if past.loading}
     <p class="pl-status">Loading…</p>
-  {:else if archived.length === 0}
+  {:else if past.archived.length === 0}
     <p class="pl-status">
-      {favoritesOnly ? 'No favorite past lists.' : 'No past lists yet — archived lists land here.'}
+      {past.favoritesOnly ? 'No favorite past lists.' : 'No past lists yet — archived lists land here.'}
     </p>
   {:else}
     <ul class="pl-list">
-      {#each archived as row (row.id)}
+      {#each past.archived as row (row.id)}
         <li class="pl-row">
           <button
             type="button"
             class="pl-row-main"
-            aria-expanded={detail?.id === row.id}
-            onclick={() => toggleDetail(row.id)}
+            aria-expanded={past.detail?.id === row.id}
+            onclick={() => past.toggleDetail(row.id)}
           >
             <span class="pl-row-name">
               {row.isFavorite ? '★ ' : ''}{row.name}
@@ -234,19 +103,19 @@
             </button>
           </div>
 
-          {#if detail?.id === row.id}
+          {#if past.detail?.id === row.id}
             <div class="pl-detail">
-              {#if detail.items.length === 0}
+              {#if past.detail.items.length === 0}
                 <p class="pl-status">This list has no items.</p>
               {:else}
                 <ul class="pl-items">
-                  {#each detail.items as item (item.id)}
+                  {#each past.detail.items as item (item.id)}
                     <li>
                       <label class="pl-item">
                         <input
                           type="checkbox"
-                          checked={pickedIds.has(item.id)}
-                          onchange={() => togglePick(item.id)}
+                          checked={past.pickedIds.has(item.id)}
+                          onchange={() => past.togglePick(item.id)}
                         />
                         <span class="pl-item-name" class:checked={item.isChecked}>
                           {item.name}
@@ -260,11 +129,11 @@
                   {/each}
                 </ul>
                 <div class="pl-pick-bar">
-                  {#if activeLists.length > 0}
+                  {#if past.activeLists.length > 0}
                     <label class="pl-target">
                       Add to
-                      <select bind:value={targetListId}>
-                        {#each activeLists as target (target.id)}
+                      <select bind:value={past.targetListId}>
+                        {#each past.activeLists as target (target.id)}
                           <option value={target.id}>
                             {target.isFavorite ? '★ ' : ''}{target.name}
                           </option>
@@ -274,10 +143,10 @@
                     <button
                       type="button"
                       class="pl-btn pl-btn-primary"
-                      disabled={pickedIds.size === 0 || adding}
-                      onclick={handleAddPicked}
+                      disabled={past.pickedIds.size === 0 || past.adding}
+                      onclick={() => past.addPicked()}
                     >
-                      {adding ? 'Adding…' : `Add ${pickedIds.size || ''} picked`}
+                      {past.adding ? 'Adding…' : `Add ${past.pickedIds.size || ''} picked`}
                     </button>
                   {:else}
                     <span class="pl-status">No active list to add to — reopen this one instead.</span>
@@ -291,7 +160,7 @@
     </ul>
   {/if}
 
-  {#if detailLoading}
+  {#if past.detailLoading}
     <p class="pl-status">Loading list…</p>
   {/if}
 </div>
@@ -299,7 +168,7 @@
 <ConfirmDialog
   open={confirmDeleteId != null}
   title="Delete List Permanently"
-  message={`Permanently delete ${archived.find((l) => l.id === confirmDeleteId)?.name ?? 'this list'}? This cannot be undone.`}
+  message={`Permanently delete ${past.archived.find((l) => l.id === confirmDeleteId)?.name ?? 'this list'}? This cannot be undone.`}
   confirmLabel="Delete forever"
   danger
   onCancel={() => (confirmDeleteId = null)}

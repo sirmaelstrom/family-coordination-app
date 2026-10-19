@@ -11,6 +11,7 @@
   import type { MealPlanEntryDto, RecipeDetailDto, RecipeIngredientDto } from '../types';
   import { getRecipeDetail, ApiError } from '../api';
   import { dayLong } from '../dates';
+  import { Resource } from '$lib/data/resource.svelte';
 
   type Mode = 'recipe' | 'custom';
 
@@ -36,28 +37,37 @@
   // Track the id we last fetched so re-opening the same recipe reuses it, but a
   // different recipe refetches. Reset on a custom-mode open.
   let loadedId = $state<number | null>(null);
-  // Monotonic load id: opening recipe A then quickly B leaves two fetches in flight, and if A's
-  // response lands last it renders A's detail under B's heading. Only the newest fetch may commit.
-  let detailLoadSeq = 0;
-
-  async function load(id: number): Promise<void> {
-    const seq = ++detailLoadSeq;
-    loading = true;
-    error = null;
-    try {
-      const next = await getRecipeDetail(id);
-      if (seq !== detailLoadSeq) return; // a newer recipe was opened
+  // The recipe the next load fetches. Opening recipe A then quickly B leaves two fetches in flight;
+  // the Resource (quest 41337b6f) lets only the newest commit, so A's response landing last can't
+  // render A's detail under B's heading.
+  let targetId = 0;
+  const detailResource = new Resource<{ id: number; next: RecipeDetailDto }>({
+    fetch: async () => {
+      const id = targetId;
+      return { id, next: await getRecipeDetail(id) };
+    },
+    commit: ({ id, next }) => {
       detail = next;
       loadedId = id;
-    } catch (e) {
-      if (seq !== detailLoadSeq) return;
+    },
+    onLoadStart: () => {
+      loading = true;
+      error = null;
+    },
+    onLoadError: (e) => {
       error =
         e instanceof ApiError
           ? `Couldn't load this recipe (HTTP ${e.status}).`
           : "Couldn't load this recipe right now.";
-    } finally {
-      if (seq === detailLoadSeq) loading = false;
-    }
+    },
+    onLoadIdle: () => {
+      loading = false;
+    },
+  });
+
+  async function load(id: number): Promise<void> {
+    targetId = id;
+    await detailResource.load();
   }
 
   $effect(() => {

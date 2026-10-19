@@ -74,7 +74,8 @@ public class BoundedJoinTests
             new Mock<IShoppingListService>().Object,
             new UnitConverter(),
             NullLogger<ShoppingListGenerator>.Instance,
-            TestClocks.System);
+            TestClocks.System,
+            TestKeys.Allocator);
 
     private static RecipeIngredient Butter(int recipeId, decimal qty) => new()
     {

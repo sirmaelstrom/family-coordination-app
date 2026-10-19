@@ -16,11 +16,22 @@ import type { ShellContext as AppShellContext } from '$lib/session.svelte';
 
 export type ShellContext = AppShellContext;
 
-/** GET /api/meal-plan/calendar-token → { active, createdAt } — never the token. */
+/**
+ * GET /api/meal-plan/calendar-token → the CALLER's own link status, plus the legacy
+ * household-shared link's — never a token. Links are per member (quest 8dba87f4):
+ * `active` says whether YOU have a link; another member's link is never reported.
+ */
 export interface CalendarTokenStatusDto {
   active: boolean;
   /** full ISO-8601 instant (UTC) when a token is active, else null/undefined. */
   createdAt?: string | null;
+  /**
+   * The household-shared link from before per-member links is still active. Nothing
+   * creates one any more; members subscribed with it keep reading until someone revokes it.
+   */
+  sharedLinkActive?: boolean;
+  /** full ISO-8601 instant (UTC) when the shared link is active, else null/undefined. */
+  sharedLinkCreatedAt?: string | null;
 }
 
 /** POST /api/meal-plan/calendar-token → { token, url } — the ONLY time the URL is readable. */

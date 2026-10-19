@@ -4,13 +4,16 @@
 // (admin → all households; regular → own household, R-C1), so the store just
 // renders whatever it's handed and uses `isSiteAdmin` for affordances/copy.
 //
-// Discipline: onMount one-time load, `loadSeq` guard on every load (this view
-// POLLS at 15s), await-then-reload mutations, reconcile on any 4xx. The IDOR
-// scope (a non-admin's mutation of another household's item ⇒ 404) is enforced
-// SERVER-side; here a 404 just reconciles + toasts.
+// Discipline: onMount one-time load; this view POLLS at 15s. Load and write
+// ordering live in a Resource (quest 41337b6f): a poll that overlaps a
+// mark-read/resolve/reopen never commits (one in flight is retired, one asked
+// for mid-write is deferred), and the list reloads once when the last write
+// settles, success or failure. The IDOR scope (a non-admin's mutation of
+// another household's item ⇒ 404) is enforced SERVER-side; here a 404 just
+// reconciles + toasts.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { FeedbackDto } from './types';
+import type { FeedbackDto, FeedbackListDto } from './types';
 import {
   ApiError,
   getFeedback,
@@ -18,6 +21,7 @@ import {
   markFeedbackResolved,
   reopenFeedback,
 } from './api';
+import { Resource } from '$lib/data/resource.svelte';
 import { showToast } from '$lib/shared/toast-store.svelte';
 
 class FeedbackStore {
@@ -27,24 +31,28 @@ class FeedbackStore {
   error = $state<string | null>(null);
 
   private hasLoaded = false;
-  private seq = 0;
 
-  async load(): Promise<void> {
-    const s = ++this.seq;
-    try {
-      if (!this.hasLoaded) this.loading = true;
-      this.error = null;
-      const dto = await getFeedback();
-      if (s !== this.seq) return; // stale poll — drop
+  #resource = new Resource<FeedbackListDto>({
+    fetch: () => getFeedback(),
+    commit: (dto) => {
       this.items = dto.items;
       this.isSiteAdmin = dto.isSiteAdmin;
       this.hasLoaded = true;
-    } catch (e) {
-      if (s !== this.seq) return;
+    },
+    onLoadStart: () => {
+      if (!this.hasLoaded) this.loading = true; // spinner only on the FIRST load
+      this.error = null;
+    },
+    onLoadError: (e) => {
       this.error = describe(e, 'load feedback');
-    } finally {
-      if (s === this.seq) this.loading = false;
-    }
+    },
+    onLoadIdle: () => {
+      this.loading = false;
+    },
+  });
+
+  async load(): Promise<void> {
+    await this.#resource.load();
   }
 
   async markRead(id: number): Promise<void> {
@@ -59,15 +67,15 @@ class FeedbackStore {
     await this.mutate(() => reopenFeedback(id), 'reopen');
   }
 
+  /** A write-then-reload action (reload 'always'); the success toast sits outside the write window. */
   private async mutate(action: () => Promise<void>, label: string, successMessage?: string): Promise<void> {
     try {
-      await action();
-      await this.load();
-      if (successMessage) showToast({ message: successMessage, kind: 'success' });
+      await this.#resource.run({ call: action });
     } catch (e) {
-      if (e instanceof ApiError) await this.load();
       showToast({ message: describe(e, label), kind: 'error' });
+      return;
     }
+    if (successMessage) showToast({ message: successMessage, kind: 'success' });
   }
 }
 

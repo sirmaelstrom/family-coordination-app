@@ -50,7 +50,7 @@ public class TenantFilterArchitectureTests
     internal static readonly Dictionary<string, int> RunAsCallsPerFile = new(StringComparer.Ordinal)
     {
         ["Data/SeedData.cs"] = 1,                      // the dev seed, from the Users lookup to the end
-        ["Endpoints/CalendarTokenEndpoints.cs"] = 1,   // the anonymous feed, around its Task.WhenAll
+        ["Endpoints/CalendarTokenEndpoints.cs"] = 2,   // the anonymous meal feed (around its Task.WhenAll) and chores feed (3bdbcab7)
         ["Services/Digest/DigestService.cs"] = 1,      // per swept household
         ["Services/HouseholdRequestService.cs"] = 2,   // admin approve, admin create
         ["Services/LoginProfileService.cs"] = 1,       // the login profile write

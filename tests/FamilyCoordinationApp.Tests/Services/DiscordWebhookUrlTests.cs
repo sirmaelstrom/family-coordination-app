@@ -26,7 +26,7 @@ public class DiscordWebhookUrlTests
     [InlineData("http://discord.com/api/webhooks/123/abc")]          // not https
     [InlineData("https://localhost/api/webhooks/123/abc")]           // internal host
     [InlineData("https://127.0.0.1/api/webhooks/123/abc")]
-    [InlineData("https://192.168.50.1/api/webhooks/123/abc")]
+    [InlineData("https://10.0.0.1/api/webhooks/123/abc")]
     [InlineData("https://familyapp-postgres/api/webhooks/1/a")]      // the docker network
     [InlineData("https://discord.com.evil.example/api/webhooks/1/a")] // suffix trick
     [InlineData("https://evil.example/discord.com/api/webhooks/1/a")]

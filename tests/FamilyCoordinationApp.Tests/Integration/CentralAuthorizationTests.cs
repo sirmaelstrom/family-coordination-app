@@ -47,6 +47,7 @@ public sealed class CentralAuthorizationTests(PostgresContainerFixture postgres)
     [
         "/api/chores/digest/run",
         "/api/calendar/meal-plan.ics",
+        "/api/calendar/chores.ics", // the member's chores feed: its token is the capability (quest 3bdbcab7)
     ];
 
     /// <summary>The site-admin routes: global reads/writes across households.</summary>
@@ -377,6 +378,7 @@ public sealed class CentralAuthorizationTests(PostgresContainerFixture postgres)
         { "GET", "/uploads/1/photo.jpg", HttpStatusCode.Unauthorized },
         { "GET", "/no-such-page", HttpStatusCode.NotFound },
         { "GET", "/api/calendar/meal-plan.ics?token=not-a-real-token", HttpStatusCode.NotFound },
+        { "GET", "/api/calendar/chores.ics?token=not-a-real-token", HttpStatusCode.NotFound },
         { "POST", "/api/chores/digest/run", HttpStatusCode.Unauthorized },
         // Changed by the gate (base: 404 and 405).
         { "GET", "/api/no-such-route", HttpStatusCode.Unauthorized },

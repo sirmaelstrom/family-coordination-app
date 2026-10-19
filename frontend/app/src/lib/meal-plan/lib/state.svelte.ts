@@ -13,9 +13,17 @@
 //
 // The ops are add + move (drag-to-assign, same week) + servings + remove. All but
 // ADD send the entry's xmin token and get a 409 on a stale one (PR #95); add
-// creates the row, so it has no prior version. On any 4xx we reconcile (re-GET the
-// current week) + surface a calm toast. The token for a dialog-driven mutation is
-// supplied BY THE CALLER, not re-read here — see setEntryServings for why.
+// creates the row, so it has no prior version. The token for a dialog-driven
+// mutation is supplied BY THE CALLER, not re-read here — see setEntryServings for why.
+//
+// Ordering lives in a Resource (quest 41337b6f). Every write goes through
+// mutate(): a load already in flight is retired when the write starts, and no
+// load (liveness, reconcile, a week change) is dispatched until the writes
+// settle — then ONE load runs. So a same-week poll can no longer revert an
+// optimistic move/remove. A 409/other 4xx undoes + reconciles + a calm toast;
+// a 5xx/network failure undoes with an error toast and no reconcile. A second
+// action on an entry whose write is still pending is skipped (it would send the
+// same, now stale, token).
 // NO `new Date('YYYY-MM-DD')` anywhere — week stepping goes through
 // lib/dates.ts (MN4).
 // ─────────────────────────────────────────────────────────────────────────
@@ -40,6 +48,15 @@ import {
   type DragEntry,
 } from './board-ops';
 import { showToast } from '$lib/shared/toast-store.svelte';
+import { Resource, type MutationOutcome } from '$lib/data/resource.svelte';
+
+/** The pending-write key for one entry (a second action on it while pending is skipped). */
+const entryKey = (mealPlanId: number, entryId: number): string => `entry:${mealPlanId}:${entryId}`;
+
+// The toast shows as the refresh STARTS (a write doesn't wait for its reconcile GET), so the copy says
+// "refreshing", and the entry stays locked until the refresh lands (slim-review delta on fca#150).
+const STALE_MEAL = 'That meal just changed — refreshing the plan. Try again in a moment.';
+const FAILED = 'Something went wrong. Please try again.';
 
 /** The board's three rendered meal rows (Snack is implicit — only shown if data exists). */
 export const MEAL_ROWS: MealType[] = ['breakfast', 'lunch', 'dinner'];
@@ -62,11 +79,38 @@ class MealPlanStore {
    */
   private refresh: (() => Promise<void>) | null = null;
 
-  /** Monotonic load id. The targetWeek capture below catches a load that raced a WEEK CHANGE, but two
-   *  loads for the SAME week (liveness poll vs reconcile vs an explicit refresh) both pass that check,
-   *  so the slower/older response can still land last and overwrite newer data. Every load applies only
-   *  if it is still the latest. */
-  private loadSeq = 0;
+  /**
+   * Load + write ordering. The Resource applies only the latest load (two loads for the SAME week —
+   * liveness vs reconcile vs refresh — can't land out of order) and none that overlaps a pending
+   * write. The load carries the week it asked for; commit drops it if the user has since moved on.
+   * (With loads deferred behind writes and a week change superseding any older load, that check is
+   * defence in depth: a stale-week result can't be current.)
+   */
+  #resource = new Resource<{ week: string; board: MealPlanBoardDto }>({
+    fetch: async () => {
+      const week = this.weekStart;
+      return { week, board: await getBoard(week) };
+    },
+    commit: ({ week, board }) => {
+      if (this.weekStart !== week) return;
+      this.setBoard(board);
+    },
+    onLoadStart: () => {
+      if (this.board == null) this.loading = true; // the spinner is for the first load only
+      this.error = null;
+    },
+    onLoadError: (e) => {
+      this.error =
+        e instanceof ApiError
+          ? `Failed to load the meal plan (HTTP ${e.status}).`
+          : e instanceof Error
+            ? e.message
+            : String(e);
+    },
+    onLoadIdle: () => {
+      this.loading = false;
+    },
+  });
 
   // ── Per-slot zone state (drag-to-assign) ─────────────────────────────────
   //
@@ -154,33 +198,11 @@ class MealPlanStore {
    * the first load; liveness refreshes are silent.
    */
   async loadBoard(): Promise<void> {
-    // Capture the week this load targets. Two getBoard calls for different weeks can be in flight at
-    // once (a liveness reconcile racing changeWeek, or rapid prev/next); without this guard the OLDER
-    // response can land last and — because setBoard() adopts the response's weekStartDate — snap the
-    // board back to the wrong week. Mirror the targetWeek capture/compare addEntry already uses.
-    const targetWeek = this.weekStart;
-    const seq = ++this.loadSeq;
-    try {
-      if (this.board == null) this.loading = true;
-      this.error = null;
-      const next = await getBoard(targetWeek);
-      // Discard a stale response: the user moved to another week while this GET was in flight, OR a
-      // newer load for the SAME week superseded this one (the week check alone cannot see that case).
-      if (this.weekStart !== targetWeek || seq !== this.loadSeq) return;
-      this.setBoard(next);
-    } catch (e) {
-      // A stale week's — or a superseded load's — failure is moot.
-      if (this.weekStart !== targetWeek || seq !== this.loadSeq) return;
-      if (e instanceof ApiError) {
-        this.error = `Failed to load the meal plan (HTTP ${e.status}).`;
-      } else {
-        this.error = e instanceof Error ? e.message : String(e);
-      }
-    } finally {
-      // Only the newest load owns the spinner: an older one finishing late must not clear it while
-      // the newer request is still in flight.
-      if (seq === this.loadSeq) this.loading = false;
-    }
+    // Ordering is the Resource's: a superseded load (an older week, or an older load for the SAME
+    // week) never commits or surfaces its error, and only the current load clears the spinner. While a
+    // write is pending this dispatches nothing and the load runs once the writes settle — for the week
+    // that is current THEN (a week change mid-write loads the new week, once).
+    await this.#resource.load();
   }
 
   /**
@@ -198,42 +220,55 @@ class MealPlanStore {
 
   /**
    * Add a meal to a slot. Add is infrequent, so we AWAIT the POST then merge the
-   * returned authoritative entry into `board.entries` (no temp id). On any
-   * 4xx/network error: reconcile (re-GET the week) + a calm toast.
+   * returned authoritative entry into `board.entries` (no temp id). A 409/other
+   * 4xx reconciles (re-GET the week) + a calm toast; a 5xx/network failure toasts.
    */
   async addEntry(body: AddEntryBody): Promise<void> {
     if (!this.board) return;
     // Capture the week the add targets. If the user navigates to another week while the POST is in flight,
     // we must NOT merge this (off-week) entry into the now-current board (council R1). It is persisted
-    // server-side and will appear when its week is viewed.
+    // server-side and will appear when its week is viewed. No key: two adds are legitimately concurrent.
     const targetWeek = this.weekStart;
-    try {
-      const created = await addEntry(body);
-      if (!this.board || this.weekStart !== targetWeek) return;
-      // The POST may have GetOrCreated the week's plan, so the board's
-      // mealPlanId could have been null — adopt the entry's plan id.
-      if (this.board.mealPlanId == null) {
-        this.board.mealPlanId = created.mealPlanId;
-      }
-      this.board.entries = [...this.board.entries, created];
-    } catch (e) {
-      await this.reconcile();
-      const msg =
-        e instanceof ApiError
-          ? "Couldn't add that meal — the plan was refreshed."
-          : "Couldn't add that meal right now.";
-      showToast({ message: msg, kind: 'info' });
-    }
+    const outcome = await this.#resource.mutate({
+      call: () => addEntry(body),
+      commit: (created) => {
+        if (!this.board || this.weekStart !== targetWeek) return;
+        // The POST may have GetOrCreated the week's plan, so the board's
+        // mealPlanId could have been null — adopt the entry's plan id.
+        if (this.board.mealPlanId == null) {
+          this.board.mealPlanId = created.mealPlanId;
+        }
+        this.board.entries = [...this.board.entries, created];
+      },
+    });
+    this.notify(outcome, targetWeek, {
+      conflict: "Couldn't add that meal — refreshing the plan.",
+      rejected: "Couldn't add that meal — refreshing the plan.",
+      failed: "Couldn't add that meal right now.",
+    });
+  }
+
+  /**
+   * The failure toast for a write's outcome — only while the user is still on the week the write was
+   * for (a failure on a week they have left is moot; its reconcile already shows the current week).
+   * The 409 copy is chosen by the outcome, never a raw status compare.
+   */
+  private notify(
+    outcome: MutationOutcome,
+    targetWeek: string,
+    copy: { conflict: string; rejected: string; failed: string },
+  ): void {
+    if (outcome === 'ok' || outcome === 'skipped' || this.weekStart !== targetWeek) return;
+    showToast({ message: copy[outcome], kind: outcome === 'failed' ? 'error' : 'info' });
   }
 
   /**
    * Move an entry to another slot in the SAME week (drag-to-assign). Optimistic
    * re-slot, then PATCH; the server echo is merged back (authoritative
-   * UpdatedAt/UpdatedBy). Mirrors removeEntry's failure split: any 4xx (cross-
-   * week, duplicate-in-slot, entry gone — a clean 404 since PR #90)
-   * → reconcile + calm toast; network/5xx → revert the optimistic move (the
-   * same transform aimed back at the original slot) + error toast. Same
-   * targetWeek stale-response guard as addEntry.
+   * UpdatedAt/UpdatedBy). Any failure reverts the optimistic move; a 409 or
+   * other 4xx (cross-week, duplicate-in-slot, entry gone — a clean 404 since
+   * PR #90) also reconciles + a calm toast; network/5xx → an error toast. Same
+   * targetWeek guard as addEntry, on the commit AND the undo.
    */
   async moveEntry(
     mealPlanId: number,
@@ -252,48 +287,40 @@ class MealPlanStore {
     if (fromDate === date && fromMeal === mealType) return;
 
     const targetWeek = this.weekStart;
-    // Optimistic re-slot (synchronous — zoneFinalize relies on this landing
-    // before the drag gate is released).
-    this.board.entries = applyEntryMove(this.board.entries, mealPlanId, entryId, date, mealType);
-    try {
+    const outcome = await this.#resource.mutate({
+      key: entryKey(mealPlanId, entryId),
+      // Optimistic re-slot. mutate() runs this synchronously, before its first await — zoneFinalize relies
+      // on it landing before the drag gate is released.
+      optimistic: () => {
+        if (!this.board) return;
+        this.board.entries = applyEntryMove(this.board.entries, mealPlanId, entryId, date, mealType);
+        // Undo: the same transform aimed back at the original slot — only on the week it was made on
+        // (restoring into another week's board would move a foreign entry).
+        return () => {
+          if (!this.board || this.weekStart !== targetWeek) return;
+          this.board.entries = applyEntryMove(this.board.entries, mealPlanId, entryId, fromDate, fromMeal);
+        };
+      },
       // Caller-supplied token (the dragged card's), NOT original.version — see zoneFinalize.
-      const updated = await moveEntry(mealPlanId, entryId, { date, mealType, version });
-      // The user stepped to another week while the PATCH was in flight — this
-      // board is no longer the one we moved on; the new week's GET is truth.
-      if (!this.board || this.weekStart !== targetWeek) return;
-      this.board.entries = replaceEntry(this.board.entries, updated);
-    } catch (e) {
-      if (this.weekStart !== targetWeek) return;
-      if (e instanceof ApiError) {
-        // Any 4xx — the server rejected the move; resync to truth.
-        //
-        // A 409 means the token we sent was stale. USUALLY that is another member, but it is not only
-        // that: the version is read from our cached entry, and nothing serializes mutations on the same
-        // entry, so a second action taken before the first response lands sends the same (now stale)
-        // token. The copy therefore says what we actually know — the meal changed — rather than blaming
-        // a person who may be this user. Non-destructive either way: the reconcile shows server truth.
-        await this.reconcile();
-        showToast({
-          message:
-            e.status === 409
-              ? 'That meal just changed — the plan was refreshed. Try again.'
-              : "Couldn't move that meal — the plan was refreshed.",
-          kind: 'info',
-        });
-      } else {
-        // Network/5xx: put the entry back in its original slot.
-        if (this.board) {
-          this.board.entries = applyEntryMove(
-            this.board.entries,
-            mealPlanId,
-            entryId,
-            fromDate,
-            fromMeal,
-          );
-        }
-        showToast({ message: 'Something went wrong. Please try again.', kind: 'error' });
-      }
-    }
+      call: () => moveEntry(mealPlanId, entryId, { date, mealType, version }),
+      commit: (updated) => {
+        // The user stepped to another week while the PATCH was in flight — this
+        // board is no longer the one we moved on; the new week's GET is truth.
+        if (!this.board || this.weekStart !== targetWeek) return;
+        this.board.entries = replaceEntry(this.board.entries, updated);
+      },
+    });
+    // Skipped (this entry's earlier write is still pending): zoneFinalize already wrote the dropped card
+    // into the destination zone, and the board didn't change — re-derive the zones from the board.
+    if (outcome === 'skipped') this.rebuildZones();
+    // A 409 means the token we sent was stale — usually another member. (A second action on the same entry
+    // before the first response lands used to send the same stale token too; the pending key now skips
+    // it.) The copy says what we know — the meal changed — and the reconcile shows server truth.
+    this.notify(outcome, targetWeek, {
+      conflict: STALE_MEAL,
+      rejected: "Couldn't move that meal — refreshing the plan.",
+      failed: FAILED,
+    });
   }
 
   /**
@@ -315,35 +342,29 @@ class MealPlanStore {
   ): Promise<void> {
     if (!this.board) return;
     const targetWeek = this.weekStart;
-    try {
+    const outcome = await this.#resource.mutate({
+      key: entryKey(mealPlanId, entryId),
       // The token comes from the CALLER — the entry as it was when the dialog opened — not from a fresh
       // lookup here. A ~20s liveness poll can replace the board entry while the dialog sits open, and
       // re-sampling would submit a version the user never saw, quietly overwriting whatever the other
       // member just changed. That is exactly the write this feature exists to refuse.
-      const updated = await setEntryServings(mealPlanId, entryId, servings, version);
-      if (!this.board || this.weekStart !== targetWeek) return;
-      this.board.entries = replaceEntry(this.board.entries, updated);
-    } catch (e) {
-      if (this.weekStart !== targetWeek) return;
-      if (e instanceof ApiError) {
-        await this.reconcile();
-        showToast({
-          message:
-            e.status === 409
-              ? 'That meal just changed — the plan was refreshed. Try again.'
-              : "Couldn't change the servings — the plan was refreshed.",
-          kind: 'info',
-        });
-      } else {
-        showToast({ message: 'Something went wrong. Please try again.', kind: 'error' });
-      }
-    }
+      call: () => setEntryServings(mealPlanId, entryId, servings, version),
+      commit: (updated) => {
+        if (!this.board || this.weekStart !== targetWeek) return;
+        this.board.entries = replaceEntry(this.board.entries, updated);
+      },
+    });
+    this.notify(outcome, targetWeek, {
+      conflict: STALE_MEAL,
+      rejected: "Couldn't change the servings — refreshing the plan.",
+      failed: FAILED,
+    });
   }
 
   /**
-   * Remove an entry — optimistic splice, then DELETE. On any error reconcile +
-   * calm toast. A missing entry (already removed by someone else) → 404
-   * → the refetch shows the true state.
+   * Remove an entry — optimistic splice, then DELETE. Any failure puts it back;
+   * a 409/other 4xx also reconciles + a calm toast. A missing entry (already
+   * removed by someone else) → 404 → the refetch shows the true state.
    */
   async removeEntry(mealPlanId: number, entryId: number, version: number): Promise<void> {
     if (!this.board) return;
@@ -353,45 +374,34 @@ class MealPlanStore {
     if (idx < 0) return;
     const removed = this.board.entries[idx];
     const targetWeek = this.weekStart;
-    // Optimistic splice.
-    this.board.entries = this.board.entries.filter(
-      (e) => !(e.mealPlanId === mealPlanId && e.entryId === entryId),
-    );
-    try {
-      // Caller-supplied token, for the same reason as setEntryServings — the confirm dialog can sit open
-      // across a liveness poll.
-      await removeEntry(mealPlanId, entryId, version);
-    } catch (e) {
-      // The user stepped to another week while the DELETE was in flight; this board is no longer the one
-      // we deleted from, and restoring into it would splice a foreign entry into the visible week.
-      if (this.weekStart !== targetWeek) return;
-      if (e instanceof ApiError) {
-        // Any 4xx (a missing entry is a clean 404 since PR #90) — resync to truth. A 409 specifically means
-        // someone else changed this entry after we read it, so say so rather than the generic line.
-        await this.reconcile();
-        showToast({
-          message:
-            e.status === 409
-              ? 'That meal just changed — the plan was refreshed. Try again.'
-              : 'That meal changed — the plan was refreshed.',
-          kind: 'info',
-        });
-      } else {
-        // Network/5xx: the refetch may not have restored it; put it back AT ITS ORIGINAL INDEX (council R1 —
-        // appending would reorder the slot's entries on a failed delete).
-        if (
-          this.board &&
-          !this.board.entries.some(
-            (x) => x.mealPlanId === mealPlanId && x.entryId === entryId,
-          )
-        ) {
+    const isThis = (x: MealPlanEntryDto) => x.mealPlanId === mealPlanId && x.entryId === entryId;
+    const outcome = await this.#resource.mutate({
+      key: entryKey(mealPlanId, entryId),
+      optimistic: () => {
+        if (!this.board) return;
+        this.board.entries = this.board.entries.filter((e) => !isThis(e));
+        // Undo: put it back AT ITS ORIGINAL INDEX (council R1 — appending would reorder the slot's entries),
+        // only on the week it was removed from (restoring into another week would splice a foreign entry
+        // into the visible week) and only if it isn't already there.
+        return () => {
+          if (!this.board || this.weekStart !== targetWeek) return;
+          if (this.board.entries.some(isThis)) return;
           const restored = [...this.board.entries];
           restored.splice(Math.min(idx, restored.length), 0, removed);
           this.board.entries = restored;
-        }
-        showToast({ message: 'Something went wrong. Please try again.', kind: 'error' });
-      }
-    }
+        };
+      },
+      // Caller-supplied token, for the same reason as setEntryServings — the confirm dialog can sit open
+      // across a liveness poll.
+      call: () => removeEntry(mealPlanId, entryId, version),
+    });
+    // A 409 means someone else changed this entry after we read it, so say so rather than the generic line.
+    // Any other 4xx (a missing entry is a clean 404 since PR #90) reconciles to truth.
+    this.notify(outcome, targetWeek, {
+      conflict: STALE_MEAL,
+      rejected: 'That meal changed — refreshing the plan.',
+      failed: FAILED,
+    });
   }
 }
 

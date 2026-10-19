@@ -7,6 +7,7 @@
   import type { RecipeFullDto, RecipeIngredientFullDto, RecipeListItemDto } from '../types';
   import { getRecipe, getConnectedRecipe, ApiError } from '../api';
   import { initials } from '../avatar';
+  import { Resource } from '$lib/data/resource.svelte';
   import {
     formatScaledQuantity,
     getScaledQuantity,
@@ -49,37 +50,48 @@
   let copying = $state(false);
   // The `${connectedId}:${recipeId}` we last fetched — reopening the same recipe reuses it.
   let loadedKey: string | null = null;
-  // Monotonic load id: opening recipe A then quickly B leaves two fetches in flight, and if A's
-  // response lands last it renders A's ingredients under B's title (and mis-sets loadedKey, causing
-  // a redundant refetch). Only the newest fetch may commit.
-  let detailLoadSeq = 0;
+  // The recipe the next load fetches. Opening recipe A then quickly B leaves two fetches in flight;
+  // the Resource (quest 41337b6f) lets only the newest commit, so A's response landing last can't
+  // render A's ingredients under B's title (or mis-set loadedKey).
+  let target: RecipeListItemDto | null = null;
 
   function keyFor(s: RecipeListItemDto): string {
     return `${connectedId ?? ''}:${s.recipeId}`;
   }
 
-  async function load(s: RecipeListItemDto): Promise<void> {
-    const seq = ++detailLoadSeq;
-    loading = true;
-    error = null;
-    try {
+  const detailResource = new Resource<{ key: string; full: RecipeFullDto }>({
+    fetch: async () => {
+      const s = target as RecipeListItemDto;
+      const key = keyFor(s);
       const full =
         connectedId == null
           ? await getRecipe(s.recipeId)
           : await getConnectedRecipe(connectedId, s.recipeId);
-      if (seq !== detailLoadSeq) return; // a newer recipe was opened
+      return { key, full };
+    },
+    commit: ({ key, full }) => {
       detail = full;
       scaledServings = full.servings ?? 1;
-      loadedKey = keyFor(s);
-    } catch (e) {
-      if (seq !== detailLoadSeq) return;
+      loadedKey = key;
+    },
+    onLoadStart: () => {
+      loading = true;
+      error = null;
+    },
+    onLoadError: (e) => {
       error =
         e instanceof ApiError
           ? `Couldn't load this recipe (HTTP ${e.status}).`
           : "Couldn't load this recipe right now.";
-    } finally {
-      if (seq === detailLoadSeq) loading = false;
-    }
+    },
+    onLoadIdle: () => {
+      loading = false;
+    },
+  });
+
+  async function load(s: RecipeListItemDto): Promise<void> {
+    target = s;
+    await detailResource.load();
   }
 
   // Reactive lazy-load on open / recipe change (mirrors meal-plan RecipeDetailSheet).

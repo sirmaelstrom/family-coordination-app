@@ -6,13 +6,14 @@
 // `$state`. We wrap the mutable state in a class instance and export the instance.
 //
 // Parity-first ⇒ versionless / last-write-wins. This view is WRITE-heavy but
-// each surface is simple CRUD: every mutation `await`s then reloads the affected
-// lists; a `loadSeq` guard drops a stale reload that resolves after a newer one
-// (memory fca-island-async-race-guards). No autosave/draft — these are explicit
-// button actions. No liveness (parity: the page doesn't poll).
+// each surface is simple CRUD. Load and write ordering live in a Resource
+// (quest 41337b6f): every write runs inside its window (no load commits over a
+// pending write), and the reload a write asks for runs once when the last write
+// settles. No autosave/draft — these are explicit button actions. No liveness
+// (parity: the page doesn't poll).
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { CategoryDto, CategoryWriteRequest } from './types';
+import type { CategoryDto, CategoryListDto, CategoryWriteRequest } from './types';
 import {
   ApiError,
   getCategories,
@@ -23,6 +24,7 @@ import {
   updateSortOrder,
   categoryInUse,
 } from './api';
+import { Resource } from '$lib/data/resource.svelte';
 import { showToast } from '$lib/shared/toast-store.svelte';
 
 class CategoriesStore {
@@ -33,51 +35,55 @@ class CategoriesStore {
 
   /** True once the first load resolved — gates the skeleton so reloads don't reflash it. */
   private hasLoaded = false;
-  /** Monotonic load id — a slower older response must not overwrite a newer one. */
-  private seq = 0;
+  /** Bumped by every optimistic reorder: an undo applies only while its own order is the latest. */
+  #reorderGen = 0;
 
-  /** Load both lists. Spinner only on the FIRST load; reloads refresh in place. */
-  async load(): Promise<void> {
-    const s = ++this.seq;
-    try {
-      if (!this.hasLoaded) this.loading = true;
-      this.error = null;
-      const dto = await getCategories();
-      if (s !== this.seq) return; // a newer load superseded this one
+  #resource = new Resource<CategoryListDto>({
+    fetch: () => getCategories(),
+    commit: (dto) => {
       this.active = dto.active;
       this.deleted = dto.deleted;
       this.hasLoaded = true;
-    } catch (e) {
-      if (s !== this.seq) return;
+    },
+    onLoadStart: () => {
+      if (!this.hasLoaded) this.loading = true; // spinner only on the FIRST load
+      this.error = null;
+    },
+    onLoadError: (e) => {
       this.error = describe(e, 'load categories');
-    } finally {
-      if (s === this.seq) this.loading = false;
+    },
+    onLoadIdle: () => {
+      this.loading = false;
+    },
+  });
+
+  /** Load both lists. Spinner only on the FIRST load; reloads refresh in place. */
+  async load(): Promise<void> {
+    await this.#resource.load();
+  }
+
+  /**
+   * A write-then-reload action: `run()` with the default reload 'always', so the lists refresh once
+   * the write settles, success or failure. The success toast sits outside the write window.
+   */
+  async #write<R>(call: () => Promise<R>, action: string, success: (result: R) => string): Promise<boolean> {
+    let result: R;
+    try {
+      result = await this.#resource.run({ call });
+    } catch (e) {
+      showToast({ message: describe(e, action), kind: 'error' });
+      return false;
     }
+    showToast({ message: success(result), kind: 'success' });
+    return true;
   }
 
   async add(body: CategoryWriteRequest): Promise<boolean> {
-    try {
-      const created = await createCategory(body);
-      await this.load();
-      showToast({ message: `Category "${created.name}" created.`, kind: 'success' });
-      return true;
-    } catch (e) {
-      showToast({ message: describe(e, 'create category'), kind: 'error' });
-      return false;
-    }
+    return this.#write(() => createCategory(body), 'create category', (created) => `Category "${created.name}" created.`);
   }
 
   async update(categoryId: number, body: CategoryWriteRequest): Promise<boolean> {
-    try {
-      await updateCategory(categoryId, body);
-      await this.load();
-      showToast({ message: 'Category updated.', kind: 'success' });
-      return true;
-    } catch (e) {
-      if (e instanceof ApiError) await this.load(); // reconcile to truth on 4xx
-      showToast({ message: describe(e, 'update category'), kind: 'error' });
-      return false;
-    }
+    return this.#write(() => updateCategory(categoryId, body), 'update category', () => 'Category updated.');
   }
 
   /** Whether the category's name is used by an ingredient (drives the delete confirm copy). */
@@ -90,42 +96,44 @@ class CategoriesStore {
   }
 
   async remove(categoryId: number): Promise<void> {
-    try {
-      await deleteCategory(categoryId);
-      await this.load();
-      showToast({ message: 'Category deleted.', kind: 'success' });
-    } catch (e) {
-      if (e instanceof ApiError) await this.load();
-      showToast({ message: describe(e, 'delete category'), kind: 'error' });
-    }
+    await this.#write(() => deleteCategory(categoryId), 'delete category', () => 'Category deleted.');
   }
 
   async restore(categoryId: number): Promise<void> {
-    try {
-      await restoreCategory(categoryId);
-      await this.load();
-      showToast({ message: 'Category restored.', kind: 'success' });
-    } catch (e) {
-      if (e instanceof ApiError) await this.load();
-      showToast({ message: describe(e, 'restore category'), kind: 'error' });
-    }
+    await this.#write(() => restoreCategory(categoryId), 'restore category', () => 'Category restored.');
   }
 
   /**
-   * Persist a new order (parity: reorder commits immediately). Optimistic local
-   * reorder so the UI is responsive, then persist; on failure reload to restore
-   * the authoritative order + a toast.
+   * Persist a new order (parity: reorder commits immediately). Optimistic local reorder, then persist.
+   * On a 409/other 4xx the old order comes back and the lists reload; on a 5xx/network failure the old
+   * order comes back with no reload (spec §5 row 6). The undo is scoped: it applies only while this
+   * reorder's order is still the latest, so it never erases a later drag. When a later drag overlapped
+   * it, no local snapshot is known to be the saved order (both may fail — slim-review on fca#152), so
+   * the failure reloads the server order instead. That load is requested from INSIDE the write window
+   * (the undo runs before settle), so the Resource defers it and coalesces it with any reconcile the
+   * same settle starts — one GET, never two racing ones (slim-review delta on fca#152).
    */
   async reorder(orderedIds: number[]): Promise<void> {
-    const byId = new Map(this.active.map((c) => [c.categoryId, c]));
-    const next = orderedIds.map((id) => byId.get(id)).filter((c): c is CategoryDto => c != null);
-    if (next.length === this.active.length) this.active = next;
-    try {
-      await updateSortOrder(orderedIds);
-    } catch (e) {
-      await this.load(); // restore the real order
-      showToast({ message: describe(e, 'reorder categories'), kind: 'error' });
-    }
+    await this.#resource.mutate({
+      optimistic: () => {
+        const byId = new Map(this.active.map((c) => [c.categoryId, c]));
+        const next = orderedIds.map((id) => byId.get(id)).filter((c): c is CategoryDto => c != null);
+        if (next.length !== this.active.length) return;
+        const previous = this.active;
+        const gen = ++this.#reorderGen;
+        this.active = next;
+        return () => {
+          if (this.#reorderGen === gen) this.active = previous;
+          else void this.#resource.load(); // 'deferred' (this write is still pending): owed at settle
+        };
+      },
+      call: () => updateSortOrder(orderedIds),
+      messages: {
+        conflict: 'The categories changed — refreshing the order.',
+        rejected: "Couldn't save that order — refreshing the list.",
+        failed: "Couldn't save that order right now.",
+      },
+    });
   }
 }
 

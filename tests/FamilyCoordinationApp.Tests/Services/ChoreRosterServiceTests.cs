@@ -47,7 +47,8 @@ public class ChoreRosterServiceTests : IDisposable
             new ChoreStatusCalculator(),
             Mock.Of<IImageService>(),
             _clock,
-            new Mock<ILogger<ChoreService>>().Object);
+            new Mock<ILogger<ChoreService>>().Object,
+            TestKeys.Allocator);
 
         _seedContext.Households.AddRange(
             new Household { Id = HouseholdId, Name = "Smith" },

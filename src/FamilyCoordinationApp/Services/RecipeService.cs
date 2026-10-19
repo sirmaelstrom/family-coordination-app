@@ -9,7 +9,8 @@ public class RecipeService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     IImageService imageService,
     ILogger<RecipeService> logger,
-    IHouseholdClock clock) : IRecipeService
+    IHouseholdClock clock,
+    IKeyAllocator keys) : IRecipeService
 {
     private const string RecipeNotFound = "Recipe not found.";
 
@@ -50,13 +51,14 @@ public class RecipeService(
 
     public async Task<Recipe> CreateRecipeAsync(Recipe recipe, CancellationToken cancellationToken = default)
     {
-        return await IdGenerationHelper.ExecuteWithRetryAsync(
+        return await keys.InsertAsync(
+            "Recipe",
             async (attempt) =>
             {
                 await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-                // Get next recipe ID for this household
-                recipe.RecipeId = await GetNextRecipeIdInternalAsync(context, recipe.HouseholdId, cancellationToken);
+                // Get next recipe ID for this household (soft-deleted recipes count: an id is never reused)
+                recipe.RecipeId = await keys.NextKeyAsync(context.Recipes, r => r.RecipeId, cancellationToken);
                 // CreatedAt, and CreatedByUserId when the caller left it unset, are stamped by the write step.
 
                 // Set ingredient IDs and household IDs
@@ -74,9 +76,7 @@ public class RecipeService(
                 logger.LogInformation("Created recipe {RecipeId} for household {HouseholdId}", recipe.RecipeId, recipe.HouseholdId);
 
                 return recipe;
-            },
-            logger,
-            "Recipe");
+            });
     }
 
     public async Task<Recipe> UpdateRecipeAsync(Recipe recipe, uint expectedVersion, CancellationToken cancellationToken = default)
@@ -156,15 +156,6 @@ public class RecipeService(
         await context.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Soft deleted recipe {RecipeId} for household {HouseholdId}", recipeId, householdId);
-    }
-
-    private static async Task<int> GetNextRecipeIdInternalAsync(ApplicationDbContext context, int householdId, CancellationToken cancellationToken)
-    {
-        var maxId = await context.Recipes
-            .IgnoreQueryFilters(["SoftDelete"]) // Include soft-deleted
-            .MaxAsync(r => (int?)r.RecipeId, cancellationToken) ?? 0;
-
-        return maxId + 1;
     }
 
     public async Task<List<string>> GetIngredientSuggestionsAsync(int householdId, string prefix, CancellationToken cancellationToken = default)
@@ -331,7 +322,8 @@ public class RecipeService(
         int sourceHouseholdId, int sourceRecipeId, int targetHouseholdId, int userId,
         string? copiedImagePath, CancellationToken cancellationToken)
     {
-        return await IdGenerationHelper.ExecuteWithRetryAsync(
+        return await keys.InsertAsync(
+            "CopiedRecipe",
             async (attempt) =>
             {
                 await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -353,7 +345,7 @@ public class RecipeService(
                 }
 
                 // Get next recipe ID for the target household
-                var newRecipeId = await GetNextRecipeIdInternalAsync(context, targetHouseholdId, cancellationToken);
+                var newRecipeId = await keys.NextKeyAsync(context.Recipes, r => r.RecipeId, cancellationToken);
 
                 var copiedRecipe = new Recipe
                 {
@@ -400,8 +392,6 @@ public class RecipeService(
                     sourceRecipeId, sourceHouseholdId, targetHouseholdId, newRecipeId);
 
                 return copiedRecipe;
-            },
-            logger,
-            "CopiedRecipe");
+            });
     }
 }

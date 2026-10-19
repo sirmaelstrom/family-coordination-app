@@ -122,7 +122,7 @@ public sealed class DigestSettingsIntegrationTests(PostgresContainerFixture post
     /// </summary>
     [Theory]
     [InlineData("https://familyapp-postgres:5432/api/webhooks/1/a")]
-    [InlineData("http://192.168.50.1/api/webhooks/1/a")]
+    [InlineData("http://10.0.0.1/api/webhooks/1/a")]
     [InlineData("LONG")]
     public async Task PutWebhook_Set_WithANonDiscordOrOverlongUrl_Is400_AndStoresNothing(string url)
     {

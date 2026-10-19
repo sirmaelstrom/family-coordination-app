@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using FamilyCoordinationApp.Data;
+using FamilyCoordinationApp.Data.Configurations;
 using FamilyCoordinationApp.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -11,11 +12,13 @@ public sealed class HouseholdCalendarTokenService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     IHouseholdClock clock) : IHouseholdCalendarTokenService
 {
-    public Task<CreatedCalendarToken> CreateOrRotateAsync(int householdId, CancellationToken ct = default) =>
-        CreateOrRotateAsync(householdId, retryOnUniqueViolation: true, ct);
+    public Task<CreatedCalendarToken> CreateOrRotateAsync(int householdId, int userId, CalendarFeed feed, CancellationToken ct = default) =>
+        CreateOrRotateAsync(householdId, userId, feed, retryOnUniqueViolation: true, ct);
 
     private async Task<CreatedCalendarToken> CreateOrRotateAsync(
         int householdId,
+        int userId,
+        CalendarFeed feed,
         bool retryOnUniqueViolation,
         CancellationToken ct)
     {
@@ -26,16 +29,24 @@ public sealed class HouseholdCalendarTokenService(
             await using var context = await dbFactory.CreateDbContextAsync(ct);
             await using var transaction = await context.Database.BeginTransactionAsync(ct);
 
-            // Serialize same-household rotations so IX_HouseholdCalendarTokens_HouseholdId remains a last-resort guard.
+            // Serialize same-household rotations so the active-token index remains a last-resort guard.
             // TENANT-SCOPE-OK: the advisory lock is keyed by the authenticated caller's household id.
             await context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({householdId})", ct);
 
+            // The member must belong to the tenant's household (the Users read is Tenant-filtered), so the row the
+            // write step stamps with that household names a user of it: the feed's resolve requires exactly that.
+            await HouseholdMembership.EnsureMemberAsync(context, householdId, userId, ct);
+
+            // Only the caller's own link for this feed: another member's link, and the legacy shared link, stay
+            // active (quest 8dba87f4).
             await context.HouseholdCalendarTokens
-                .Where(calendarToken => calendarToken.RevokedAt == null)
+                .Where(calendarToken => calendarToken.UserId == userId && calendarToken.Feed == feed && calendarToken.RevokedAt == null)
                 .ExecuteUpdateAsync(update => update.SetProperty(calendarToken => calendarToken.RevokedAt, now), ct);
 
             context.HouseholdCalendarTokens.Add(new HouseholdCalendarToken
             {
+                UserId = userId,
+                Feed = feed,
                 TokenHash = Hash(token),
                 CreatedAt = now,
             });
@@ -46,17 +57,23 @@ public sealed class HouseholdCalendarTokenService(
         }
         catch (DbUpdateException ex) when (retryOnUniqueViolation && IsActiveTokenUniqueViolation(ex))
         {
-            // IX_HouseholdCalendarTokens_HouseholdId can reject the losing READ COMMITTED rotation; retry once.
-            return await CreateOrRotateAsync(householdId, retryOnUniqueViolation: false, ct);
+            // The active-token index can reject the losing READ COMMITTED rotation; retry once.
+            return await CreateOrRotateAsync(householdId, userId, feed, retryOnUniqueViolation: false, ct);
         }
     }
 
-    public async Task RevokeAsync(int householdId, CancellationToken ct = default)
+    public Task RevokeAsync(int userId, CalendarFeed feed, CancellationToken ct = default) =>
+        RevokeWhereAsync(userId, feed, ct);
+
+    public Task RevokeSharedAsync(CalendarFeed feed, CancellationToken ct = default) =>
+        RevokeWhereAsync(userId: null, feed, ct);
+
+    private async Task RevokeWhereAsync(int? userId, CalendarFeed feed, CancellationToken ct)
     {
         var now = clock.UtcNow;
         await using var context = await dbFactory.CreateDbContextAsync(ct);
         var active = await context.HouseholdCalendarTokens
-            .Where(calendarToken => calendarToken.RevokedAt == null)
+            .Where(calendarToken => calendarToken.UserId == userId && calendarToken.Feed == feed && calendarToken.RevokedAt == null)
             .ToListAsync(ct);
         foreach (var token in active)
         {
@@ -71,7 +88,8 @@ public sealed class HouseholdCalendarTokenService(
         catch (ConcurrencyConflictException)
         {
             await using var check = await dbFactory.CreateDbContextAsync(ct);
-            if (await check.HouseholdCalendarTokens.AnyAsync(calendarToken => calendarToken.RevokedAt == null, ct))
+            if (await check.HouseholdCalendarTokens.AnyAsync(calendarToken =>
+                    calendarToken.UserId == userId && calendarToken.Feed == feed && calendarToken.RevokedAt == null, ct))
             {
                 throw; // a rotation landed: a new active token exists that this revoke never saw
             }
@@ -79,26 +97,42 @@ public sealed class HouseholdCalendarTokenService(
         }
     }
 
-    public async Task<HouseholdCalendarToken?> ResolveActiveAsync(string? token, CancellationToken ct = default)
+    public async Task<HouseholdCalendarToken?> ResolveActiveAsync(string? token, CalendarFeed feed, CancellationToken ct = default)
     {
         var hash = HashForLookup(token);
 
         await using var context = await dbFactory.CreateDbContextAsync(ct);
-        // TENANT-SCOPE-OK: capability lookup by globally unique token hash is the scope source. The anonymous feed
-        // (CalendarTokenEndpoints GetFeed, unmarked) has no tenant until this row names one.
+        // Only the meal plan ever had a household-shared (userless) link; every other feed is personal (3bdbcab7).
+        var sharedAllowed = feed == CalendarFeed.MealPlan;
+        // TENANT-SCOPE-OK: capability lookup by globally unique token hash is the scope source. The anonymous feeds
+        // (CalendarTokenEndpoints GetFeed and GetChoresFeed, unmarked) have no tenant until this row names one. The
+        // bypass is query-wide, so the User navigation is read unfiltered too; its predicate pins that user to the
+        // token's own household and requires the member to be enabled (quest 8dba87f4).
         return await context.HouseholdCalendarTokens
             .IgnoreQueryFilters(["Tenant"])
             .AsNoTracking()
-            .Where(calendarToken => calendarToken.TokenHash == hash && calendarToken.RevokedAt == null)
+            .Where(calendarToken => calendarToken.TokenHash == hash && calendarToken.Feed == feed && calendarToken.RevokedAt == null
+                && ((calendarToken.UserId == null && sharedAllowed)
+                    || (calendarToken.User!.HouseholdId == calendarToken.HouseholdId && calendarToken.User.IsWhitelisted)))
             .FirstOrDefaultAsync(ct);
     }
 
-    public async Task<HouseholdCalendarToken?> GetActiveAsync(int householdId, CancellationToken ct = default)
+    public async Task<HouseholdCalendarToken?> GetActiveAsync(int userId, CalendarFeed feed, CancellationToken ct = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(ct);
         return await context.HouseholdCalendarTokens
             .AsNoTracking()
-            .Where(calendarToken => calendarToken.RevokedAt == null)
+            .Where(calendarToken => calendarToken.UserId == userId && calendarToken.Feed == feed && calendarToken.RevokedAt == null)
+            .OrderByDescending(calendarToken => calendarToken.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    public async Task<HouseholdCalendarToken?> GetActiveSharedAsync(CalendarFeed feed, CancellationToken ct = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
+        return await context.HouseholdCalendarTokens
+            .AsNoTracking()
+            .Where(calendarToken => calendarToken.UserId == null && calendarToken.Feed == feed && calendarToken.RevokedAt == null)
             .OrderByDescending(calendarToken => calendarToken.CreatedAt)
             .FirstOrDefaultAsync(ct);
     }
@@ -132,7 +166,7 @@ public sealed class HouseholdCalendarTokenService(
         exception.InnerException is PostgresException
         {
             SqlState: PostgresErrorCodes.UniqueViolation,
-            ConstraintName: "IX_HouseholdCalendarTokens_HouseholdId",
+            ConstraintName: HouseholdCalendarTokenConfiguration.ActiveTokenIndexName,
         };
 
     private static string Hash(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));

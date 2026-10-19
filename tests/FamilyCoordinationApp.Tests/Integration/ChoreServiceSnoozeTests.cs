@@ -105,7 +105,8 @@ public sealed class ChoreServiceSnoozeTests(PostgresContainerFixture postgres) :
             new ChoreStatusCalculator(),
             Mock.Of<IImageService>(),
             new FamilyCoordinationApp.Tests.Services.FixedTimeProvider(Now),
-            NullLogger<ChoreService>.Instance);
+            NullLogger<ChoreService>.Instance,
+            FamilyCoordinationApp.Tests.Services.TestKeys.Allocator);
     }
 
     public Task DisposeAsync() => Task.CompletedTask;

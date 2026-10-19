@@ -9,24 +9,23 @@ namespace FamilyCoordinationApp.Services;
 public class ShoppingListService(
     IDbContextFactory<ApplicationDbContext> dbFactory,
     ILogger<ShoppingListService> logger,
-    IHouseholdClock clock) : IShoppingListService
+    IHouseholdClock clock,
+    IKeyAllocator keys) : IShoppingListService
 {
     private const string ListNotFound = "Shopping list not found.";
     private const string ItemNotFound = "Item not found.";
 
     public async Task<ShoppingList> CreateShoppingListAsync(int householdId, string name, int? mealPlanId = null, CancellationToken cancellationToken = default)
     {
-        return await IdGenerationHelper.ExecuteWithRetryAsync(
+        return await keys.InsertAsync(
+            "ShoppingList",
             async (attempt) =>
             {
                 await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-                var maxId = await context.ShoppingLists
-                    .MaxAsync(sl => (int?)sl.ShoppingListId, cancellationToken) ?? 0;
-
                 var shoppingList = new ShoppingList
                 {
-                    ShoppingListId = maxId + 1,
+                    ShoppingListId = await keys.NextKeyAsync(context.ShoppingLists, sl => sl.ShoppingListId, cancellationToken),
                     Name = name,
                     MealPlanId = mealPlanId,
                     CreatedAt = clock.UtcNow,
@@ -40,9 +39,7 @@ public class ShoppingListService(
                     shoppingList.ShoppingListId, householdId);
 
                 return shoppingList;
-            },
-            logger,
-            "ShoppingList");
+            });
     }
 
     public async Task<ShoppingList?> GetShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default)
@@ -143,16 +140,14 @@ public class ShoppingListService(
 
     public async Task<ShoppingListItem> AddManualItemAsync(ShoppingListItem item, CancellationToken cancellationToken = default)
     {
-        return await IdGenerationHelper.ExecuteWithRetryAsync(
+        return await keys.InsertAsync(
+            "ShoppingListItem",
             async (attempt) =>
             {
                 await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-                var maxItemId = await context.ShoppingListItems
-                    .Where(i => i.ShoppingListId == item.ShoppingListId)
-                    .MaxAsync(i => (int?)i.ItemId, cancellationToken) ?? 0;
-
-                item.ItemId = maxItemId + 1;
+                item.ItemId = await keys.NextKeyAsync(
+                    context.ShoppingListItems.Where(i => i.ShoppingListId == item.ShoppingListId), i => i.ItemId, cancellationToken);
                 item.AddedAt = clock.UtcNow;
                 item.UpdatedAt = clock.UtcNow;
                 item.IsChecked = false;
@@ -164,9 +159,7 @@ public class ShoppingListService(
                     item.ItemId, item.ShoppingListId, item.HouseholdId);
 
                 return item;
-            },
-            logger,
-            "ShoppingListItem");
+            });
     }
 
     /// <summary>
