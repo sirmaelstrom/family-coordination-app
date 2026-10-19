@@ -31,3 +31,17 @@ body {
 a {
   color: inherit;
 }
+
+/* iOS Safari zooms the whole page when a text field under 16px takes focus, and
+   leaves it zoomed after the keyboard closes. Most of our fields use `font:
+   inherit` inside a 0.875rem label, so they measured 14px (the shopping-list
+   add-item and rename dialogs, chore due dates, feedback). On touch screens hold
+   every text-entry field at 16px; !important because each component's scoped
+   rule outranks this one. */
+@media (pointer: coarse) {
+  input:not([type='checkbox'], [type='radio'], [type='file'], [type='range'], [type='color'], [type='button'], [type='submit'], [type='reset']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
