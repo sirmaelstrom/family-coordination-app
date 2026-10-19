@@ -120,6 +120,9 @@
     font-size: 1.15rem;
     font-weight: 600;
     white-space: nowrap;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .sh-header-spacer {
     flex: 1;
@@ -128,6 +131,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-shrink: 0;
   }
   .sh-presence {
     display: flex;
@@ -202,6 +206,13 @@
     .sh-user-name,
     .sh-nav-toggle {
       display: none;
+    }
+  }
+  /* Small phones (320px): the 40px buttons already space themselves; the gap
+     is what pushed the last one 3px past the edge. */
+  @media (max-width: 400px) {
+    .sh-header-actions {
+      gap: 0;
     }
   }
 </style>

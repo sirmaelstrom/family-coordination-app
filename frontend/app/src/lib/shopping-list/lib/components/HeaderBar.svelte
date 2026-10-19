@@ -186,17 +186,25 @@
     margin: 0;
     color: var(--color-text);
   }
+  /* The controls never wrap: the select is the one flexible item, so it shrinks
+     (and truncates a long list name) instead of pushing the star + menu onto a
+     line of their own. On a phone the whole row drops below the title and the
+     menu button stays at its right edge, which keeps the right-anchored menu on
+     screen. */
   .sl-controls {
-    display: inline-flex;
+    display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 8px;
-    flex-wrap: wrap;
+    flex: 1 1 280px;
+    min-width: 0;
   }
   .sl-select-wrap {
     position: relative;
-    display: inline-flex;
+    display: flex;
     flex-direction: column;
-    min-width: 200px;
+    flex: 0 1 320px;
+    min-width: 0;
   }
   .sl-select-label {
     position: absolute;
@@ -216,6 +224,9 @@
     border-radius: var(--radius-sm);
     background: var(--color-surface);
     min-height: 44px;
+    width: 100%;
+    min-width: 0;
+    text-overflow: ellipsis;
     cursor: pointer;
   }
   .sl-select:focus {
@@ -224,12 +235,18 @@
     border-color: var(--color-primary);
   }
   .sl-single-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     color: var(--color-text-muted);
     font-size: 1rem;
   }
   .sl-icon-btn {
-    width: 40px;
-    height: 40px;
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
     padding: 0;
     border: none;
     background: transparent;
@@ -257,6 +274,9 @@
     top: calc(100% + 4px);
     right: 0;
     min-width: 240px;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100dvh - 160px);
+    overflow-y: auto;
     background: var(--color-surface);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-4);
@@ -267,7 +287,8 @@
     display: block;
     width: 100%;
     text-align: left;
-    padding: 10px 16px;
+    padding: 12px 16px;
+    min-height: 44px;
     background: transparent;
     border: none;
     color: inherit;

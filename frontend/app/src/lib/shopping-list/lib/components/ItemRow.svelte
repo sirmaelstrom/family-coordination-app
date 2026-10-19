@@ -83,12 +83,14 @@
   {/if}
 
   {#if item.addedByName}
-    <UserAvatar
-      name={item.addedByName}
-      initials={item.addedByInitials}
-      pictureUrl={item.addedByPictureUrl}
-      size={24}
-    />
+    <span class="sl-avatar">
+      <UserAvatar
+        name={item.addedByName}
+        initials={item.addedByInitials}
+        pictureUrl={item.addedByPictureUrl}
+        size={24}
+      />
+    </span>
   {/if}
 
   <div class="sl-row-actions">
@@ -316,5 +318,78 @@
   }
   .sl-icon-btn-danger:hover {
     color: var(--color-error);
+  }
+  .sl-avatar {
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+
+  /* Phone width: one line can't hold the handle, checkbox, stepper, avatar and
+     both actions AND a readable name (at 360px the name was squeezed to 0px).
+     Two lines instead: the name and the actions on the first, the stepper under
+     the name and the avatar under the actions on the second. The handle and
+     checkbox span both lines. */
+  @media (max-width: 600px) {
+    .sl-item-row {
+      display: grid;
+      grid-template-columns: auto auto minmax(0, 1fr) auto;
+      grid-template-areas:
+        'handle check body actions'
+        'handle check qty qty';
+      column-gap: 8px;
+      row-gap: 0;
+      padding: 6px 8px;
+    }
+    .sl-drag-handle {
+      grid-area: handle;
+      align-self: center;
+      margin-right: 0;
+    }
+    .sl-checkbox {
+      grid-area: check;
+      align-self: center;
+    }
+    .sl-body {
+      grid-area: body;
+      padding: 6px 0;
+    }
+    .sl-qty {
+      grid-area: qty;
+      justify-self: start;
+      min-width: 0;
+      /* The stepper may run under the edit button but stops short of the avatar
+         (24px + 8px margin + 8px gap), less the 6px the negative margin pulls back. */
+      max-width: calc(100% - 34px);
+      gap: 0;
+      margin: 0 0 2px -6px;
+      padding-right: 0;
+      border-right: none;
+    }
+    .sl-qty-btn {
+      flex-shrink: 0;
+    }
+    .sl-qty-unit {
+      margin: 0 2px;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    /* Second line, last column: centred under the delete button. */
+    .sl-avatar {
+      grid-row: 2;
+      grid-column: 4;
+      justify-self: end;
+      align-self: center;
+      margin: 0 8px 2px 0;
+    }
+    .sl-row-actions {
+      grid-area: actions;
+      align-self: center;
+    }
+    .sl-icon-btn {
+      width: 40px;
+      height: 40px;
+    }
   }
 </style>
