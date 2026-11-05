@@ -140,13 +140,24 @@ public sealed class SafeRecipeFetcherTests
                     using (client)
                     {
                         var stream = client.GetStream();
-                        var buffer = new byte[8192];
-                        await stream.ReadExactlyAsync(buffer);
+                        await ReadRequestHeadAsync(stream);
                         var bytes = Encoding.UTF8.GetBytes(respond(n));
                         try { await stream.WriteAsync(bytes); } catch (IOException) { }
                     }
                 }
             });
+        }
+
+        /// <summary>Read until the blank line that ends a GET's headers (the fetcher sends no body).</summary>
+        private static async Task ReadRequestHeadAsync(NetworkStream stream)
+        {
+            var seen = new List<byte>();
+            var one = new byte[1];
+            while (await stream.ReadAsync(one.AsMemory(0, 1)) == 1)
+            {
+                seen.Add(one[0]);
+                if (seen.Count >= 4 && seen[^4] == '\r' && seen[^3] == '\n' && seen[^2] == '\r' && seen[^1] == '\n') return;
+            }
         }
 
         public async ValueTask<Stream> Connect(SocketsHttpConnectionContext context, CancellationToken ct)
