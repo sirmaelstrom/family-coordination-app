@@ -90,7 +90,8 @@ public static class AgentToolGate
                     $"unknown argument(s) {string.Join(", ", extra.Select(e => $"\"{e}\""))}. Nothing was run; send only the tool's declared arguments.",
                     correlationId);
             }
-            else if (Limited(caller.TokenId, tool, access, (request.Services?.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow().UtcDateTime) is { } limit)
+            else if (Limited(caller.TokenId, tool, IsDryRun(request) ? Access.Read : access,
+                         (request.Services?.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow().UtcDateTime) is { } limit)
             {
                 result = ToolResults.Error(tool, "rate_limited",
                     $"Too many {limit} for this token in the last minute, so nothing was run. Wait a minute and retry with the same requestId.",
@@ -125,6 +126,16 @@ public static class AgentToolGate
             : [];
         return arguments.Keys.Where(name => !declared.Contains(name)).ToList();
     }
+
+    /// <summary>
+    /// A dry run persists nothing, so it counts against the call budget only, not the write budget. Measured in the
+    /// real-client acceptance run: both agents previewed every change, and a week's plan (1 recipe, 7 meals,
+    /// 7 servings, 1 list, each previewed then saved) needs about 32 write calls in a minute.
+    /// </summary>
+    private static bool IsDryRun(RequestContext<CallToolRequestParams> request) =>
+        request.Params?.Arguments is { } args
+        && args.TryGetValue("dryRun", out var dryRun)
+        && dryRun.ValueKind == System.Text.Json.JsonValueKind.True;
 
     /// <summary>The bucket that is over its limit, or null. Counts this call when it is allowed.</summary>
     private static string? Limited(int tokenId, string tool, Access access, DateTime now)

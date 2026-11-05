@@ -258,10 +258,17 @@ public sealed class McpEndpointTests(PostgresContainerFixture postgres) : IAsync
         var token = await MintAsync(ChoresWebAppFactory.UserAEmail, "readWrite");
         await using var client = await ConnectAsync(token.token);
 
+        // Dry runs persist nothing and do not spend the write budget.
+        for (var i = 0; i < AgentToolGate.WritesPerMinute + 5; i++)
+        {
+            (await CallError(client, "generate_shopping_list", new() { ["weekStart"] = Monday, ["requestId"] = $"dry-{i:000}", ["dryRun"] = true }))
+                .Code.Should().Be("invalid_argument");
+        }
+
         for (var i = 0; i < AgentToolGate.WritesPerMinute; i++)
         {
             // Refused by the command (no meals that week), but each one counts as a write attempt.
-            (await CallError(client, "generate_shopping_list", new() { ["weekStart"] = Monday, ["requestId"] = $"rate-{i:000}", ["dryRun"] = true }))
+            (await CallError(client, "generate_shopping_list", new() { ["weekStart"] = Monday, ["requestId"] = $"rate-{i:000}" }))
                 .Code.Should().Be("invalid_argument");
         }
 
