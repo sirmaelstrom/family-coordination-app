@@ -1222,6 +1222,9 @@ public class TenantScopeArchitectureTests
         // The agent unit of work hands the owner context's connection to the factory; no SQL is run through it here.
         ("Services/AgentAccess/AgentCommandRunner.cs",
             "unitOfWork.Begin(owner.Database.GetDbConnection(), transaction.GetDbTransaction());"),
+        // One agent write per household at a time (quest 8bfa42cf): a lock keyed by the caller's household, no table read.
+        ("Services/AgentAccess/AgentCommandRunner.cs",
+            "await owner.Database.ExecuteSqlInterpolatedAsync($\"SELECT pg_advisory_xact_lock({WriteLockClass}, {householdId})\", ct);"),
     ];
 
     [Fact]

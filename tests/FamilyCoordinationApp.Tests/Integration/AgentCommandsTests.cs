@@ -198,6 +198,19 @@ public sealed class AgentCommandsTests(PostgresContainerFixture postgres) : IAsy
     }
 
     [Fact]
+    public async Task Concurrent_creates_with_different_keys_all_commit_with_distinct_ids()
+    {
+        // The key allocator's max+1 collides under concurrency; its unique-violation retry must still work inside
+        // the shared agent transaction.
+        var outcomes = await Task.WhenAll(Enumerable.Range(0, 5).Select(i =>
+            As(A, UserA, c => c.CreateRecipeAsync(Chili($"Parallel chili {i}"), $"parallel-key-{i:00}", false))));
+
+        outcomes.Select(o => o.Result.RecipeId).Distinct().Should().HaveCount(5);
+        await using var db = Raw();
+        (await db.Recipes.CountAsync(r => r.HouseholdId == A && r.Name.StartsWith("Parallel chili"))).Should().Be(5);
+    }
+
+    [Fact]
     public async Task A_reused_key_with_a_different_payload_is_a_conflict_and_changes_nothing()
     {
         await As(A, UserA, c => c.CreateRecipeAsync(Chili("First"), "reused-key-01", false));
