@@ -140,9 +140,12 @@ public sealed class PersonalAccessTokenService(
                 {
                     throw new DomainValidationException($"A token can last at most {MaxLifetimeDays} days.");
                 }
-                // The end of that day in the household's zone: the token works through the date it names.
+                // The end of that day in the household's zone: the token works through the date it names, but never longer
+                // than the maximum lifetime from now (the last allowed date would otherwise overrun it by part of a day).
                 var endOfDayLocal = DateTime.SpecifyKind(date.AddDays(1).ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified);
-                return TimeZoneInfo.ConvertTimeToUtc(endOfDayLocal, clock.TimeZone(householdId));
+                var endOfDay = TimeZoneInfo.ConvertTimeToUtc(endOfDayLocal, clock.TimeZone(householdId));
+                var ceiling = now.AddDays(MaxLifetimeDays);
+                return endOfDay < ceiling ? endOfDay : ceiling;
 
             default:
                 throw new DomainValidationException("Choose an expiry: 30, 90 or 365 days, or a date.");
@@ -153,15 +156,23 @@ public sealed class PersonalAccessTokenService(
     {
         var now = clock.UtcNow;
         await using var context = await dbFactory.CreateDbContextAsync(ct);
-        var rows = await context.PersonalAccessTokens
+        // Every active token, always (at most MaxActiveTokensPerMember), so any credential that still works can be seen and
+        // revoked; then the newest 50 revoked or expired ones as history.
+        var active = await context.PersonalAccessTokens
             .AsNoTracking()
-            .Where(token => token.UserId == userId)
+            .Where(token => token.UserId == userId && token.RevokedAt == null && token.ExpiresAt > now)
+            .OrderByDescending(token => token.CreatedAt)
+            .ThenByDescending(token => token.Id)
+            .ToListAsync(ct);
+        var history = await context.PersonalAccessTokens
+            .AsNoTracking()
+            .Where(token => token.UserId == userId && (token.RevokedAt != null || token.ExpiresAt <= now))
             .OrderByDescending(token => token.CreatedAt)
             .ThenByDescending(token => token.Id)
             .Take(50)
             .ToListAsync(ct);
 
-        return rows.Select(token => new AgentTokenSummary(
+        return active.Concat(history).Select(token => new AgentTokenSummary(
                 token.Id,
                 token.Label,
                 token.SafePrefix,
