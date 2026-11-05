@@ -124,6 +124,22 @@ public sealed class DevAuthBypassMiddlewareTests
         ctx.User.FindFirst(ClaimTypes.Email)!.Value.Should().Be("dev@example.test");
         ctx.User.FindFirst(ClaimTypes.Name)!.Value.Should().Be("Dev User");
         ctx.User.FindFirst(ClaimTypes.NameIdentifier)!.Value.Should().Be("google-abc-123");
+        FamilyCoordinationApp.Authorization.FreshSignIn.IsFresh(ctx.User, DateTime.UtcNow).Should().BeTrue(
+            "the injected identity is re-created per request, so it counts as a fresh sign-in (quest 8bfa42cf)");
+        nextCalled().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Development_NeverInjectsAnIdentityOnTheAgentEndpoint()
+    {
+        var (mw, nextCalled) = Middleware();
+        var ctx = new DefaultHttpContext();
+        ctx.Request.Path = "/mcp";
+
+        await mw.InvokeAsync(ctx, Env("Development"),
+            Config(new() { ["DevAuth:Email"] = "dev@example.test" }), ThrowingDbFactory());
+
+        ctx.User.Identity!.IsAuthenticated.Should().BeFalse("/mcp authenticates with an agent token only (quest 8bfa42cf)");
         nextCalled().Should().BeTrue();
     }
 

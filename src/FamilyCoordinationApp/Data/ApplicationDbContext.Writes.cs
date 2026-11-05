@@ -22,7 +22,7 @@ namespace FamilyCoordinationApp.Data;
 /// <see cref="InvalidOperationException"/> from <c>ChangeTracker.Entries()</c>: the write is still blocked, but that
 /// refusal is not a tenancy exception, so the D13 soak's log grep can't see it.</item>
 /// <item>A Modified or Deleted row whose primary key excludes <c>HouseholdId</c> (<c>User</c>,
-/// <c>HouseholdInvite</c>, <c>HouseholdCalendarToken</c>) must exist in the tenant's household, because its
+/// <c>HouseholdInvite</c>, <c>HouseholdCalendarToken</c>, <c>PersonalAccessToken</c>) must exist in the tenant's household, because its
 /// <c>UPDATE … WHERE Id = @id</c> would otherwise reach a row whose tracked <c>HouseholdId</c> was forged. A row
 /// that exists in ANOTHER household is refused; a row that exists nowhere (a concurrent delete) is left to base
 /// <c>SaveChanges</c>, which raises <c>DbUpdateConcurrencyException</c> as before (<see cref="Owned{TEntity}"/>).</item>
@@ -82,6 +82,7 @@ public partial class ApplicationDbContext
         [typeof(User)] = OwnershipQuery.For<User>(),
         [typeof(HouseholdInvite)] = OwnershipQuery.For<HouseholdInvite>(),
         [typeof(HouseholdCalendarToken)] = OwnershipQuery.For<HouseholdCalendarToken>(),
+        [typeof(PersonalAccessToken)] = OwnershipQuery.For<PersonalAccessToken>(),
     };
 
     /// <summary>The types <see cref="OwnershipQueries"/> covers, and nothing callable (for the dispatch-set test).</summary>

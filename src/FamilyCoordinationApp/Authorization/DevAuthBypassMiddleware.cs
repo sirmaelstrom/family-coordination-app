@@ -47,8 +47,12 @@ public sealed class DevAuthBypassMiddleware(RequestDelegate next, ILogger<DevAut
 
         // Only synthesize an identity for a genuinely anonymous request — never override a real principal, and
         // never touch a request that carries the real auth cookie (that must go through the real cookie handler).
+        // Never on the agent endpoint (quest 8bfa42cf): /mcp authenticates with a bearer token only. Its policy would
+        // discard an injected identity anyway; skipping here keeps a Development /mcp request honest end to end.
         var alreadyAuthenticated = context.User.Identity?.IsAuthenticated == true;
-        if (alreadyAuthenticated || context.Request.Cookies.ContainsKey(AuthCookieName))
+        if (alreadyAuthenticated
+            || context.Request.Cookies.ContainsKey(AuthCookieName)
+            || context.Request.Path.StartsWithSegments(AgentAccess.McpPrefix))
         {
             await next(context);
             return;
@@ -95,6 +99,8 @@ public sealed class DevAuthBypassMiddleware(RequestDelegate next, ILogger<DevAut
             new(ClaimTypes.Email, EmailAddress.Normalize(email)),
             new(ClaimTypes.Name, name),
             new(ClaimTypes.NameIdentifier, googleId),
+            // The injected identity is re-created per request, so it is always a fresh sign-in (FreshSignIn).
+            FreshSignIn.Stamp((context.RequestServices?.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow().UtcDateTime),
         };
         if (!string.IsNullOrWhiteSpace(picture))
         {

@@ -5,6 +5,7 @@ using FamilyCoordinationApp.Authorization;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Endpoints;
 using FamilyCoordinationApp.Services;
+using FamilyCoordinationApp.Services.AgentAccess;
 using FamilyCoordinationApp.Services.Calendar;
 using FamilyCoordinationApp.Services.Digest;
 using FamilyCoordinationApp.Services.Interfaces;
@@ -113,6 +114,8 @@ builder.Services.AddScoped<IMealPlanBoardService, MealPlanBoardService>();
 builder.Services.AddScoped<IHouseholdCalendarTokenService, HouseholdCalendarTokenService>();
 builder.Services.AddSingleton<ICalendarWriter, CalendarWriter>();
 builder.Services.AddScoped<IChoreCalendarFeedService, ChoreCalendarFeedService>();
+// Agent access (quest 8bfa42cf): members' personal access tokens for the /mcp endpoint.
+builder.Services.AddScoped<IPersonalAccessTokenService, PersonalAccessTokenService>();
 // Recipes island (strangler): the single recipe→DTO projection (list card / full detail / parsed ingredient).
 builder.Services.AddScoped<IRecipeProjectionService, RecipeProjectionService>();
 // Dashboard island (strangler): the read-only aggregate (chore summary + shopping summary + today's meals).
@@ -305,6 +308,9 @@ builder.Services.AddAuthentication(options =>
     options.Events.OnCreatingTicket = async context =>
     {
         EmailAddress.NormalizeClaims(context.Principal!);
+        // When this sign-in happened; minting an agent token needs a recent one (FreshSignIn, quest 8bfa42cf).
+        var clock = context.HttpContext.RequestServices.GetRequiredService<IHouseholdClock>();
+        context.Identity!.AddClaim(FreshSignIn.Stamp(clock.UtcNow));
         var profiles = context.HttpContext.RequestServices.GetRequiredService<LoginProfileService>();
         await profiles.RefreshAsync(context.Principal!, context.HttpContext.RequestAborted);
     };
@@ -333,7 +339,10 @@ builder.Services.AddAuthentication(options =>
     // unchanged for pages (MN7).
     options.Events.OnRedirectToAuthorizationEndpoint = context =>
         ApiAwareAuthEvents.StatusForApiElseRedirect(context, StatusCodes.Status401Unauthorized);
-});
+})
+// Agent tokens (quest 8bfa42cf). Never a default scheme: only the /mcp policies name it, so a bearer token opens
+// nothing on /api and the cookie opens nothing on /mcp.
+.AddScheme<AuthenticationSchemeOptions, AgentTokenAuthenticationHandler>(AgentAccess.Scheme, _ => { });
 
 // Authorization
 builder.Services.AddScoped<IAuthorizationHandler, WhitelistedEmailHandler>();
@@ -367,6 +376,10 @@ builder.Services.AddAuthorization(options =>
     options.FallbackPolicy = new AuthorizationPolicyBuilder()
         .AddRequirements(new ApiLoginGateRequirement())
         .Build();
+
+    // The agent endpoint's own bearer-only policies (quest 8bfa42cf). /mcp is off /api, so the fallback gate above
+    // would succeed there: the /mcp group must carry one of these, and does.
+    AgentAccess.AddPolicies(options);
 });
 
 // Add services to the container.
@@ -429,7 +442,7 @@ if (!app.Environment.IsDevelopment())
 // status-code branches below — an exception thrown anywhere deeper (model binding, a handler, auth) is
 // caught here first, before the page-shaped handlers above (/Error re-execute, dev page) can see it.
 app.UseWhen(
-    static context => context.Request.Path.StartsWithSegments(ApiAwareAuthEvents.ApiPrefix),
+    static context => IsJsonSurface(context.Request.Path),
     static branch => branch.UseExceptionHandler(new ExceptionHandlerOptions
     {
         ExceptionHandler = ApiExceptionResponse.Write,
@@ -443,12 +456,12 @@ app.UseWhen(
 // auth pipeline, not only what a handler returns. A response that already wrote a body is untouched.
 // Same prefix + matcher ApiAwareAuthEvents already uses, so the two cannot drift apart.
 app.UseWhen(
-    static context => context.Request.Path.StartsWithSegments(ApiAwareAuthEvents.ApiPrefix),
+    static context => IsJsonSurface(context.Request.Path),
     static branch => branch.UseStatusCodePages(static async context =>
         await context.HttpContext.Response.WriteAsJsonAsync(
             new { message = ApiStatusMessages.For(context.HttpContext.Response.StatusCode) })));
 app.UseWhen(
-    static context => !context.Request.Path.StartsWithSegments(ApiAwareAuthEvents.ApiPrefix),
+    static context => !IsJsonSurface(context.Request.Path),
     // The re-execution target must stay unmarked (no RequireTenant): re-execution reuses the request's DI scope, so a
     // marked target would call SetCaller twice and throw (a fail-closed 500). See CallerTenantMiddleware.
     static branch => branch.UseStatusCodePagesWithReExecute("/not-found"));
@@ -506,6 +519,7 @@ app.Use(async (context, next) =>
     // Skip setup check for these paths (static assets, framework, auth, household request)
     if (path.StartsWith("/setup") ||
         path.StartsWith("/api/calendar") ||
+        path.StartsWith("/mcp") ||   // agent clients: a 302 to /setup means nothing to them; the token gate answers
         path.StartsWith("/account") ||
         path.StartsWith("/household") ||
         path.StartsWith("/_") ||   // /_app SPA assets (Blazor's /_framework and /_blazor died in WP-12)
@@ -568,6 +582,8 @@ app.MapDashboardEndpoints();
 app.MapSettingsEndpoints();
 app.MapSettingsConnectionsEndpoints();
 app.MapSettingsAdminEndpoints();
+app.MapAgentTokenEndpoints();
+app.MapMcpEndpoints(app.Configuration);
 
 // De-Blazor WP-12: the SvelteKit SPA owns the site root. EXPLICIT per-prefix fallbacks — NOT a broad
 // root catch-all, which would shadow the Razor Pages (/account/*, /household/*, /setup, /privacy,
@@ -619,11 +635,17 @@ app.MapPost("/account/login-google", async (HttpContext context, IAntiforgery an
         returnUrl = "/";
     }
 
-    var properties = new AuthenticationProperties
+    var properties = new GoogleChallengeProperties
     {
         RedirectUri = returnUrl,
         IsPersistent = true  // Remember me
     };
+    // A re-authentication (quest 8bfa42cf) makes Google show its account chooser instead of silently reusing the
+    // browser's Google session, so the member actively confirms the account.
+    if (string.Equals(form["reauth"].FirstOrDefault(), "true", StringComparison.Ordinal))
+    {
+        properties.Prompt = "select_account";
+    }
     // The Challenge redirect to Google (and the callback path) is unchanged — only the initiation is gated.
     return Results.Challenge(properties, [GoogleDefaults.AuthenticationScheme]);
 });
@@ -635,6 +657,12 @@ app.MapGet("/account/logout", async (HttpContext context) =>
 });
 
 app.Run();
+
+// The surfaces that answer in JSON, never through an HTML page: the SPA's /api and the agent endpoint /mcp (quest
+// 8bfa42cf). Both get the JSON exception handler and the JSON status-code backfill, and neither is re-executed
+// through /not-found.
+static bool IsJsonSurface(PathString path) =>
+    path.StartsWithSegments(ApiAwareAuthEvents.ApiPrefix) || path.StartsWithSegments(AgentAccess.McpPrefix);
 
 // Resolve the household timezone for chore day-boundary math (D14). Default America/Chicago; overridable via
 // the CHORES_TIMEZONE config/env value (IANA id, with a Windows-id fallback so it resolves on either OS).
