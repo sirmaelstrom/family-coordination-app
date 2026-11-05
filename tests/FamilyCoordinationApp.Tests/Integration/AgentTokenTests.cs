@@ -143,6 +143,33 @@ public sealed class AgentTokenTests(PostgresContainerFixture postgres) : IAsyncL
         minted.expiresAt.ToUniversalTime().Should().Be(new DateTime(2026, 7, 2, 5, 0, 0, DateTimeKind.Utc));
     }
 
+    [Fact]
+    public async Task The_last_allowed_custom_date_never_exceeds_365_days()
+    {
+        // Review r1 on #163: at 2026-06-07T23:30Z the end of local 2027-06-07 is 2027-06-08T05:00Z, 365 d 5.5 h out.
+        var response = await ClientA.PostAsJsonAsync("/api/agent-tokens", new { label = "max", access = "read", expiresOn = "2027-06-07" });
+        var minted = (await response.Content.ReadFromJsonAsync<Minted>(Json))!;
+
+        (minted.expiresAt - minted.createdAt).Should().Be(TimeSpan.FromDays(365));
+    }
+
+    [Fact]
+    public async Task An_active_token_stays_listed_however_much_history_follows_it()
+    {
+        // Review r1 on #163: 50 newer revoked tokens pushed a still-working one out of the list, so it could not be revoked.
+        var survivor = await MintAsync(ClientA, "read", label: "survivor");
+        for (var i = 0; i < 51; i++)
+        {
+            var churn = await MintAsync(ClientA, "read", label: $"churn {i}");
+            (await ClientA.DeleteAsync($"/api/agent-tokens/{churn.id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        var list = (await ClientA.GetFromJsonAsync<TokenList>("/api/agent-tokens", Json))!;
+
+        list.tokens.Should().ContainSingle(t => t.id == survivor.id && t.status == "active");
+        list.tokens.Count(t => t.status == "revoked").Should().Be(50, "history stays bounded");
+    }
+
     // ── The /mcp gate ────────────────────────────────────────────────────────────────────────
 
     [Fact]
