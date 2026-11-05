@@ -40,6 +40,9 @@ public sealed partial class AgentCommandRunner(
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    /// <summary>The advisory-lock class for "agent writes of household N" (household ids are positive; -1 is never one).</summary>
+    private const int WriteLockClass = -1;
+
     [GeneratedRegex("^[A-Za-z0-9._:-]{8,100}$")]
     private static partial Regex RequestIdPattern();
 
@@ -51,7 +54,7 @@ public sealed partial class AgentCommandRunner(
         Func<CancellationToken, Task<T>> write,
         CancellationToken ct = default)
     {
-        if (tenant.State != TenantState.Caller || tenant.UserId is not { } userId)
+        if (tenant.State != TenantState.Caller || tenant.UserId is not { } userId || tenant.HouseholdId is not { } householdId)
         {
             throw new InvalidOperationException("An agent write needs the caller tenant.");
         }
@@ -74,6 +77,12 @@ public sealed partial class AgentCommandRunner(
         unitOfWork.Begin(owner.Database.GetDbConnection(), transaction.GetDbTransaction());
         try
         {
+            // One agent write per household at a time. Each write holds its new rows uncommitted until the end, so
+            // concurrent writes would keep colliding on IKeyAllocator's max+1 ids for longer than its retries last.
+            // Agent writes are few; the UI's own short writes are not blocked by this lock.
+            // TENANT-SCOPE-OK: the advisory lock is keyed by the caller tenant's own household id.
+            await owner.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({WriteLockClass}, {householdId})", ct);
+
             if (dryRun)
             {
                 var preview = await write(ct);
