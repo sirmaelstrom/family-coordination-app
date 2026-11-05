@@ -52,7 +52,7 @@ public sealed class FieldLengthArchitectureTests
 
         using (new AssertionScope())
         {
-            constants.Should().HaveCount(62, "FieldLengths holds the 62 column limits (re-count it if a column is added)");
+            constants.Should().HaveCount(65, "FieldLengths holds the 65 column limits (re-count it if a column is added)");
             used.Should().BeEquivalentTo(constants,
                 "each column constant must be declared by exactly one HasMaxLength call in Data/Configurations; a " +
                 "missing name means its column lost its limit, a repeated one means two columns share a constant");
@@ -72,7 +72,7 @@ public sealed class FieldLengthArchitectureTests
 
         using (new AssertionScope())
         {
-            calls.Should().BeGreaterThan(62, "the scanner must see the 62 HasMaxLength calls plus the request attributes (guard the guard)");
+            calls.Should().BeGreaterThan(65, "the scanner must see the 65 HasMaxLength calls plus the request attributes (guard the guard)");
             literal.Should().BeEmpty(
                 "a column or request limit must name its FieldLengths constant, so the column and the check share one " +
                 "source (quest ec7a7331). Literal:\n{0}", string.Join("\n", literal));

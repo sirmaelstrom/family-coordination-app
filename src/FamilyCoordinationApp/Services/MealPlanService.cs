@@ -174,6 +174,99 @@ public class MealPlanService(
             });
     }
 
+    public async Task<(MealPlanEntry Entry, bool Created)> AddMealIfAbsentAsync(
+        int householdId, DateOnly date, MealType mealType, int? recipeId, string? customMealName, string? notes, int? userId,
+        CancellationToken cancellationToken = default)
+    {
+        customMealName = string.IsNullOrWhiteSpace(customMealName) ? null : customMealName.Trim();
+        notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
+        if (recipeId.HasValue == (customMealName is not null))
+        {
+            throw new DomainValidationException("Give exactly one of a recipe id or a custom meal name.");
+        }
+
+        var weekStart = GetWeekStartDate(date);
+
+        return await keys.InsertAsync(
+            "MealPlanEntry",
+            async (attempt) =>
+            {
+                await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+                // Inside an agent unit of work the shared transaction is already open; otherwise this add owns one.
+                await using var ownTransaction = context.Database.CurrentTransaction is null
+                    ? await context.Database.BeginTransactionAsync(cancellationToken)
+                    : null;
+
+                // Serialize adds to one (household, day): the duplicate check below and the insert are then atomic
+                // against a concurrent identical add, which a check-then-insert alone is not.
+                // TENANT-SCOPE-OK: the advisory lock is keyed by the authenticated caller's household id.
+                await context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({householdId}, {date.DayNumber})", cancellationToken);
+
+                if (recipeId is { } id && !await context.Recipes.AnyAsync(r => r.RecipeId == id, cancellationToken))
+                {
+                    throw new NotFoundException(
+                        $"Recipe {id} was not found in your household.", $"Recipe {id} not found for household {householdId}");
+                }
+
+                var mealPlan = await context.MealPlans.FirstOrDefaultAsync(mp => mp.WeekStartDate == weekStart, cancellationToken);
+                if (mealPlan is not null)
+                {
+                    var existing = await context.MealPlanEntries
+                        .Include(e => e.Recipe)
+                        .FirstOrDefaultAsync(e =>
+                            e.MealPlanId == mealPlan.MealPlanId &&
+                            e.Date == date &&
+                            e.MealType == mealType &&
+                            ((recipeId.HasValue && e.RecipeId == recipeId) ||
+                             (customMealName != null && e.CustomMealName == customMealName)), cancellationToken);
+                    if (existing is not null)
+                    {
+                        var stored = string.IsNullOrWhiteSpace(existing.Notes) ? null : existing.Notes.Trim();
+                        if (notes is not null && !string.Equals(notes, stored, StringComparison.Ordinal))
+                        {
+                            throw new ConflictException(
+                                $"That meal is already planned for {mealType.ToString().ToLowerInvariant()} on {date:yyyy-MM-dd} " +
+                                $"(entry {existing.EntryId}) with different notes. Nothing was changed.",
+                                $"Insert-only add of a duplicate with different notes: plan {mealPlan.MealPlanId} entry {existing.EntryId}");
+                        }
+                        if (ownTransaction is not null) await ownTransaction.CommitAsync(cancellationToken);
+                        return (existing, false);
+                    }
+                }
+                else
+                {
+                    mealPlan = new MealPlan
+                    {
+                        MealPlanId = await GetNextMealPlanIdAsync(context, cancellationToken),
+                        WeekStartDate = weekStart,
+                        CreatedAt = clock.UtcNow,
+                    };
+                    context.MealPlans.Add(mealPlan);
+                }
+
+                var entry = new MealPlanEntry
+                {
+                    MealPlanId = mealPlan.MealPlanId,
+                    EntryId = await GetNextEntryIdAsync(context, mealPlan.MealPlanId, cancellationToken),
+                    Date = date,
+                    MealType = mealType,
+                    RecipeId = recipeId,
+                    CustomMealName = customMealName,
+                    Notes = notes,
+                    CreatedByUserId = userId,
+                };
+                context.MealPlanEntries.Add(entry);
+                mealPlan.UpdatedAt = clock.UtcNow;
+
+                await context.SaveChangesAsync(cancellationToken);
+                if (ownTransaction is not null) await ownTransaction.CommitAsync(cancellationToken);
+
+                logger.LogInformation("Created meal entry {EntryId} in plan {MealPlanId} for household {HouseholdId} (insert-only)",
+                    entry.EntryId, mealPlan.MealPlanId, householdId);
+                return (entry, true);
+            });
+    }
+
     public async Task<MealPlanEntry> MoveMealAsync(int householdId, int mealPlanId, int entryId, DateOnly newDate, MealType newMealType, uint version, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);

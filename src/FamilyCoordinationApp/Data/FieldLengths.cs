@@ -63,6 +63,13 @@ public static class FieldLengths
         public const int Feed = 20;
     }
 
+    public static class AgentOperation
+    {
+        public const int RequestId = 100;
+        public const int Tool = 50;
+        public const int PayloadHash = 64;
+    }
+
     public static class PersonalAccessToken
     {
         public const int Label = 100;

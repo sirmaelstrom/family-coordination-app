@@ -22,6 +22,53 @@ namespace FamilyCoordinationApp.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.AgentOperation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("HouseholdId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("RequestId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Tool")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("HouseholdId", "UserId", "RequestId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_AgentOperations_HouseholdId_UserId_RequestId");
+
+                    b.ToTable("AgentOperations", (string)null);
+                });
+
             modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.Category", b =>
                 {
                     b.Property<int>("HouseholdId")
@@ -1274,6 +1321,25 @@ namespace FamilyCoordinationApp.Migrations
                     b.HasIndex("HouseholdId", "RecipeId");
 
                     b.ToTable("UserFavorites", (string)null);
+                });
+
+            modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.AgentOperation", b =>
+                {
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.Household", "Household")
+                        .WithMany()
+                        .HasForeignKey("HouseholdId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("FamilyCoordinationApp.Data.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Household");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("FamilyCoordinationApp.Data.Entities.Category", b =>
