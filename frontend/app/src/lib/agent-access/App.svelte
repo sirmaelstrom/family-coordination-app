@@ -138,9 +138,8 @@
   <section class="aa-card">
     <h2 class="aa-card-title">Create a token</h2>
     <p class="aa-card-sub">
-      A token lets an AI agent such as Claude Code or Codex read and plan
-      {householdName ? `the ${householdName} household's` : "your household's"} recipes, meal plan and shopping lists
-      as you. It cannot delete anything, change members or settings, or create tokens. Make one per client so you can
+      A token lets an AI agent such as Claude Code or Codex read and plan the recipes, meal plan and shopping lists of
+      {householdName ?? 'your household'} as you. It cannot delete anything, change members or settings, or create tokens. Make one per client so you can
       revoke them separately.
     </p>
 
