@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "family": {
+      "type": "http",
+      "url": "https://family.heathdev.me/mcp",
+      "headers": {
+        "Authorization": "Bearer ${FAMILYAPP_TOKEN}"
+      }
+    }
+  }
+}

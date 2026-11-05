@@ -1,0 +1,12 @@
+# Codex CLI: add to ~/.codex/config.toml (user scope, never a repo file). The token is read from the environment
+# variable at connect time, so it is never written into this file.
+#
+# 1. Settings → Agent access → create a token named for this machine's Codex.
+# 2. Put it in FAMILYAPP_TOKEN for the shell or service that runs `codex` (a user environment variable, or your
+#    secret manager's injector). Do not paste it on a command line: it would land in shell history.
+# 3. Use ChatGPT sign-in for Codex (`codex login status` says "Logged in using ChatGPT") and leave OPENAI_API_KEY unset,
+#    so the work runs on the subscription, not API billing.
+
+[mcp_servers.family]
+url = "https://family.heathdev.me/mcp"
+bearer_token_env_var = "FAMILYAPP_TOKEN"
