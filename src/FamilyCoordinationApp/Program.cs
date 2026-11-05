@@ -122,6 +122,8 @@ builder.Services.AddScoped<AgentUnitOfWork>();
 builder.Services.AddScoped<AgentCommandRunner>();
 builder.Services.AddScoped<AgentCommands>();
 builder.Services.AddSingleton<SafeRecipeFetcher>();
+// The MCP server (stateless Streamable HTTP) and its ten tools. Mapped at /mcp only when Mcp:Enabled is true.
+builder.Services.AddAgentMcp();
 // Recipes island (strangler): the single recipe→DTO projection (list card / full detail / parsed ingredient).
 builder.Services.AddScoped<IRecipeProjectionService, RecipeProjectionService>();
 // Dashboard island (strangler): the read-only aggregate (chore summary + shopping summary + today's meals).

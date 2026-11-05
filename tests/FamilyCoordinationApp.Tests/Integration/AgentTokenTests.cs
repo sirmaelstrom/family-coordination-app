@@ -69,8 +69,23 @@ public sealed class AgentTokenTests(PostgresContainerFixture postgres) : IAsyncL
         return client;
     }
 
-    private static Task<HttpResponseMessage> CallMcp(HttpClient client) =>
-        client.PostAsJsonAsync("/mcp", new { jsonrpc = "2.0", id = 1, method = "tools/list" });
+    /// <summary>A raw MCP <c>initialize</c> over Streamable HTTP. 200 means the token passed the gate.</summary>
+    private static Task<HttpResponseMessage> CallMcp(HttpClient client)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+        {
+            Content = JsonContent.Create(new
+            {
+                jsonrpc = "2.0",
+                id = 1,
+                method = "initialize",
+                @params = new { protocolVersion = "2025-06-18", capabilities = new { }, clientInfo = new { name = "agent-token-tests", version = "1" } },
+            }),
+        };
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.Accept.ParseAdd("text/event-stream");
+        return client.SendAsync(request);
+    }
 
     private ApplicationDbContext RawContext() =>
         new PostgresDbContextFactory(_factory.ConnectionString).CreateDbContext();
@@ -178,8 +193,8 @@ public sealed class AgentTokenTests(PostgresContainerFixture postgres) : IAsyncL
         var a = await MintAsync(ClientA, "read");
         var b = await MintAsync(ClientB, "readWrite");
 
-        (await CallMcp(Bearer(a.token))).StatusCode.Should().Be(HttpStatusCode.NotImplemented);
-        (await CallMcp(Bearer(b.token))).StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        (await CallMcp(Bearer(a.token))).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await CallMcp(Bearer(b.token))).StatusCode.Should().Be(HttpStatusCode.OK);
 
         var mcpTenants = _tenants.Where(t => t.RequestPath == "/mcp" && t.State == TenantState.Caller)
             .Select(t => (t.HouseholdId, t.UserId)).ToList();
@@ -226,7 +241,7 @@ public sealed class AgentTokenTests(PostgresContainerFixture postgres) : IAsyncL
     {
         var minted = await MintAsync(ClientA, "readWrite");
         var agent = Bearer(minted.token);
-        (await CallMcp(agent)).StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        (await CallMcp(agent)).StatusCode.Should().Be(HttpStatusCode.OK);
 
         (await ClientA.DeleteAsync($"/api/agent-tokens/{minted.id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
 
@@ -248,8 +263,8 @@ public sealed class AgentTokenTests(PostgresContainerFixture postgres) : IAsyncL
         var aliceList = (await ClientA.GetFromJsonAsync<TokenList>("/api/agent-tokens", Json))!;
         aliceList.tokens.Should().NotContain(t => t.id == amys.id || t.id == bobs.id);
 
-        (await CallMcp(Bearer(amys.token))).StatusCode.Should().Be(HttpStatusCode.NotImplemented);
-        (await CallMcp(Bearer(bobs.token))).StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        (await CallMcp(Bearer(amys.token))).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await CallMcp(Bearer(bobs.token))).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
@@ -281,7 +296,7 @@ public sealed class AgentTokenTests(PostgresContainerFixture postgres) : IAsyncL
             (await CallMcp(agent)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
             await SetMember(ChoresWebAppFactory.UserA2Id, whitelisted: true, householdId: ChoresWebAppFactory.HouseholdAId);
-            (await CallMcp(agent)).StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+            (await CallMcp(agent)).StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {
