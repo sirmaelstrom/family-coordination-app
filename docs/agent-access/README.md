@@ -63,32 +63,45 @@ Then open `http://127.0.0.1:8095/settings/agent-access`, create a token, and poi
 - **Per token, each minute:** 120 calls, 30 writes and 10 web-page fetches. Dry runs count as calls, not writes. Over the limit, the tool error says to wait and retry with the same requestId.
 - **Logging:** each call logs one line, `Agent tool <tool> by token <id> (user, household) request <requestId>: <outcome> in <ms> [<correlationId>]`. A refused token logs `Agent token refused: <reason> (token id <id>)`. Neither logs argument content or the token.
 
-## Production (not done; needs Justin's go)
+## Production
 
-Nothing here is deployed. Merging to `master` deploys, and `/mcp` stays unmapped until `Mcp__Enabled=true` is set on the production app container. Turning it on would mean:
+Merging to `master` deploys. `/mcp` stays unmapped until the app container gets `Mcp__Enabled=true`. `docker-compose.yml` maps it from `MCP_ENABLED`, which defaults to `false`. Turning it on:
 
 1. Merge the stack (#163, #164, #165, and this PR) under Justin's go. Two additive migrations apply at start: `PersonalAccessTokens` and `AgentOperations`.
-2. Review the proxy separately. The shared nginx `server` block for `family.heathdev.me` already proxies `/` with upgrade headers and long timeouts. A dedicated location should keep the `Authorization` header, stop buffering and caching, and keep Cloudflare from serving a browser challenge to `/mcp`. A sketch, not applied:
+2. Add a dedicated `location /mcp` to the shared nginx `server` block for `family.heathdev.me` (the `nginx` container on the production host, `/etc/nginx/conf.d/family.heathdev.me.conf`). Use the same upstream as its `location /`, pass `Authorization`, and turn off buffering and caching. Back up the file, then `nginx -t`, then `nginx -s reload`.
 
    ```nginx
    location /mcp {
-       proxy_pass http://127.0.0.1:8085;
-       proxy_set_header Authorization $http_authorization;
+       proxy_pass http://<same upstream as location />;
+       proxy_http_version 1.1;
        proxy_set_header Host $host;
-       proxy_set_header X-Forwarded-Proto $scheme;
+       proxy_set_header Authorization $http_authorization;
+       proxy_set_header X-Real-IP $remote_addr;
        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       proxy_set_header X-Forwarded-Proto https;
        proxy_buffering off;
        proxy_cache off;
+       add_header Cache-Control "no-store" always;
        proxy_read_timeout 300s;
+       proxy_send_timeout 300s;
    }
    ```
 
-3. Set `Mcp__Enabled=true` in the production environment and restart the app.
-4. Run a bounded smoke test as Justin: create a token, `initialize` and `tools/list` from one client, run one read and one dry-run write, then revoke the token and confirm a 401.
+3. Set `MCP_ENABLED=true`. On the production host, back up `~/familyapp/.env.local`, add the line `MCP_ENABLED=true`, and recreate the app:
+
+   ```sh
+   cp .env.local .env.local.bak-$(date +%Y%m%d%H%M%S) && echo 'MCP_ENABLED=true' >> .env.local
+   ./deploy.sh --no-pull   # rebuilds .env from .env.local + secrets, recreates the containers
+   ```
+
+   `deploy.sh` copies `.env.local` into `.env` on every deploy, so the setting survives later merges. To turn the endpoint off, remove the line and run `./deploy.sh --no-pull` again.
+4. Run a bounded smoke test with a token Justin creates in Settings: `initialize`, `tools/list`, one read, and one dry-run write through `https://family.heathdev.me/mcp`.
+   - If the smoke-test token is a throwaway, revoke it afterwards and confirm a 401.
+   - If it is the token the client will keep, don't revoke it: the acceptance run already proved revocation.
 
 ## Acceptance evidence
 
-The real-client run is recorded in `D:\Development\data\outputs\verifications\fca-mcp-e2e\`:
+The real-client run is recorded in `D:\Development\data\outputs\verifications\fca-mcp-e2e-final\` (`verdict.md`). An earlier run, on `060e576`, is in `...\fca-mcp-e2e\`; it found the dry-run rate-limit issue. The final run includes:
 
 - traces from a Claude Code session and a Codex session, both on subscription auth;
 - screenshots of the app showing the recipe, the week and the list;

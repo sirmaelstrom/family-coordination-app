@@ -49,6 +49,10 @@ services:
       CHORES_DIGEST_TRIGGER_TOKEN: ${CHORES_DIGEST_TRIGGER_TOKEN:-}
       # Household timezone for digest send-time + equity week windows (IANA id; code defaults to America/Chicago).
       CHORES_TIMEZONE: ${CHORES_TIMEZONE:-}
+      # The agent endpoint /mcp (quest 8bfa42cf; docs/agent-access/README.md). Off unless MCP_ENABLED=true is in the
+      # host's .env.local (deploy.sh copies .env.local into .env on every deploy). Mapped here for the same reason as
+      # the two above: .env only feeds ${VAR} substitution.
+      Mcp__Enabled: ${MCP_ENABLED:-false}
     volumes:
       # Direct bind mounts - avoids Docker Desktop WSL2 mount path issues
       - ${APP_DATAPROTECTION_PATH:-./data/dataprotection}:/root/.aspnet/DataProtection-Keys
