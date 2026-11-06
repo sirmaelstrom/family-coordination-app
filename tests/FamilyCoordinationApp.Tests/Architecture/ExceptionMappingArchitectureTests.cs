@@ -30,6 +30,15 @@ public sealed class ExceptionMappingArchitectureTests
     internal static readonly (string File, string Line)[] EndpointCatchAllowlist =
     [
         ("Endpoints/UploadsEndpoints.cs", "catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)"),
+        // The /mcp twin of ApiExceptionResponse (quest 8bfa42cf): the ONE map from a thrown domain exception to an MCP
+        // tool-error result. /mcp answers tool failures inside a 200 JSON-RPC response, so the /api status branch
+        // cannot serve it; every tool runs through ToolResults.RunAsync and no tool catches on its own.
+        ("Endpoints/Mcp/ToolResults.cs", "catch (ToolArgumentException ex)"),
+        ("Endpoints/Mcp/ToolResults.cs", "catch (ConcurrencyConflictException)"),
+        ("Endpoints/Mcp/ToolResults.cs", "catch (DomainException ex)"),
+        ("Endpoints/Mcp/ToolResults.cs", "catch (OperationCanceledException) when (http.RequestAborted.IsCancellationRequested)"),
+        // Anything else becomes a generic tool error that says the outcome is unknown (never a stack trace), and is logged.
+        ("Endpoints/Mcp/ToolResults.cs", "catch (Exception ex)"),
     ];
 
     /// <summary>
@@ -153,7 +162,7 @@ public sealed class ExceptionMappingArchitectureTests
 
         sites.Should().Equal(("Endpoints/X.cs", "catch (InvalidOperationException) { return Results.NotFound(); }"));
         Compare(sites, EndpointCatchAllowlist).Unlisted.Should().ContainSingle();
-        Compare([], EndpointCatchAllowlist).Stale.Should().ContainSingle();
+        Compare([], EndpointCatchAllowlist).Stale.Should().HaveCount(EndpointCatchAllowlist.Length);
     }
 
     [Fact]
