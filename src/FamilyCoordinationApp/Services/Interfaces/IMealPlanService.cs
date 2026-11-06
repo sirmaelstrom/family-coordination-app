@@ -8,6 +8,16 @@ public interface IMealPlanService
     Task<MealPlanEntry> AddMealAsync(int householdId, DateOnly date, MealType mealType, int? recipeId, string? customMealName, string? notes = null, int? userId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The agents' add (quest 8bfa42cf): INSERT-ONLY. When the slot already holds the same recipe or custom meal, the
+    /// existing entry is returned UNCHANGED (<c>Created = false</c>); unlike <see cref="AddMealAsync"/>'s fold it
+    /// never touches the entry's notes. A duplicate whose requested notes differ from the stored notes is a
+    /// <see cref="ConflictException"/>, and nothing is written. Atomic: the duplicate check and the insert hold a
+    /// transaction-scoped advisory lock on (household, date), so two concurrent identical adds yield one entry.
+    /// A recipe id that names no recipe of the household is a <see cref="NotFoundException"/>.
+    /// </summary>
+    Task<(MealPlanEntry Entry, bool Created)> AddMealIfAbsentAsync(int householdId, DateOnly date, MealType mealType, int? recipeId, string? customMealName, string? notes, int? userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Move an existing entry to another slot (date × meal type) WITHIN its plan's week (drag-to-assign).
     /// Household-scoped (M1). Returns the updated entry with its <c>Recipe</c> nav loaded (for projection).
     /// Throws <see cref="NotFoundException"/> when the entry is not found and

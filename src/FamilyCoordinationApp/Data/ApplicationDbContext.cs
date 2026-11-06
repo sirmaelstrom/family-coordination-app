@@ -92,6 +92,7 @@ public partial class ApplicationDbContext : DbContext
     public DbSet<HouseholdInvite> HouseholdInvites => Set<HouseholdInvite>();
     public DbSet<HouseholdCalendarToken> HouseholdCalendarTokens => Set<HouseholdCalendarToken>();
     public DbSet<PersonalAccessToken> PersonalAccessTokens => Set<PersonalAccessToken>();
+    public DbSet<AgentOperation> AgentOperations => Set<AgentOperation>();
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<Chore> Chores => Set<Chore>();
     public DbSet<ChoreRoom> ChoreRooms => Set<ChoreRoom>();

@@ -99,6 +99,15 @@ public class RecipeImportService(
                 RecipeImportErrorType.FetchFailed);
         }
 
+        return FromSchema(schema, url, householdId, userId);
+    }
+
+    /// <summary>
+    /// Steps 3–5 of the website import: validate the extracted schema and convert it to an unsaved recipe. Shared with
+    /// the agents' import (quest 8bfa42cf), which fetches the page through its own hardened client.
+    /// </summary>
+    public RecipeImportResult FromSchema(RecipeSchema? schema, string url, int householdId, int userId)
+    {
         // Step 3: Check if we got any data
         if (schema == null)
         {

@@ -116,6 +116,12 @@ builder.Services.AddSingleton<ICalendarWriter, CalendarWriter>();
 builder.Services.AddScoped<IChoreCalendarFeedService, ChoreCalendarFeedService>();
 // Agent access (quest 8bfa42cf): members' personal access tokens for the /mcp endpoint.
 builder.Services.AddScoped<IPersonalAccessTokenService, PersonalAccessTokenService>();
+// The agent commands behind /mcp: one shared transaction per write (AgentUnitOfWork, read by TenantDbContextFactory),
+// its idempotency record, and the hardened outbound fetch for recipe import.
+builder.Services.AddScoped<AgentUnitOfWork>();
+builder.Services.AddScoped<AgentCommandRunner>();
+builder.Services.AddScoped<AgentCommands>();
+builder.Services.AddSingleton<SafeRecipeFetcher>();
 // Recipes island (strangler): the single recipe→DTO projection (list card / full detail / parsed ingredient).
 builder.Services.AddScoped<IRecipeProjectionService, RecipeProjectionService>();
 // Dashboard island (strangler): the read-only aggregate (chore summary + shopping summary + today's meals).

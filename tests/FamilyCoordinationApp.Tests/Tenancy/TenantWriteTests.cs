@@ -358,8 +358,8 @@ public class TenantWriteTests
         ApplicationDbContext.OwnershipQueryTypes.Should().BeEquivalentTo(surrogateKeyTenantTypes,
             "a Modified/Deleted surrogate-key row with a forged HouseholdId would pass every in-memory check (D9)");
         ApplicationDbContext.OwnershipQueryTypes.Should().BeEquivalentTo(
-            [typeof(User), typeof(HouseholdInvite), typeof(HouseholdCalendarToken), typeof(PersonalAccessToken)],
-            "the three of D9 plus the agent tokens (quest 8bfa42cf)");
+            [typeof(User), typeof(HouseholdInvite), typeof(HouseholdCalendarToken), typeof(PersonalAccessToken), typeof(AgentOperation)],
+            "the three of D9 plus the agent tokens and operation records (quest 8bfa42cf)");
     }
 
     [Fact]

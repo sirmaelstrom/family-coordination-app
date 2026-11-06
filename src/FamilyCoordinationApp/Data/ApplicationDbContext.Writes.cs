@@ -83,6 +83,7 @@ public partial class ApplicationDbContext
         [typeof(HouseholdInvite)] = OwnershipQuery.For<HouseholdInvite>(),
         [typeof(HouseholdCalendarToken)] = OwnershipQuery.For<HouseholdCalendarToken>(),
         [typeof(PersonalAccessToken)] = OwnershipQuery.For<PersonalAccessToken>(),
+        [typeof(AgentOperation)] = OwnershipQuery.For<AgentOperation>(),
     };
 
     /// <summary>The types <see cref="OwnershipQueries"/> covers, and nothing callable (for the dispatch-set test).</summary>
