@@ -113,6 +113,49 @@ public sealed class SafeRecipeFetcherTests
         await fetch.Should().ThrowAsync<RecipeFetchException>().WithMessage("*HTTP 403*");
     }
 
+    [Fact]
+    public async Task A_body_that_stalls_after_the_headers_is_cut_off_at_the_deadline()
+    {
+        // Headers at once, then the body only after BodyDelay. With ResponseHeadersRead the client's Timeout stops
+        // at the headers, so only one deadline spanning the body read cuts this off. The deadline is injected short
+        // (production: SafeRecipeFetcher.Timeout, 20 s) so the test does not wait in real time.
+        var deadline = TimeSpan.FromMilliseconds(300);
+        var bodyDelay = TimeSpan.FromSeconds(3);
+        const string body = "<html><body>chili</body></html>";
+        await using var server = new CannedServer(async (_, stream, stop) =>
+        {
+            var head = $"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n";
+            await stream.WriteAsync(Encoding.UTF8.GetBytes(head), stop);
+            await stream.FlushAsync(stop);
+            await Task.Delay(bodyDelay, stop);
+            await stream.WriteAsync(Encoding.UTF8.GetBytes(body), stop);
+        });
+        using var fetcher = new SafeRecipeFetcher(server.Connect, deadline);
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var fetch = () => fetcher.FetchHtmlAsync("http://recipes.test/slow", CancellationToken.None);
+
+        await fetch.Should().ThrowAsync<RecipeFetchException>().WithMessage("*took longer than*");
+        clock.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2), "the deadline covers the body read, not just the headers");
+    }
+
+    [Fact]
+    public async Task A_slow_but_in_time_page_is_still_fetched_under_a_short_deadline()
+    {
+        await using var server = new CannedServer(async (_, stream, stop) =>
+        {
+            const string body = "<html><body>chili</body></html>";
+            var head = $"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n";
+            await stream.WriteAsync(Encoding.UTF8.GetBytes(head), stop);
+            await stream.FlushAsync(stop);
+            await Task.Delay(TimeSpan.FromMilliseconds(100), stop);
+            await stream.WriteAsync(Encoding.UTF8.GetBytes(body), stop);
+        });
+        using var fetcher = new SafeRecipeFetcher(server.Connect, TimeSpan.FromSeconds(5));
+
+        (await fetcher.FetchHtmlAsync("http://recipes.test/chili", CancellationToken.None)).Should().Contain("chili");
+    }
+
     private static string Ok(string body) =>
         $"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {Encoding.UTF8.GetByteCount(body)}\r\nConnection: close\r\n\r\n{body}";
 
@@ -127,6 +170,10 @@ public sealed class SafeRecipeFetcherTests
         public int Requests => Volatile.Read(ref _requests);
 
         public CannedServer(Func<int, string> respond)
+            : this((n, stream, stop) => stream.WriteAsync(Encoding.UTF8.GetBytes(respond(n)), stop).AsTask()) { }
+
+        /// <summary>Answer the n-th connection by writing to its stream (for responses paced over time).</summary>
+        public CannedServer(Func<int, NetworkStream, CancellationToken, Task> respond)
         {
             _listener.Start();
             _loop = Task.Run(async () =>
@@ -141,8 +188,9 @@ public sealed class SafeRecipeFetcherTests
                     {
                         var stream = client.GetStream();
                         await ReadRequestHeadAsync(stream);
-                        var bytes = Encoding.UTF8.GetBytes(respond(n));
-                        try { await stream.WriteAsync(bytes); } catch (IOException) { }
+                        try { await respond(n, stream, _stop.Token); }
+                        catch (IOException) { }
+                        catch (OperationCanceledException) { return; }
                     }
                 }
             });

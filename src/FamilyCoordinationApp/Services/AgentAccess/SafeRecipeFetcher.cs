@@ -30,11 +30,19 @@ public sealed class SafeRecipeFetcher : IDisposable
 
     private readonly HttpClient _client;
 
+    private readonly TimeSpan _timeout;
+
     public SafeRecipeFetcher() : this(ConnectToPublicAddressAsync) { }
 
-    /// <summary>Test seam: the connect step (production: <see cref="ConnectToPublicAddressAsync"/>).</summary>
-    internal SafeRecipeFetcher(Func<SocketsHttpConnectionContext, CancellationToken, ValueTask<Stream>> connect)
+    /// <summary>
+    /// Test seam: the connect step (production: <see cref="ConnectToPublicAddressAsync"/>) and the whole-fetch
+    /// deadline (production: <see cref="Timeout"/>).
+    /// </summary>
+    internal SafeRecipeFetcher(
+        Func<SocketsHttpConnectionContext, CancellationToken, ValueTask<Stream>> connect,
+        TimeSpan? timeout = null)
     {
+        _timeout = timeout ?? Timeout;
         var handler = new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
@@ -46,7 +54,9 @@ public sealed class SafeRecipeFetcher : IDisposable
             PooledConnectionLifetime = TimeSpan.FromMinutes(2),
             ConnectCallback = connect,
         };
-        _client = new HttpClient(handler) { Timeout = Timeout, MaxResponseContentBufferSize = MaxBytes };
+        // The deadline is the one linked token in FetchHtmlAsync, which spans every hop AND the body read. The
+        // client's own Timeout would stop at the headers (ResponseHeadersRead), so it is switched off.
+        _client = new HttpClient(handler) { Timeout = System.Threading.Timeout.InfiniteTimeSpan, MaxResponseContentBufferSize = MaxBytes };
         _client.DefaultRequestHeaders.UserAgent.ParseAdd(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
         _client.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml;q=0.9,*/*;q=0.5");
@@ -56,6 +66,20 @@ public sealed class SafeRecipeFetcher : IDisposable
     public async Task<string> FetchHtmlAsync(string url, CancellationToken ct)
     {
         var current = CheckUrl(url);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(_timeout);
+        try
+        {
+            return await FetchWithinAsync(current, deadline.Token);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw new RecipeFetchException($"The page took longer than {_timeout.TotalSeconds:0.#} seconds to fetch.");
+        }
+    }
+
+    private async Task<string> FetchWithinAsync(Uri current, CancellationToken ct)
+    {
         for (var hop = 0; ; hop++)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, current);
@@ -68,13 +92,13 @@ public sealed class SafeRecipeFetcher : IDisposable
             {
                 throw refused;
             }
+            catch (HttpRequestException) when (ct.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(ct); // the deadline or the caller, not the site
+            }
             catch (HttpRequestException)
             {
                 throw new RecipeFetchException($"Could not reach {current.Host}.");
-            }
-            catch (TaskCanceledException) when (!ct.IsCancellationRequested)
-            {
-                throw new RecipeFetchException($"{current.Host} took longer than {Timeout.TotalSeconds:0} seconds to answer.");
             }
 
             using (response)
