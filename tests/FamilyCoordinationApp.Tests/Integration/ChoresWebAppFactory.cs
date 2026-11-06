@@ -45,6 +45,9 @@ public class ChoresWebAppFactory(PostgresContainerFixture postgres) : WebApplica
 
     public const string TestAuthScheme = "Test";
 
+    /// <summary>How many seconds ago the test identity signed in (default: now). For the fresh-sign-in gate.</summary>
+    public const string TestSignInAgeHeader = "X-Test-Sign-In-Age";
+
     // ── Seeded fixture identities (deterministic — see SeedAsync) ────────────────────────────────
     public const int HouseholdAId = 1;
     public const int HouseholdBId = 2;
@@ -126,9 +129,13 @@ public class ChoresWebAppFactory(PostgresContainerFixture postgres) : WebApplica
     /// </summary>
     public Func<ITenantContext, IServiceProvider, ITenantContext>? TenantContextDecorator { get; init; }
 
+    /// <summary>Map the agent endpoint (<c>Mcp:Enabled</c>, quest 8bfa42cf). Off by default, as in production.</summary>
+    public bool McpEnabled { get; init; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        builder.UseSetting("Mcp:Enabled", McpEnabled ? "true" : "false");
         TestHostTenancy.Apply(builder);
 
         if (TenantContextDecorator is { } decorate)
@@ -427,12 +434,19 @@ public sealed class TestAuthHandler(
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(ClaimTypes.Email, email),
             new Claim(ClaimTypes.Name, email),
             new Claim(ClaimTypes.NameIdentifier, email)
         };
+        // A test sign-in is fresh (FreshSignIn) unless the request says how long ago it happened, in seconds.
+        var now = Context.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow().UtcDateTime;
+        var age = Request.Headers.TryGetValue(ChoresWebAppFactory.TestSignInAgeHeader, out var ageValues)
+                  && int.TryParse(ageValues.ToString(), out var seconds)
+            ? TimeSpan.FromSeconds(seconds)
+            : TimeSpan.Zero;
+        claims.Add(FamilyCoordinationApp.Authorization.FreshSignIn.Stamp(now - age));
         var identity = new ClaimsIdentity(claims, ChoresWebAppFactory.TestAuthScheme);
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, ChoresWebAppFactory.TestAuthScheme);

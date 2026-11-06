@@ -1,3 +1,4 @@
+using FamilyCoordinationApp.Authorization;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Endpoints;
 using Microsoft.EntityFrameworkCore;
@@ -30,7 +31,12 @@ public sealed class CallerTenantMiddleware(RequestDelegate next)
             return;
         }
 
-        var caller = await UserContextResolver.ResolveUserAsync(context.User, dbFactory, logger, context.RequestAborted);
+        // An agent-token principal (quest 8bfa42cf) carries the ids its handler validated on THIS request: the token's
+        // member, still enabled and still in the token's household. It has no email claim, and must never be resolved
+        // by one: a member who moved household would otherwise be followed into the new household.
+        var caller = AgentAccess.ReadIdentity(context.User) is { } agent
+            ? new UserContextResolver.UserContext(agent.HouseholdId, agent.UserId)
+            : await UserContextResolver.ResolveUserAsync(context.User, dbFactory, logger, context.RequestAborted);
         if (caller is null)
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;

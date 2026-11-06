@@ -63,6 +63,14 @@ public static class FieldLengths
         public const int Feed = 20;
     }
 
+    public static class PersonalAccessToken
+    {
+        public const int Label = 100;
+        public const int TokenHash = 64;
+        public const int SafePrefix = 16;
+        public const int Access = 20;
+    }
+
     public static class HouseholdChoreDigestSettings
     {
         public const int WebhookUrlProtected = 2000;

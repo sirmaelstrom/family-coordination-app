@@ -33,6 +33,7 @@ export const settingsNav: SettingsItem[] = [
   { href: '/settings/users', label: 'Family Members', icon: 'people' },
   { href: '/settings/connections', label: 'Connections', icon: 'connections' },
   { href: '/settings/calendar', label: 'Calendar Feed', icon: 'meals' },
+  { href: '/settings/agent-access', label: 'Agent Access', icon: 'connections' },
   { href: '/settings/feedback', label: 'Feedback', icon: 'feedback' },
   { href: '/settings/households', label: 'Household Requests', icon: 'admin', adminOnly: true },
 ];

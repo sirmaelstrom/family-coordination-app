@@ -372,7 +372,7 @@ public class TenantFilterArchitectureTests
         var tenantTypes = db.Model.GetEntityTypes().Count(t => typeof(ITenantEntity).IsAssignableFrom(t.ClrType));
 
         using var scope = new AssertionScope(); // report the coverage reasons even when the count also fails
-        tenantTypes.Should().Be(21, "D5's 21 tenant entities (guard the guard: the model is the real one)");
+        tenantTypes.Should().Be(22, "D5's 21 tenant entities plus PersonalAccessToken (quest 8bfa42cf) (guard the guard: the model is the real one)");
         FilterCoverageViolations(db.Model, UnfilteredHouseholdIdEntities).Should().BeEmpty();
     }
 
