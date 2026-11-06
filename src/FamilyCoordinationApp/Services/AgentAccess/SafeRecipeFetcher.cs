@@ -30,11 +30,19 @@ public sealed class SafeRecipeFetcher : IDisposable
 
     private readonly HttpClient _client;
 
+    private readonly TimeSpan _timeout;
+
     public SafeRecipeFetcher() : this(ConnectToPublicAddressAsync) { }
 
-    /// <summary>Test seam: the connect step (production: <see cref="ConnectToPublicAddressAsync"/>).</summary>
-    internal SafeRecipeFetcher(Func<SocketsHttpConnectionContext, CancellationToken, ValueTask<Stream>> connect)
+    /// <summary>
+    /// Test seam: the connect step (production: <see cref="ConnectToPublicAddressAsync"/>) and the whole-fetch
+    /// deadline (production: <see cref="Timeout"/>).
+    /// </summary>
+    internal SafeRecipeFetcher(
+        Func<SocketsHttpConnectionContext, CancellationToken, ValueTask<Stream>> connect,
+        TimeSpan? timeout = null)
     {
+        _timeout = timeout ?? Timeout;
         var handler = new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
@@ -46,7 +54,7 @@ public sealed class SafeRecipeFetcher : IDisposable
             PooledConnectionLifetime = TimeSpan.FromMinutes(2),
             ConnectCallback = connect,
         };
-        _client = new HttpClient(handler) { Timeout = Timeout, MaxResponseContentBufferSize = MaxBytes };
+        _client = new HttpClient(handler) { Timeout = _timeout, MaxResponseContentBufferSize = MaxBytes };
         _client.DefaultRequestHeaders.UserAgent.ParseAdd(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
         _client.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml;q=0.9,*/*;q=0.5");
