@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using FamilyCoordinationApp.Data.Entities;
 
 namespace FamilyCoordinationApp.Services.AgentAccess;
@@ -90,7 +91,9 @@ public sealed record PlannedMeal(
 
 public sealed record WeekPlan(DateOnly WeekStart, DateOnly WeekEnd, int? MealPlanId, IReadOnlyList<PlannedMeal> Meals, string AppPath, string ContentNote);
 
-public sealed record AddMealInput(DateOnly Date, MealType MealType, int? RecipeId, string? CustomMealName, string? Notes);
+// Preserve the pre-servings request hash when the optional override is omitted.
+public sealed record AddMealInput(DateOnly Date, MealType MealType, int? RecipeId, string? CustomMealName, string? Notes,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Servings = null);
 
 /// <summary><c>Outcome</c> is <c>added</c>, or <c>alreadyPlanned</c> when the slot already held that meal (left unchanged).</summary>
 public sealed record AddMealResult(string Outcome, PlannedMeal Meal);

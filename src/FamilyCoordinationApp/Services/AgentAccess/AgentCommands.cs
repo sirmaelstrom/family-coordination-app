@@ -230,7 +230,7 @@ public sealed class AgentCommands(
         return runner.RunAsync("add_meal", requestId, input, dryRun, async token =>
         {
             var (entry, created) = await mealPlans.AddMealIfAbsentAsync(
-                householdId, input.Date, input.MealType, input.RecipeId, input.CustomMealName, input.Notes, userId, token);
+                householdId, input.Date, input.MealType, input.RecipeId, input.CustomMealName, input.Notes, userId, input.Servings, token);
             var meal = await ReadMealAsync(entry.MealPlanId, entry.EntryId, token);
             return new AddMealResult(created ? "added" : "alreadyPlanned", meal);
         }, ct);

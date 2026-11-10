@@ -119,6 +119,23 @@ public sealed class AgentCommandsTests(PostgresContainerFixture postgres) : IAsy
     // ── Insert-only adds ─────────────────────────────────────────────────────────────────────
 
     [Fact]
+    public async Task An_existing_meal_without_an_override_conflicts_with_explicit_servings()
+    {
+        var input = new AddMealInput(Week, MealType.Dinner, null, "Leftovers", null);
+        var first = await As(A, UserA, c => c.AddMealAsync(input, "null-servings-01", false));
+        first.Result.Meal.Servings.Should().BeNull();
+        var before = await CountsAsync(A);
+
+        var different = () => As(A, UserA, c => c.AddMealAsync(input with { Servings = 1000 }, "null-servings-02", false));
+        await different.Should().ThrowAsync<ConflictException>().WithMessage("*different servings*Nothing was changed*");
+        (await CountsAsync(A)).Should().Be(before);
+        (await As(A, UserA, c => c.GetMealPlanAsync(Week))).Meals.Single().Servings.Should().BeNull();
+
+        var inserted = await As(A, UserA, c => c.AddMealAsync(input with { Date = Week.AddDays(1), Servings = 1000 }, "max-servings-01", false));
+        inserted.Result.Meal.Servings.Should().Be(1000);
+    }
+
+    [Fact]
     public async Task An_add_without_servings_replays_a_request_recorded_before_servings_was_supported()
     {
         var input = new AddMealInput(Week, MealType.Dinner, null, "Leftovers", null);
