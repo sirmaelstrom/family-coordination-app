@@ -119,6 +119,26 @@ public sealed class AgentCommandsTests(PostgresContainerFixture postgres) : IAsy
     // ── Insert-only adds ─────────────────────────────────────────────────────────────────────
 
     [Fact]
+    public async Task An_add_without_servings_replays_a_request_recorded_before_servings_was_supported()
+    {
+        var input = new AddMealInput(Week, MealType.Dinner, null, "Leftovers", null);
+        var first = await As(A, UserA, c => c.AddMealAsync(input, "legacy-meal-01", false));
+        // Pin the pre-servings wire shape: adding an omitted optional property must not change its hash.
+        var legacy = new { input.Date, input.MealType, input.RecipeId, input.CustomMealName, input.Notes };
+        var json = System.Text.Json.JsonSerializer.Serialize(legacy, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("add_meal\n" + json)));
+        await using (var db = Raw())
+        {
+            await db.AgentOperations.Where(o => o.RequestId == "legacy-meal-01")
+                .ExecuteUpdateAsync(u => u.SetProperty(o => o.PayloadHash, hash));
+        }
+
+        var replay = await As(A, UserA, c => c.AddMealAsync(input, "legacy-meal-01", false));
+        replay.Replayed.Should().BeTrue();
+        replay.Result.Should().BeEquivalentTo(first.Result);
+    }
+
+    [Fact]
     public async Task The_app_fold_overwrites_notes_but_the_agent_add_never_does()
     {
         var chili = await CreateChiliAsync(A, UserA, "chili-fold-01");
