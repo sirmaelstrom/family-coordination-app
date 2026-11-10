@@ -107,17 +107,11 @@ public sealed class McpEndpointTests(PostgresContainerFixture postgres) : IAsync
                 ["date"] = monday.AddDays(day).ToString("yyyy-MM-dd"),
                 ["mealType"] = "dinner",
                 ["recipeId"] = recipeId,
+                ["servings"] = 8,
                 ["requestId"] = $"e2e-meal-{day:00}",
             });
             var meal = added.GetProperty("result").GetProperty("meal");
-            await CallOk(client, "set_meal_servings", new()
-            {
-                ["mealPlanId"] = meal.GetProperty("mealPlanId").GetInt32(),
-                ["entryId"] = meal.GetProperty("entryId").GetInt32(),
-                ["version"] = meal.GetProperty("version").GetUInt32(),
-                ["servings"] = 8,
-                ["requestId"] = $"e2e-serve-{day:00}",
-            });
+            meal.GetProperty("servings").GetInt32().Should().Be(8);
         }
 
         var week = await CallOk(client, "get_meal_plan", new() { ["weekStart"] = Monday });
@@ -132,6 +126,110 @@ public sealed class McpEndpointTests(PostgresContainerFixture postgres) : IAsync
         var listId = list.GetProperty("result").GetProperty("listId").GetInt32();
         var read = await CallOk(client, "get_shopping_lists", new() { ["listId"] = listId });
         read.GetProperty("detail").GetProperty("items").GetArrayLength().Should().BeGreaterThan(0);
+
+        await using var db = Raw();
+        (await db.AgentOperations.CountAsync(o => o.Tool == "add_meal")).Should().Be(7);
+        (await db.AgentOperations.CountAsync(o => o.Tool == "set_meal_servings")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Add_meal_schema_exposes_optional_nullable_integer_servings()
+    {
+        var token = await MintAsync(ChoresWebAppFactory.UserAEmail, "readWrite");
+        await using var client = await ConnectAsync(token.token);
+        var tool = (await client.ListToolsAsync()).Single(t => t.Name == "add_meal");
+        var schema = tool.JsonSchema;
+        var servings = schema.GetProperty("properties").GetProperty("servings");
+        servings.GetProperty("type").EnumerateArray().Select(t => t.GetString())
+            .Should().BeEquivalentTo("integer", "null");
+        schema.GetProperty("required").EnumerateArray().Select(t => t.GetString()).Should().NotContain("servings");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Add_meal_servings_are_insert_only_and_dry_runs_persist_nothing(bool useRecipe)
+    {
+        var token = await MintAsync(ChoresWebAppFactory.UserAEmail, "readWrite");
+        await using var client = await ConnectAsync(token.token);
+        int? recipeId = useRecipe
+            ? (await CallOk(client, "create_recipe", Chili("servings-recipe-01"))).GetProperty("result").GetProperty("recipeId").GetInt32()
+            : null;
+
+        Dictionary<string, object?> Args(string requestId, int? servings = 8, bool dryRun = false) => new()
+        {
+            ["date"] = Monday, ["mealType"] = "dinner", ["recipeId"] = recipeId,
+            ["customMealName"] = useRecipe ? null : "Leftovers", ["notes"] = "Birthday",
+            ["servings"] = servings, ["requestId"] = requestId, ["dryRun"] = dryRun,
+        };
+
+        var dry = await CallOk(client, "add_meal", Args("servings-insert-01", dryRun: true));
+        dry.GetProperty("dryRun").GetBoolean().Should().BeTrue();
+        dry.GetProperty("result").GetProperty("meal").GetProperty("servings").GetInt32().Should().Be(8);
+        await using (var db = Raw())
+        {
+            (await db.MealPlanEntries.CountAsync()).Should().Be(0);
+            (await db.MealPlans.CountAsync()).Should().Be(0);
+            (await db.AgentOperations.CountAsync(o => o.Tool == "add_meal")).Should().Be(0);
+        }
+
+        var inserted = await CallOk(client, "add_meal", Args("servings-insert-01"));
+        inserted.GetProperty("replayed").GetBoolean().Should().BeFalse();
+        inserted.GetProperty("result").GetProperty("outcome").GetString().Should().Be("added");
+        var meal = inserted.GetProperty("result").GetProperty("meal");
+        meal.GetProperty("servings").GetInt32().Should().Be(8);
+
+        var replay = await CallOk(client, "add_meal", Args("servings-insert-01"));
+        replay.GetProperty("replayed").GetBoolean().Should().BeTrue();
+        var same = await CallOk(client, "add_meal", Args("servings-same-01"));
+        same.GetProperty("result").GetProperty("outcome").GetString().Should().Be("alreadyPlanned");
+        same.GetProperty("result").GetProperty("meal").ToString().Should().Be(meal.ToString());
+
+        var omitted = Args("servings-omitted-01");
+        omitted.Remove("servings");
+        var unchanged = await CallOk(client, "add_meal", omitted);
+        unchanged.GetProperty("result").GetProperty("meal").ToString().Should().Be(meal.ToString());
+        var cleared = await CallOk(client, "add_meal", Args("servings-null-01", servings: null));
+        cleared.GetProperty("result").GetProperty("meal").ToString().Should().Be(meal.ToString());
+
+        foreach (var dryRun in new[] { false, true })
+        {
+            var conflict = await CallError(client, "add_meal", Args($"servings-conflict-{dryRun}", 6, dryRun));
+            conflict.Code.Should().Be("conflict");
+            conflict.Text.Should().Contain("different servings").And.Contain("Nothing was changed");
+        }
+        (await CallError(client, "add_meal", Args("servings-insert-01", 6))).Code.Should().Be("conflict", "servings participates in request-id hashing");
+
+        var dryDuplicate = await CallOk(client, "add_meal", Args("servings-dry-same", dryRun: true));
+        dryDuplicate.GetProperty("result").GetProperty("outcome").GetString().Should().Be("alreadyPlanned");
+        await using var check = Raw();
+        var row = await check.MealPlanEntries.SingleAsync();
+        row.Servings.Should().Be(8);
+        row.Version.Should().Be(meal.GetProperty("version").GetUInt32());
+        row.Notes.Should().Be("Birthday");
+        row.UpdatedAt.Should().BeNull();
+        (await check.AgentOperations.CountAsync(o => o.Tool == "add_meal")).Should().Be(4);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(1001)]
+    public async Task Add_meal_rejects_invalid_servings_without_writes(int servings)
+    {
+        var token = await MintAsync(ChoresWebAppFactory.UserAEmail, "readWrite");
+        await using var client = await ConnectAsync(token.token);
+        var error = await CallError(client, "add_meal", new()
+        {
+            ["date"] = Monday, ["mealType"] = "dinner", ["customMealName"] = "Leftovers",
+            ["servings"] = servings, ["requestId"] = "servings-invalid-01",
+        });
+        error.Code.Should().Be("invalid_argument");
+        error.Text.Should().Contain("Servings");
+        await using var db = Raw();
+        (await db.MealPlanEntries.CountAsync()).Should().Be(0);
+        (await db.MealPlans.CountAsync()).Should().Be(0);
+        (await db.AgentOperations.CountAsync()).Should().Be(0);
     }
 
     [Fact]

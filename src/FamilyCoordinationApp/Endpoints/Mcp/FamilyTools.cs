@@ -77,7 +77,7 @@ public sealed class FamilyTools(IHttpContextAccessor accessor)
             ToolResults.Ok(await c.GetMealPlanAsync(ParseDate(weekStart, "weekStart"), Http.RequestAborted)));
 
     [McpServerTool(Name = "add_meal", Title = "Plan a meal", ReadOnly = false, Idempotent = true, Destructive = false, OpenWorld = false)]
-    [Description("Add one meal to the plan: exactly one of `recipeId` or `customMealName`. Insert-only: if that slot already holds the same meal, nothing changes and the result says `alreadyPlanned`; if it holds it with different notes, the call fails and nothing changes. Never edits or removes other meals.")]
+    [Description("Add one meal to the plan: exactly one of `recipeId` or `customMealName`, with optional servings. Insert-only: if that slot already holds the same meal, nothing changes and the result says `alreadyPlanned`; if explicit notes or servings differ, the call fails and nothing changes. Never edits or removes other meals.")]
     public Task<CallToolResult> AddMeal(
         [Description("The day, as YYYY-MM-DD.")] string date,
         [Description("One of: breakfast, lunch, dinner, snack.")] string mealType,
@@ -85,9 +85,10 @@ public sealed class FamilyTools(IHttpContextAccessor accessor)
         [Description("A recipe id from search_recipes or create_recipe.")] int? recipeId = null,
         [Description("A meal with no recipe, e.g. \"Leftovers\", up to 200 characters. It adds nothing to shopping lists.")] string? customMealName = null,
         [Description("Optional notes, up to 500 characters.")] string? notes = null,
+        [Description("Optional servings override, 1 to 1000, applied only when inserting. Omitted or null leaves an existing meal unchanged; different explicit servings conflict.")] int? servings = null,
         [Description(DryRunHelp)] bool dryRun = false) =>
         ToolResults.RunAsync(Http, "add_meal", true, async c => ToolResults.Ok(await c.AddMealAsync(
-            new AddMealInput(ParseDate(date, "date"), ParseEnum<MealType>(mealType, "mealType"), recipeId, customMealName, notes),
+            new AddMealInput(ParseDate(date, "date"), ParseEnum<MealType>(mealType, "mealType"), recipeId, customMealName, notes, servings),
             requestId, dryRun, Http.RequestAborted)));
 
     [McpServerTool(Name = "set_meal_servings", Title = "Set a meal's servings", ReadOnly = false, Idempotent = true, Destructive = false, OpenWorld = false)]

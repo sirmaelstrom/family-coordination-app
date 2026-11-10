@@ -119,6 +119,44 @@ public sealed class AgentCommandsTests(PostgresContainerFixture postgres) : IAsy
     // ── Insert-only adds ─────────────────────────────────────────────────────────────────────
 
     [Fact]
+    public async Task An_existing_meal_without_an_override_conflicts_with_explicit_servings()
+    {
+        var input = new AddMealInput(Week, MealType.Dinner, null, "Leftovers", null);
+        var first = await As(A, UserA, c => c.AddMealAsync(input, "null-servings-01", false));
+        first.Result.Meal.Servings.Should().BeNull();
+        var before = await CountsAsync(A);
+
+        var different = () => As(A, UserA, c => c.AddMealAsync(input with { Servings = 1000 }, "null-servings-02", false));
+        (await different.Should().ThrowAsync<ConflictException>()).Which.ClientMessage
+            .Should().Match("*different servings*Nothing was changed*");
+        (await CountsAsync(A)).Should().Be(before);
+        (await As(A, UserA, c => c.GetMealPlanAsync(Week))).Meals.Single().Servings.Should().BeNull();
+
+        var inserted = await As(A, UserA, c => c.AddMealAsync(input with { Date = Week.AddDays(1), Servings = 1000 }, "max-servings-01", false));
+        inserted.Result.Meal.Servings.Should().Be(1000);
+    }
+
+    [Fact]
+    public async Task An_add_without_servings_replays_a_request_recorded_before_servings_was_supported()
+    {
+        var input = new AddMealInput(Week, MealType.Dinner, null, "Leftovers", null);
+        var first = await As(A, UserA, c => c.AddMealAsync(input, "legacy-meal-01", false));
+        // Pin the pre-servings wire shape: adding an omitted optional property must not change its hash.
+        var legacy = new { input.Date, input.MealType, input.RecipeId, input.CustomMealName, input.Notes };
+        var json = System.Text.Json.JsonSerializer.Serialize(legacy, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("add_meal\n" + json)));
+        await using (var db = Raw())
+        {
+            await db.AgentOperations.Where(o => o.RequestId == "legacy-meal-01")
+                .ExecuteUpdateAsync(u => u.SetProperty(o => o.PayloadHash, hash));
+        }
+
+        var replay = await As(A, UserA, c => c.AddMealAsync(input, "legacy-meal-01", false));
+        replay.Replayed.Should().BeTrue();
+        replay.Result.Should().BeEquivalentTo(first.Result);
+    }
+
+    [Fact]
     public async Task The_app_fold_overwrites_notes_but_the_agent_add_never_does()
     {
         var chili = await CreateChiliAsync(A, UserA, "chili-fold-01");

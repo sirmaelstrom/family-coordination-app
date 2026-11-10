@@ -176,8 +176,9 @@ public class MealPlanService(
 
     public async Task<(MealPlanEntry Entry, bool Created)> AddMealIfAbsentAsync(
         int householdId, DateOnly date, MealType mealType, int? recipeId, string? customMealName, string? notes, int? userId,
-        CancellationToken cancellationToken = default)
+        int? servings = null, CancellationToken cancellationToken = default)
     {
+        ValidateServings(servings);
         customMealName = string.IsNullOrWhiteSpace(customMealName) ? null : customMealName.Trim();
         notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
         if (recipeId.HasValue == (customMealName is not null))
@@ -229,6 +230,13 @@ public class MealPlanService(
                                 $"(entry {existing.EntryId}) with different notes. Nothing was changed.",
                                 $"Insert-only add of a duplicate with different notes: plan {mealPlan.MealPlanId} entry {existing.EntryId}");
                         }
+                        if (servings is not null && servings != existing.Servings)
+                        {
+                            throw new ConflictException(
+                                $"That meal is already planned for {mealType.ToString().ToLowerInvariant()} on {date:yyyy-MM-dd} " +
+                                $"(entry {existing.EntryId}) with different servings. Nothing was changed.",
+                                $"Insert-only add of a duplicate with different servings: plan {mealPlan.MealPlanId} entry {existing.EntryId}");
+                        }
                         if (ownTransaction is not null) await ownTransaction.CommitAsync(cancellationToken);
                         return (existing, false);
                     }
@@ -253,6 +261,7 @@ public class MealPlanService(
                     RecipeId = recipeId,
                     CustomMealName = customMealName,
                     Notes = notes,
+                    Servings = servings,
                     CreatedByUserId = userId,
                 };
                 context.MealPlanEntries.Add(entry);
@@ -329,6 +338,20 @@ public class MealPlanService(
     /// <summary>Upper bound on a per-entry servings override; mirrored client-side in lib/servings.ts.</summary>
     public const int MaxServings = 1000;
 
+    private static void ValidateServings(int? servings)
+    {
+        if (servings is <= 0)
+        {
+            throw new DomainValidationException("Servings must be a positive number, or null to cook the recipe as written.");
+        }
+
+        // This value multiplies ingredients stored as decimal(10,2); bound it to avoid numeric overflow.
+        if (servings > MaxServings)
+        {
+            throw new DomainValidationException($"Servings must be {MaxServings} or fewer.");
+        }
+    }
+
     public async Task<MealPlanEntry> SetMealServingsAsync(
         int householdId,
         int mealPlanId,
@@ -352,19 +375,7 @@ public class MealPlanService(
             throw new NotFoundException(MealEntryNotFound, $"Meal entry {entryId} not found in plan {mealPlanId} for household {householdId}");
         }
 
-        if (servings is <= 0)
-        {
-            throw new DomainValidationException("Servings must be a positive number, or null to cook the recipe as written.");
-        }
-
-        // Bounded because the value becomes a MULTIPLIER on every ingredient of that meal, and
-        // ShoppingListItem.Quantity is decimal(10,2) — an unbounded servings count turns a generate into a
-        // numeric-overflow 500 rather than a silly list. 1000 is far past any real household.
-        if (servings > MaxServings)
-        {
-            throw new DomainValidationException($"Servings must be {MaxServings} or fewer.");
-        }
-
+        ValidateServings(servings);
         entry.Servings = servings;
         // A touch, kept on purpose: an unchanged servings value must still put the row in the UPDATE for the version
         // check. The write step stamps UpdatedByUserId (the caller).
