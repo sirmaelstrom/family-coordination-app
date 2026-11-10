@@ -127,7 +127,8 @@ public sealed class AgentCommandsTests(PostgresContainerFixture postgres) : IAsy
         var before = await CountsAsync(A);
 
         var different = () => As(A, UserA, c => c.AddMealAsync(input with { Servings = 1000 }, "null-servings-02", false));
-        await different.Should().ThrowAsync<ConflictException>().WithMessage("*different servings*Nothing was changed*");
+        (await different.Should().ThrowAsync<ConflictException>()).Which.ClientMessage
+            .Should().Match("*different servings*Nothing was changed*");
         (await CountsAsync(A)).Should().Be(before);
         (await As(A, UserA, c => c.GetMealPlanAsync(Week))).Meals.Single().Servings.Should().BeNull();
 
