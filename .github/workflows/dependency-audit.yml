@@ -1,0 +1,34 @@
+name: Dependency Audit
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: '17 9 * * 1' # Weekly even when no one opens a PR.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-audit-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: NuGet & npm (Moderate+)
+    # Public repo + standard hosted runner = free compute; no self-hosted access or secrets.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Audit direct and transitive dependencies
+        run: node scripts/audit-dependencies.mjs
