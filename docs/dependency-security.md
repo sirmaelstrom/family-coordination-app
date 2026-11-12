@@ -5,8 +5,8 @@ projects, including transitive packages, and the complete npm lockfile, includin
 development dependencies. Moderate, High, Critical, and audit-service errors fail
 the command. Low findings remain in its output; they are not suppressed.
 
-`.github/workflows/dependency-audit.yml` runs this command on every PR to master/main,
-on pushes to those branches, every Monday at 09:17 UTC, and on manual dispatch.
+`.github/workflows/dependency-audit.yml` runs this command on every PR,
+on pushes to master/main, every Monday at 09:17 UTC, and on manual dispatch.
 The weekly run can fail when an advisory arrives without a source change. Check
 the Dependency Audit workflow and GitHub's workflow-failure notifications.
 The repo is public and uses a standard `ubuntu-latest` runner, for which
