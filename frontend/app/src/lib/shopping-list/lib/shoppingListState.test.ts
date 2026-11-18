@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // the fca#103 residual open: a GET that STARTS during a write and is answered before its response).
 
 vi.mock('./api', async () => {
-  const { ApiError } = await vi.importActual<typeof import('$lib/api/client')>('$lib/api/client');
+  const { ApiError } = await vi.importActual<typeof import('#lib/api/client.ts')>('#lib/api/client.ts');
   return {
     ApiError,
     addItem: vi.fn(),
@@ -24,7 +24,7 @@ vi.mock('./api', async () => {
     updateSortOrders: vi.fn(),
   };
 });
-vi.mock('$lib/shared/toast-store.svelte', () => ({ showToast: vi.fn() }));
+vi.mock('#lib/shared/toast-store.svelte.ts', () => ({ showToast: vi.fn() }));
 
 import { ShoppingListState } from './shoppingListState.svelte';
 import {
@@ -38,7 +38,7 @@ import {
   patchItem,
   updateSortOrders,
 } from './api';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 import type { ShoppingListDto, ShoppingListItemDto, ShoppingListSummaryDto } from './types';
 
 function deferred<T>() {

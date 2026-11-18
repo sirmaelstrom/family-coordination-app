@@ -3,14 +3,14 @@
   // within ListApp — there is no standalone import view — so this route renders
   // ListApp with the dialog auto-opened. Closing the dialog returns to /recipes
   // (base-aware); a successful import follows the island's own base-aware nav to the
-  // new/edited recipe. Identity from $lib/session via ctx() (M8).
-  import { base } from '$app/paths';
+  // new/edited recipe. Identity from #lib/session via ctx() (M8).
+  import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
-  import IslandRoute from '$lib/shared/IslandRoute.svelte';
-  import ListApp from '$lib/recipes/ListApp.svelte';
-  import { ctx } from '$lib/session.svelte';
+  import IslandRoute from '#lib/shared/IslandRoute.svelte';
+  import ListApp from '#lib/recipes/ListApp.svelte';
+  import { ctx } from '#lib/session.svelte.ts';
 </script>
 
 <IslandRoute>
-  <ListApp openImport onImportClose={() => goto(`${base}/recipes`)} ctx={ctx({ view: 'list' })} />
+  <ListApp openImport onImportClose={() => goto(resolve('/recipes'))} ctx={ctx({ view: 'list' })} />
 </IslandRoute>

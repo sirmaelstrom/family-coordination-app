@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ChoreEquityDto, EquityWindow, CapacityTier } from '../types';
-  import MemberAvatar from '$lib/shared/MemberAvatar.svelte';
+  import MemberAvatar from '#lib/shared/MemberAvatar.svelte';
 
   // ───────────────────────────────────────────────────────────────────────
   // Equity lens (the headline v1.1 view) — a NEUTRAL distribution of who has

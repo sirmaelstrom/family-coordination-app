@@ -11,7 +11,7 @@
 //   `new Date("YYYY-MM-DD")` (UTC-midnight parse = wrong day in US tz).
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { MealType } from '$lib/api/recipeType';
+import type { MealType } from '#lib/api/recipeType.ts';
 export type { MealType };
 
 /** The four Home chore-card counts (mirrors ChoreHomeStats.Result). */
@@ -47,4 +47,4 @@ export interface DashboardDto {
 
 /** Shell context the Razor host hands the island via root data-attrs. */
 // The canonical app-wide ShellContext (quest 76e6f169 collapsed the per-island copies).
-export type { ShellContext } from '$lib/session.svelte';
+export type { ShellContext } from '#lib/session.svelte.ts';

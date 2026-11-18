@@ -31,7 +31,7 @@ export interface PlanLocation {
  * back to `today`; a missing or unknown `view` falls back to `defaultView`.
  */
 export function parsePlanLocation(
-  params: URLSearchParams,
+  params: Pick<URLSearchParams, 'get'>,
   today: string,
   defaultView: PlanView,
 ): PlanLocation {

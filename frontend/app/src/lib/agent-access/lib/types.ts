@@ -8,7 +8,7 @@
 // ⚠ DATES: every instant is a full ISO-8601 UTC string; render with new Date(iso).
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { ShellContext as AppShellContext } from '$lib/session.svelte';
+import type { ShellContext as AppShellContext } from '#lib/session.svelte.ts';
 
 export type ShellContext = AppShellContext;
 

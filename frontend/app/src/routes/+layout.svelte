@@ -5,15 +5,15 @@
   // the canonical session store (fetches /api/me once) and the theme store on
   // mount. ssr=false (see +layout.ts) so this all runs client-side.
   import { onMount } from 'svelte';
-  import '$lib/styles/app.css';
-  import { session } from '$lib/session.svelte';
-  import { theme } from '$lib/theme.svelte';
-  import Header from '$lib/shell/Header.svelte';
-  import Nav from '$lib/shell/Nav.svelte';
-  import MobileBottomNav from '$lib/shell/MobileBottomNav.svelte';
-  import Footer from '$lib/shell/Footer.svelte';
-  import Toasts from '$lib/shared/Toasts.svelte';
-  import FeedbackDialog from '$lib/shared/FeedbackDialog.svelte';
+  import '#lib/styles/app.css';
+  import { session } from '#lib/session.svelte.ts';
+  import { theme } from '#lib/theme.svelte.ts';
+  import Header from '#lib/shell/Header.svelte';
+  import Nav from '#lib/shell/Nav.svelte';
+  import MobileBottomNav from '#lib/shell/MobileBottomNav.svelte';
+  import Footer from '#lib/shell/Footer.svelte';
+  import Toasts from '#lib/shared/Toasts.svelte';
+  import FeedbackDialog from '#lib/shared/FeedbackDialog.svelte';
 
   let { children } = $props();
 

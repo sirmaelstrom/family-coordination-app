@@ -1,8 +1,20 @@
+import adapter from '@sveltejs/adapter-static';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
+// The de-Blazored shell (WP-12: flipped to root). Pure SPA (adapter-static + SPA fallback),
+// served by ASP.NET at the site root, talking to the existing /api with the existing auth
+// cookie. SvelteKit 3 takes its config here (svelte.config.js is gone). No base path: the app
+// is at the root, and every internal link goes through `resolve()` from $app/paths, so setting
+// `paths.base` here would still be the only change needed.
 export default defineConfig({
-  plugins: [sveltekit()],
+  plugins: [
+    sveltekit({
+      preprocess: vitePreprocess(),
+      adapter: adapter({ fallback: 'index.html', strict: false }),
+    }),
+  ],
   server: {
     port: 5174,
     // Dev loop (de-Blazor WP-03): `npm run dev` serves the SPA on :5174 and proxies /api to the .NET host on

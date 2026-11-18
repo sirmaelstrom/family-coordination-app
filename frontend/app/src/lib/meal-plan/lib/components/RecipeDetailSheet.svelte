@@ -11,7 +11,7 @@
   import type { MealPlanEntryDto, RecipeDetailDto, RecipeIngredientDto } from '../types';
   import { getRecipeDetail, ApiError } from '../api';
   import { dayLong } from '../dates';
-  import { Resource } from '$lib/data/resource.svelte';
+  import { Resource } from '#lib/data/resource.svelte.ts';
 
   type Mode = 'recipe' | 'custom';
 

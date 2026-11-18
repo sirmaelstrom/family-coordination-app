@@ -48,8 +48,8 @@ import {
   zoneKey,
   type DragEntry,
 } from './board-ops';
-import { showToast } from '$lib/shared/toast-store.svelte';
-import { Resource, type MutationOutcome } from '$lib/data/resource.svelte';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
+import { Resource, type MutationOutcome } from '#lib/data/resource.svelte.ts';
 
 /** The pending-write key for one entry (a second action on it while pending is skipped). */
 const entryKey = (mealPlanId: number, entryId: number): string => `entry:${mealPlanId}:${entryId}`;

@@ -13,8 +13,8 @@
   // ───────────────────────────────────────────────────────────────────────
   import type { MealRecipeSummaryDto, RecipeType } from '../types';
   import { searchRecipes, quickCreateRecipe, ApiError } from '../api';
-  import { RECIPE_TYPES, recipeTypeLabel } from '$lib/api/recipeType';
-  import { Resource } from '$lib/data/resource.svelte';
+  import { RECIPE_TYPES, recipeTypeLabel } from '#lib/api/recipeType.ts';
+  import { Resource } from '#lib/data/resource.svelte.ts';
 
   type Mode = 'search' | 'custom' | 'new';
 

@@ -63,8 +63,8 @@ import {
   type UpdateChoreRequest,
   type CompleteRequest,
 } from './api';
-import { showToast } from '$lib/shared/toast-store.svelte';
-import { Resource, type MutationOutcome } from '$lib/data/resource.svelte';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
+import { Resource, type MutationOutcome } from '#lib/data/resource.svelte.ts';
 
 const REJECTED_MESSAGE = "That didn't go through — the board has been refreshed.";
 const FAILED_MESSAGE = 'Something went wrong. Please try again.';

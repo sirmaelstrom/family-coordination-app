@@ -21,7 +21,7 @@ vi.mock('./api', async (importOriginal) => ({
   reorderSubtasks: vi.fn(),
   setDefaultView: vi.fn(),
 }));
-vi.mock('$lib/shared/toast-store.svelte', () => ({ showToast: vi.fn() }));
+vi.mock('#lib/shared/toast-store.svelte.ts', () => ({ showToast: vi.fn() }));
 
 import { boardStore } from './state.svelte';
 import {
@@ -37,7 +37,7 @@ import {
   updateChore,
   updateSubtask,
 } from './api';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 import type { ChoreBoardDto, ChoreDto } from './types';
 
 function deferred<T>() {

@@ -17,8 +17,8 @@
 
 import type { ArchivedListSummaryDto, ShoppingListDto, ShoppingListSummaryDto } from './types';
 import { addItem, deleteList, getArchivedList, listArchived, listLists, restoreList } from './api';
-import { Resource } from '$lib/data/resource.svelte';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { Resource } from '#lib/data/resource.svelte.ts';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 

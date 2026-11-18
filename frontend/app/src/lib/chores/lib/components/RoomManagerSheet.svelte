@@ -24,7 +24,7 @@
   import type { RoomRollupDto } from '../types';
   import { createRoom, deleteRoom, reorderRooms } from '../api';
   import { boardStore } from '../state.svelte';
-  import { showToast } from '$lib/shared/toast-store.svelte';
+  import { showToast } from '#lib/shared/toast-store.svelte.ts';
   import IconPicker from './IconPicker.svelte';
   import { dndzone, type DndEvent } from 'svelte-dnd-action';
 

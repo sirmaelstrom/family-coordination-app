@@ -6,7 +6,7 @@
   // (optimistic + 409 reconcile) with the chosen target (null ⇒ pile).
   // ───────────────────────────────────────────────────────────────────────
   import type { MemberDto } from '../types';
-  import MemberAvatar from '$lib/shared/MemberAvatar.svelte';
+  import MemberAvatar from '#lib/shared/MemberAvatar.svelte';
 
   interface Props {
     open: boolean;

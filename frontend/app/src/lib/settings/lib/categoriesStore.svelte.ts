@@ -24,8 +24,8 @@ import {
   updateSortOrder,
   categoryInUse,
 } from './api';
-import { Resource } from '$lib/data/resource.svelte';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { Resource } from '#lib/data/resource.svelte.ts';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
 class CategoriesStore {
   active = $state<CategoryDto[]>([]);

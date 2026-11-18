@@ -2,7 +2,7 @@
   import type { ChoreDto, ChoreSubtaskDto, ColorTier, DueState, EffortTier, RecurrenceMode, RosterState } from '../types';
   import { boardStore, memberFor, roomFor } from '../state.svelte';
   import { showPhoto } from '../lightbox.svelte';
-  import MemberAvatar from '$lib/shared/MemberAvatar.svelte';
+  import MemberAvatar from '#lib/shared/MemberAvatar.svelte';
   import { dndzone, type DndEvent } from 'svelte-dnd-action';
 
   // ───────────────────────────────────────────────────────────────────────

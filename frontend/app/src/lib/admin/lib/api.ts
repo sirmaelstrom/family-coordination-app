@@ -4,13 +4,13 @@ const REQUESTS = '/api/settings/household-requests';
 const HOUSEHOLDS = '/api/settings/households';
 const FEEDBACK = '/api/settings/feedback';
 
-// Transport + error contract live in $lib/api/client (the one HTTP boundary,
+// Transport + error contract live in #lib/api/client (the one HTTP boundary,
 // quest 79aa83e7). Admin semantics: any 4xx is a non-retryable rejection →
 // reconcile + calm toast. The 403 on the households GET is special-cased by
 // the store as the access-denied signal (R-C4 — the 403 IS the signal; no
 // /context endpoint), which is exactly why the client boundary never
 // redirects on 403.
-import { ApiError, apiGet, apiSend } from '$lib/api/client';
+import { ApiError, apiGet, apiSend } from '#lib/api/client.ts';
 
 export { ApiError };
 

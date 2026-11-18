@@ -2,10 +2,10 @@
   import { untrack } from 'svelte';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import { base } from '$app/paths';
+  import { resolve } from '$app/paths';
   import type { MealPlanEntryDto, MealType, ShellContext } from './lib/types';
   import { mealPlanStore } from './lib/state.svelte';
-  import { startLiveness, type LivenessHandle } from '$lib/liveness';
+  import { startLiveness, type LivenessHandle } from '#lib/liveness.ts';
   import { weekdayShort, monthDay, todayStr } from './lib/dates';
   import {
     parsePlanLocation,
@@ -22,9 +22,9 @@
   import DayView from './lib/components/DayView.svelte';
   import RecipePickerSheet, { type PickerResult } from './lib/components/RecipePickerSheet.svelte';
   import RecipeDetailSheet from './lib/components/RecipeDetailSheet.svelte';
-  import ConfirmDialog from '$lib/shared/ConfirmDialog.svelte';
-  import PromptDialog from '$lib/shared/PromptDialog.svelte';
-  import { showToast } from '$lib/shared/toast-store.svelte';
+  import ConfirmDialog from '#lib/shared/ConfirmDialog.svelte';
+  import PromptDialog from '#lib/shared/PromptDialog.svelte';
+  import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
   // ───────────────────────────────────────────────────────────────────────
   // Root of the meal-plan surface. The URL says where we are looking
@@ -70,17 +70,27 @@
   /**
    * Go to a location. Switching view pushes history (Back returns to the week);
    * stepping prev/next/today replaces it, so Back isn't a day-by-day replay.
+   *
+   * Kit 3's one `reset` flag moves scroll AND focus, and it also decides whether
+   * Back restores the scroll. A step keeps both (`reset: false`). A view switch
+   * resets, so the day opens at its top (a header tapped far down the phone week
+   * list would otherwise land mid-day) and Back returns to the week where it was.
+   * Then focus goes back to the control that had it (the Week/Day toggle stays
+   * mounted), so a keyboard user isn't thrown to the top of the page.
    */
-  function go(next: PlanLocation, opts: { replace: boolean }): void {
-    void goto(`${base}/meal-plan${planSearch(next, todayStr(), defaultView)}`, {
-      replaceState: opts.replace,
-      noScroll: opts.replace,
-      keepFocus: true,
+  async function go(next: PlanLocation, opts: { replace: boolean }): Promise<void> {
+    const focused = document.activeElement;
+    await goto(resolve('/meal-plan') + planSearch(next, todayStr(), defaultView), {
+      replace: opts.replace,
+      reset: !opts.replace,
     });
+    if (!opts.replace && focused instanceof HTMLElement && focused.isConnected) {
+      focused.focus({ preventScroll: true });
+    }
   }
 
   function openDay(date: string): void {
-    go({ view: 'day', date }, { replace: false });
+    void go({ view: 'day', date }, { replace: false });
   }
 
   let liveness: LivenessHandle | null = null;

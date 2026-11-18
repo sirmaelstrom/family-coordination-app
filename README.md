@@ -25,7 +25,7 @@ static Razor Pages (login, legal, error, and the household-onboarding flow).
 
 ## Building and Running
 
-Requires the .NET 10 SDK, Node 20+, PostgreSQL, and Google OAuth credentials.
+Requires the .NET 10 SDK, Node 22.17+, PostgreSQL, and Google OAuth credentials.
 
 ### Local development
 
@@ -71,7 +71,7 @@ cd frontend/app && npm install && npm run check && npm run build
 
 ### Docker
 
-The production image is a single multi-stage `Dockerfile` — a `node:20-alpine`
+The production image is a single multi-stage `Dockerfile` — a `node:22-alpine`
 stage builds the SPA, then the .NET publish stage copies it into `wwwroot/`:
 
 ```bash

@@ -1,6 +1,6 @@
 import type { DashboardDto, DashboardMealDto, MealType, ShellContext } from './types';
 import { getDashboard } from './api';
-import { Resource } from '$lib/data/resource.svelte';
+import { Resource } from '#lib/data/resource.svelte.ts';
 
 /** A meal-type group for the Today's Meals card (preserves the server's MealType ordering). */
 export interface MealGroup {
