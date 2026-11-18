@@ -612,6 +612,29 @@ public sealed class AgentCommandsTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_dry_run_with_a_stale_version_is_refused_like_the_live_call()
+    {
+        // Land review blocker: the dry run skipped the only version check, so it reported "replaced" for a write the
+        // live call refuses. Both now refuse the same way, and the dry run still stores nothing.
+        _web.Serve("/pie.png", FakeWebServer.Png, "image/png");
+        _web.Serve("/pie.jpg", FakeWebServer.Jpeg, "image/jpeg");
+        var chili = await CreateChiliAsync(A, UserA, "img-dstale-rcp1");
+        var added = await As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, ImageUrl, null), "img-dstale-add1", false));
+        var first = added.Result.ImagePath!;
+        var stale = added.Result.Version!.Value - 1;
+
+        var dryStale = () => As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, "http://images.test/pie.jpg", stale), "img-dstale-dry1", true));
+        await dryStale.Should().ThrowAsync<ConcurrencyConflictException>();
+
+        var current = (await As(A, UserA, c => c.GetRecipeAsync(chili))).Version;
+        var dryFresh = await As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, "http://images.test/pie.jpg", current), "img-dstale-dry2", true));
+        dryFresh.Result.Outcome.Should().Be("replaced");
+
+        (await StoredImagePathAsync(A, chili)).Should().Be(first);
+        _uploads.New().Should().Equal(first);
+    }
+
+    [Fact]
     public async Task Another_households_recipe_cannot_be_given_an_image()
     {
         _web.Serve("/pie.png", FakeWebServer.Png, "image/png");
@@ -644,6 +667,39 @@ public sealed class AgentCommandsTests : IAsyncLifetime
         preview.ImageUrl.Should().Be("https://images.test/pumpkin.jpg");
         _uploads.New().Should().BeEmpty("a preview stores nothing");
     }
+
+    [Fact]
+    public async Task Preview_resolves_a_root_relative_image_against_the_page()
+    {
+        // Land review blocker: a normal root-relative schema.org image was dropped, so create_recipe got no picture.
+        const string page = """
+            <html><head><script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"Recipe","name":"Apple pie","image":"/images/apple.jpg",
+             "recipeIngredient":["6 apples"],"recipeInstructions":"Bake it."}
+            </script></head><body></body></html>
+            """;
+        _web.Serve("/desserts/apple-pie", System.Text.Encoding.UTF8.GetBytes(page), "text/html; charset=utf-8");
+
+        var preview = await As(A, UserA, c => c.PreviewRecipeImportAsync("http://recipes.test/desserts/apple-pie"));
+
+        preview.ImageUrl.Should().Be("http://recipes.test/images/apple.jpg");
+    }
+
+    [Theory]
+    [InlineData("https://images.test/a.jpg", "https://images.test/a.jpg")]
+    [InlineData("/images/a.jpg", "https://site.test/images/a.jpg")]
+    [InlineData("a.jpg", "https://site.test/recipes/a.jpg")]
+    [InlineData("../img/a.jpg", "https://site.test/img/a.jpg")]
+    [InlineData("//cdn.test/a.jpg", "https://cdn.test/a.jpg")]
+    [InlineData("  /images/a.jpg  ", "https://site.test/images/a.jpg")]
+    [InlineData("ftp://files.test/a.jpg", null)]
+    [InlineData("file:///etc/passwd", null)]
+    [InlineData("data:image/png;base64,AAAA", null)]
+    [InlineData("javascript:alert(1)", null)]
+    [InlineData("", null)]
+    [InlineData(null, null)]
+    public void Preview_image_url_is_absolute_http_or_nothing(string? raw, string? expected) =>
+        AgentCommands.PreviewImageUrl("https://site.test/recipes/pie", raw).Should().Be(expected);
 
     // ── No model calls on the token path ─────────────────────────────────────────────────────
 

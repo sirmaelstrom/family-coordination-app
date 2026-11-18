@@ -144,6 +144,9 @@ public sealed class AgentCommands(
                 // Read again under the write lock: the recipe may have changed while the image was fetched.
                 var (previous, current) = await CheckImageTargetAsync(input, token);
                 uint? version = null;
+                // A dry run skips the write, so it must check the caller's version itself: the save's version check
+                // is the only other one, and a preview must not report success for a write that would be refused.
+                if (dryRun && input.Version is { } given) ConcurrencySave.ThrowIfStale<Recipe>(current, given);
                 if (!dryRun)
                 {
                     stored = await StoreImageAsync(image, householdId, token);
@@ -339,12 +342,33 @@ public sealed class AgentCommands(
             existing?.Name,
             "Nothing was saved. To keep this recipe, call create_recipe with these fields (imageUrl included, if one was found).",
             AgentContent.UntrustedNote,
-            // The page's schema.org image, as the importer read it. Only an absolute web URL is offered: create_recipe
-            // fetches and stores its own copy, so a relative or odd value is left out rather than passed on.
-            Uri.TryCreate(recipe.ImagePath, UriKind.Absolute, out var image) && (image.Scheme == Uri.UriSchemeHttps || image.Scheme == Uri.UriSchemeHttp)
-                && recipe.ImagePath!.Length <= FieldLengths.Recipe.SourceUrl
-                ? recipe.ImagePath
-                : null);
+            PreviewImageUrl(url, recipe.ImagePath));
+    }
+
+    /// <summary>
+    /// The page's schema.org image as an absolute http(s) URL create_recipe can fetch, or null. A relative value
+    /// ("/images/pie.jpg", "pie.jpg", "//cdn.example/pie.jpg") is resolved against the page URL, as a browser would;
+    /// any other scheme or an over-long result is left out rather than passed on.
+    /// </summary>
+    internal static string? PreviewImageUrl(string pageUrl, string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var value = raw.Trim();
+        // Absolute first, and only http(s): on Unix "/images/pie.jpg" parses as an absolute file: URI, so a relative
+        // reference is parsed explicitly as Relative and combined with the page URL.
+        Uri? resolved = null;
+        if (Uri.TryCreate(value, UriKind.Absolute, out var absolute)
+            && (absolute.Scheme == Uri.UriSchemeHttps || absolute.Scheme == Uri.UriSchemeHttp))
+        {
+            resolved = absolute;
+        }
+        else if (Uri.TryCreate(value, UriKind.Relative, out var relative) && Uri.TryCreate(pageUrl, UriKind.Absolute, out var page))
+        {
+            resolved = new Uri(page, relative);
+        }
+        if (resolved is null || (resolved.Scheme != Uri.UriSchemeHttps && resolved.Scheme != Uri.UriSchemeHttp)) return null;
+        var text = resolved.AbsoluteUri;
+        return text.Length <= FieldLengths.Recipe.SourceUrl ? text : null;
     }
 
     // ── Meal plan ───────────────────────────────────────────────────────────────────────────
