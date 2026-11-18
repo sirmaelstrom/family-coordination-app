@@ -1,0 +1,24 @@
+{
+  "surface": "fca-meal-plan-drive",
+  "status": "green",
+  "branch": {
+    "commit": "beae8c7552fdbf70d8b3f5e83315b657fed7f5e3"
+  },
+  "baseUrl": "http://127.0.0.1:58334",
+  "snackRowRendered": false,
+  "errors": [],
+  "views": [
+    {
+      "view": "desktop-week",
+      "screenshot": "01-desktop-week.png"
+    },
+    {
+      "view": "desktop-week-dinner-label",
+      "screenshot": "02-desktop-week-scrolled-dinner-label.png"
+    },
+    {
+      "view": "phone-week",
+      "screenshot": "07-phone-week-thursday-open.png"
+    }
+  ]
+}

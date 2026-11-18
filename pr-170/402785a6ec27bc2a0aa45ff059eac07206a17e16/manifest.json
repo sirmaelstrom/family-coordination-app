@@ -1,0 +1,318 @@
+{
+  "schema": 1,
+  "maxBytes": 4000000,
+  "runs": {
+    "base": {
+      "commit": "beae8c7552fdbf70d8b3f5e83315b657fed7f5e3",
+      "verdict": "base-verdict.json",
+      "sourceVerdict": "D:\\Development\\data\\outputs\\verifications\\2026-11-18-fca-meal-plan-day-view-base-beae8c7\\verdict.json"
+    },
+    "head": {
+      "commit": "402785a6ec27bc2a0aa45ff059eac07206a17e16",
+      "verdict": "head-verdict.json",
+      "sourceVerdict": "D:\\Development\\data\\outputs\\verifications\\2026-11-18-fca-meal-plan-day-view-head-402785a\\verdict.json"
+    }
+  },
+  "frames": [
+    {
+      "frame": "base-desktop-week.png",
+      "bytes": 29835,
+      "encoding": "palette",
+      "capturedBytes": 67867,
+      "psnr": 55.83,
+      "maxError": 27,
+      "colours": 3255,
+      "cells": [
+        {
+          "capturedBytes": 67867,
+          "source": "01-desktop-week.png",
+          "script": "desktop-week",
+          "sha256": "0161323e725646f8363a8422fba4b5bf1424eae952dcdc9b1810cca5492024d0",
+          "slot": 0,
+          "original": "originals/base/01-desktop-week.png"
+        }
+      ],
+      "source": "01-desktop-week.png"
+    },
+    {
+      "frame": "head-desktop-week.png",
+      "bytes": 30766,
+      "encoding": "palette",
+      "capturedBytes": 72996,
+      "psnr": 57.55,
+      "maxError": 28,
+      "colours": 2382,
+      "cells": [
+        {
+          "capturedBytes": 72996,
+          "source": "01-desktop-week.png",
+          "script": "desktop-week",
+          "sha256": "43532042633d40a62798c1c01916b6c4e346a3741926057bf65856378d70a497",
+          "slot": 0,
+          "original": "originals/head/01-desktop-week.png"
+        }
+      ],
+      "source": "01-desktop-week.png"
+    },
+    {
+      "frame": "base-desktop-week-dinner-label.png",
+      "bytes": 24556,
+      "encoding": "palette",
+      "capturedBytes": 53158,
+      "psnr": 60.1,
+      "maxError": 29,
+      "colours": 1391,
+      "cells": [
+        {
+          "capturedBytes": 53158,
+          "source": "02-desktop-week-scrolled-dinner-label.png",
+          "script": "desktop-week-dinner-label",
+          "sha256": "e4cd8288676e4011a5d0b351aa7556ef45a50c8eee61864b49f05b1c9b0e6aef",
+          "slot": 0,
+          "original": "originals/base/02-desktop-week-scrolled-dinner-label.png"
+        }
+      ],
+      "source": "02-desktop-week-scrolled-dinner-label.png"
+    },
+    {
+      "frame": "head-desktop-week-dinner-label.png",
+      "bytes": 26088,
+      "encoding": "palette",
+      "capturedBytes": 59118,
+      "psnr": 89.56,
+      "maxError": 2,
+      "colours": 284,
+      "cells": [
+        {
+          "capturedBytes": 59118,
+          "source": "02-desktop-week-scrolled-dinner-label.png",
+          "script": "desktop-week-dinner-label",
+          "sha256": "ef994142414ed5ff2c5100d77559ff8779e68de0fbaa847bf48fd9c062c5866d",
+          "slot": 0,
+          "original": "originals/head/02-desktop-week-scrolled-dinner-label.png"
+        }
+      ],
+      "source": "02-desktop-week-scrolled-dinner-label.png"
+    },
+    {
+      "frame": "base-desktop-day.png",
+      "bytes": 794,
+      "encoding": "placeholder",
+      "capturedBytes": 0,
+      "reason": "new on head",
+      "slot": 0,
+      "cells": [
+        {
+          "encoding": "placeholder",
+          "capturedBytes": 0,
+          "reason": "new on head",
+          "slot": 0
+        }
+      ]
+    },
+    {
+      "frame": "head-desktop-day.png",
+      "bytes": 50283,
+      "encoding": "palette",
+      "capturedBytes": 121235,
+      "psnr": 52.92,
+      "maxError": 30,
+      "colours": 4051,
+      "cells": [
+        {
+          "capturedBytes": 121235,
+          "source": "03-desktop-day.png",
+          "script": "desktop-day",
+          "sha256": "1060da7dba2f7bf41143ef41b768fe549d2153c4eafa0f1ebe260d0e5477a4e6",
+          "slot": 0,
+          "original": "originals/head/03-desktop-day.png"
+        }
+      ],
+      "source": "03-desktop-day.png"
+    },
+    {
+      "frame": "base-desktop-day-after-reload.png",
+      "bytes": 794,
+      "encoding": "placeholder",
+      "capturedBytes": 0,
+      "reason": "new on head",
+      "slot": 0,
+      "cells": [
+        {
+          "encoding": "placeholder",
+          "capturedBytes": 0,
+          "reason": "new on head",
+          "slot": 0
+        }
+      ]
+    },
+    {
+      "frame": "head-desktop-day-after-reload.png",
+      "bytes": 49125,
+      "encoding": "palette",
+      "capturedBytes": 118978,
+      "psnr": 53.14,
+      "maxError": 31,
+      "colours": 3590,
+      "cells": [
+        {
+          "capturedBytes": 118978,
+          "source": "04-desktop-day-after-reload.png",
+          "script": "desktop-day-after-reload",
+          "sha256": "7f194cd68444b99e292bee2403ed1c99b05b2060ec684b91fab4b859c34305aa",
+          "slot": 0,
+          "original": "originals/head/04-desktop-day-after-reload.png"
+        }
+      ],
+      "source": "04-desktop-day-after-reload.png"
+    },
+    {
+      "frame": "base-desktop-day-after-actions.png",
+      "bytes": 794,
+      "encoding": "placeholder",
+      "capturedBytes": 0,
+      "reason": "new on head",
+      "slot": 0,
+      "cells": [
+        {
+          "encoding": "placeholder",
+          "capturedBytes": 0,
+          "reason": "new on head",
+          "slot": 0
+        }
+      ]
+    },
+    {
+      "frame": "head-desktop-day-after-actions.png",
+      "bytes": 58348,
+      "encoding": "palette",
+      "capturedBytes": 140154,
+      "psnr": 53.39,
+      "maxError": 35,
+      "colours": 4314,
+      "cells": [
+        {
+          "capturedBytes": 140154,
+          "source": "06-desktop-day-after-actions.png",
+          "script": "desktop-day-after-actions",
+          "sha256": "7aa8dea3ca1862edf6ee0139846a7b4c92b3a32fd8d237f84747ef8c8475740e",
+          "slot": 0,
+          "original": "originals/head/06-desktop-day-after-actions.png"
+        }
+      ],
+      "source": "06-desktop-day-after-actions.png"
+    },
+    {
+      "frame": "base-phone-default.png",
+      "bytes": 794,
+      "encoding": "placeholder",
+      "capturedBytes": 0,
+      "reason": "new on head",
+      "slot": 0,
+      "cells": [
+        {
+          "encoding": "placeholder",
+          "capturedBytes": 0,
+          "reason": "new on head",
+          "slot": 0
+        }
+      ]
+    },
+    {
+      "frame": "head-phone-default.png",
+      "bytes": 24521,
+      "encoding": "palette",
+      "capturedBytes": 58580,
+      "psnr": 58.98,
+      "maxError": 23,
+      "colours": 1715,
+      "cells": [
+        {
+          "capturedBytes": 58580,
+          "source": "07a-phone-default-today.png",
+          "script": "phone-default",
+          "sha256": "4271406a348a17dd1233f4ad9d0f460fa69120f30c637f48ba3be9074c73ffed",
+          "slot": 0,
+          "original": "originals/head/07a-phone-default-today.png"
+        }
+      ],
+      "source": "07a-phone-default-today.png"
+    },
+    {
+      "frame": "base-phone-week.png",
+      "bytes": 35564,
+      "encoding": "palette",
+      "capturedBytes": 83529,
+      "psnr": 56.05,
+      "maxError": 25,
+      "colours": 2421,
+      "cells": [
+        {
+          "capturedBytes": 83529,
+          "source": "07-phone-week-thursday-open.png",
+          "script": "phone-week",
+          "sha256": "4e22cc10e777dfcd566757df4a8c25784549689a20f7fabf3c986bdab0bfe43e",
+          "slot": 0,
+          "original": "originals/base/07-phone-week-thursday-open.png"
+        }
+      ],
+      "source": "07-phone-week-thursday-open.png"
+    },
+    {
+      "frame": "head-phone-week.png",
+      "bytes": 37673,
+      "encoding": "palette",
+      "capturedBytes": 88998,
+      "psnr": 55.62,
+      "maxError": 26,
+      "colours": 2592,
+      "cells": [
+        {
+          "capturedBytes": 88998,
+          "source": "07-phone-week-thursday-open.png",
+          "script": "phone-week",
+          "sha256": "a0f28eadc3e79c5ab065863d165400f25e7d26f0d82f9dcd0723c4f066f50376",
+          "slot": 0,
+          "original": "originals/head/07-phone-week-thursday-open.png"
+        }
+      ],
+      "source": "07-phone-week-thursday-open.png"
+    },
+    {
+      "frame": "base-phone-day.png",
+      "bytes": 794,
+      "encoding": "placeholder",
+      "capturedBytes": 0,
+      "reason": "new on head",
+      "slot": 0,
+      "cells": [
+        {
+          "encoding": "placeholder",
+          "capturedBytes": 0,
+          "reason": "new on head",
+          "slot": 0
+        }
+      ]
+    },
+    {
+      "frame": "head-phone-day.png",
+      "bytes": 48588,
+      "encoding": "palette",
+      "capturedBytes": 113935,
+      "psnr": 53.74,
+      "maxError": 31,
+      "colours": 3652,
+      "cells": [
+        {
+          "capturedBytes": 113935,
+          "source": "08-phone-day.png",
+          "script": "phone-day",
+          "sha256": "658b420822e5c35de53178f2773009c943e9960b2014b4f4b2e42b96858fa3b0",
+          "slot": 0,
+          "original": "originals/head/08-phone-day.png"
+        }
+      ],
+      "source": "08-phone-day.png"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "surface": "fca-meal-plan-drive",
+  "status": "green",
+  "branch": {
+    "commit": "402785a6ec27bc2a0aa45ff059eac07206a17e16"
+  },
+  "baseUrl": "http://127.0.0.1:51641",
+  "checks": "31/31",
+  "views": [
+    {
+      "view": "desktop-week",
+      "screenshot": "01-desktop-week.png"
+    },
+    {
+      "view": "desktop-week-dinner-label",
+      "screenshot": "02-desktop-week-scrolled-dinner-label.png"
+    },
+    {
+      "view": "desktop-day",
+      "screenshot": "03-desktop-day.png"
+    },
+    {
+      "view": "desktop-day-after-reload",
+      "screenshot": "04-desktop-day-after-reload.png"
+    },
+    {
+      "view": "desktop-day-after-actions",
+      "screenshot": "06-desktop-day-after-actions.png"
+    },
+    {
+      "view": "phone-default",
+      "screenshot": "07a-phone-default-today.png"
+    },
+    {
+      "view": "phone-week",
+      "screenshot": "07-phone-week-thursday-open.png"
+    },
+    {
+      "view": "phone-day",
+      "screenshot": "08-phone-day.png"
+    }
+  ]
+}
