@@ -38,6 +38,13 @@
      * card (clipped/mispositioned drags).
      */
     compact?: boolean;
+    /**
+     * Wide (day-view) layout: the slot spans the page, so its entries flow into
+     * a multi-column grid of bordered cards (one column on a phone). A card with
+     * no image shows no placeholder, and a recipe entry's notes are shown, since
+     * a heavy day is read card by card. Same class-variant reasoning as `compact`.
+     */
+    wide?: boolean;
     /** The slot's drag rows (entry + the dnd `id`) — the store's per-zone array. */
     entries: DragEntry[];
     /** Open the picker for this slot (＋ / add side-dessert). */
@@ -56,6 +63,7 @@
 
   let {
     compact = false,
+    wide = false,
     entries,
     onAdd,
     onRemove,
@@ -80,7 +88,12 @@
   }
 </script>
 
-<div class="mp-slot" class:mp-slot-filled={hasEntries} class:mp-slot-compact={compact}>
+<div
+  class="mp-slot"
+  class:mp-slot-filled={hasEntries}
+  class:mp-slot-compact={compact}
+  class:mp-slot-wide={wide}
+>
   {#if !hasEntries}
     <button type="button" class="mp-slot-empty" aria-label="Add a meal" onclick={onAdd}>
       <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
@@ -126,7 +139,7 @@
             >
               {#if entry.recipe.imagePath}
                 <img src={entry.recipe.imagePath} alt={entry.recipe.name} class="mp-entry-image" />
-              {:else}
+              {:else if !wide}
                 <span class="mp-entry-placeholder" aria-label="Recipe (no image)">
                   <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
                     <path
@@ -140,6 +153,9 @@
                 <span class="mp-entry-name">{entry.recipe.name}</span>
                 {#if entry.recipe.recipeType !== 'main'}
                   <span class="mp-entry-chip">{recipeTypeLabel(entry.recipe.recipeType)}</span>
+                {/if}
+                {#if wide && entry.notes}
+                  <span class="mp-entry-notes" title={entry.notes}>{entry.notes}</span>
                 {/if}
               </span>
             </button>
@@ -495,6 +511,68 @@
     border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--color-surface) 75%, transparent);
     opacity: 0.9;
+  }
+
+  /* ── Wide (day-view) layout ─────────────────────────────────────────────
+     The slot is a full-width section, so its zone becomes a card grid:
+     ~280px columns on a desktop, one column on a phone. The slot's own
+     surface/shadow is dropped — each entry is the card. */
+  .mp-slot-wide.mp-slot-filled {
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+  }
+  .mp-slot-wide .mp-slot-entries:not(.mp-slot-entries-overlay) {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+    gap: 8px;
+  }
+  .mp-slot-wide .mp-entry {
+    align-items: stretch;
+    min-height: 56px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    box-shadow: var(--shadow-1);
+  }
+  .mp-slot-wide .mp-entry:hover {
+    background: color-mix(in srgb, var(--color-surface) 85%, var(--color-text) 6%);
+  }
+  .mp-slot-wide .mp-entry-main {
+    align-items: center;
+  }
+  .mp-slot-wide .mp-entry-image,
+  .mp-slot-wide .mp-entry-custom-icon {
+    width: 36px;
+    height: 36px;
+  }
+  .mp-slot-wide .mp-entry-name {
+    font-size: 0.9375rem;
+    font-weight: 500;
+  }
+  .mp-slot-wide .mp-entry-details {
+    gap: 4px;
+  }
+  .mp-slot-wide .mp-entry-notes {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+  .mp-slot-wide,
+  .mp-slot-wide .mp-slot-empty {
+    min-height: 56px;
+  }
+  /* A touch screen has no hover to reveal ×; the wide card reserves its room
+     (the servings chip's right margin), so it can simply stay visible. */
+  @media (hover: none) {
+    .mp-slot-wide .mp-entry-remove {
+      opacity: 1;
+    }
+  }
+  .mp-slot-wide .mp-slot-add-more {
+    margin-top: 8px;
+    padding: 8px;
   }
 
   .mp-slot-add-more {

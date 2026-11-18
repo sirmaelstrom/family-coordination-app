@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Week helpers for the meal-plan island.
+// Week and day helpers for the meal-plan island.
 //
 // ⚠ GLOBAL PROJECT RULE / MN4: NEVER `new Date('YYYY-MM-DD')`. The string form
 // parses as UTC midnight, which renders as the PREVIOUS day in US timezones —
@@ -59,15 +59,37 @@ export function addWeeks(mondayStr: string, n: number): string {
   return formatUtc(d);
 }
 
-/** Monday of the LOCAL current week, as "YYYY-MM-DD". The one place we read "today". */
-export function todayMonday(): string {
+/** A "YYYY-MM-DD" `n` days from `dateStr` (n may be negative). */
+export function addDays(dateStr: string, n: number): string {
+  const d = utcNoon(dateStr);
+  d.setUTCDate(d.getUTCDate() + n);
+  return formatUtc(d);
+}
+
+/**
+ * Today as "YYYY-MM-DD", built from LOCAL parts (the household's calendar day).
+ * The one place we read the clock. No `new Date('YYYY-MM-DD')`.
+ */
+export function todayStr(): string {
   const now = new Date();
-  // Build today's string from LOCAL parts (the household's calendar day), then
-  // snap to Monday via the UTC-noon helpers. No `new Date('YYYY-MM-DD')`.
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, '0');
   const d = String(now.getDate()).padStart(2, '0');
-  return mondayOf(`${y}-${m}-${d}`);
+  return `${y}-${m}-${d}`;
+}
+
+/** Monday of the LOCAL current week, as "YYYY-MM-DD". */
+export function todayMonday(): string {
+  return mondayOf(todayStr());
+}
+
+/**
+ * Is `s` a real calendar date in "YYYY-MM-DD" form? Rejects the shape-valid but
+ * impossible ("2026-02-31") by round-tripping through the UTC-noon helpers.
+ */
+export function isDateStr(s: string | null | undefined): s is string {
+  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  return formatUtc(utcNoon(s)) === s;
 }
 
 /** The 7 "YYYY-MM-DD" day strings of the week starting at `mondayStr`. */
@@ -109,6 +131,11 @@ export function dayLong(dateStr: string): string {
   return `${weekdayLong(dateStr)}, ${months[d.getUTCMonth()]} ${d.getUTCDate()}`;
 }
 
+/** Day-view title, e.g. "Thursday, November 26, 2026". */
+export function dayTitle(dateStr: string): string {
+  return `${dayLong(dateStr)}, ${utcNoon(dateStr).getUTCFullYear()}`;
+}
+
 /**
  * Week-range label, e.g. "Jun 23 – Jun 29, 2025" (matches the Blazor
  * MealPlanNavigation's "MMM d - MMM d, yyyy"). `mondayStr` is the week's Monday.
@@ -122,9 +149,5 @@ export function weekRangeLabel(mondayStr: string): string {
 
 /** Is `dateStr` the local current day? (drives the "today" highlight). */
 export function isToday(dateStr: string): boolean {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return dateStr === `${y}-${m}-${d}`;
+  return dateStr === todayStr();
 }

@@ -5,6 +5,7 @@ import {
   dragId,
   findCrossSlotEntry,
   replaceEntry,
+  weekMealRows,
   zoneKey,
   type DragEntry,
 } from './board-ops';
@@ -132,5 +133,15 @@ describe('replaceEntry — merging the server echo after a successful move', () 
     const other = entry({ entryId: 2 });
     const echo = entry({ entryId: 1 });
     expect(replaceEntry([other], echo)).toEqual([other]);
+  });
+});
+
+describe('weekMealRows', () => {
+  it('shows the three main meals on a week with no snack', () => {
+    expect(weekMealRows([entry({ mealType: 'dinner' })])).toEqual(['breakfast', 'lunch', 'dinner']);
+  });
+
+  it('adds a Snack row when an entry is a snack, so it is never zoned but unrendered', () => {
+    expect(weekMealRows([entry({ mealType: 'snack' })])).toEqual(['breakfast', 'lunch', 'dinner', 'snack']);
   });
 });

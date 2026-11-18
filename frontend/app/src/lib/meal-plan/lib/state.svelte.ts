@@ -44,6 +44,7 @@ import {
   buildZones,
   findCrossSlotEntry,
   replaceEntry,
+  weekMealRows,
   zoneKey,
   type DragEntry,
 } from './board-ops';
@@ -58,8 +59,8 @@ const entryKey = (mealPlanId: number, entryId: number): string => `entry:${mealP
 const STALE_MEAL = 'That meal just changed — refreshing the plan. Try again in a moment.';
 const FAILED = 'Something went wrong. Please try again.';
 
-/** The board's three rendered meal rows (Snack is implicit — only shown if data exists). */
-export const MEAL_ROWS: MealType[] = ['breakfast', 'lunch', 'dinner'];
+/** Every meal type, in display order — the day view's sections, and the zones every day gets. */
+export const MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 
 class MealPlanStore {
   /** The week's Monday "YYYY-MM-DD". Client stepping is display-only — the server re-snaps on GET. */
@@ -132,7 +133,16 @@ class MealPlanStore {
 
   /** Re-derive all zones from the authoritative board. NEVER call mid-drag. */
   rebuildZones(): void {
-    this.zones = buildZones(this.board?.entries ?? [], weekDays(this.weekStart), MEAL_ROWS);
+    this.zones = buildZones(this.board?.entries ?? [], weekDays(this.weekStart), MEAL_TYPES);
+  }
+
+  /**
+   * The week view's meal rows: Breakfast/Lunch/Dinner, plus Snack only when this week has a snack
+   * entry. Snack entries (an agent or the API can add them) used to have a zone but no row, so they
+   * were on the plan and invisible.
+   */
+  weekMealRows(): MealType[] {
+    return weekMealRows(this.board?.entries ?? []);
   }
 
   /** Live drag: reflect the library's per-zone items in the zone that fired, nothing else. */
