@@ -1,44 +1,50 @@
 <script lang="ts">
   // ───────────────────────────────────────────────────────────────────────
-  // Week navigation — mirrors the Blazor MealPlanNavigation: prev / next
-  // chevrons, the centered week-range label, a "This week" chip when on the
-  // current week, and a "Jump to Today" button (disabled on the current week).
+  // Meal-plan navigation for both views: prev / next chevrons (a week in week
+  // view, a day in day view), the centered label (week range, or the full day
+  // title), a "This week" / "Today" chip when on it, a Week | Day toggle, and
+  // "Jump to Today" (disabled when already there).
   //
-  // Stepping is DISPLAY-ONLY (the server re-snaps the week to Monday on every
-  // board GET). No `new Date('YYYY-MM-DD')` — the label comes from dates.ts.
+  // Presentational only: App turns each callback into a URL change, and the
+  // URL drives the store. No `new Date('YYYY-MM-DD')` — labels come from dates.ts.
   // ───────────────────────────────────────────────────────────────────────
-  import { weekRangeLabel, todayMonday } from '../dates';
+  import { weekRangeLabel, dayTitle, mondayOf, todayStr } from '../dates';
+  import type { PlanView } from '../view';
 
   interface Props {
-    /** The week's Monday "YYYY-MM-DD". */
-    weekStart: string;
+    view: PlanView;
+    /** "YYYY-MM-DD" — the day shown, or a day in the week shown. */
+    date: string;
     onPrev: () => void;
     onNext: () => void;
     onToday: () => void;
+    onViewChange: (view: PlanView) => void;
   }
 
-  let { weekStart, onPrev, onNext, onToday }: Props = $props();
+  let { view, date, onPrev, onNext, onToday, onViewChange }: Props = $props();
 
-  let isCurrentWeek = $derived(weekStart === todayMonday());
-  let rangeLabel = $derived(weekRangeLabel(weekStart));
+  let today = $derived(todayStr());
+  let isCurrent = $derived(view === 'day' ? date === today : mondayOf(date) === mondayOf(today));
+  let label = $derived(view === 'day' ? dayTitle(date) : weekRangeLabel(mondayOf(date)));
+  let unit = $derived(view === 'day' ? 'day' : 'week');
 </script>
 
-<nav class="mp-nav" aria-label="Week navigation">
+<nav class="mp-nav" aria-label="Meal plan navigation">
   <div class="mp-nav-header">
-    <button type="button" class="mp-nav-chevron" aria-label="Previous week" onclick={onPrev}>
+    <button type="button" class="mp-nav-chevron" aria-label={`Previous ${unit}`} onclick={onPrev}>
       <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
         <path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z" fill="currentColor" />
       </svg>
     </button>
 
     <div class="mp-nav-center">
-      <h2 class="mp-nav-range">{rangeLabel}</h2>
-      {#if isCurrentWeek}
-        <span class="mp-nav-chip">This week</span>
+      <h2 class="mp-nav-range">{label}</h2>
+      {#if isCurrent}
+        <span class="mp-nav-chip">{view === 'day' ? 'Today' : 'This week'}</span>
       {/if}
     </div>
 
-    <button type="button" class="mp-nav-chevron" aria-label="Next week" onclick={onNext}>
+    <button type="button" class="mp-nav-chevron" aria-label={`Next ${unit}`} onclick={onNext}>
       <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
         <path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" fill="currentColor" />
       </svg>
@@ -46,11 +52,25 @@
   </div>
 
   <div class="mp-nav-actions">
+    <div class="mp-nav-toggle" role="group" aria-label="View">
+      <button
+        type="button"
+        class="mp-nav-toggle-btn"
+        aria-pressed={view === 'week'}
+        onclick={() => onViewChange('week')}>Week</button
+      >
+      <button
+        type="button"
+        class="mp-nav-toggle-btn"
+        aria-pressed={view === 'day'}
+        onclick={() => onViewChange('day')}>Day</button
+      >
+    </div>
     <button
       type="button"
       class="mp-nav-today"
       onclick={onToday}
-      disabled={isCurrentWeek}
+      disabled={isCurrent}
     >
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
         <path
@@ -75,6 +95,7 @@
   }
   .mp-nav-center {
     flex: 1;
+    min-width: 0;
     text-align: center;
     display: flex;
     flex-direction: column;
@@ -114,8 +135,37 @@
   }
   .mp-nav-actions {
     display: flex;
+    flex-wrap: wrap;
     justify-content: center;
+    align-items: center;
+    gap: 12px;
     margin-top: 12px;
+  }
+  .mp-nav-toggle {
+    display: inline-flex;
+    border: 1px solid var(--color-line-strong);
+    border-radius: 20px;
+    overflow: hidden;
+  }
+  .mp-nav-toggle-btn {
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    min-width: 64px;
+    min-height: 36px;
+    padding: 6px 16px;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+  }
+  .mp-nav-toggle-btn:hover {
+    background: var(--color-action-hover);
+  }
+  .mp-nav-toggle-btn[aria-pressed='true'] {
+    background: var(--color-primary);
+    color: #fff;
   }
   .mp-nav-today {
     display: inline-flex;

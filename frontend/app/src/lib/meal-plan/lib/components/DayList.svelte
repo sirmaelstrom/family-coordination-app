@@ -2,11 +2,12 @@
   // ───────────────────────────────────────────────────────────────────────
   // Mobile day list (sm-). Mirrors the Blazor WeeklyListView: one expandable
   // section per day (native <details>), with the weekday + date, a "Today"
-  // chip, and a "N meals" count in the summary; expanding shows B/L/D rows.
+  // chip, and a "N meals" count in the summary; expanding shows B/L/D rows
+  // (+ Snack when the week has one) and an "Open in day view" link.
   // Today's section is expanded by default and left-accented.
   // ───────────────────────────────────────────────────────────────────────
   import type { MealPlanEntryDto, MealType } from '../types';
-  import { mealPlanStore, MEAL_ROWS } from '../state.svelte';
+  import { mealPlanStore } from '../state.svelte';
   import { weekDays, weekdayLong, monthDay, isToday } from '../dates';
   import MealSlot from './MealSlot.svelte';
 
@@ -18,12 +19,16 @@
     onSetServings: (entry: MealPlanEntryDto) => void;
     onViewRecipe: (entry: MealPlanEntryDto) => void;
     onViewCustom: (entry: MealPlanEntryDto) => void;
+    /** Open one day in day view. */
+    onOpenDay: (date: string) => void;
   }
 
-  let { weekStart, onSlotAdd, onRemove, onSetServings, onViewRecipe, onViewCustom }: Props = $props();
+  let { weekStart, onSlotAdd, onRemove, onSetServings, onViewRecipe, onViewCustom, onOpenDay }: Props =
+    $props();
 
   const store = mealPlanStore;
   let days = $derived(weekDays(weekStart));
+  let rows = $derived(store.weekMealRows());
 
   const MEAL_LABELS: Record<MealType, string> = {
     breakfast: 'Breakfast',
@@ -48,7 +53,7 @@
         <span class="mp-day-summary-count">{store.dayCount(day)} meals</span>
       </summary>
       <div class="mp-day-body">
-        {#each MEAL_ROWS as mealType (mealType)}
+        {#each rows as mealType (mealType)}
           <div class="mp-day-row">
             <span class="mp-day-row-label">{MEAL_LABELS[mealType]}</span>
             <div class="mp-day-row-slot">
@@ -67,6 +72,12 @@
             </div>
           </div>
         {/each}
+        <button type="button" class="mp-day-open" onclick={() => onOpenDay(day)}>
+          Open in day view
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" fill="currentColor" />
+          </svg>
+        </button>
       </div>
     </details>
   {/each}
@@ -150,5 +161,24 @@
   .mp-day-row-slot {
     flex: 1;
     min-width: 0;
+  }
+  .mp-day-open {
+    align-self: flex-end;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-primary);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 8px 8px 8px 12px;
+    min-height: 40px;
+    cursor: pointer;
+  }
+  .mp-day-open:hover {
+    background: var(--color-action-hover);
   }
 </style>

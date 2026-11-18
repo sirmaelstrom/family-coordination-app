@@ -54,6 +54,16 @@ export function buildZones(
 }
 
 /**
+ * The week grid's rows: the three main meals always, Snack only when an entry
+ * carries it (an empty Snack row on every week would be noise; a hidden snack
+ * entry is a bug).
+ */
+export function weekMealRows(entries: Pick<MealPlanEntryDto, 'mealType'>[]): MealType[] {
+  const rows: MealType[] = ['breakfast', 'lunch', 'dinner'];
+  return entries.some((e) => e.mealType === 'snack') ? [...rows, 'snack'] : rows;
+}
+
+/**
  * The entry a finalize event moved INTO this zone: its (still-original)
  * date/mealType disagrees with the zone's slot. Only the destination zone's
  * items can contain one — the source zone's finalize (and any same-slot

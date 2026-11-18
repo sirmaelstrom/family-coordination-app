@@ -1,13 +1,26 @@
 <script lang="ts">
   import { untrack } from 'svelte';
+  import { page } from '$app/state';
+  import { goto } from '$app/navigation';
+  import { resolve } from '$app/paths';
   import type { MealPlanEntryDto, MealType, ShellContext } from './lib/types';
   import { mealPlanStore } from './lib/state.svelte';
   import { startLiveness, type LivenessHandle } from '#lib/liveness.ts';
-  import { weekdayShort, monthDay, todayMonday } from './lib/dates';
+  import { weekdayShort, monthDay, todayStr } from './lib/dates';
+  import {
+    parsePlanLocation,
+    planSearch,
+    planWeek,
+    boardIsForWeek,
+    stepPlan,
+    type PlanLocation,
+    type PlanView,
+  } from './lib/view';
   import { parseServingsInput } from './lib/servings';
-  import WeekNav from './lib/components/WeekNav.svelte';
+  import PlanNav from './lib/components/PlanNav.svelte';
   import CalendarGrid from './lib/components/CalendarGrid.svelte';
   import DayList from './lib/components/DayList.svelte';
+  import DayView from './lib/components/DayView.svelte';
   import RecipePickerSheet, { type PickerResult } from './lib/components/RecipePickerSheet.svelte';
   import RecipeDetailSheet from './lib/components/RecipeDetailSheet.svelte';
   import ConfirmDialog from '#lib/shared/ConfirmDialog.svelte';
@@ -15,10 +28,16 @@
   import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
   // ───────────────────────────────────────────────────────────────────────
-  // Root of the meal-plan island. Reads the ShellContext from #meal-plan-root
-  // data-attrs, fetches the current week's board into the shared store, and
-  // renders WeekNav + (CalendarGrid on md+ / DayList on sm-). Every slot is a
-  // client-side grouping of the one board payload (the store's per-slot zones).
+  // Root of the meal-plan surface. The URL says where we are looking
+  // (lib/view.ts: `?view=day&date=…`), the store holds the week containing
+  // that date, and we render PlanNav + either DayView (one day, full width) or
+  // the week (CalendarGrid on md+ / DayList on sm-). Every slot is a
+  // client-side grouping of the one week payload (the store's per-slot zones),
+  // so day view needs no API of its own.
+  //
+  // Bare `/meal-plan` is today in the screen's default view: week on md+, DAY
+  // on a phone, where the week list leaves a recipe name a few characters.
+  // Every other URL names its view, so links mean the same on every screen.
   // Move / servings / remove send the entry's xmin token and 409 on a stale one; add creates the row
   // so it has none. On any 4xx the store reconciles.
   // No `new Date('YYYY-MM-DD')` anywhere — week stepping goes through dates.ts.
@@ -32,15 +51,52 @@
 
   const store = mealPlanStore;
 
-  let liveness: LivenessHandle | null = null;
-
   // Responsive split mirrors the Blazor MudHidden breakpoint (Sm = 960px). We
   // watch matchMedia rather than relying on CSS alone so we only mount one tree.
-  let isDesktop = $state(true);
+  // Read synchronously (SPA, no SSR) so the first render already has the right
+  // default view — no week-then-day flash on a phone.
+  const DESKTOP_QUERY = '(min-width: 960px)';
+  let isDesktop = $state(window.matchMedia(DESKTOP_QUERY).matches);
   let mediaQuery: MediaQueryList | null = null;
   function syncMedia(): void {
     if (mediaQuery) isDesktop = mediaQuery.matches;
   }
+
+  // ── Location (URL-owned) ──────────────────────────────────────────────────
+  // Read straight from the URL; every navigation below is a goto() to the same
+  // route with a new query, so back/forward and reload all land where the URL says.
+  let defaultView = $derived<PlanView>(isDesktop ? 'week' : 'day');
+  let loc = $derived(parsePlanLocation(page.url.searchParams, todayStr(), defaultView));
+  /** The board in hand, only when it is the week being shown (see the template's render gate). */
+  let boardForWeek = $derived(boardIsForWeek(store.board, store.weekStart));
+
+  /**
+   * Go to a location. Switching view pushes history (Back returns to the week);
+   * stepping prev/next/today replaces it, so Back isn't a day-by-day replay.
+   *
+   * Kit 3's one `reset` flag moves scroll AND focus, and it also decides whether
+   * Back restores the scroll. A step keeps both (`reset: false`). A view switch
+   * resets, so the day opens at its top (a header tapped far down the phone week
+   * list would otherwise land mid-day) and Back returns to the week where it was.
+   * Then focus goes back to the control that had it (the Week/Day toggle stays
+   * mounted), so a keyboard user isn't thrown to the top of the page.
+   */
+  async function go(next: PlanLocation, opts: { replace: boolean }): Promise<void> {
+    const focused = document.activeElement;
+    await goto(resolve('/meal-plan') + planSearch(next), {
+      replace: opts.replace,
+      reset: !opts.replace,
+    });
+    if (!opts.replace && focused instanceof HTMLElement && focused.isConnected) {
+      focused.focus({ preventScroll: true });
+    }
+  }
+
+  function openDay(date: string): void {
+    void go({ view: 'day', date }, { replace: false });
+  }
+
+  let liveness: LivenessHandle | null = null;
 
   // ── Picker (add) state ────────────────────────────────────────────────────
   let pickerOpen = $state(false);
@@ -180,7 +236,15 @@
       store.init(ctx);
       store.setRefresh(loadBoard);
 
-      mediaQuery = window.matchMedia('(min-width: 960px)');
+      // The store outlives the route (module singleton): if it still holds another week from an
+      // earlier visit, drop that board so the first paint is the spinner, not last visit's week.
+      const monday = planWeek(loc);
+      if (store.weekStart !== monday) {
+        store.weekStart = monday;
+        store.board = null;
+      }
+
+      mediaQuery = window.matchMedia(DESKTOP_QUERY);
       syncMedia();
       mediaQuery.addEventListener('change', syncMedia);
 
@@ -197,6 +261,16 @@
       mediaQuery = null;
     };
   });
+
+  // The URL moved to a date in another week (prev/next, a header click near a week edge,
+  // back/forward): load that week. Declared after the mount effect, so on mount it finds
+  // the week already set and does nothing. Reads the store untracked: it reacts to the URL only.
+  $effect(() => {
+    const monday = planWeek(loc);
+    untrack(() => {
+      if (store.weekStart !== monday) void store.changeWeek(monday);
+    });
+  });
 </script>
 
 <div class="mp-container">
@@ -205,11 +279,13 @@
     <span class="mp-user">{ctx.userName}</span>
   </header>
 
-  <WeekNav
-    weekStart={store.weekStart}
-    onPrev={() => store.changeWeek(-1)}
-    onNext={() => store.changeWeek(1)}
-    onToday={() => store.changeWeek(todayMonday())}
+  <PlanNav
+    view={loc.view}
+    date={loc.date}
+    onPrev={() => go(stepPlan(loc, -1), { replace: true })}
+    onNext={() => go(stepPlan(loc, 1), { replace: true })}
+    onToday={() => go({ view: loc.view, date: todayStr() }, { replace: true })}
+    onViewChange={(view) => go({ view, date: loc.date }, { replace: false })}
   />
 
   {#if store.error}
@@ -219,10 +295,23 @@
     </div>
   {/if}
 
-  {#if store.loading && !store.board}
-    <div class="mp-loading">Loading the meal plan…</div>
-  {:else if store.board}
-    {#if isDesktop}
+  <!--
+    Slots render only from a board FOR the week shown. changeWeek moves weekStart at once and keeps the
+    old board until the new one arrives, so rendering "any board" showed the new week's days as empty,
+    clickable slots backed by the old week, and kept showing them if the fetch failed. A board for
+    another week means a fetch is in flight (loading text) or failed (the error banner's Retry above).
+  -->
+  {#if boardForWeek}
+    {#if loc.view === 'day'}
+      <DayView
+        date={loc.date}
+        onSlotAdd={handleSlotAdd}
+        onRemove={handleRemove}
+        onSetServings={handleSetServings}
+        onViewRecipe={handleViewRecipe}
+        onViewCustom={handleViewCustom}
+      />
+    {:else if isDesktop}
       <CalendarGrid
         weekStart={store.weekStart}
         onSlotAdd={handleSlotAdd}
@@ -230,6 +319,7 @@
         onSetServings={handleSetServings}
         onViewRecipe={handleViewRecipe}
         onViewCustom={handleViewCustom}
+        onOpenDay={openDay}
       />
     {:else}
       <DayList
@@ -239,9 +329,14 @@
         onSetServings={handleSetServings}
         onViewRecipe={handleViewRecipe}
         onViewCustom={handleViewCustom}
+        onOpenDay={openDay}
       />
     {/if}
-  {:else if !store.loading}
+  {:else if store.error}
+    <!-- Nothing to show for this week; the error banner above carries Retry. -->
+  {:else if store.loading || store.board}
+    <div class="mp-loading">Loading the meal plan…</div>
+  {:else}
     <div class="mp-empty">No meal plan data.</div>
   {/if}
 </div>
