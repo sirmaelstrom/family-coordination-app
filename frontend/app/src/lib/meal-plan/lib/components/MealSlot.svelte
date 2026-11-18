@@ -558,6 +558,7 @@
     -webkit-line-clamp: 2;
     line-clamp: 2;
   }
+  .mp-slot-wide,
   .mp-slot-wide .mp-slot-empty {
     min-height: 56px;
   }
