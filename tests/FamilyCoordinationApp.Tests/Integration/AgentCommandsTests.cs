@@ -5,6 +5,7 @@ using FamilyCoordinationApp.Services.AgentAccess;
 using FamilyCoordinationApp.Services.Interfaces;
 using FamilyCoordinationApp.Tenancy;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -18,9 +19,19 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// </summary>
 [Collection(IntegrationCollection.Name)]
 [Trait("kind", "integration")]
-public sealed class AgentCommandsTests(PostgresContainerFixture postgres) : IAsyncLifetime
+public sealed class AgentCommandsTests : IAsyncLifetime
 {
-    private readonly ChoresWebAppFactory _factory = new(postgres);
+    // The outbound fetch goes to a local fake site; its URL checks still run (see FakeWebServer).
+    private readonly FakeWebServer _web = new();
+    private readonly SafeRecipeFetcher _fetcher;
+    private readonly ChoresWebAppFactory _factory;
+    private UploadFiles _uploads = null!;
+
+    public AgentCommandsTests(PostgresContainerFixture postgres)
+    {
+        _fetcher = _web.CreateFetcher();
+        _factory = new(postgres) { Fetcher = _fetcher };
+    }
 
     // A Monday well clear of the fixture's seeded data.
     private static readonly DateOnly Week = new(2026, 11, 9);
@@ -30,8 +41,19 @@ public sealed class AgentCommandsTests(PostgresContainerFixture postgres) : IAsy
     private const int B = ChoresWebAppFactory.HouseholdBId;
     private const int UserB = ChoresWebAppFactory.UserBId;
 
-    public async Task InitializeAsync() => await _factory.EnsureSeededAsync();
-    public async Task DisposeAsync() => await _factory.DisposeAsync();
+    public async Task InitializeAsync()
+    {
+        await _factory.EnsureSeededAsync();
+        _uploads = new UploadFiles(_factory.Services.GetRequiredService<IWebHostEnvironment>().WebRootPath);
+    }
+
+    public async Task DisposeAsync()
+    {
+        _uploads.DeleteNew();
+        await _factory.DisposeAsync();
+        await _web.DisposeAsync();
+        _fetcher.Dispose();
+    }
 
     private async Task<T> As<T>(int householdId, int userId, Func<AgentCommands, Task<T>> run)
     {
@@ -411,6 +433,294 @@ public sealed class AgentCommandsTests(PostgresContainerFixture postgres) : IAsy
         await stale.Should().ThrowAsync<ConcurrencyConflictException>();
         (await As(A, UserA, c => c.GetMealPlanAsync(Week))).Meals.Single(m => m.EntryId == meal.EntryId).Servings.Should().Be(6);
     }
+
+    // ── Recipe images: fetched by the server, stored as the household's own upload ───────────
+
+    private const string ImageUrl = "http://images.test/pie.png";
+
+    private async Task<string?> StoredImagePathAsync(int householdId, int recipeId)
+    {
+        await using var db = Raw();
+        return await db.Recipes.Where(r => r.HouseholdId == householdId && r.RecipeId == recipeId).Select(r => r.ImagePath).SingleAsync();
+    }
+
+    [Fact]
+    public async Task Create_recipe_with_an_image_url_stores_the_households_own_copy()
+    {
+        _web.Serve("/pie.png", FakeWebServer.Png, "image/png");
+
+        var created = await As(A, UserA, c => c.CreateRecipeAsync(Chili("Pie with a picture") with { ImageUrl = ImageUrl }, "img-create-01", false));
+
+        var path = created.Result.ImagePath;
+        path.Should().MatchRegex($"^/uploads/{A}/[0-9a-f-]{{36}}\\.png$", "the server's copy in the caller household's directory, never the remote URL");
+        created.Result.Image.Should().Be(new AgentImage("image/png", FakeWebServer.Png.Length));
+        (await StoredImagePathAsync(A, created.Result.RecipeId!.Value)).Should().Be(path);
+        _uploads.New().Should().Equal(path);
+        File.ReadAllBytes(_uploads.FullPath(path!)).Should().Equal(FakeWebServer.Png);
+        (await As(A, UserA, c => c.GetRecipeAsync(created.Result.RecipeId!.Value))).ImagePath.Should().Be(path);
+        (await As(A, UserA, c => c.SearchRecipesAsync(new SearchRecipesInput("Pie with a picture", null, null)))).Recipes.Single().HasImage.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("image/png", false)] // an HTML page that claims to be an image: the bytes decide
+    [InlineData("text/html", true)]  // real image bytes behind a non-image type: refused too
+    public async Task A_body_that_is_not_an_image_is_refused_and_nothing_is_saved(string contentType, bool realImageBytes)
+    {
+        var body = realImageBytes ? FakeWebServer.Png : "<html><body>not a picture</body></html>"u8.ToArray();
+        _web.Serve("/fake.png", body, contentType);
+        var before = await CountsAsync(A);
+
+        var create = () => As(A, UserA, c => c.CreateRecipeAsync(Chili("Not-an-image pie") with { ImageUrl = "http://images.test/fake.png" }, "img-nonimage-1", false));
+
+        (await create.Should().ThrowAsync<DomainValidationException>()).Which.ClientMessage
+            .Should().Match(realImageBytes ? "*text/html, not an image*Nothing was saved*" : "*did not return a JPEG, PNG, GIF or WebP*Nothing was saved*");
+        (await CountsAsync(A)).Should().Be(before, "no recipe and no operation record");
+        _uploads.New().Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("http://127.0.0.1/pie.png")]
+    [InlineData("http://169.254.169.254/latest/meta-data")]
+    [InlineData("http://192.168.50.65/pie.png")]
+    [InlineData("http://localhost/pie.png")]
+    [InlineData("https://images.test:8443/pie.png")]
+    public async Task An_image_url_on_a_private_address_is_refused_before_any_connection(string url)
+    {
+        var chili = await CreateChiliAsync(A, UserA, "img-private-r1");
+        var before = await CountsAsync(A);
+
+        var create = () => As(A, UserA, c => c.CreateRecipeAsync(Chili("Private pie") with { ImageUrl = url }, "img-private-01", false));
+        var set = () => As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, url, null), "img-private-02", false));
+
+        await create.Should().ThrowAsync<DomainValidationException>().WithMessage("*Nothing was saved*");
+        await set.Should().ThrowAsync<DomainValidationException>().WithMessage("*Nothing was saved*");
+        _web.Requests.Should().BeEmpty("the URL is refused before a connection is made");
+        (await CountsAsync(A)).Should().Be(before);
+        _uploads.New().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task An_image_over_the_cap_is_refused_whether_or_not_it_declares_its_length()
+    {
+        var chili = await CreateChiliAsync(A, UserA, "img-big-recipe");
+        // Declared: a Content-Length over the cap is refused before the body is read.
+        _web.Serve("/declared.png", new byte[SafeRecipeFetcher.MaxImageBytes + 1], "image/png");
+        // Undeclared: the body is cut off as it crosses the cap.
+        _web.ServeStreamed("/streamed.png", FakeWebServer.Png, SafeRecipeFetcher.MaxImageBytes + 1, "image/png");
+        var before = await CountsAsync(A);
+
+        foreach (var path in new[] { "/declared.png", "/streamed.png" })
+        {
+            var set = () => As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, $"http://images.test{path}", null), $"img-big{path.Replace('/', '-').Replace('.', '-')}", false));
+            await set.Should().ThrowAsync<DomainValidationException>().WithMessage("*larger than 10 MB*Nothing was saved*");
+        }
+
+        (await CountsAsync(A)).Should().Be(before);
+        (await StoredImagePathAsync(A, chili)).Should().BeNull();
+        _uploads.New().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Image_dry_runs_fetch_and_check_but_store_nothing()
+    {
+        _web.Serve("/pie.png", FakeWebServer.Png, "image/png");
+        var chili = await CreateChiliAsync(A, UserA, "img-dry-recipe");
+        var before = await CountsAsync(A);
+
+        var create = await As(A, UserA, c => c.CreateRecipeAsync(Chili("Dry pie") with { ImageUrl = ImageUrl }, "img-dry-create", dryRun: true));
+        var set = await As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, ImageUrl, null), "img-dry-set-01", dryRun: true));
+
+        create.DryRun.Should().BeTrue();
+        create.Result.ImagePath.Should().BeNull();
+        create.Result.Image.Should().Be(new AgentImage("image/png", FakeWebServer.Png.Length), "the image was fetched and checked");
+        set.Result.Outcome.Should().Be("added");
+        set.Result.ImagePath.Should().BeNull();
+        set.Result.Version.Should().BeNull();
+        _web.Requests.Should().HaveCount(2);
+        (await CountsAsync(A)).Should().Be(before, "no recipe and no operation record");
+        (await StoredImagePathAsync(A, chili)).Should().BeNull();
+        _uploads.New().Should().BeEmpty("a dry run writes no file");
+
+        // The same keys then commit for real: a dry run never claims them.
+        (await As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, ImageUrl, null), "img-dry-set-01", false))).Replayed.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_retried_image_write_replays_without_fetching_or_storing_again()
+    {
+        _web.Serve("/pie.png", FakeWebServer.Png, "image/png");
+        var chili = await CreateChiliAsync(A, UserA, "img-retry-recipe");
+
+        var first = await As(A, UserA, c => c.CreateRecipeAsync(Chili("Retry pie") with { ImageUrl = ImageUrl }, "img-retry-create", false));
+        var firstSet = await As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, ImageUrl, null), "img-retry-set-1", false));
+        var counts = await CountsAsync(A);
+        var files = _uploads.New();
+        files.Should().HaveCount(2);
+        _web.Requests.Should().HaveCount(2);
+
+        var retry = await As(A, UserA, c => c.CreateRecipeAsync(Chili("Retry pie") with { ImageUrl = ImageUrl }, "img-retry-create", false));
+        var retrySet = await As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, ImageUrl, null), "img-retry-set-1", false));
+
+        retry.Replayed.Should().BeTrue();
+        retry.Result.Should().BeEquivalentTo(first.Result);
+        retrySet.Replayed.Should().BeTrue();
+        retrySet.Result.Should().BeEquivalentTo(firstSet.Result);
+        _web.Requests.Should().HaveCount(2, "a retry is answered from its record before any fetch");
+        _uploads.New().Should().Equal(files, "and writes no second file");
+        (await CountsAsync(A)).Should().Be(counts);
+
+        // The same key with another image URL is a different change.
+        var reuse = () => As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, "http://images.test/other.png", null), "img-retry-set-1", false));
+        await reuse.Should().ThrowAsync<ConflictException>().WithMessage("*already used for a different change*");
+        _web.Requests.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task Set_recipe_image_fills_an_empty_image_and_replaces_only_with_the_current_version()
+    {
+        _web.Serve("/pie.png", FakeWebServer.Png, "image/png");
+        _web.Serve("/pie.jpg", FakeWebServer.Jpeg, "image/jpeg");
+        var chili = await CreateChiliAsync(A, UserA, "img-set-recipe1");
+
+        var added = await As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, ImageUrl, null), "img-set-add-001", false));
+        added.Result.Outcome.Should().Be("added");
+        added.Result.PreviousImagePath.Should().BeNull();
+        var first = added.Result.ImagePath!;
+        (await StoredImagePathAsync(A, chili)).Should().Be(first);
+
+        // Add-only without a version: the recipe keeps its image, and nothing is fetched or stored.
+        var requests = _web.Requests.Count;
+        var again = () => As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, "http://images.test/pie.jpg", null), "img-set-add-002", false));
+        (await again.Should().ThrowAsync<ConflictException>()).Which.ClientMessage.Should().Match("*already has an image*nothing was changed*version*");
+        _web.Requests.Should().HaveCount(requests);
+
+        // A stale version: refused, and the file it fetched is not left behind.
+        var stale = () => As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, "http://images.test/pie.jpg", added.Result.Version!.Value - 1), "img-set-stale-1", false));
+        await stale.Should().ThrowAsync<ConcurrencyConflictException>();
+        (await StoredImagePathAsync(A, chili)).Should().Be(first);
+        _uploads.New().Should().Equal(first);
+
+        // The current version replaces it; the old file is kept.
+        var current = (await As(A, UserA, c => c.GetRecipeAsync(chili))).Version;
+        var replaced = await As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, "http://images.test/pie.jpg", current), "img-set-repl-01", false));
+        replaced.Result.Outcome.Should().Be("replaced");
+        replaced.Result.PreviousImagePath.Should().Be(first);
+        replaced.Result.ImagePath.Should().MatchRegex($"^/uploads/{A}/.+\\.jpg$");
+        replaced.Result.Version.Should().NotBe(current);
+        (await StoredImagePathAsync(A, chili)).Should().Be(replaced.Result.ImagePath);
+        _uploads.New().Should().BeEquivalentTo([first, replaced.Result.ImagePath]);
+    }
+
+    [Fact]
+    public async Task A_dry_run_with_a_stale_version_is_refused_like_the_live_call()
+    {
+        // Land review blocker: the dry run skipped the only version check, so it reported "replaced" for a write the
+        // live call refuses. Both now refuse the same way, and the dry run still stores nothing.
+        _web.Serve("/pie.png", FakeWebServer.Png, "image/png");
+        _web.Serve("/pie.jpg", FakeWebServer.Jpeg, "image/jpeg");
+        var chili = await CreateChiliAsync(A, UserA, "img-dstale-rcp1");
+        var added = await As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, ImageUrl, null), "img-dstale-add1", false));
+        var first = added.Result.ImagePath!;
+        var stale = added.Result.Version!.Value - 1;
+
+        var dryStale = () => As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, "http://images.test/pie.jpg", stale), "img-dstale-dry1", true));
+        await dryStale.Should().ThrowAsync<ConcurrencyConflictException>();
+
+        var current = (await As(A, UserA, c => c.GetRecipeAsync(chili))).Version;
+        var dryFresh = await As(A, UserA, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, "http://images.test/pie.jpg", current), "img-dstale-dry2", true));
+        dryFresh.Result.Outcome.Should().Be("replaced");
+
+        (await StoredImagePathAsync(A, chili)).Should().Be(first);
+        _uploads.New().Should().Equal(first);
+    }
+
+    [Fact]
+    public async Task Another_households_recipe_cannot_be_given_an_image()
+    {
+        _web.Serve("/pie.png", FakeWebServer.Png, "image/png");
+        var chili = await CreateChiliAsync(A, UserA, "img-iso-recipe1");
+        var beforeA = await CountsAsync(A);
+
+        var set = () => As(B, UserB, c => c.SetRecipeImageAsync(new SetRecipeImageInput(chili, ImageUrl, null), "img-iso-b-0001", false));
+
+        await set.Should().ThrowAsync<NotFoundException>();
+        _web.Requests.Should().BeEmpty("the recipe is checked before anything is fetched");
+        (await StoredImagePathAsync(A, chili)).Should().BeNull();
+        (await CountsAsync(A)).Should().Be(beforeA);
+        _uploads.New().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Preview_returns_the_pages_schema_org_image_url()
+    {
+        const string page = """
+            <html><head><script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"Recipe","name":"Pumpkin pie","image":"https://images.test/pumpkin.jpg",
+             "recipeIngredient":["1 cup pumpkin puree","2 eggs"],"recipeInstructions":"Bake it."}
+            </script></head><body></body></html>
+            """;
+        _web.Serve("/pumpkin-pie", System.Text.Encoding.UTF8.GetBytes(page), "text/html; charset=utf-8");
+
+        var preview = await As(A, UserA, c => c.PreviewRecipeImportAsync("http://recipes.test/pumpkin-pie"));
+
+        preview.Name.Should().Be("Pumpkin pie");
+        preview.ImageUrl.Should().Be("https://images.test/pumpkin.jpg");
+        _uploads.New().Should().BeEmpty("a preview stores nothing");
+    }
+
+    [Fact]
+    public async Task Preview_resolves_a_root_relative_image_against_the_page()
+    {
+        // Land review blocker: a normal root-relative schema.org image was dropped, so create_recipe got no picture.
+        const string page = """
+            <html><head><script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"Recipe","name":"Apple pie","image":"/images/apple.jpg",
+             "recipeIngredient":["6 apples"],"recipeInstructions":"Bake it."}
+            </script></head><body></body></html>
+            """;
+        _web.Serve("/desserts/apple-pie", System.Text.Encoding.UTF8.GetBytes(page), "text/html; charset=utf-8");
+
+        var preview = await As(A, UserA, c => c.PreviewRecipeImportAsync("http://recipes.test/desserts/apple-pie"));
+
+        preview.ImageUrl.Should().Be("http://recipes.test/images/apple.jpg");
+    }
+
+    [Fact]
+    public async Task Preview_resolves_a_relative_image_against_the_redirected_page()
+    {
+        // Land review blocker: the base was the URL asked for, not the one the page was served from. A move from
+        // /recipes/apple-pie to /desserts/fall/apple-pie made "apple.png" point at /recipes/apple.png, a dead link.
+        const string page = """
+            <html><head><script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"Recipe","name":"Apple pie","image":"apple.png",
+             "recipeIngredient":["6 apples"],"recipeInstructions":"Bake it."}
+            </script></head><body></body></html>
+            """;
+        _web.Serve("/recipes/apple-pie", async (stream, ct) => await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(
+            "HTTP/1.1 301 Moved Permanently\r\nLocation: /desserts/fall/apple-pie\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"), ct));
+        _web.Serve("/desserts/fall/apple-pie", System.Text.Encoding.UTF8.GetBytes(page), "text/html; charset=utf-8");
+
+        var preview = await As(A, UserA, c => c.PreviewRecipeImportAsync("http://recipes.test/recipes/apple-pie"));
+
+        preview.ImageUrl.Should().Be("http://recipes.test/desserts/fall/apple.png");
+        preview.SourceUrl.Should().Be("http://recipes.test/recipes/apple-pie", "the source stays the address the agent gave");
+    }
+
+    [Theory]
+    [InlineData("https://images.test/a.jpg", "https://images.test/a.jpg")]
+    [InlineData("/images/a.jpg", "https://site.test/images/a.jpg")]
+    [InlineData("a.jpg", "https://site.test/recipes/a.jpg")]
+    [InlineData("../img/a.jpg", "https://site.test/img/a.jpg")]
+    [InlineData("//cdn.test/a.jpg", "https://cdn.test/a.jpg")]
+    [InlineData("  /images/a.jpg  ", "https://site.test/images/a.jpg")]
+    [InlineData("ftp://files.test/a.jpg", null)]
+    [InlineData("file:///etc/passwd", null)]
+    [InlineData("data:image/png;base64,AAAA", null)]
+    [InlineData("javascript:alert(1)", null)]
+    [InlineData("", null)]
+    [InlineData(null, null)]
+    public void Preview_image_url_is_absolute_http_or_nothing(string? raw, string? expected) =>
+        AgentCommands.PreviewImageUrl("https://site.test/recipes/pie", raw).Should().Be(expected);
 
     // ── No model calls on the token path ─────────────────────────────────────────────────────
 

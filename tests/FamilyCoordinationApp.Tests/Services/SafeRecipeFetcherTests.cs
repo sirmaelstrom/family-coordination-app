@@ -156,6 +156,61 @@ public sealed class SafeRecipeFetcherTests
         (await fetcher.FetchHtmlAsync("http://recipes.test/chili", CancellationToken.None)).Should().Contain("chili");
     }
 
+    [Theory]
+    [InlineData(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 }, ".jpg")]
+    [InlineData(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00 }, ".png")]
+    [InlineData(new byte[] { 0x47, 0x49, 0x46, 0x38, 0x39, 0x61 }, ".gif")]
+    [InlineData(new byte[] { 0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4, 0x57, 0x45, 0x42, 0x50 }, ".webp")]
+    [InlineData(new byte[] { 0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4, 0x57, 0x41, 0x56, 0x45 }, null)] // RIFF WAVE audio
+    [InlineData(new byte[] { 0x3C, 0x73, 0x76, 0x67 }, null)] // "<svg": scriptable, never stored
+    [InlineData(new byte[] { 0x3C, 0x68, 0x74, 0x6D, 0x6C }, null)] // "<html"
+    [InlineData(new byte[] { 0xFF, 0xD8 }, null)] // truncated
+    [InlineData(new byte[0], null)]
+    public void Only_the_four_stored_formats_are_recognised_by_their_bytes(byte[] bytes, string? extension) =>
+        (FamilyCoordinationApp.Services.ImageFormat.Sniff(bytes)?.Extension).Should().Be(extension);
+
+    [Fact]
+    public async Task An_image_is_fetched_and_named_by_its_bytes_not_its_header()
+    {
+        byte[] png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3];
+        await using var server = new CannedServer(async (_, stream, stop) =>
+        {
+            await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: {png.Length}\r\nConnection: close\r\n\r\n"), stop);
+            await stream.WriteAsync(png, stop);
+        });
+        using var fetcher = new SafeRecipeFetcher(server.Connect);
+
+        var image = await fetcher.FetchImageAsync("http://images.test/pie.jpg", CancellationToken.None);
+
+        image.Extension.Should().Be(".png");
+        image.ContentType.Should().Be("image/png");
+        image.Bytes.Should().Equal(png);
+    }
+
+    [Fact]
+    public async Task A_page_where_an_image_was_expected_is_refused()
+    {
+        await using var server = new CannedServer(_ => Ok("<html><body>chili</body></html>"));
+        using var fetcher = new SafeRecipeFetcher(server.Connect);
+
+        var fetch = () => fetcher.FetchImageAsync("http://images.test/pie.jpg", CancellationToken.None);
+
+        await fetch.Should().ThrowAsync<RecipeFetchException>().WithMessage("*text/html, not an image*");
+    }
+
+    [Fact]
+    public async Task An_image_redirect_to_an_internal_address_is_refused()
+    {
+        await using var server = new CannedServer(_ =>
+            "HTTP/1.1 302 Found\r\nLocation: http://10.0.0.1/pie.png\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        using var fetcher = new SafeRecipeFetcher(server.Connect);
+
+        var fetch = () => fetcher.FetchImageAsync("http://images.test/pie.png", CancellationToken.None);
+
+        await fetch.Should().ThrowAsync<RecipeFetchException>().WithMessage("*internal networks*");
+        server.Requests.Should().Be(1);
+    }
+
     private static string Ok(string body) =>
         $"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {Encoding.UTF8.GetByteCount(body)}\r\nConnection: close\r\n\r\n{body}";
 

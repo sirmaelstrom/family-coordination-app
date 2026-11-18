@@ -14,6 +14,14 @@ public interface IRecipeService
     /// </summary>
     /// <exception cref="ConcurrencyConflictException">The client <paramref name="expectedVersion"/> is stale or missing.</exception>
     Task<Recipe> UpdateRecipeAsync(Recipe recipe, uint expectedVersion, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Point one recipe at an image, checked against <paramref name="expectedVersion"/> like
+    /// <see cref="UpdateRecipeAsync"/>. Nothing else on the recipe changes. The caller validates the path
+    /// (<c>ImagePathPolicy</c>); the previous file is not deleted, as the app's own editor leaves it too.
+    /// </summary>
+    /// <exception cref="NotFoundException">No such recipe in the caller's household.</exception>
+    /// <exception cref="ConcurrencyConflictException"><paramref name="expectedVersion"/> is stale.</exception>
+    Task SetImagePathAsync(int recipeId, string imagePath, uint expectedVersion, CancellationToken cancellationToken = default);
     Task DeleteRecipeAsync(int householdId, int recipeId, CancellationToken cancellationToken = default);
     Task<List<string>> GetIngredientSuggestionsAsync(int householdId, string prefix, CancellationToken cancellationToken = default);
 

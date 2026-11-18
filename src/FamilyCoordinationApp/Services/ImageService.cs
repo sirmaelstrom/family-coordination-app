@@ -10,6 +10,14 @@ public interface IImageService
     Task<string> SaveImageAsync(IFormFile file, int householdId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Saves image bytes the server fetched itself (an agent's image URL) through the same size / extension /
+    /// content-type rules and writer as an upload. The format comes from the bytes' own signature
+    /// (<see cref="ImageFormat.Sniff"/>); anything else is refused. Returns the stored
+    /// <c>/uploads/{householdId}/{guid}.{ext}</c> URL.
+    /// </summary>
+    Task<string> SaveImageBytesAsync(byte[] bytes, int householdId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Duplicate a STORED upload (<c>/uploads/{sourceHouseholdId}/{file}</c>) into another household's
     /// directory, returning the new <c>/uploads/{targetHouseholdId}/{guid}.{ext}</c> path — or null when the
     /// source is not that household's stored upload or the file is missing. The recipe-copy path uses this so
@@ -57,6 +65,19 @@ public class ImageService(
             (_, _) => file.OpenReadStream(),
             householdId,
             cancellationToken);
+
+    public Task<string> SaveImageBytesAsync(byte[] bytes, int householdId, CancellationToken cancellationToken = default)
+    {
+        var format = ImageFormat.Sniff(bytes)
+            ?? throw new DomainValidationException("The file is not a JPEG, PNG, GIF or WebP image.");
+        return SaveValidatedAsync(
+            bytes.LongLength,
+            "image" + format.Extension,
+            format.ContentType,
+            (_, _) => new MemoryStream(bytes, writable: false),
+            householdId,
+            cancellationToken);
+    }
 
     /// <summary>
     /// Validation + traversal-safe writer behind <see cref="SaveImageAsync(IFormFile, int, CancellationToken)"/>.

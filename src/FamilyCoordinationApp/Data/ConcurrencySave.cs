@@ -37,6 +37,20 @@ public static class ConcurrencySave
         return context.SaveChangesOrConflictAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// The refusal a stale save gets, for a path that checks a client version WITHOUT saving (an agent dry run that
+    /// skips its write). Throws the same <see cref="ConcurrencyConflictException"/> the save would, so a preview never
+    /// reports success for a write that would be refused.
+    /// </summary>
+    public static void ThrowIfStale<TEntity>(uint currentVersion, uint clientVersion)
+        where TEntity : class, IVersioned
+    {
+        if (currentVersion == clientVersion) return;
+        throw new ConcurrencyConflictException(
+            $"Concurrency conflict checking {typeof(TEntity).Name} without a save; the version read is stale.",
+            new DbUpdateConcurrencyException($"Version check without a save: client {clientVersion}, current {currentVersion}."));
+    }
+
     /// <summary>The token a request that omitted it is checked with: 0, which no live row carries (fail-safe 409).</summary>
     public const uint MissingToken = 0;
 

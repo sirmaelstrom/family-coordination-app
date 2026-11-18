@@ -138,6 +138,20 @@ public class RecipeService(
         return existing;
     }
 
+    public async Task SetImagePathAsync(int recipeId, string imagePath, uint expectedVersion, CancellationToken cancellationToken = default)
+    {
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var existing = await context.Recipes.FirstOrDefaultAsync(r => r.RecipeId == recipeId, cancellationToken)
+            ?? throw new NotFoundException(RecipeNotFound, $"Recipe {recipeId} not found for an image update");
+
+        existing.ImagePath = imagePath;
+        // A touch, kept on purpose: the same path again must still put the row in the UPDATE for the version check.
+        existing.UpdatedAt = clock.UtcNow;
+        await context.SaveWithConcurrencyAsync(existing, expectedVersion, cancellationToken);
+
+        logger.LogInformation("Set the image of recipe {RecipeId} for household {HouseholdId}", recipeId, existing.HouseholdId);
+    }
+
     public async Task DeleteRecipeAsync(int householdId, int recipeId, CancellationToken cancellationToken = default)
     {
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);

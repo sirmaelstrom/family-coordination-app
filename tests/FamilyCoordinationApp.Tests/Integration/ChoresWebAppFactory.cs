@@ -132,6 +132,12 @@ public class ChoresWebAppFactory(PostgresContainerFixture postgres) : WebApplica
     /// <summary>Map the agent endpoint (<c>Mcp:Enabled</c>, quest 8bfa42cf). Off by default, as in production.</summary>
     public bool McpEnabled { get; init; }
 
+    /// <summary>
+    /// The agents' outbound fetch, when a test routes it to a local fake site (<see cref="FakeWebServer"/>) through
+    /// the fetcher's connect seam. Null keeps the real one. The URL checks run either way.
+    /// </summary>
+    public FamilyCoordinationApp.Services.AgentAccess.SafeRecipeFetcher? Fetcher { get; init; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -185,6 +191,8 @@ public class ChoresWebAppFactory(PostgresContainerFixture postgres) : WebApplica
             // dueness against FixedNowUtc, not the wall clock (determinism — WP-08 non-flaky requirement). The
             // settings service also reads this for CreatedAt/UpdatedAt.
             services.AddSingleton<TimeProvider>(Clock);
+
+            if (Fetcher is not null) services.AddSingleton(Fetcher);
         });
     }
 

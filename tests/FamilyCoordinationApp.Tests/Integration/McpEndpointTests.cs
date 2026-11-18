@@ -4,8 +4,11 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FamilyCoordinationApp.Data;
 using FamilyCoordinationApp.Endpoints.Mcp;
+using FamilyCoordinationApp.Services.AgentAccess;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
@@ -19,10 +22,20 @@ namespace FamilyCoordinationApp.Tests.Integration;
 /// </summary>
 [Collection(IntegrationCollection.Name)]
 [Trait("kind", "integration")]
-public sealed class McpEndpointTests(PostgresContainerFixture postgres) : IAsyncLifetime
+public sealed class McpEndpointTests : IAsyncLifetime
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-    private readonly ChoresWebAppFactory _factory = new(postgres) { McpEnabled = true };
+    // The outbound fetch goes to a local fake site; its URL checks still run (see FakeWebServer).
+    private readonly FakeWebServer _web = new();
+    private readonly SafeRecipeFetcher _fetcher;
+    private readonly ChoresWebAppFactory _factory;
+    private UploadFiles _uploads = null!;
+
+    public McpEndpointTests(PostgresContainerFixture postgres)
+    {
+        _fetcher = _web.CreateFetcher();
+        _factory = new(postgres) { McpEnabled = true, Fetcher = _fetcher };
+    }
 
     private const string Monday = "2026-11-09";
 
@@ -32,9 +45,16 @@ public sealed class McpEndpointTests(PostgresContainerFixture postgres) : IAsync
     {
         await _factory.EnsureSeededAsync();
         AgentToolGate.ResetLimits();
+        _uploads = new UploadFiles(_factory.Services.GetRequiredService<IWebHostEnvironment>().WebRootPath);
     }
 
-    public async Task DisposeAsync() => await _factory.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        _uploads.DeleteNew();
+        await _factory.DisposeAsync();
+        await _web.DisposeAsync();
+        _fetcher.Dispose();
+    }
 
     private async Task<Minted> MintAsync(string email, string access)
     {
@@ -374,6 +394,155 @@ public sealed class McpEndpointTests(PostgresContainerFixture postgres) : IAsync
         code.Should().Be("rate_limited");
         text.Should().Contain("nothing was run");
         (await CallOk(client, "search_recipes", new())).GetProperty("total").GetInt32().Should().BeGreaterThanOrEqualTo(0, "reads have their own, larger budget");
+    }
+
+    // ── Recipe images ────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task The_tool_list_is_eleven_tools_with_set_recipe_image_a_write()
+    {
+        AgentToolGate.Tools.Should().HaveCount(11);
+        AgentToolGate.Tools["set_recipe_image"].Should().Be(AgentToolGate.Access.Write);
+        var token = await MintAsync(ChoresWebAppFactory.UserAEmail, "readWrite");
+        await using var client = await ConnectAsync(token.token);
+        var tools = await client.ListToolsAsync();
+        tools.Select(t => t.Name).Should().Contain("set_recipe_image");
+        tools.Single(t => t.Name == "create_recipe").JsonSchema.GetProperty("properties").TryGetProperty("imageUrl", out _).Should().BeTrue();
+        var set = tools.Single(t => t.Name == "set_recipe_image").JsonSchema;
+        set.GetProperty("required").EnumerateArray().Select(r => r.GetString()).Should().BeEquivalentTo("recipeId", "imageUrl", "requestId");
+    }
+
+    [Fact]
+    public async Task An_agent_gives_recipes_pictures_that_the_app_serves_from_its_own_storage()
+    {
+        _web.Serve("/pie.png", FakeWebServer.Png, "image/png");
+        _web.Serve("/pie.jpg", FakeWebServer.Jpeg, "image/jpeg");
+        var token = await MintAsync(ChoresWebAppFactory.UserAEmail, "readWrite");
+        await using var client = await ConnectAsync(token.token);
+
+        // A new recipe with its picture.
+        var args = Chili("mcp-img-create-1");
+        args["imageUrl"] = "http://images.test/pie.png";
+        var created = (await CallOk(client, "create_recipe", args)).GetProperty("result");
+        var recipeId = created.GetProperty("recipeId").GetInt32();
+        var imagePath = created.GetProperty("imagePath").GetString()!;
+        imagePath.Should().StartWith($"/uploads/{ChoresWebAppFactory.HouseholdAId}/").And.EndWith(".png");
+
+        // An existing recipe with no picture gets one; a second call without a version keeps it.
+        var bare = (await CallOk(client, "create_recipe", Chili("mcp-img-bare-01"))).GetProperty("result").GetProperty("recipeId").GetInt32();
+        var set = await CallOk(client, "set_recipe_image", new() { ["recipeId"] = bare, ["imageUrl"] = "http://images.test/pie.jpg", ["requestId"] = "mcp-img-set-001" });
+        set.GetProperty("result").GetProperty("outcome").GetString().Should().Be("added");
+        var setPath = set.GetProperty("result").GetProperty("imagePath").GetString()!;
+        var again = await CallError(client, "set_recipe_image", new() { ["recipeId"] = bare, ["imageUrl"] = "http://images.test/pie.png", ["requestId"] = "mcp-img-set-002" });
+        again.Code.Should().Be("conflict");
+        again.Text.Should().Contain("already has an image");
+
+        // The same request id replays.
+        var replay = await CallOk(client, "set_recipe_image", new() { ["recipeId"] = bare, ["imageUrl"] = "http://images.test/pie.jpg", ["requestId"] = "mcp-img-set-001" });
+        replay.GetProperty("replayed").GetBoolean().Should().BeTrue();
+        replay.GetProperty("result").GetProperty("imagePath").GetString().Should().Be(setPath);
+
+        // The app's own API and upload route: the recipe names the stored copy, and it serves image bytes.
+        var member = _factory.CreateClientAs(ChoresWebAppFactory.UserAEmail);
+        foreach (var (id, path, bytes, type) in new[] { (recipeId, imagePath, FakeWebServer.Png, "image/png"), (bare, setPath, FakeWebServer.Jpeg, "image/jpeg") })
+        {
+            var recipe = await member.GetFromJsonAsync<JsonElement>($"/api/recipes/{id}", Json);
+            recipe.GetProperty("imagePath").GetString().Should().Be(path);
+            var served = await member.GetAsync(path);
+            served.StatusCode.Should().Be(HttpStatusCode.OK);
+            served.Content.Headers.ContentType!.MediaType.Should().Be(type);
+            served.Headers.GetValues("X-Content-Type-Options").Should().Equal("nosniff");
+            (await served.Content.ReadAsByteArrayAsync()).Should().Equal(bytes);
+        }
+        _uploads.New().Should().BeEquivalentTo([imagePath, setPath]);
+        _web.Requests.Should().HaveCount(2, "the conflict was refused before fetching and the replay never fetched");
+    }
+
+    [Fact]
+    public async Task Unusable_images_are_tool_errors_that_save_nothing()
+    {
+        _web.Serve("/page.png", "<html>a page, not a picture</html>"u8.ToArray(), "image/png");
+        _web.ServeStreamed("/huge.png", FakeWebServer.Png, SafeRecipeFetcher.MaxImageBytes + 1, "image/png");
+        var token = await MintAsync(ChoresWebAppFactory.UserAEmail, "readWrite");
+        await using var client = await ConnectAsync(token.token);
+        var recipeId = (await CallOk(client, "create_recipe", Chili("mcp-img-bad-r01"))).GetProperty("result").GetProperty("recipeId").GetInt32();
+        await using var before = Raw();
+        var recipes = await before.Recipes.CountAsync();
+        var operations = await before.AgentOperations.CountAsync();
+
+        var cases = new[]
+        {
+            ("http://images.test/page.png", "did not return a JPEG, PNG, GIF or WebP"),
+            ("http://10.0.0.5/pie.png", "internal networks"),
+            ("http://images.test/huge.png", "larger than 10 MB"),
+        };
+        foreach (var (i, (url, expected)) in cases.Index())
+        {
+            var args = Chili($"mcp-img-bad-create-{i}");
+            args["imageUrl"] = url;
+            var create = await CallError(client, "create_recipe", args);
+            create.Code.Should().Be("invalid_argument");
+            create.Text.Should().Contain(expected).And.Contain("Nothing was saved");
+
+            var set = await CallError(client, "set_recipe_image", new() { ["recipeId"] = recipeId, ["imageUrl"] = url, ["requestId"] = $"mcp-img-bad-set-{i}" });
+            set.Code.Should().Be("invalid_argument");
+            set.Text.Should().Contain(expected);
+        }
+
+        await using var after = Raw();
+        (await after.Recipes.CountAsync()).Should().Be(recipes);
+        (await after.AgentOperations.CountAsync()).Should().Be(operations);
+        (await after.Recipes.Where(r => r.RecipeId == recipeId && r.HouseholdId == ChoresWebAppFactory.HouseholdAId).Select(r => r.ImagePath).SingleAsync()).Should().BeNull();
+        _uploads.New().Should().BeEmpty();
+        _web.Requests.Should().NotContain("/pie.png", "the private address was never connected to");
+    }
+
+    [Fact]
+    public async Task An_image_dry_run_over_mcp_stores_nothing_and_a_read_token_cannot_set_images()
+    {
+        _web.Serve("/pie.png", FakeWebServer.Png, "image/png");
+        var writer = await MintAsync(ChoresWebAppFactory.UserAEmail, "readWrite");
+        await using var client = await ConnectAsync(writer.token);
+        var recipeId = (await CallOk(client, "create_recipe", Chili("mcp-img-dry-r01"))).GetProperty("result").GetProperty("recipeId").GetInt32();
+
+        var dry = await CallOk(client, "set_recipe_image", new() { ["recipeId"] = recipeId, ["imageUrl"] = "http://images.test/pie.png", ["requestId"] = "mcp-img-dry-001", ["dryRun"] = true });
+        dry.GetProperty("dryRun").GetBoolean().Should().BeTrue();
+        dry.GetProperty("result").GetProperty("image").GetProperty("contentType").GetString().Should().Be("image/png");
+        (dry.GetProperty("result").TryGetProperty("imagePath", out var dryPath) && dryPath.ValueKind != JsonValueKind.Null)
+            .Should().BeFalse("a dry run stores no image, so there is no path");
+
+        var reader = await MintAsync(ChoresWebAppFactory.UserAEmail, "read");
+        await using var readClient = await ConnectAsync(reader.token);
+        (await readClient.ListToolsAsync()).Select(t => t.Name).Should().NotContain("set_recipe_image");
+        var refused = await CallError(readClient, "set_recipe_image", new() { ["recipeId"] = recipeId, ["imageUrl"] = "http://images.test/pie.png", ["requestId"] = "mcp-img-read-01" });
+        refused.Code.Should().Be("forbidden");
+
+        await using var db = Raw();
+        (await db.Recipes.Where(r => r.RecipeId == recipeId && r.HouseholdId == ChoresWebAppFactory.HouseholdAId).Select(r => r.ImagePath).SingleAsync()).Should().BeNull();
+        (await db.AgentOperations.CountAsync(o => o.Tool == "set_recipe_image")).Should().Be(0);
+        _uploads.New().Should().BeEmpty();
+        _web.Requests.Should().HaveCount(1, "the dry run fetched once; the read token was refused before any fetch");
+    }
+
+    [Fact]
+    public async Task Image_fetches_share_the_per_token_fetch_budget()
+    {
+        var token = await MintAsync(ChoresWebAppFactory.UserAEmail, "readWrite");
+        await using var client = await ConnectAsync(token.token);
+        for (var i = 0; i < AgentToolGate.FetchesPerMinute; i++)
+        {
+            // Refused by the command (no such recipe), but each call spends the fetch budget at the gate.
+            (await CallError(client, "set_recipe_image", new() { ["recipeId"] = 4242, ["imageUrl"] = "http://images.test/x.png", ["requestId"] = $"fetch-budget-{i:00}", ["dryRun"] = true }))
+                .Code.Should().Be("not_found");
+        }
+
+        var args = Chili("fetch-budget-over");
+        args["imageUrl"] = "http://images.test/x.png";
+        var (code, text) = await CallError(client, "create_recipe", args);
+        code.Should().Be("rate_limited");
+        text.Should().Contain("web fetches");
+        (await CallOk(client, "create_recipe", Chili("fetch-budget-noimg"))).GetProperty("replayed").GetBoolean()
+            .Should().BeFalse("a recipe without an image fetches nothing");
     }
 
     [Fact]

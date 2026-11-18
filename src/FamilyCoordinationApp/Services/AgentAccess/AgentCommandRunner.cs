@@ -54,17 +54,7 @@ public sealed partial class AgentCommandRunner(
         Func<CancellationToken, Task<T>> write,
         CancellationToken ct = default)
     {
-        if (tenant.State != TenantState.Caller || tenant.UserId is not { } userId || tenant.HouseholdId is not { } householdId)
-        {
-            throw new InvalidOperationException("An agent write needs the caller tenant.");
-        }
-        if (requestId is null || !RequestIdPattern().IsMatch(requestId))
-        {
-            throw new DomainValidationException(
-                "requestId must be 8 to 100 characters of letters, digits, '.', '_', ':' or '-'. " +
-                "Generate a new one for each distinct change, and reuse it only to retry the same change.");
-        }
-
+        var (userId, householdId) = CheckCaller(requestId);
         var payloadHash = Hash(tool, payload);
 
         // The owner context opens and owns the connection; every context the services create while the unit of work
@@ -133,6 +123,36 @@ public sealed partial class AgentCommandRunner(
         {
             unitOfWork.End();
         }
+    }
+
+    /// <summary>
+    /// Before slow outside work a write needs first (fetching an image), answer a retry from its record without
+    /// doing that work again: the stored result when this member already committed the same change under
+    /// <paramref name="requestId"/>, else null. A reused id with another payload or an expired id throws, as in
+    /// <see cref="RunAsync{T}"/>. Read-only and outside any transaction; <see cref="RunAsync{T}"/> checks again under
+    /// its lock, so a request that commits in between is still answered once.
+    /// </summary>
+    public async Task<AgentWriteOutcome<T>?> TryReplayAsync<T>(string tool, string? requestId, object payload, bool dryRun, CancellationToken ct = default)
+    {
+        var (userId, _) = CheckCaller(requestId);
+        if (dryRun) return null;
+        await using var context = await dbFactory.CreateDbContextAsync(ct);
+        return await ReplayAsync<T>(context, userId, requestId, tool, Hash(tool, payload), ct);
+    }
+
+    private (int UserId, int HouseholdId) CheckCaller([System.Diagnostics.CodeAnalysis.NotNull] string? requestId)
+    {
+        if (tenant.State != TenantState.Caller || tenant.UserId is not { } userId || tenant.HouseholdId is not { } householdId)
+        {
+            throw new InvalidOperationException("An agent write needs the caller tenant.");
+        }
+        if (requestId is null || !RequestIdPattern().IsMatch(requestId))
+        {
+            throw new DomainValidationException(
+                "requestId must be 8 to 100 characters of letters, digits, '.', '_', ':' or '-'. " +
+                "Generate a new one for each distinct change, and reuse it only to retry the same change.");
+        }
+        return (userId, householdId);
     }
 
     private async Task<AgentWriteOutcome<T>?> ReplayAsync<T>(

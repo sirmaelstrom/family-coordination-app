@@ -3,7 +3,7 @@ using FamilyCoordinationApp.Data.Entities;
 
 namespace FamilyCoordinationApp.Services.AgentAccess;
 
-// The typed inputs and results of the ten agent commands (quest 8bfa42cf, design §5). The MCP tools (step 3) are thin
+// The typed inputs and results of the agent commands (quest 8bfa42cf, design §5). The MCP tools (step 3) are thin
 // adapters over these. No input names a household or user: both come from the caller tenant. Results carry plain
 // text and the ids an agent needs for the next call, never profile pictures, HTML or secrets. Every write result is
 // JSON-round-trippable, because a retried request replays it from the operation record.
@@ -20,7 +20,7 @@ public static class AgentContent
 public sealed record SearchRecipesInput(string? Query, int? Limit, string? Cursor);
 
 public sealed record RecipeSummary(
-    int RecipeId, string Name, RecipeType RecipeType, int? Servings, int? PrepTimeMinutes, int? CookTimeMinutes, int IngredientCount);
+    int RecipeId, string Name, RecipeType RecipeType, int? Servings, int? PrepTimeMinutes, int? CookTimeMinutes, int IngredientCount, bool HasImage);
 
 public sealed record SearchRecipesResult(IReadOnlyList<RecipeSummary> Recipes, int Total, string? NextCursor, string ContentNote);
 
@@ -40,8 +40,10 @@ public sealed record RecipeDetail(
     uint Version,
     IReadOnlyList<AgentIngredient> Ingredients,
     string AppPath,
-    string ContentNote);
+    string ContentNote,
+    string? ImagePath = null);
 
+// Preserve the pre-image request hash when the optional image URL is omitted.
 public sealed record CreateRecipeInput(
     string Name,
     RecipeType RecipeType,
@@ -51,13 +53,29 @@ public sealed record CreateRecipeInput(
     int? Servings,
     int? PrepTimeMinutes,
     int? CookTimeMinutes,
-    IReadOnlyList<CreateRecipeIngredient> Ingredients);
+    IReadOnlyList<CreateRecipeIngredient> Ingredients,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ImageUrl = null);
 
 /// <summary>An ingredient to create. A missing category is inferred from the name, as the app's editor does.</summary>
 public sealed record CreateRecipeIngredient(
     string Name, decimal? Quantity, string? Unit, string? Category, string? Notes, string? GroupName);
 
-public sealed record CreatedRecipe(int? RecipeId, string Name, uint? Version, int IngredientCount, string? AppPath);
+/// <summary>
+/// The image a write fetched: its format by its own signature and its size. On a dry run it was fetched and checked
+/// but not stored, so <c>ImagePath</c> is null beside it.
+/// </summary>
+public sealed record AgentImage(string ContentType, int Bytes);
+
+public sealed record CreatedRecipe(int? RecipeId, string Name, uint? Version, int IngredientCount, string? AppPath,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ImagePath = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AgentImage? Image = null);
+
+/// <summary>Version null: only a recipe with no image gets one. Version given: the image is set or replaced, checked against it.</summary>
+public sealed record SetRecipeImageInput(int RecipeId, string ImageUrl, uint? Version);
+
+/// <summary><c>Outcome</c> is <c>added</c> (the recipe had no image) or <c>replaced</c>.</summary>
+public sealed record SetRecipeImageResult(
+    int RecipeId, string Outcome, string? ImagePath, string? PreviousImagePath, uint? Version, AgentImage Image, string AppPath);
 
 public sealed record RecipeImportPreview(
     string SourceUrl,
@@ -72,7 +90,8 @@ public sealed record RecipeImportPreview(
     int? ExistingRecipeId,
     string? ExistingRecipeName,
     string Saved,
-    string ContentNote);
+    string ContentNote,
+    string? ImageUrl = null);
 
 // ── Meal plan ───────────────────────────────────────────────────────────────────────────────
 
