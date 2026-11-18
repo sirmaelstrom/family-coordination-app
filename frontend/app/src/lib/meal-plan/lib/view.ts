@@ -7,10 +7,10 @@
 // The anchor is always a DAY, in both views. Week view shows the week that
 // contains it; stepping a week moves it by 7 days, so Week → Day lands on the
 // same weekday you were looking at, and Day → Week → Day comes back to the same
-// day. Plain `/meal-plan` is today in the screen's default view: week on a
-// desktop, day on a phone (the phone week list squeezes names to a few
-// characters). Any other location names its view, so a shared link opens the
-// same view on every device.
+// day. Plain `/meal-plan` (the nav link) is today in the screen's default
+// view: week on a desktop, day on a phone (the phone week list squeezes names
+// to a few characters). Every navigation inside the page names its view and
+// date, so a copied link opens the same view and day on every device, any day.
 //
 // No `new Date('YYYY-MM-DD')` (MN4): dates are validated and stepped through
 // lib/dates.ts.
@@ -44,12 +44,13 @@ export function parsePlanLocation(
 }
 
 /**
- * The query string for a location ('' or '?…'). Only today in the default view
- * is the bare `/meal-plan`; anything else names both view and date, so a link
- * means the same thing tomorrow and on another screen.
+ * The query string for a location the user navigated to. It always names both
+ * view and date, even when they match this screen's default and today: the
+ * bare `/meal-plan` means "today, in whatever view this screen defaults to",
+ * so a link copied from a phone's day view for today would open Week on a
+ * desktop, and another day tomorrow. Only the nav link is bare.
  */
-export function planSearch(loc: PlanLocation, today: string, defaultView: PlanView): string {
-  if (loc.view === defaultView && loc.date === today) return '';
+export function planSearch(loc: PlanLocation): string {
   return `?view=${loc.view}&date=${loc.date}`;
 }
 

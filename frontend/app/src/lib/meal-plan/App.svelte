@@ -80,7 +80,7 @@
    */
   async function go(next: PlanLocation, opts: { replace: boolean }): Promise<void> {
     const focused = document.activeElement;
-    await goto(resolve('/meal-plan') + planSearch(next, todayStr(), defaultView), {
+    await goto(resolve('/meal-plan') + planSearch(next), {
       replace: opts.replace,
       reset: !opts.replace,
     });

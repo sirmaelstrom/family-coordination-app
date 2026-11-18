@@ -42,17 +42,23 @@ describe('planSearch', () => {
         { view: 'week', date: '2026-11-26' },
         { view: 'week', date: TODAY },
       ] as const) {
-        const search = planSearch(loc, TODAY, def).replace(/^\?/, '');
+        const search = planSearch(loc).replace(/^\?/, '');
         expect(parsePlanLocation(q(search), TODAY, def)).toEqual(loc);
       }
     }
   });
 
-  it('keeps the bare URL only for today in the default view', () => {
-    expect(planSearch({ view: 'week', date: TODAY }, TODAY, 'week')).toBe('');
-    expect(planSearch({ view: 'day', date: TODAY }, TODAY, 'day')).toBe('');
-    expect(planSearch({ view: 'day', date: TODAY }, TODAY, 'week')).toBe(`?view=day&date=${TODAY}`);
-    expect(planSearch({ view: 'week', date: '2026-11-26' }, TODAY, 'week')).toBe('?view=week&date=2026-11-26');
+  it('always names view and date, even for today in the default view', () => {
+    expect(planSearch({ view: 'week', date: TODAY })).toBe(`?view=week&date=${TODAY}`);
+    expect(planSearch({ view: 'day', date: TODAY })).toBe(`?view=day&date=${TODAY}`);
+    expect(planSearch({ view: 'week', date: '2026-11-26' })).toBe('?view=week&date=2026-11-26');
+  });
+
+  it('a link made on a phone for today opens the same day view on a desktop tomorrow', () => {
+    // Land review blocker: phone Week → "Open in day view" for today wrote bare /meal-plan, which a desktop
+    // opened as Week, and a reload the next day moved to that day.
+    const link = planSearch({ view: 'day', date: TODAY }).replace(/^\?/, '');
+    expect(parsePlanLocation(q(link), '2026-11-27', 'week')).toEqual({ view: 'day', date: TODAY });
   });
 });
 
