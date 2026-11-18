@@ -127,6 +127,9 @@ public static class UploadsEndpoints
         // used to emit a cacheable public response, and a shared cache holding one of these would re-serve it
         // across households. The file name is a GUID and its bytes never change, so the BROWSER may hold it.
         http.Response.Headers.CacheControl = "private, max-age=3600";
+        // Upload bytes come from members and, through the agents' image URLs, from other sites: the browser must
+        // take the image type served here as final and never sniff a file into something it would run.
+        http.Response.Headers.XContentTypeOptions = "nosniff";
         return Results.File(fullPath, contentType, enableRangeProcessing: true);
     }
 

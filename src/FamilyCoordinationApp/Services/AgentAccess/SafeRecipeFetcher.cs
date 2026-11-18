@@ -8,25 +8,38 @@ namespace FamilyCoordinationApp.Services.AgentAccess;
 /// <summary>Why a fetch was refused or failed, safe to show the agent.</summary>
 public sealed class RecipeFetchException(string message) : Exception(message);
 
+/// <summary>An image's bytes and the format its own signature names (never the site's word for it).</summary>
+public sealed record FetchedImage(byte[] Bytes, string Extension, string ContentType);
+
 /// <summary>
-/// The outbound fetch behind the agents' recipe import (quest 8bfa42cf, design §6 "outbound fetch"). The browser
-/// import's <c>RecipeScraper</c> client follows redirects and checks only the first host's DNS answer; this one:
+/// The outbound fetch behind the agents' recipe import and recipe images (quest 8bfa42cf, design §6 "outbound
+/// fetch"). The browser import's <c>RecipeScraper</c> client follows redirects and checks only the first host's DNS
+/// answer; this one:
 /// <list type="bullet">
 /// <item>accepts https (and http) URLs on the default ports only, with no credentials in the URL;</item>
 /// <item>follows at most <see cref="MaxRedirects"/> redirects itself, re-checking every hop;</item>
 /// <item>checks the address it ACTUALLY connects to (<see cref="SocketsHttpHandler.ConnectCallback"/>), so a DNS
 /// answer that changes between check and connect cannot reach a private, loopback, link-local, metadata, CGNAT,
 /// multicast or IPv4-mapped internal address;</item>
-/// <item>caps the decompressed body at <see cref="MaxBytes"/> and the whole fetch at <see cref="Timeout"/>;</item>
+/// <item>caps the decompressed body at <see cref="MaxBytes"/> (a page) or <see cref="MaxImageBytes"/> (an image) and
+/// the whole fetch at <see cref="Timeout"/>;</item>
 /// <item>sends no cookies, credentials or app headers.</item>
 /// </list>
-/// It is stateless and holds one handler for the process (a singleton).
+/// It is stateless and holds one handler for the process (a singleton). <see cref="FetchImageAsync"/> goes through the
+/// same hops, checks and deadline, then keeps only bytes whose own signature is a JPEG, PNG, GIF or WebP.
 /// </summary>
 public sealed class SafeRecipeFetcher : IDisposable
 {
     public const int MaxRedirects = 3;
     public const int MaxBytes = 3 * 1024 * 1024;
+
+    /// <summary>The image cap: the same 10 MB the app's own upload path (<c>ImageService</c>) accepts.</summary>
+    public const int MaxImageBytes = 10 * 1024 * 1024;
+
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
+
+    private const string PageAccept = "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5";
+    private const string ImageAccept = "image/webp,image/png,image/jpeg,image/gif;q=0.9,*/*;q=0.5";
 
     private readonly HttpClient _client;
 
@@ -54,35 +67,74 @@ public sealed class SafeRecipeFetcher : IDisposable
             PooledConnectionLifetime = TimeSpan.FromMinutes(2),
             ConnectCallback = connect,
         };
-        // The deadline is the one linked token in FetchHtmlAsync, which spans every hop AND the body read. The
-        // client's own Timeout would stop at the headers (ResponseHeadersRead), so it is switched off.
-        _client = new HttpClient(handler) { Timeout = System.Threading.Timeout.InfiniteTimeSpan, MaxResponseContentBufferSize = MaxBytes };
+        // The deadline is the one linked token in FetchAsync, which spans every hop AND the body read. The client's
+        // own Timeout would stop at the headers (ResponseHeadersRead), so it is switched off. Bodies are read as
+        // streams under each fetch's own cap.
+        _client = new HttpClient(handler) { Timeout = System.Threading.Timeout.InfiniteTimeSpan, MaxResponseContentBufferSize = MaxImageBytes };
         _client.DefaultRequestHeaders.UserAgent.ParseAdd(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
-        _client.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml;q=0.9,*/*;q=0.5");
     }
 
     /// <summary>Fetch the page's HTML, or throw <see cref="RecipeFetchException"/> saying why not.</summary>
     public async Task<string> FetchHtmlAsync(string url, CancellationToken ct)
+    {
+        var (body, contentType) = await FetchAsync(url, "page", PageAccept, MaxBytes, ct);
+        var charset = contentType?.CharSet;
+        var encoding = Encoding.UTF8;
+        if (!string.IsNullOrWhiteSpace(charset))
+        {
+            try { encoding = Encoding.GetEncoding(charset.Trim('"')); }
+            catch (ArgumentException) { /* unknown charset: UTF-8 */ }
+        }
+        return encoding.GetString(body);
+    }
+
+    /// <summary>
+    /// Fetch an image, or throw <see cref="RecipeFetchException"/> saying why not. The bytes decide what it is: a body
+    /// whose signature is not a JPEG, PNG, GIF or WebP is refused whatever the site's <c>Content-Type</c> says, and a
+    /// site that declares a non-image type (an HTML error page, a script) is refused even when the bytes match.
+    /// </summary>
+    public async Task<FetchedImage> FetchImageAsync(string url, CancellationToken ct)
+    {
+        var (body, contentType) = await FetchAsync(url, "image", ImageAccept, MaxImageBytes, ct);
+        var declared = contentType?.MediaType;
+        if (declared is not null
+            && !declared.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+            && !declared.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase)
+            && !declared.Equals("binary/octet-stream", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new RecipeFetchException($"The address returned {Truncate(declared)}, not an image.");
+        }
+        if (ImageFormat.Sniff(body) is not { } format)
+        {
+            throw new RecipeFetchException("The address did not return a JPEG, PNG, GIF or WebP image.");
+        }
+        return new FetchedImage(body, format.Extension, format.ContentType);
+    }
+
+    private async Task<(byte[] Body, MediaTypeHeaderValue? ContentType)> FetchAsync(
+        string url, string what, string accept, int maxBytes, CancellationToken ct)
     {
         var current = CheckUrl(url);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(_timeout);
         try
         {
-            return await FetchWithinAsync(current, deadline.Token);
+            return await FetchWithinAsync(current, what, accept, maxBytes, deadline.Token);
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
         {
-            throw new RecipeFetchException($"The page took longer than {_timeout.TotalSeconds:0.#} seconds to fetch.");
+            throw new RecipeFetchException($"The {what} took longer than {_timeout.TotalSeconds:0.#} seconds to fetch.");
         }
     }
 
-    private async Task<string> FetchWithinAsync(Uri current, CancellationToken ct)
+    private async Task<(byte[] Body, MediaTypeHeaderValue? ContentType)> FetchWithinAsync(
+        Uri current, string what, string accept, int maxBytes, CancellationToken ct)
     {
         for (var hop = 0; ; hop++)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, current);
+            request.Headers.Accept.ParseAdd(accept);
             HttpResponseMessage response;
             try
             {
@@ -107,7 +159,7 @@ public sealed class SafeRecipeFetcher : IDisposable
                 {
                     if (hop >= MaxRedirects)
                     {
-                        throw new RecipeFetchException($"The page redirected more than {MaxRedirects} times.");
+                        throw new RecipeFetchException($"The {what} redirected more than {MaxRedirects} times.");
                     }
                     current = CheckUrl(new Uri(current, location).ToString());
                     continue;
@@ -116,16 +168,16 @@ public sealed class SafeRecipeFetcher : IDisposable
                 {
                     throw new RecipeFetchException($"The site returned HTTP {(int)response.StatusCode}.");
                 }
-                if (response.Content.Headers.ContentLength is > MaxBytes)
+                if (response.Content.Headers.ContentLength > maxBytes)
                 {
-                    throw new RecipeFetchException($"The page is larger than {MaxBytes / (1024 * 1024)} MB.");
+                    throw new RecipeFetchException($"The {what} is larger than {maxBytes / (1024 * 1024)} MB.");
                 }
-                return await ReadCappedAsync(response.Content, ct);
+                return (await ReadCappedAsync(response.Content, what, maxBytes, ct), response.Content.Headers.ContentType);
             }
         }
     }
 
-    private static async Task<string> ReadCappedAsync(HttpContent content, CancellationToken ct)
+    private static async Task<byte[]> ReadCappedAsync(HttpContent content, string what, int maxBytes, CancellationToken ct)
     {
         await using var stream = await content.ReadAsStreamAsync(ct);
         using var buffer = new MemoryStream();
@@ -133,21 +185,16 @@ public sealed class SafeRecipeFetcher : IDisposable
         int read;
         while ((read = await stream.ReadAsync(chunk, ct)) > 0)
         {
-            if (buffer.Length + read > MaxBytes)
+            if (buffer.Length + read > maxBytes)
             {
-                throw new RecipeFetchException($"The page is larger than {MaxBytes / (1024 * 1024)} MB.");
+                throw new RecipeFetchException($"The {what} is larger than {maxBytes / (1024 * 1024)} MB.");
             }
             buffer.Write(chunk, 0, read);
         }
-        var charset = content.Headers.ContentType?.CharSet;
-        var encoding = Encoding.UTF8;
-        if (!string.IsNullOrWhiteSpace(charset))
-        {
-            try { encoding = Encoding.GetEncoding(charset.Trim('"')); }
-            catch (ArgumentException) { /* unknown charset: UTF-8 */ }
-        }
-        return encoding.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
+        return buffer.ToArray();
     }
+
+    private static string Truncate(string value) => value.Length <= 60 ? value : value[..60] + "…";
 
     /// <summary>The URL rules every hop must meet before any connection is made.</summary>
     public static Uri CheckUrl(string url)
