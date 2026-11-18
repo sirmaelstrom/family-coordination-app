@@ -13,12 +13,12 @@ import type {
   DigestSettingsView,
   DigestSettingsUpdate,
 } from './types';
-import { ApiError, apiGet, apiSend, apiUpload } from '$lib/api/client';
+import { ApiError, apiGet, apiSend, apiUpload } from '#lib/api/client.ts';
 
 const CHORES_BASE = '/api/chores';
 const ROOMS_BASE = '/api/rooms';
 
-// Transport + error contract live in $lib/api/client (the one HTTP boundary,
+// Transport + error contract live in #lib/api/client (the one HTTP boundary,
 // quest 79aa83e7). Re-exported so island-internal imports keep working.
 // Chores semantics: any 4xx is a non-retryable rejection EXCEPT 409, the
 // genuine xmin conflict (WP-11 refetches the board and retries on 409 only).

@@ -18,7 +18,7 @@
   // ───────────────────────────────────────────────────────────────────────
   import type { ChoreDto, MemberDto } from '../types';
   import { memberFor } from '../state.svelte';
-  import MemberAvatar from '$lib/shared/MemberAvatar.svelte';
+  import MemberAvatar from '#lib/shared/MemberAvatar.svelte';
 
   interface Props {
     open: boolean;

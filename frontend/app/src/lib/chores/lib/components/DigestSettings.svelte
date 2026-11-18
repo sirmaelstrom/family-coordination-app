@@ -17,7 +17,7 @@
   // ─────────────────────────────────────────────────────────────────────────
   import type { DigestDay, DigestSettingsView, DigestSettingsUpdate, WebhookAction } from '../types';
   import { getDigestSettings, updateDigestSettings, ApiError } from '../api';
-  import { showToast } from '$lib/shared/toast-store.svelte';
+  import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
   interface Props {
     open: boolean;

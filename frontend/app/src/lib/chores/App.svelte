@@ -3,8 +3,8 @@
   import type { ChoreDto, ShellContext } from './lib/types';
   import { uploadChorePhoto, createSubtask, ApiError } from './lib/api';
   import { boardStore } from './lib/state.svelte';
-  import { startLiveness, type LivenessHandle } from '$lib/liveness';
-  import { showToast } from '$lib/shared/toast-store.svelte';
+  import { startLiveness, type LivenessHandle } from '#lib/liveness.ts';
+  import { showToast } from '#lib/shared/toast-store.svelte.ts';
   import ViewSwitcher from './lib/components/ViewSwitcher.svelte';
   import PileControls from './lib/components/PileControls.svelte';
   import NeedsAttentionBoard from './lib/components/NeedsAttentionBoard.svelte';

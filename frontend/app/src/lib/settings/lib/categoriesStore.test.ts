@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The REAL ApiError: the Resource classifies failures through its getters.
 vi.mock('./api', async () => {
-  const { ApiError } = await vi.importActual<typeof import('$lib/api/client')>('$lib/api/client');
+  const { ApiError } = await vi.importActual<typeof import('#lib/api/client.ts')>('#lib/api/client.ts');
   return {
     ApiError,
     getCategories: vi.fn(),
@@ -18,11 +18,11 @@ vi.mock('./api', async () => {
     categoryInUse: vi.fn(),
   };
 });
-vi.mock('$lib/shared/toast-store.svelte', () => ({ showToast: vi.fn() }));
+vi.mock('#lib/shared/toast-store.svelte.ts', () => ({ showToast: vi.fn() }));
 
 import { categoriesStore } from './categoriesStore.svelte';
 import { ApiError, createCategory, getCategories, updateCategory, updateSortOrder } from './api';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 import type { CategoryDto, CategoryListDto } from './types';
 
 function deferred<T>() {

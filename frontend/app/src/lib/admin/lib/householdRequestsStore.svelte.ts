@@ -15,8 +15,8 @@
 
 import type { HouseholdRequestDto, HouseholdRequestsDto, HouseholdSummaryDto } from './types';
 import { ApiError, getHouseholdRequests, approveRequest, rejectRequest, createHousehold } from './api';
-import { Resource } from '$lib/data/resource.svelte';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { Resource } from '#lib/data/resource.svelte.ts';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
 class HouseholdRequestsStore {
   requests = $state<HouseholdRequestDto[]>([]);

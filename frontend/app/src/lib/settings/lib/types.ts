@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 /** The per-page context the Razor host hands the island via data- attributes. */
-import type { ShellContext as AppShellContext } from '$lib/session.svelte';
+import type { ShellContext as AppShellContext } from '#lib/session.svelte.ts';
 
 // Canonical identity + this island's view discriminator (quest 76e6f169).
 export interface ShellContext extends AppShellContext {

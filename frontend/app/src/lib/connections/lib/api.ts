@@ -7,11 +7,11 @@ import type {
 
 const BASE = '/api/settings/connections';
 
-// Transport + error contract live in $lib/api/client (the one HTTP boundary,
+// Transport + error contract live in #lib/api/client (the one HTTP boundary,
 // quest 79aa83e7). Connections semantics: the endpoints return outcome
 // envelopes (200) for the expected validate/accept flow results, so a 4xx
 // here is a genuine error — treat ANY 4xx as a non-retryable rejection.
-import { ApiError, apiGet, apiSend } from '$lib/api/client';
+import { ApiError, apiGet, apiSend } from '#lib/api/client.ts';
 
 export { ApiError };
 

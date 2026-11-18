@@ -7,7 +7,7 @@
   import type { RecipeFullDto, RecipeIngredientFullDto, RecipeListItemDto } from '../types';
   import { getRecipe, getConnectedRecipe, ApiError } from '../api';
   import { initials } from '../avatar';
-  import { Resource } from '$lib/data/resource.svelte';
+  import { Resource } from '#lib/data/resource.svelte.ts';
   import {
     formatScaledQuantity,
     getScaledQuantity,

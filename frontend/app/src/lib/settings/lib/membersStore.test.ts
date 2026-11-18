@@ -4,14 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The REAL ApiError: the Resource classifies failures through its getters.
 vi.mock('./api', async () => {
-  const { ApiError } = await vi.importActual<typeof import('$lib/api/client')>('$lib/api/client');
+  const { ApiError } = await vi.importActual<typeof import('#lib/api/client.ts')>('#lib/api/client.ts');
   return { ApiError, getMembers: vi.fn(), addMember: vi.fn(), setWhitelist: vi.fn(), deleteMember: vi.fn() };
 });
-vi.mock('$lib/shared/toast-store.svelte', () => ({ showToast: vi.fn() }));
+vi.mock('#lib/shared/toast-store.svelte.ts', () => ({ showToast: vi.fn() }));
 
 import { membersStore } from './membersStore.svelte';
 import { ApiError, addMember, deleteMember, getMembers, setWhitelist } from './api';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 import type { MemberDto, MemberListDto } from './types';
 
 /** Let the settle load (dispatched, not awaited, by the write) run to completion. */

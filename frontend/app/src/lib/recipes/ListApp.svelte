@@ -13,18 +13,18 @@
   // liveness + user actions drive every later refresh.
   // ───────────────────────────────────────────────────────────────────────
   import { untrack } from 'svelte';
-  import { base } from '$app/paths';
+  import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
   import type { RecipeListItemDto, ShellContext } from './lib/types';
   import { recipeListStore } from './lib/recipeListStore.svelte';
   import { copyConnectedRecipe } from './lib/api';
-  import { startLiveness, type LivenessHandle } from '$lib/liveness';
-  import { showToast } from '$lib/shared/toast-store.svelte';
+  import { startLiveness, type LivenessHandle } from '#lib/liveness.ts';
+  import { showToast } from '#lib/shared/toast-store.svelte.ts';
   import RecipeCard from './lib/components/RecipeCard.svelte';
   import ConnectedHouseholdSelector from './lib/components/ConnectedHouseholdSelector.svelte';
   import RecipeDetailDrawer from './lib/components/RecipeDetailDrawer.svelte';
   import ImportDialog from './lib/components/ImportDialog.svelte';
-  import ConfirmDialog from '$lib/shared/ConfirmDialog.svelte';
+  import ConfirmDialog from '#lib/shared/ConfirmDialog.svelte';
 
   interface Props {
     ctx: ShellContext;
@@ -80,11 +80,11 @@
   }
 
   function handleEdit(recipeId: number): void {
-    void goto(`${base}/recipes/edit/${recipeId}`);
+    void goto(resolve('/recipes/edit/[id]', { id: String(recipeId) }));
   }
 
   function handleAddRecipe(): void {
-    void goto(`${base}/recipes/new`);
+    void goto(resolve('/recipes/new'));
   }
 
   function handleAddToMealPlan(name: string): void {
@@ -116,7 +116,7 @@
   }
 
   function onImported(recipeId: number): void {
-    void goto(`${base}/recipes/edit/${recipeId}`);
+    void goto(resolve('/recipes/edit/[id]', { id: String(recipeId) }));
   }
 
   // Empty-state copy mirrors Recipes.razor:120-195.

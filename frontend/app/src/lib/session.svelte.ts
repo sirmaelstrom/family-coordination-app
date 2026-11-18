@@ -29,7 +29,7 @@ export interface SessionUser {
 /** Lifecycle of the one-shot /api/me load. */
 export type SessionStatus = 'idle' | 'loading' | 'ready' | 'error';
 
-import { ApiError, apiFetch, loginRedirectUrl } from '$lib/api/client';
+import { ApiError, apiFetch, loginRedirectUrl } from '#lib/api/client.ts';
 
 /** Raw JSON shape of GET /api/me (camelCased MeDto). */
 interface MeResponse {

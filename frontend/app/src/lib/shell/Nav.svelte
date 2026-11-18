@@ -1,11 +1,11 @@
 <script lang="ts">
   // Desktop side navigation. Order / labels mirror NavMenu.razor. The Settings
   // block is a collapsible section (auto-expands on a /settings route). Every
-  // in-app link is built as `${base}${href}`; active state highlights the current
+  // in-app link is built as `link(href)` (resolve() + base); active state highlights the current
   // path. Hidden on mobile (MobileBottomNav takes over).
-  import { base } from '$app/paths';
+  import { resolve } from '$app/paths';
   import { page } from '$app/state';
-  import { session } from '$lib/session.svelte';
+  import { session } from '#lib/session.svelte.ts';
   import { sidebar } from './sidebar.svelte';
   import Icon from './Icon.svelte';
   import {
@@ -13,10 +13,11 @@
     settingsNav,
     isActive,
     isSettingsActive,
+    link,
   } from './nav';
 
   const pathname = $derived(page.url.pathname);
-  const settingsActive = $derived(isSettingsActive(pathname, base));
+  const settingsActive = $derived(isSettingsActive(pathname));
 
   // Auto-expand the Settings section whenever we're on a settings route;
   // otherwise let the user toggle it.
@@ -29,7 +30,7 @@
 </script>
 
 <nav class="sh-nav" class:collapsed={sidebar.collapsed} aria-label="Primary">
-  <a class="sh-brand" href="{base}/dashboard" aria-label="Family Kitchen — dashboard" title="Family Kitchen">
+  <a class="sh-brand" href={resolve('/dashboard')} aria-label="Family Kitchen — dashboard" title="Family Kitchen">
     <Icon name="recipes" size={26} />
     <span class="sh-brand-name">Family Kitchen</span>
   </a>
@@ -39,11 +40,11 @@
       <li>
         <a
           class="sh-nav-link"
-          class:active={isActive(pathname, base, item.href, item.match)}
-          href="{base}{item.href}"
+          class:active={isActive(pathname, item.href, item.match)}
+          href={link(item.href)}
           title={item.label}
           aria-label={item.label}
-          aria-current={isActive(pathname, base, item.href, item.match) ? 'page' : undefined}
+          aria-current={isActive(pathname, item.href, item.match) ? 'page' : undefined}
         >
           <Icon name={item.icon} />
           <span>{item.label}</span>
@@ -62,11 +63,11 @@
         <li>
           <a
             class="sh-nav-link"
-            class:active={isActive(pathname, base, item.href, 'prefix')}
-            href="{base}{item.href}"
+            class:active={isActive(pathname, item.href, 'prefix')}
+            href={link(item.href)}
             title={item.label}
             aria-label={item.label}
-            aria-current={isActive(pathname, base, item.href, 'prefix') ? 'page' : undefined}
+            aria-current={isActive(pathname, item.href, 'prefix') ? 'page' : undefined}
           >
             <Icon name={item.icon} />
             <span>{item.label}</span>
@@ -96,9 +97,9 @@
             <li>
               <a
                 class="sh-nav-link sh-sublink"
-                class:active={isActive(pathname, base, item.href, 'prefix')}
-                href="{base}{item.href}"
-                aria-current={isActive(pathname, base, item.href, 'prefix') ? 'page' : undefined}
+                class:active={isActive(pathname, item.href, 'prefix')}
+                href={link(item.href)}
+                aria-current={isActive(pathname, item.href, 'prefix') ? 'page' : undefined}
               >
                 <Icon name={item.icon} size={20} />
                 <span>{item.label}</span>

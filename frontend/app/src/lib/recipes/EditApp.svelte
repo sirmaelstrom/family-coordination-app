@@ -24,7 +24,7 @@
   import IngredientList from './lib/components/IngredientList.svelte';
   import BulkPasteDialog from './lib/components/BulkPasteDialog.svelte';
   import ImagePickerDialog from './lib/components/ImagePickerDialog.svelte';
-  import ConfirmDialog from '$lib/shared/ConfirmDialog.svelte';
+  import ConfirmDialog from '#lib/shared/ConfirmDialog.svelte';
 
   interface Props {
     ctx: ShellContext;

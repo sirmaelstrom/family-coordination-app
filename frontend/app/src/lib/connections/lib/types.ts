@@ -13,7 +13,7 @@
 
 /** The per-page context the Razor host hands the island via data- attributes. */
 // The canonical app-wide ShellContext (quest 76e6f169 collapsed the per-island copies).
-export type { ShellContext } from '$lib/session.svelte';
+export type { ShellContext } from '#lib/session.svelte.ts';
 
 /** The household's single active invite. */
 export interface InviteDto {

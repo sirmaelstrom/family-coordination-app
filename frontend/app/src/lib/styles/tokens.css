@@ -2,7 +2,7 @@
  * Canonical design tokens for the de-Blazored SvelteKit shell.
  * Mirrored from the MudBlazor theme used elsewhere in the app.
  * Light mode = :root. Dark mode = html.mud-theme-dark (toggled by the pre-paint
- * script in app.html + $lib/theme.svelte.ts).
+ * script in app.html + #lib/theme.svelte.ts).
  *
  * IMPORTANT: the dark-mode selector `.mud-theme-dark` is load-bearing during
  * the strangler coexistence — the not-yet-migrated islands detect dark mode by

@@ -1,6 +1,6 @@
 import type { AgentTokenListDto, MintAgentTokenBody, MintedAgentTokenDto } from './types';
-// Transport + error contract live in $lib/api/client (the one HTTP boundary, quest 79aa83e7).
-import { ApiError, apiGet, apiSend } from '$lib/api/client';
+// Transport + error contract live in #lib/api/client (the one HTTP boundary, quest 79aa83e7).
+import { ApiError, apiGet, apiSend } from '#lib/api/client.ts';
 
 export { ApiError };
 

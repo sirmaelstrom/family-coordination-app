@@ -2,7 +2,8 @@
 # A full SvelteKit app (adapter-static) that emits ./build/ (SPA fallback index.html +
 # fingerprinted _app/ assets + static/ manifest + service worker), which the .NET stage
 # copies into wwwroot/ so ASP.NET serves it at the site root.
-FROM node:20-alpine AS app-spa-node-build
+# Node 22 LTS: SvelteKit 3 requires Node >=22.17 (frontend/app/package.json engines).
+FROM node:22-alpine AS app-spa-node-build
 WORKDIR /frontend
 COPY frontend/app/package.json frontend/app/package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi

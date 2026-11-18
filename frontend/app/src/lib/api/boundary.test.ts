@@ -1,5 +1,5 @@
 // Architecture guard for the one-HTTP-boundary invariant (quest 79aa83e7,
-// council round-1 amendment): raw fetch() lives ONLY in $lib/api/client.ts,
+// council round-1 amendment): raw fetch() lives ONLY in #lib/api/client.ts,
 // and the on401 escape hatch is used only by its named policy owners.
 // Comments (JS AND HTML — a .svelte prose comment saying "no new fetch (M7)"
 // tripped the first version of this scan) and string literals are stripped
@@ -40,7 +40,7 @@ describe('one HTTP boundary (architecture guard)', () => {
     expect(files.length).toBeGreaterThan(100);
   });
 
-  it('raw fetch() appears only in $lib/api/client.ts', () => {
+  it('raw fetch() appears only in #lib/api/client.ts', () => {
     const offenders = files
       .filter((f) => !FETCH_ALLOWED.has(f.rel) && /(?<![.\w])fetch\s*\(/.test(f.code))
       .map((f) => f.rel);

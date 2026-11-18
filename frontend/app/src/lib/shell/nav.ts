@@ -1,18 +1,35 @@
 // Shared nav model + active-path helper for the shell chrome (Nav + MobileBottomNav).
 // Order / labels mirror Components/Layout/NavMenu.razor + MainLayout.razor.
-// hrefs are SPA route paths WITHOUT the base — callers build `${base}${href}`.
+// hrefs are SPA route IDs; callers link with `link(href)`, which adds the base through
+// `resolve()` from $app/paths (SvelteKit 3 removed the `base` export).
 
+import { resolve } from '$app/paths';
+import type { ResolvedPathname, RouteId, RouteParams } from '$app/types';
 import type { IconName } from './Icon.svelte';
 
+/** A route ID with no dynamic segments: `resolve()` needs no params for it. */
+export type StaticRouteId = {
+  [K in RouteId]: RouteParams<K> extends Record<string, never> ? K : never;
+}[RouteId];
+
+/**
+ * `resolve()` for a static route held in a union-typed field. resolve's argument type
+ * distributes over a union (one tuple per route), so a `StaticRouteId` variable can't be
+ * passed to it directly; a literal can. Restricting to static routes keeps the cast honest.
+ */
+export function link(route: StaticRouteId): ResolvedPathname {
+  return (resolve as (route: StaticRouteId) => ResolvedPathname)(route);
+}
+
 export interface NavItem {
-  href: string;
+  href: StaticRouteId;
   label: string;
   icon: IconName;
   match: 'exact' | 'prefix';
 }
 
 export interface SettingsItem {
-  href: string;
+  href: StaticRouteId;
   label: string;
   icon: IconName;
   adminOnly?: boolean;
@@ -39,26 +56,23 @@ export const settingsNav: SettingsItem[] = [
 ];
 
 /** The Settings section landing (mobile bottom-nav Settings target). */
-export const SETTINGS_LANDING = '/settings/categories';
+export const SETTINGS_LANDING: StaticRouteId = '/settings/categories';
 
-/** Any /settings/* route (used to highlight/expand the Settings section). */
-export const SETTINGS_PREFIX = '/settings';
+/** Any /settings/* route (used to highlight/expand the Settings section). Not a route of its
+ * own (there is no /settings page), so it is a path segment under the app root. */
+export const SETTINGS_PREFIX = 'settings';
 
 /**
  * Whether `href` is the active route. `pathname` is the full location pathname
- * (includes base); `base` is $app/paths base ('/app'). Mirrors NavMenu's
- * NavLinkMatch: 'exact' for Home (also matches the base root), 'prefix' otherwise.
+ * (includes any base); each target is `link(href)`, so it carries the same base.
+ * Mirrors NavMenu's NavLinkMatch: 'exact' for Home (also matches the app root),
+ * 'prefix' otherwise.
  */
-export function isActive(
-  pathname: string,
-  base: string,
-  href: string,
-  match: 'exact' | 'prefix',
-): boolean {
-  const target = base + href;
+export function isActive(pathname: string, href: StaticRouteId, match: 'exact' | 'prefix'): boolean {
+  const target = link(href);
   if (match === 'exact') {
     if (href === '/dashboard') {
-      return pathname === target || pathname === base || pathname === `${base}/`;
+      return pathname === target || pathname === resolve('/');
     }
     return pathname === target;
   }
@@ -66,7 +80,7 @@ export function isActive(
 }
 
 /** Whether the current path is inside the Settings section. */
-export function isSettingsActive(pathname: string, base: string): boolean {
-  const target = base + SETTINGS_PREFIX;
+export function isSettingsActive(pathname: string): boolean {
+  const target = resolve('/') + SETTINGS_PREFIX;
   return pathname === target || pathname.startsWith(`${target}/`);
 }
