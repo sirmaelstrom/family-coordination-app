@@ -24,7 +24,7 @@ There is a known .NET SDK 10.0 bug (MSB3552) that can break multi-stage Docker b
 ./docker-build.sh v1.0.0   # Build with specific tag
 ```
 
-The plain `Dockerfile` (what prod builds — `deploy.sh:` `docker build -t familyapp:latest .`) has ONE `node:20-alpine` stage that builds the SvelteKit SPA (`frontend/app/` → `build/`) and copies it into `wwwroot/` (site root) before the .NET publish stage. The per-island stages died in the de-Blazor flip (WP-12).
+The plain `Dockerfile` (what prod builds — `deploy.sh:` `docker build -t familyapp:latest .`) has ONE `node:22-alpine` stage (SvelteKit 3 needs Node >=22.17) that builds the SvelteKit SPA (`frontend/app/` → `build/`) and copies it into `wwwroot/` (site root) before the .NET publish stage. The per-island stages died in the de-Blazor flip (WP-12).
 
 ## Deployment
 

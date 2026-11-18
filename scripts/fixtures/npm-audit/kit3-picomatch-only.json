@@ -1,0 +1,222 @@
+{
+  "auditReportVersion": 2,
+  "vulnerabilities": {
+    "@sveltejs/adapter-static": {
+      "name": "@sveltejs/adapter-static",
+      "severity": "high",
+      "isDirect": true,
+      "via": [
+        "@sveltejs/kit"
+      ],
+      "effects": [],
+      "range": ">=4.0.0-next.0",
+      "nodes": [
+        "node_modules/@sveltejs/adapter-static"
+      ],
+      "fixAvailable": {
+        "name": "@sveltejs/adapter-static",
+        "version": "3.0.11",
+        "isSemVerMajor": true
+      }
+    },
+    "@sveltejs/kit": {
+      "name": "@sveltejs/kit",
+      "severity": "high",
+      "isDirect": true,
+      "via": [
+        "@sveltejs/vite-plugin-svelte",
+        "vite"
+      ],
+      "effects": [
+        "@sveltejs/adapter-static"
+      ],
+      "range": ">=3.0.0-next.0",
+      "nodes": [
+        "node_modules/@sveltejs/kit"
+      ],
+      "fixAvailable": {
+        "name": "@sveltejs/kit",
+        "version": "2.70.4",
+        "isSemVerMajor": true
+      }
+    },
+    "@sveltejs/vite-plugin-svelte": {
+      "name": "@sveltejs/vite-plugin-svelte",
+      "severity": "high",
+      "isDirect": true,
+      "via": [
+        "vite"
+      ],
+      "effects": [
+        "@sveltejs/kit"
+      ],
+      "range": ">=6.0.0-next.0",
+      "nodes": [
+        "node_modules/@sveltejs/vite-plugin-svelte"
+      ],
+      "fixAvailable": {
+        "name": "@sveltejs/vite-plugin-svelte",
+        "version": "5.1.1",
+        "isSemVerMajor": true
+      }
+    },
+    "fdir": {
+      "name": "fdir",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "picomatch"
+      ],
+      "effects": [
+        "svelte-check",
+        "tinyglobby"
+      ],
+      "range": ">=5.2.1",
+      "nodes": [
+        "node_modules/fdir"
+      ],
+      "fixAvailable": {
+        "name": "vitest",
+        "version": "3.1.4",
+        "isSemVerMajor": true
+      }
+    },
+    "picomatch": {
+      "name": "picomatch",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1247710,
+          "name": "picomatch",
+          "dependency": "picomatch",
+          "title": "picomatch vulnerable to ReDoS through single-branch repeated extglobs",
+          "url": "https://github.com/advisories/GHSA-fc5q-39xc-vjpf",
+          "severity": "high",
+          "cwe": [
+            "CWE-1333"
+          ],
+          "cvss": {
+            "score": 7.5,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+          },
+          "range": "<=4.0.7"
+        }
+      ],
+      "effects": [
+        "fdir",
+        "tinyglobby",
+        "vite",
+        "vitest"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/picomatch"
+      ],
+      "fixAvailable": {
+        "name": "vitest",
+        "version": "3.1.4",
+        "isSemVerMajor": true
+      }
+    },
+    "svelte-check": {
+      "name": "svelte-check",
+      "severity": "high",
+      "isDirect": true,
+      "via": [
+        "fdir"
+      ],
+      "effects": [],
+      "range": ">=4.0.0",
+      "nodes": [
+        "node_modules/svelte-check"
+      ],
+      "fixAvailable": {
+        "name": "svelte-check",
+        "version": "3.8.6",
+        "isSemVerMajor": true
+      }
+    },
+    "tinyglobby": {
+      "name": "tinyglobby",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "fdir",
+        "picomatch"
+      ],
+      "effects": [
+        "vite",
+        "vitest"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/tinyglobby"
+      ],
+      "fixAvailable": {
+        "name": "vitest",
+        "version": "3.1.4",
+        "isSemVerMajor": true
+      }
+    },
+    "vite": {
+      "name": "vite",
+      "severity": "high",
+      "isDirect": true,
+      "via": [
+        "picomatch",
+        "tinyglobby"
+      ],
+      "effects": [
+        "@sveltejs/kit",
+        "@sveltejs/vite-plugin-svelte"
+      ],
+      "range": ">=6.3.0-beta.0",
+      "nodes": [
+        "node_modules/vite"
+      ],
+      "fixAvailable": {
+        "name": "vite",
+        "version": "6.2.7",
+        "isSemVerMajor": true
+      }
+    },
+    "vitest": {
+      "name": "vitest",
+      "severity": "high",
+      "isDirect": true,
+      "via": [
+        "picomatch",
+        "tinyglobby"
+      ],
+      "effects": [],
+      "range": ">=3.1.2",
+      "nodes": [
+        "node_modules/vitest"
+      ],
+      "fixAvailable": {
+        "name": "vitest",
+        "version": "3.1.4",
+        "isSemVerMajor": true
+      }
+    }
+  },
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 9,
+      "critical": 0,
+      "total": 9
+    },
+    "dependencies": {
+      "prod": 21,
+      "dev": 94,
+      "optional": 34,
+      "peer": 0,
+      "peerOptional": 0,
+      "total": 114
+    }
+  }
+}

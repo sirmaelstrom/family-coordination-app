@@ -5,6 +5,17 @@ projects, including transitive packages, and the complete npm lockfile, includin
 development dependencies. Moderate, High, Critical, and audit-service errors fail
 the command. Low findings remain in its output; they are not suppressed.
 
+The npm half reads `npm audit --json` and decides in `scripts/npm-audit-filter.mjs`.
+Its `ACCEPTED_ADVISORIES` list names exact GHSA IDs (with their package) that may
+pass at Moderate or above; every other Moderate+ advisory still fails. Anything the
+filter cannot read fails closed: non-JSON output, an `error` object from the audit
+service, an advisory without a GHSA ID or with an unknown severity. An accepted ID
+the audit stops reporting also fails, so the list cannot rot: delete the entry and
+its row below. Each accepted advisory prints the package entries that carry it.
+`node --test scripts/npm-audit-filter.test.mjs` holds these rules to two real audit
+captures (`scripts/fixtures/npm-audit/`) and synthetic cases; the workflow runs it
+before the audit. Add an ID only with a reachability row in the accepted table below.
+
 `.github/workflows/dependency-audit.yml` runs this command on every PR,
 on pushes to master/main, every Monday at 09:17 UTC, and on manual dispatch.
 The weekly run can fail when an advisory arrives without a source change. Check
@@ -40,32 +51,53 @@ The workflow uploads no artifacts and uses no secrets or self-hosted runner.
 
 ## npm changes
 
-Keep the supported SvelteKit 2 / Vite 6 / Vitest 4 majors. Direct minimums become
-SvelteKit 2.70.2, Vite 6.4.5, and Vitest 4.1.12. Vite 6.4.4 is insufficient:
-[GHSA-8g5g-mxqh-grgj](https://github.com/advisories/GHSA-8g5g-mxqh-grgj) fixes a
-dev-server file-denial bypass in 6.4.5. Vitest's mock-server fixes require 4.1.12.
-Transitive overrides pin the first fixed compatible releases: devalue 5.9.3,
-nanoid 3.3.18, PostCSS 8.5.23, and source-map-js 1.2.2. They remain within their
-parents' declared ranges. The scoped cookie 0.7.0 override crosses SvelteKit's
-0.6 range to take the validation fix while preserving its parse/serialize API;
-FCA's production server uses ASP.NET cookies, not SvelteKit's cookie server.
+The SPA runs on the SvelteKit 3 / Vite 8 / Vitest 4 majors (2026-11-17): SvelteKit
+3.3.1, adapter-static 4.0.1, vite-plugin-svelte 7.3.1, Vite 8.3.8, Svelte 5.57.3,
+TypeScript 6.0.3, Vitest 4.1.12. Kit 2 had no fix for
+[GHSA-3r8g-jcqq-3p5j](https://github.com/advisories/GHSA-3r8g-jcqq-3p5j) (High) or
+[GHSA-6cf5-gc4q-fm3x](https://github.com/advisories/GHSA-6cf5-gc4q-fm3x) (Moderate):
+both cover `>=2.42.0 <=3.1.0` and Kit 3.1.1 is the first patched release, with no
+Kit 2 backport. The upgrade also clears the Kit 2 Moderates
+[GHSA-mw6w-2fmv-pvw3](https://github.com/advisories/GHSA-mw6w-2fmv-pvw3) and
+[GHSA-rqp5-r3wg-vg35](https://github.com/advisories/GHSA-rqp5-r3wg-vg35), adapter-static
+3's [GHSA-jf9x-2fg2-hx4w](https://github.com/advisories/GHSA-jf9x-2fg2-hx4w), and the
+two Kit Lows this page used to accept,
+[GHSA-pfhg-q3qv-9q6r](https://github.com/advisories/GHSA-pfhg-q3qv-9q6r) and
+[GHSA-27mw-82g8-phjj](https://github.com/advisories/GHSA-27mw-82g8-phjj).
+`scripts/fixtures/npm-audit/kit2-master.json` is the Kit 2 audit these replace.
+Kit 3 sets the floors that follow: Node 22.17 (CI, the audit workflow and the
+Dockerfile's SPA stage run Node 22), Vite 8, TypeScript 6 and vite-plugin-svelte 7.
+Vitest stays on 4.1.12: it declares `vite ^6 || ^7 || ^8`, and it keeps the
+mock-server fixes that needed 4.1.12.
 
-## Accepted Low risks (2026-11-12)
+There are no npm `overrides`. The five earlier pins (devalue 5.9.3, nanoid 3.3.18,
+PostCSS 8.5.23, source-map-js 1.2.2, Kit-scoped cookie 0.7.0) are moot: the Kit 3
+tree resolves devalue 5.9.4, nanoid 3.3.20, PostCSS 8.5.33, source-map-js 1.2.2 and
+cookie 2.0.2, each at or past its pinned fix, and Kit 3 requires devalue `^5.9.4`
+and cookie `^2.0.1`, so the old devalue and cookie pins would now conflict. The
+audit, not a pin, catches a regression.
 
-These are explicit residual findings, not a claim of zero npm advisories. The
-parent approved documenting remaining Low risks after assessing reachability.
-Five affected npm package entries represent three underlying Low advisories;
-some entries inherit their finding from dependencies or peer dependencies.
+## Accepted Moderate+ risks
 
-| npm entry | Reachability and decision | Revisit if: |
+These pass the audit only because their exact GHSA ID is in
+`ACCEPTED_ADVISORIES` (`scripts/npm-audit-filter.mjs`).
+
+| Advisory | Reachability and decision | Revisit if: |
 | --- | --- | --- |
-| `deepmerge` 4.3.1 | [GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4) has no patched release. The Svelte Vite plugin merges checked-in compiler/plugin configuration with it. It runs during builds/dev, and is absent from the static app runtime. Accept this Low build-tooling risk; do not downgrade below its parent's supported range. | An upstream fix ships, or build configuration starts accepting untrusted objects. |
-| `@sveltejs/vite-plugin-svelte` | Inherits the deepmerge finding (and inspector peer relationship). Compiler/dev tooling only; the plugin is not shipped in the ASP.NET runtime image. Accept the inherited Low risk. | The deepmerge fix ships or a compatible plugin removes it. |
-| `@sveltejs/vite-plugin-svelte-inspector` | Inherits the plugin's Low finding through its peer dependency. Its inspector runs in the Vite dev server, not the production static bundle. Accept the inherited Low risk. | A compatible plugin/inspector release removes the affected dependency. |
-| `@sveltejs/kit` 2.70.2 | Kit does contribute client routing code, so its `devDependency` label alone does not prove safety. [GHSA-pfhg-q3qv-9q6r](https://github.com/advisories/GHSA-pfhg-q3qv-9q6r) needs enhanced form actions on double-slash paths; FCA imports no `$app/forms` or `use:enhance`. [GHSA-27mw-82g8-phjj](https://github.com/advisories/GHSA-27mw-82g8-phjj) needs untrusted cache-control passed to `setHeaders` while prerendering; FCA has no `setHeaders`, and `+layout.ts` sets `ssr=false` and `prerender=false`. Both are fixed in Kit 3. Accept the Low findings with these paths unused, rather than force a framework major migration. | FCA adds enhanced form actions, prerendering/untrusted headers, or a supported Kit 2 backport ships; also reassess at the Kit 3 migration. |
-| `@sveltejs/adapter-static` 3.0.10 | Inherits Kit's Low findings via its peer dependency; it generates static build output and does not serve requests in production. Accept the inherited Low risk under the same Kit feature constraints. | Kit is upgraded or its affected features become reachable. |
+| [GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) `picomatch` <=4.0.7, High (accepted 2026-11-17) | ReDoS from single-branch repeated extglobs such as `+(*)`: the attacker must supply the **glob pattern**. No patched release exists. picomatch is build tooling only: Vite (config globs, `import.meta.glob`), tinyglobby/fdir (file discovery for Vite and svelte-check) and Vitest (`include` globs). Every pattern they compile is checked in (`vite.config.ts`, `vitest.config.ts`, two `import.meta.glob` calls in test files); none comes from a request, a user or the network. The production image holds the ASP.NET publish output and the static SPA files, not the Node stage's `node_modules`, and the shipped client bundle does not include picomatch. The audit prints the 9 entries that carry it (picomatch, plus fdir, tinyglobby, vite, vitest, svelte-check, Kit, adapter-static and vite-plugin-svelte by dependency). | An upstream picomatch fix ships (take it, then the audit fails on the stale ID until the entry is deleted), or a build or dev step starts compiling globs from untrusted input. |
+
+## Accepted Low risks
+
+None as of 2026-11-17. The Low rows this page used to hold are gone: Kit 3 fixes
+both Kit Lows (and so adapter-static's inherited ones), and the deepmerge advisory
+[GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4) that
+vite-plugin-svelte and its inspector inherited was withdrawn by GitHub on
+2026-11-16. vite-plugin-svelte 7 also no longer depends on the inspector.
+deepmerge 4.3.1 is still in the tree, unflagged. A new Low prints in the audit
+output without failing it; add a row here when one appears.
 
 The final Docker image copies the ASP.NET publish directory and static SPA files,
 not the Node build stage's `node_modules`. This distinction does not exclude
-compiled browser code: the Kit row above explicitly assesses its shipped client
-behavior. Audit counts describe affected package entries, not exploit counts.
+compiled browser code: a Kit advisory, for instance, must be assessed against the
+client routing code Kit ships. Audit counts describe affected package entries, not
+exploit counts.

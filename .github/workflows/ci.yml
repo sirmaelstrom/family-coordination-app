@@ -67,7 +67,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'  # matches the SPA build stage in Dockerfile (node:20-alpine)
+          node-version: '22'  # matches the SPA build stage in Dockerfile (node:22-alpine); Kit 3 needs >=22.17
           cache: 'npm'
           cache-dependency-path: frontend/app/package-lock.json
 
