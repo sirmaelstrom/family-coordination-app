@@ -1,7 +1,7 @@
 /*
  * Connections surface styles. Ported from the original connections island's
  * app.css (git 2978eb3:frontend/connections/src/styles/app.css) during the
- * de-Blazor flip — the island copy at $lib/connections/** lost its styles, so
+ * de-Blazor flip — the island copy at #lib/connections/** lost its styles, so
  * /settings/connections rendered unstyled (same defect as /dashboard).
  *
  * Imported (unscoped, global) from App.svelte. Kept as a plain .css file rather

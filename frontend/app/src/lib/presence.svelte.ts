@@ -16,7 +16,7 @@
 // $state). Reading `presence.users` / `presence.online` in markup tracks them.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { ApiError, apiFetch, loginRedirectUrl } from '$lib/api/client';
+import { ApiError, apiFetch, loginRedirectUrl } from '#lib/api/client.ts';
 
 /** One active user in the header roster (caller excluded server-side). */
 export interface PresenceUser {

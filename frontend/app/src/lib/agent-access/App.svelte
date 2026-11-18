@@ -15,8 +15,8 @@
     reauthUrl,
     type ExpiryChoice,
   } from './lib/ops';
-  import ConfirmDialog from '$lib/shared/ConfirmDialog.svelte';
-  import { showToast } from '$lib/shared/toast-store.svelte';
+  import ConfirmDialog from '#lib/shared/ConfirmDialog.svelte';
+  import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
   let { ctx }: { ctx: ShellContext } = $props();
 

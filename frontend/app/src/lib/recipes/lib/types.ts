@@ -11,7 +11,7 @@
 //   ("main", "side", …). `decimal?`/`int?` serialize as number-or-null.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { RecipeType } from '$lib/api/recipeType';
+import type { RecipeType } from '#lib/api/recipeType.ts';
 export type { RecipeType };
 
 // ── List (Fixtures/RecipeList/list.json) ───────────────────────────────────
@@ -220,7 +220,7 @@ export interface SaveDraftRequest {
 
 export type IslandView = 'list' | 'edit';
 
-import type { ShellContext as AppShellContext } from '$lib/session.svelte';
+import type { ShellContext as AppShellContext } from '#lib/session.svelte.ts';
 
 // Canonical identity + this island's view discriminator; recipeId rides the canonical
 // shape (set only when editing an existing recipe — null for /recipes/new). Quest 76e6f169.

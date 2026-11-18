@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // The REAL ApiError (quest 41337b6f): the store branches on its getters (isConflict / isClientRejection),
 // which a stand-in class would not have. Fixture change only — every assertion below is unchanged.
 vi.mock('./api', async () => {
-  const { ApiError } = await vi.importActual<typeof import('$lib/api/client')>('$lib/api/client');
+  const { ApiError } = await vi.importActual<typeof import('#lib/api/client.ts')>('#lib/api/client.ts');
   return {
     ApiError,
     getRecipe: vi.fn(),
@@ -22,13 +22,13 @@ vi.mock('./api', async () => {
   };
 });
 
-vi.mock('$app/paths', () => ({ base: '' }));
-vi.mock('$lib/shared/toast-store.svelte', () => ({ showToast: vi.fn() }));
+vi.mock('$app/paths', () => ({ resolve: (id: string) => id }));
+vi.mock('#lib/shared/toast-store.svelte.ts', () => ({ showToast: vi.fn() }));
 
 import { recipeEditStore } from './recipeEditStore.svelte';
 import { ApiError, deleteDraft, getCategories, getDraft, getRecipe, saveDraft, updateRecipe } from './api';
 import type { RecipeDraftData, RecipeFullDto } from './types';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
 const RECIPE_ID = 12;
 

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // that resolves after a newer one must not overwrite it, and `loading` clears once the current load settles.
 
 vi.mock('./api', () => ({ getDashboard: vi.fn() }));
-vi.mock('$lib/shared/toast-store.svelte', () => ({ showToast: vi.fn() }));
+vi.mock('#lib/shared/toast-store.svelte.ts', () => ({ showToast: vi.fn() }));
 
 import { DashboardStore } from './dashboardStore.svelte';
 import { getDashboard } from './api';

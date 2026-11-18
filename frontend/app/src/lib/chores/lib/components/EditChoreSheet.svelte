@@ -21,7 +21,7 @@
   import type { UpdateChoreRequest } from '../api';
   import { boardStore } from '../state.svelte';
   import { uploadChorePhoto, createRoom, uploadRoomPhoto } from '../api';
-  import { showToast } from '$lib/shared/toast-store.svelte';
+  import { showToast } from '#lib/shared/toast-store.svelte.ts';
   import { minFloorDate } from '../dates';
   import IconPicker from './IconPicker.svelte';
   import { assignableMembers } from '../assignable';

@@ -1,8 +1,8 @@
 import type { CalendarTokenStatusDto, CalendarTokenCreatedDto } from './types';
-// Transport + error contract live in $lib/api/client (the one HTTP boundary,
+// Transport + error contract live in #lib/api/client (the one HTTP boundary,
 // quest 79aa83e7). Calendar-feed semantics: every 4xx is a non-retryable
 // rejection → reconcile (refetch status) + a calm toast.
-import { ApiError, apiGet, apiSend } from '$lib/api/client';
+import { ApiError, apiGet, apiSend } from '#lib/api/client.ts';
 
 export { ApiError };
 

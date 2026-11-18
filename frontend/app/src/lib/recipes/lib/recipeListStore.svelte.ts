@@ -26,7 +26,7 @@ import type {
   ShellContext,
 } from './types';
 import type { RecipeListDto } from './types';
-import { Resource } from '$lib/data/resource.svelte';
+import { Resource } from '#lib/data/resource.svelte.ts';
 import {
   ApiError,
   listRecipes,
@@ -35,7 +35,7 @@ import {
   deleteRecipe as apiDeleteRecipe,
   getConnections,
 } from './api';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
 class RecipeListStore {
   /** The active search term (server-filtered, debounced by the view). */

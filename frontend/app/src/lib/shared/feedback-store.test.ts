@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./toast-store.svelte', () => ({ showToast: vi.fn() }));
 
 import { feedbackError, feedbackOpen, openFeedback, submitFeedback } from './feedback-store.svelte';
-import { LOGIN_URL, setNavigateForTesting } from '$lib/api/client';
+import { LOGIN_URL, setNavigateForTesting } from '#lib/api/client.ts';
 
 let navigations: string[];
 let restoreNavigate: () => void;

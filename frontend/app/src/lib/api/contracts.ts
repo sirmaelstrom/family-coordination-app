@@ -89,7 +89,7 @@ export const WIRE_ENUMS = {
   HouseholdRequestStatus: ['pending', 'approved', 'rejected'],
   DigestCadence: ['weekly'],
   DayOfWeek: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
-  // GET /api/presence/users emits this enum-typed; the SPA's union ($lib/presence.svelte.ts)
+  // GET /api/presence/users emits this enum-typed; the SPA's union (#lib/presence.svelte.ts)
   // deliberately covers only online|away because the endpoint filters Offline out — a new
   // member still fails the list-equality pin here, which is the loud signal we want.
   PresenceStatus: ['online', 'away', 'offline'],

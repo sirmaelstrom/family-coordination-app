@@ -21,7 +21,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { InviteDto, ConnectedDto, ConnectionsDto } from './types';
-import { Resource } from '$lib/data/resource.svelte';
+import { Resource } from '#lib/data/resource.svelte.ts';
 import {
   ApiError,
   getConnections,
@@ -31,7 +31,7 @@ import {
   acceptCode,
   disconnect,
 } from './api';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
 /**
  * Faithful port of Connections.razor's MapValidationError (:403-415). The service

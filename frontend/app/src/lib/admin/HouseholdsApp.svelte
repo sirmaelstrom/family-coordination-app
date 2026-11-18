@@ -8,8 +8,8 @@
   import type { ShellContext, HouseholdRequestDto } from './lib/types';
   import { householdRequestsStore } from './lib/householdRequestsStore.svelte';
   import { formatDateTime, formatDate } from './lib/dates';
-  import { startLiveness, type LivenessHandle } from '$lib/liveness';
-  import ConfirmDialog from '$lib/shared/ConfirmDialog.svelte';
+  import { startLiveness, type LivenessHandle } from '#lib/liveness.ts';
+  import ConfirmDialog from '#lib/shared/ConfirmDialog.svelte';
   import RejectReasonDialog from './lib/components/RejectReasonDialog.svelte';
 
   let { ctx }: { ctx: ShellContext } = $props();

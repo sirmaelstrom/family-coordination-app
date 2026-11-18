@@ -47,8 +47,8 @@ import {
   type MutationSpec,
   type ReloadPolicy,
   type RunSpec,
-} from '$lib/data/resource.svelte';
-import { showToast } from '$lib/shared/toast-store.svelte';
+} from '#lib/data/resource.svelte.ts';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
 /** What one detail load fetched: the list it was asked for (null when none selected / not found). */
 interface LoadedList {

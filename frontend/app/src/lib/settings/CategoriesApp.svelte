@@ -7,9 +7,9 @@
   import type { ShellContext, CategoryDto, CategoryWriteRequest } from './lib/types';
   import { categoriesStore } from './lib/categoriesStore.svelte';
   import { formatDeletedDate } from './lib/dates';
-  import { showToast } from '$lib/shared/toast-store.svelte';
+  import { showToast } from '#lib/shared/toast-store.svelte.ts';
   import CategoryEditDialog from './lib/components/CategoryEditDialog.svelte';
-  import ConfirmDialog from '$lib/shared/ConfirmDialog.svelte';
+  import ConfirmDialog from '#lib/shared/ConfirmDialog.svelte';
 
   // ctx is provided by the Razor host; the store calls /api directly (household resolved server-side).
   let { ctx }: { ctx: ShellContext } = $props();

@@ -4,11 +4,11 @@ import type {
   ShoppingListItemDto,
   ShoppingListSummaryDto,
 } from './types';
-import { ApiError, apiGet, apiSend } from '$lib/api/client';
+import { ApiError, apiGet, apiSend } from '#lib/api/client.ts';
 
 const BASE = '/api/shopping-lists';
 
-// Transport + error contract live in $lib/api/client (the one HTTP boundary,
+// Transport + error contract live in #lib/api/client (the one HTTP boundary,
 // quest 79aa83e7). This island's local ApiError copy had no isConflict /
 // isClientRejection getters — its callers hand-rolled status checks; the
 // canonical class restores them.

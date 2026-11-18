@@ -2,23 +2,22 @@
   // Mobile bottom navigation. Mirrors MainLayout.razor:132-170 — Home · Chores ·
   // Shopping · Meals · Recipes · Settings, where Settings links to the section
   // landing (/settings/categories). Shown on mobile only.
-  import { base } from '$app/paths';
   import { page } from '$app/state';
   import Icon from './Icon.svelte';
-  import { primaryNav, isActive, isSettingsActive, SETTINGS_LANDING } from './nav';
+  import { primaryNav, isActive, isSettingsActive, link, SETTINGS_LANDING } from './nav';
 
   const pathname = $derived(page.url.pathname);
-  const settingsActive = $derived(isSettingsActive(pathname, base));
+  const settingsActive = $derived(isSettingsActive(pathname));
 </script>
 
 <nav class="sh-bottom-nav" aria-label="Primary (mobile)">
   {#each primaryNav as item (item.href)}
     <a
       class="sh-bottom-link"
-      class:active={isActive(pathname, base, item.href, item.match)}
-      href="{base}{item.href}"
+      class:active={isActive(pathname, item.href, item.match)}
+      href={link(item.href)}
       aria-label={item.label}
-      aria-current={isActive(pathname, base, item.href, item.match) ? 'page' : undefined}
+      aria-current={isActive(pathname, item.href, item.match) ? 'page' : undefined}
     >
       <Icon name={item.icon} size={24} />
     </a>
@@ -26,7 +25,7 @@
   <a
     class="sh-bottom-link"
     class:active={settingsActive}
-    href="{base}{SETTINGS_LANDING}"
+    href={link(SETTINGS_LANDING)}
     aria-label="Settings"
     aria-current={settingsActive ? 'page' : undefined}
   >

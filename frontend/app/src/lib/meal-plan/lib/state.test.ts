@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // origin/master's store — the controls for the pre-existing bug.
 
 vi.mock('./api', async () => {
-  const { ApiError } = await vi.importActual<typeof import('$lib/api/client')>('$lib/api/client');
+  const { ApiError } = await vi.importActual<typeof import('#lib/api/client.ts')>('#lib/api/client.ts');
   return {
     ApiError,
     getBoard: vi.fn(),
@@ -16,11 +16,11 @@ vi.mock('./api', async () => {
     removeEntry: vi.fn(),
   };
 });
-vi.mock('$lib/shared/toast-store.svelte', () => ({ showToast: vi.fn() }));
+vi.mock('#lib/shared/toast-store.svelte.ts', () => ({ showToast: vi.fn() }));
 
 import { mealPlanStore as store } from './state.svelte';
 import { ApiError, getBoard, moveEntry, removeEntry } from './api';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 import type { MealPlanBoardDto, MealPlanEntryDto } from './types';
 
 const W1 = '2026-10-12';

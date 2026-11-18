@@ -7,8 +7,8 @@
   import './styles/app.css';
   import type { ShellContext } from './lib/types';
   import { dashboardStore as store } from './lib/dashboardStore.svelte';
-  import { startLiveness, type LivenessHandle } from '$lib/liveness';
-  import { showToast } from '$lib/shared/toast-store.svelte';
+  import { startLiveness, type LivenessHandle } from '#lib/liveness.ts';
+  import { showToast } from '#lib/shared/toast-store.svelte.ts';
   import { formatLongDate, formatShortDate } from './lib/dates';
   import ChoreCard from './lib/components/ChoreCard.svelte';
   import ShoppingCard from './lib/components/ShoppingCard.svelte';

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ShoppingListItemDto } from '../types';
-  import UserAvatar from '$lib/shared/UserAvatar.svelte';
+  import UserAvatar from '#lib/shared/UserAvatar.svelte';
 
   interface Props {
     item: ShoppingListItemDto;

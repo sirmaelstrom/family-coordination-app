@@ -8,7 +8,7 @@
 // functions (never a re-exported reassigned $state).
 // ─────────────────────────────────────────────────────────────────────────
 
-import { ApiError, apiSend } from '$lib/api/client';
+import { ApiError, apiSend } from '#lib/api/client.ts';
 import { showToast } from './toast-store.svelte';
 
 /** Wire values for Feedback.Type (camelCase — the backend enum converter's form). */

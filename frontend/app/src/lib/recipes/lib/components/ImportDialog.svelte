@@ -7,7 +7,7 @@
   // parse still previews (with a warning; confirm needs at least a title). Confirm
   // POSTs the payload to the plain create endpoint, then the parent navigates to
   // /recipes/edit/{id}; Back/Cancel persist nothing.
-  import { base } from '$app/paths';
+  import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
   import { previewImport, createRecipe, ApiError } from '../api';
   import {
@@ -122,7 +122,7 @@
   }
 
   function viewExisting(): void {
-    if (existingId != null) void goto(`${base}/recipes/edit/${existingId}`);
+    if (existingId != null) void goto(resolve('/recipes/edit/[id]', { id: String(existingId) }));
   }
 
   function importAnyway(): void {
@@ -130,7 +130,7 @@
   }
 
   function addManually(): void {
-    void goto(`${base}/recipes/new`);
+    void goto(resolve('/recipes/new'));
   }
 </script>
 
