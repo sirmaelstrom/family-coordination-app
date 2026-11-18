@@ -29,5 +29,31 @@ export function parseServingsInput(raw: string): ServingsParse {
   return { ok: true, servings: parsed };
 }
 
+/**
+ * The servings chip on a meal card, or null for no chip.
+ *
+ * A recipe with no yield gets no chip to START an override (the override would scale nothing), but a
+ * SAVED override always shows, yield or not: the yield can be cleared after the override was set, and
+ * hiding a saved value would leave it unseen and unclearable.
+ */
+export function servingsChip(
+  recipeServings: number | null | undefined,
+  override: number | null | undefined,
+): { text: string; label: string } | null {
+  const hasYield = recipeServings != null && recipeServings > 0;
+  if (override != null) {
+    return {
+      text: `for ${override}`,
+      label: hasYield
+        ? `Cooking for ${override}; recipe serves ${recipeServings}. Change`
+        : `Cooking for ${override}; the recipe has no yield set. Change`,
+    };
+  }
+  if (hasYield) {
+    return { text: `serves ${recipeServings}`, label: `Recipe serves ${recipeServings}. Cook for a different number` };
+  }
+  return null;
+}
+
 /** Mirrors the server's cap (MealPlanService.MaxServings). Both sides validate; neither trusts the other. */
 export const MAX_SERVINGS = 1000;

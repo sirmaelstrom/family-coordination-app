@@ -122,9 +122,11 @@
   let servingsOpen = $state(false);
   let servingsEntry = $state<MealPlanEntryDto | null>(null);
   let servingsLabel = $derived(
-    servingsEntry?.recipe
+    servingsEntry?.recipe?.servings != null && servingsEntry.recipe.servings > 0
       ? `Cooking for how many? (the recipe serves ${servingsEntry.recipe.servings}) — blank to cook it as written`
-      : 'Cooking for how many?',
+      : servingsEntry?.recipe
+        ? 'Cooking for how many? (the recipe has no yield set, so this scales nothing) — blank to clear it'
+        : 'Cooking for how many?',
   );
 
   function mealLabel(m: MealType): string {
