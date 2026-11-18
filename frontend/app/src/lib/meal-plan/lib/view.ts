@@ -7,7 +7,10 @@
 // The anchor is always a DAY, in both views. Week view shows the week that
 // contains it; stepping a week moves it by 7 days, so Week → Day lands on the
 // same weekday you were looking at, and Day → Week → Day comes back to the same
-// day. Plain `/meal-plan` is week view anchored on today.
+// day. Plain `/meal-plan` is today in the screen's default view: week on a
+// desktop, day on a phone (the phone week list squeezes names to a few
+// characters). Any other location names its view, so a shared link opens the
+// same view on every device.
 //
 // No `new Date('YYYY-MM-DD')` (MN4): dates are validated and stepped through
 // lib/dates.ts.
@@ -25,24 +28,29 @@ export interface PlanLocation {
 
 /**
  * Read the location from the query string. A missing or invalid `date` falls
- * back to `today`; anything but `view=day` is week view (the default).
+ * back to `today`; a missing or unknown `view` falls back to `defaultView`.
  */
-export function parsePlanLocation(params: URLSearchParams, today: string): PlanLocation {
+export function parsePlanLocation(
+  params: URLSearchParams,
+  today: string,
+  defaultView: PlanView,
+): PlanLocation {
   const raw = params.get('date');
+  const view = params.get('view');
   return {
-    view: params.get('view') === 'day' ? 'day' : 'week',
+    view: view === 'day' || view === 'week' ? view : defaultView,
     date: isDateStr(raw) ? raw : today,
   };
 }
 
 /**
- * The query string for a location ('' or '?…'). Week view anchored on today is
- * the bare `/meal-plan`; day view always names its date, so a shared link means
- * the same day tomorrow.
+ * The query string for a location ('' or '?…'). Only today in the default view
+ * is the bare `/meal-plan`; anything else names both view and date, so a link
+ * means the same thing tomorrow and on another screen.
  */
-export function planSearch(loc: PlanLocation, today: string): string {
-  if (loc.view === 'day') return `?view=day&date=${loc.date}`;
-  return loc.date === today ? '' : `?date=${loc.date}`;
+export function planSearch(loc: PlanLocation, today: string, defaultView: PlanView): string {
+  if (loc.view === defaultView && loc.date === today) return '';
+  return `?view=${loc.view}&date=${loc.date}`;
 }
 
 /** One step back (-1) or forward (+1): a day in day view, a week in week view. */

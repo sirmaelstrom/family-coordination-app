@@ -7,7 +7,14 @@
   import { mealPlanStore } from './lib/state.svelte';
   import { startLiveness, type LivenessHandle } from '$lib/liveness';
   import { weekdayShort, monthDay, todayStr } from './lib/dates';
-  import { parsePlanLocation, planSearch, planWeek, stepPlan, type PlanLocation } from './lib/view';
+  import {
+    parsePlanLocation,
+    planSearch,
+    planWeek,
+    stepPlan,
+    type PlanLocation,
+    type PlanView,
+  } from './lib/view';
   import { parseServingsInput } from './lib/servings';
   import PlanNav from './lib/components/PlanNav.svelte';
   import CalendarGrid from './lib/components/CalendarGrid.svelte';
@@ -21,15 +28,15 @@
 
   // ───────────────────────────────────────────────────────────────────────
   // Root of the meal-plan surface. The URL says where we are looking
-  // (lib/view.ts: `?view=day&date=…`; bare `/meal-plan` = this week), the
-  // store holds the week containing that date, and we render PlanNav + either
-  // DayView (one day, full width) or the week (CalendarGrid on md+ / DayList on
-  // sm-). Every slot is a client-side grouping of the one week payload (the
-  // store's per-slot zones), so day view needs no API of its own.
+  // (lib/view.ts: `?view=day&date=…`), the store holds the week containing
+  // that date, and we render PlanNav + either DayView (one day, full width) or
+  // the week (CalendarGrid on md+ / DayList on sm-). Every slot is a
+  // client-side grouping of the one week payload (the store's per-slot zones),
+  // so day view needs no API of its own.
   //
-  // Phone width keeps WEEK as the default: there the week is the per-day
-  // accordion (DayList), which fits, and a width-dependent default would make
-  // one link open different views on different devices.
+  // Bare `/meal-plan` is today in the screen's default view: week on md+, DAY
+  // on a phone, where the week list leaves a recipe name a few characters.
+  // Every other URL names its view, so links mean the same on every screen.
   // Move / servings / remove send the entry's xmin token and 409 on a stale one; add creates the row
   // so it has none. On any 4xx the store reconciles.
   // No `new Date('YYYY-MM-DD')` anywhere — week stepping goes through dates.ts.
@@ -43,17 +50,29 @@
 
   const store = mealPlanStore;
 
+  // Responsive split mirrors the Blazor MudHidden breakpoint (Sm = 960px). We
+  // watch matchMedia rather than relying on CSS alone so we only mount one tree.
+  // Read synchronously (SPA, no SSR) so the first render already has the right
+  // default view — no week-then-day flash on a phone.
+  const DESKTOP_QUERY = '(min-width: 960px)';
+  let isDesktop = $state(window.matchMedia(DESKTOP_QUERY).matches);
+  let mediaQuery: MediaQueryList | null = null;
+  function syncMedia(): void {
+    if (mediaQuery) isDesktop = mediaQuery.matches;
+  }
+
   // ── Location (URL-owned) ──────────────────────────────────────────────────
   // Read straight from the URL; every navigation below is a goto() to the same
   // route with a new query, so back/forward and reload all land where the URL says.
-  let loc = $derived(parsePlanLocation(page.url.searchParams, todayStr()));
+  let defaultView = $derived<PlanView>(isDesktop ? 'week' : 'day');
+  let loc = $derived(parsePlanLocation(page.url.searchParams, todayStr(), defaultView));
 
   /**
    * Go to a location. Switching view pushes history (Back returns to the week);
    * stepping prev/next/today replaces it, so Back isn't a day-by-day replay.
    */
   function go(next: PlanLocation, opts: { replace: boolean }): void {
-    void goto(`${base}/meal-plan${planSearch(next, todayStr())}`, {
+    void goto(`${base}/meal-plan${planSearch(next, todayStr(), defaultView)}`, {
       replaceState: opts.replace,
       noScroll: opts.replace,
       keepFocus: true,
@@ -65,14 +84,6 @@
   }
 
   let liveness: LivenessHandle | null = null;
-
-  // Responsive split mirrors the Blazor MudHidden breakpoint (Sm = 960px). We
-  // watch matchMedia rather than relying on CSS alone so we only mount one tree.
-  let isDesktop = $state(true);
-  let mediaQuery: MediaQueryList | null = null;
-  function syncMedia(): void {
-    if (mediaQuery) isDesktop = mediaQuery.matches;
-  }
 
   // ── Picker (add) state ────────────────────────────────────────────────────
   let pickerOpen = $state(false);
@@ -218,7 +229,7 @@
         store.board = null;
       }
 
-      mediaQuery = window.matchMedia('(min-width: 960px)');
+      mediaQuery = window.matchMedia(DESKTOP_QUERY);
       syncMedia();
       mediaQuery.addEventListener('change', syncMedia);
 

@@ -1,48 +1,58 @@
 import { describe, expect, it } from 'vitest';
-import { parsePlanLocation, planSearch, planWeek, stepPlan } from './view';
+import { parsePlanLocation, planSearch, planWeek, stepPlan, type PlanView } from './view';
 import { addDays, dayTitle, isDateStr } from './dates';
 
 const TODAY = '2026-11-17';
 const q = (s: string) => new URLSearchParams(s);
 
 describe('parsePlanLocation', () => {
-  it('defaults a bare /meal-plan to week view on today', () => {
-    expect(parsePlanLocation(q(''), TODAY)).toEqual({ view: 'week', date: TODAY });
+  it('opens a bare /meal-plan on today in the screen default (week desktop, day phone)', () => {
+    expect(parsePlanLocation(q(''), TODAY, 'week')).toEqual({ view: 'week', date: TODAY });
+    expect(parsePlanLocation(q(''), TODAY, 'day')).toEqual({ view: 'day', date: TODAY });
   });
 
-  it('reads a day-view link', () => {
-    expect(parsePlanLocation(q('view=day&date=2026-11-26'), TODAY)).toEqual({
-      view: 'day',
-      date: '2026-11-26',
-    });
+  it('reads a day-view link the same on every screen', () => {
+    for (const def of ['week', 'day'] as PlanView[]) {
+      expect(parsePlanLocation(q('view=day&date=2026-11-26'), TODAY, def)).toEqual({
+        view: 'day',
+        date: '2026-11-26',
+      });
+      expect(parsePlanLocation(q('view=week&date=2026-11-26'), TODAY, def).view).toBe('week');
+    }
   });
 
   it('falls back to today for a malformed or impossible date', () => {
     for (const bad of ['2026-02-31', '2026-11-6', 'nope', '2026-13-01', '']) {
-      expect(parsePlanLocation(q(`view=day&date=${bad}`), TODAY).date).toBe(TODAY);
+      expect(parsePlanLocation(q(`view=day&date=${bad}`), TODAY, 'week').date).toBe(TODAY);
     }
   });
 
-  it('treats an unknown view as week', () => {
-    expect(parsePlanLocation(q('view=month&date=2026-11-26'), TODAY).view).toBe('week');
+  it('treats an unknown view as the default', () => {
+    expect(parsePlanLocation(q('view=month&date=2026-11-26'), TODAY, 'week').view).toBe('week');
+    expect(parsePlanLocation(q('view=month&date=2026-11-26'), TODAY, 'day').view).toBe('day');
   });
 });
 
 describe('planSearch', () => {
-  it('round-trips every location through the query string', () => {
-    for (const loc of [
-      { view: 'day', date: '2026-11-26' },
-      { view: 'day', date: TODAY },
-      { view: 'week', date: '2026-11-26' },
-      { view: 'week', date: TODAY },
-    ] as const) {
-      expect(parsePlanLocation(q(planSearch(loc, TODAY).replace(/^\?/, '')), TODAY)).toEqual(loc);
+  it('round-trips every location through the query string, under either default', () => {
+    for (const def of ['week', 'day'] as PlanView[]) {
+      for (const loc of [
+        { view: 'day', date: '2026-11-26' },
+        { view: 'day', date: TODAY },
+        { view: 'week', date: '2026-11-26' },
+        { view: 'week', date: TODAY },
+      ] as const) {
+        const search = planSearch(loc, TODAY, def).replace(/^\?/, '');
+        expect(parsePlanLocation(q(search), TODAY, def)).toEqual(loc);
+      }
     }
   });
 
-  it('keeps plain /meal-plan for this week anchored on today', () => {
-    expect(planSearch({ view: 'week', date: TODAY }, TODAY)).toBe('');
-    expect(planSearch({ view: 'day', date: TODAY }, TODAY)).toBe(`?view=day&date=${TODAY}`);
+  it('keeps the bare URL only for today in the default view', () => {
+    expect(planSearch({ view: 'week', date: TODAY }, TODAY, 'week')).toBe('');
+    expect(planSearch({ view: 'day', date: TODAY }, TODAY, 'day')).toBe('');
+    expect(planSearch({ view: 'day', date: TODAY }, TODAY, 'week')).toBe(`?view=day&date=${TODAY}`);
+    expect(planSearch({ view: 'week', date: '2026-11-26' }, TODAY, 'week')).toBe('?view=week&date=2026-11-26');
   });
 });
 
