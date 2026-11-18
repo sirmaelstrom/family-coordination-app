@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { parsePlanLocation, planSearch, planWeek, stepPlan, type PlanView } from './view';
+import { boardIsForWeek, parsePlanLocation, planSearch, planWeek, stepPlan, type PlanView } from './view';
+
+describe('boardIsForWeek', () => {
+  it("does not let the old week's board stand in for the week being shown", () => {
+    // Land review blocker: Sunday → Monday moved weekStart at once; with the fetch failed, the old board still
+    // rendered Monday as four empty, clickable slots.
+    expect(boardIsForWeek({ weekStartDate: '2026-11-23' }, '2026-11-30')).toBe(false);
+    expect(boardIsForWeek(null, '2026-11-30')).toBe(false);
+    expect(boardIsForWeek({ weekStartDate: '2026-11-30' }, '2026-11-30')).toBe(true);
+  });
+});
 import { addDays, dayTitle, isDateStr } from './dates';
 
 const TODAY = '2026-11-17';

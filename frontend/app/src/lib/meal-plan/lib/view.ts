@@ -59,6 +59,15 @@ export function stepPlan(loc: PlanLocation, dir: -1 | 1): PlanLocation {
   return { view: loc.view, date: addDays(loc.date, loc.view === 'day' ? dir : dir * 7) };
 }
 
+/**
+ * True only when the board in hand is the week being shown. Moving to another
+ * week updates `weekStart` at once and keeps the old board until the new one
+ * arrives (or fails), and the old board must not stand in for the new week.
+ */
+export function boardIsForWeek(board: { weekStartDate: string } | null, weekStart: string): boolean {
+  return board != null && board.weekStartDate === weekStart;
+}
+
 /** The Monday of the week the store must hold to render this location. */
 export function planWeek(loc: PlanLocation): string {
   return mondayOf(loc.date);

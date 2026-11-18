@@ -11,6 +11,7 @@
     parsePlanLocation,
     planSearch,
     planWeek,
+    boardIsForWeek,
     stepPlan,
     type PlanLocation,
     type PlanView,
@@ -66,6 +67,8 @@
   // route with a new query, so back/forward and reload all land where the URL says.
   let defaultView = $derived<PlanView>(isDesktop ? 'week' : 'day');
   let loc = $derived(parsePlanLocation(page.url.searchParams, todayStr(), defaultView));
+  /** The board in hand, only when it is the week being shown (see the template's render gate). */
+  let boardForWeek = $derived(boardIsForWeek(store.board, store.weekStart));
 
   /**
    * Go to a location. Switching view pushes history (Back returns to the week);
@@ -292,9 +295,13 @@
     </div>
   {/if}
 
-  {#if store.loading && !store.board}
-    <div class="mp-loading">Loading the meal plan…</div>
-  {:else if store.board}
+  <!--
+    Slots render only from a board FOR the week shown. changeWeek moves weekStart at once and keeps the
+    old board until the new one arrives, so rendering "any board" showed the new week's days as empty,
+    clickable slots backed by the old week, and kept showing them if the fetch failed. A board for
+    another week means a fetch is in flight (loading text) or failed (the error banner's Retry above).
+  -->
+  {#if boardForWeek}
     {#if loc.view === 'day'}
       <DayView
         date={loc.date}
@@ -325,7 +332,11 @@
         onOpenDay={openDay}
       />
     {/if}
-  {:else if !store.loading}
+  {:else if store.error}
+    <!-- Nothing to show for this week; the error banner above carries Retry. -->
+  {:else if store.loading || store.board}
+    <div class="mp-loading">Loading the meal plan…</div>
+  {:else}
     <div class="mp-empty">No meal plan data.</div>
   {/if}
 </div>
