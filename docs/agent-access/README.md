@@ -6,18 +6,29 @@ AI agents such as Claude Code and Codex can read and plan the household's recipe
 
 | Tool | Access | What it does |
 | --- | --- | --- |
-| `search_recipes` | read | Search the household's recipes, paged |
-| `get_recipe` | read | One recipe: ingredients, servings, version |
-| `preview_recipe_import` | read | Extract a recipe from a public web page without saving it (no YouTube, no model calls) |
+| `search_recipes` | read | Search the household's recipes, paged (each says whether it has a picture) |
+| `get_recipe` | read | One recipe: ingredients, servings, picture, version |
+| `preview_recipe_import` | read | Extract a recipe from a public web page without saving it, including the page's own image URL (no YouTube, no model calls) |
 | `get_meal_plan` | read | One Monday–Sunday week |
 | `get_shopping_lists` | read | List summaries, or one list's items |
-| `create_recipe` | write | Add a new recipe |
+| `create_recipe` | write | Add a new recipe, optionally with a picture from an image URL |
+| `set_recipe_image` | write | Give an existing recipe a picture. Fills an empty image only, unless the call names the recipe's current version |
 | `add_meal` | write | Plan one meal. Insert-only: an existing identical meal is left unchanged |
 | `set_meal_servings` | write | How many people one meal is cooked for (needs its current version) |
 | `generate_shopping_list` | write | A new list from one week, scaled to servings, with no pantry subtraction |
 | `add_shopping_item` | write | One item on an active list |
 
-There are no deletes, no edits of existing recipes or lists, no bulk changes and no settings. Every write takes a `requestId`, so a retry never writes twice, and a `dryRun` flag that previews without saving. A read-only token cannot call any write tool and doesn't see one.
+There are no deletes, no edits of existing recipes or lists beyond a recipe's picture, no bulk changes and no settings. Every write takes a `requestId`, so a retry never writes twice, and a `dryRun` flag that previews without saving. A read-only token cannot call any write tool and doesn't see one.
+
+### Recipe pictures
+
+An agent passes an image **URL**, never a file or a path. The server downloads it and stores its own copy in the household's upload folder, the same place a picture uploaded in the app goes, so the recipe never points at the other site.
+
+- **The download** uses the same guarded fetch as `preview_recipe_import`: http or https on the standard ports, public addresses only (every redirect and the address actually connected to are checked), at most 3 redirects, one 20-second deadline for the whole download, and at most 10 MB (the app's own upload limit).
+- **Only real images are kept.** The file's own first bytes must be a JPEG, PNG, GIF or WebP; the site's `Content-Type` is not trusted, and a site that says `text/html` is refused even when the bytes look like an image. SVG is never accepted. The bytes are stored as received, not re-encoded, exactly as an upload in the app is.
+- **`set_recipe_image` is add-only by default.** Without `version`, it only fills a recipe that has no picture; one that has a picture is a `conflict` and keeps it. With the version from `get_recipe`, it replaces the picture, and a stale version fails with `stale_version`. The previous file stays on disk, as it does when a member changes a picture in the app.
+- **Retries and dry runs.** A retry with the same `requestId` is answered from its record before anything is downloaded. A dry run downloads and checks the image and stores nothing.
+- **From a web page:** `preview_recipe_import` returns the page's schema.org image as `imageUrl`; pass it to `create_recipe` unchanged.
 
 ## Token rules
 
@@ -60,7 +71,7 @@ Then open `http://127.0.0.1:8095/settings/agent-access`, create a token, and poi
 
 ## Limits and logs
 
-- **Per token, each minute:** 120 calls, 30 writes and 10 web-page fetches. Dry runs count as calls, not writes. Over the limit, the tool error says to wait and retry with the same requestId.
+- **Per token, each minute:** 120 calls, 30 writes and 10 web fetches. A web fetch is a `preview_recipe_import`, a `set_recipe_image`, or a `create_recipe` with an `imageUrl`. Dry runs count as calls, not writes, but they still fetch, so they count as fetches. Over the limit, the tool error says to wait and retry with the same requestId.
 - **Logging:** each call logs one line, `Agent tool <tool> by token <id> (user, household) request <requestId>: <outcome> in <ms> [<correlationId>]`. A refused token logs `Agent token refused: <reason> (token id <id>)`. Neither logs argument content or the token.
 
 ## Production

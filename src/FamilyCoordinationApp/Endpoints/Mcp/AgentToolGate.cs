@@ -15,7 +15,7 @@ namespace FamilyCoordinationApp.Endpoints.Mcp;
 /// <item><b>Scope</b>: a write tool needs the token's <c>family.write</c> scope; a read token is refused whatever
 /// arguments it sends. <c>tools/list</c> hides the write tools from a read token.</item>
 /// <item><b>Rate</b>: per token, <see cref="CallsPerMinute"/> calls, <see cref="WritesPerMinute"/> writes and
-/// <see cref="FetchesPerMinute"/> outbound fetches a minute.</item>
+/// <see cref="FetchesPerMinute"/> outbound fetches (page previews and recipe images) a minute.</item>
 /// <item><b>Audit</b>: one log line per call with the token id, member, household, tool, request id, outcome and
 /// duration. Never arguments' content, never the token.</item>
 /// </list>
@@ -40,6 +40,7 @@ public static class AgentToolGate
         ["create_recipe"] = Access.Write,
         ["add_meal"] = Access.Write,
         ["set_meal_servings"] = Access.Write,
+        ["set_recipe_image"] = Access.Write,
         ["generate_shopping_list"] = Access.Write,
         ["add_shopping_item"] = Access.Write,
     };
@@ -90,7 +91,7 @@ public static class AgentToolGate
                     $"unknown argument(s) {string.Join(", ", extra.Select(e => $"\"{e}\""))}. Nothing was run; send only the tool's declared arguments.",
                     correlationId);
             }
-            else if (Limited(caller.TokenId, tool, IsDryRun(request) ? Access.Read : access,
+            else if (Limited(caller.TokenId, IsFetch(request), IsDryRun(request) ? Access.Read : access,
                          (request.Services?.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow().UtcDateTime) is { } limit)
             {
                 result = ToolResults.Error(tool, "rate_limited",
@@ -137,12 +138,27 @@ public static class AgentToolGate
         && args.TryGetValue("dryRun", out var dryRun)
         && dryRun.ValueKind == System.Text.Json.JsonValueKind.True;
 
+    /// <summary>
+    /// Whether this call fetches from the web: a page preview, a recipe image, or a new recipe with an image URL.
+    /// Dry runs fetch too (they check the image), so they spend the fetch budget.
+    /// </summary>
+    private static bool IsFetch(RequestContext<CallToolRequestParams> request) =>
+        request.Params?.Name switch
+        {
+            "preview_recipe_import" or "set_recipe_image" => true,
+            "create_recipe" => request.Params.Arguments is { } args
+                               && args.TryGetValue("imageUrl", out var imageUrl)
+                               && imageUrl.ValueKind == System.Text.Json.JsonValueKind.String
+                               && !string.IsNullOrWhiteSpace(imageUrl.GetString()),
+            _ => false,
+        };
+
     /// <summary>The bucket that is over its limit, or null. Counts this call when it is allowed.</summary>
-    private static string? Limited(int tokenId, string tool, Access access, DateTime now)
+    private static string? Limited(int tokenId, bool fetches, Access access, DateTime now)
     {
         if (!Take(tokenId, "calls", CallsPerMinute, now)) return "calls";
         if (access == Access.Write && !Take(tokenId, "writes", WritesPerMinute, now)) return "writes";
-        if (tool == "preview_recipe_import" && !Take(tokenId, "fetches", FetchesPerMinute, now)) return "page fetches";
+        if (fetches && !Take(tokenId, "fetches", FetchesPerMinute, now)) return "web fetches";
         return null;
     }
 
