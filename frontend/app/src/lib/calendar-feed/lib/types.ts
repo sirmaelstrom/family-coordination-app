@@ -12,7 +12,7 @@
 //   via new Date(iso) (NEVER new Date('YYYY-MM-DD')).
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { ShellContext as AppShellContext } from '$lib/session.svelte';
+import type { ShellContext as AppShellContext } from '#lib/session.svelte.ts';
 
 export type ShellContext = AppShellContext;
 

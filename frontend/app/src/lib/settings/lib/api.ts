@@ -10,11 +10,11 @@ import type {
 const CATEGORIES = '/api/settings/categories';
 const MEMBERS = '/api/settings/members';
 
-// Transport + error contract live in $lib/api/client (the one HTTP boundary,
+// Transport + error contract live in #lib/api/client (the one HTTP boundary,
 // quest 79aa83e7). Settings semantics: every endpoint writes a specific 4xx
 // body; the island treats ANY 4xx as a non-retryable rejection → reconcile
 // (refetch) + a calm toast.
-import { ApiError, apiGet, apiSend } from '$lib/api/client';
+import { ApiError, apiGet, apiSend } from '#lib/api/client.ts';
 
 export { ApiError };
 

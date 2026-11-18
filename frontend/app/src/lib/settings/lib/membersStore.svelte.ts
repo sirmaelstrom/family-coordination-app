@@ -12,8 +12,8 @@
 
 import type { MemberDto, MemberListDto } from './types';
 import { ApiError, getMembers, addMember, setWhitelist, deleteMember } from './api';
-import { Resource } from '$lib/data/resource.svelte';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { Resource } from '#lib/data/resource.svelte.ts';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
 class MembersStore {
   members = $state<MemberDto[]>([]);

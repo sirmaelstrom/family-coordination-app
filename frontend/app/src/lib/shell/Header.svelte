@@ -4,13 +4,13 @@
   // chip, user name + avatar, logout. Identity comes from the canonical session
   // store; dark mode from the theme store.
   import { onMount } from 'svelte';
-  import { session } from '$lib/session.svelte';
-  import { theme } from '$lib/theme.svelte';
-  import { presence } from '$lib/presence.svelte';
+  import { session } from '#lib/session.svelte.ts';
+  import { theme } from '#lib/theme.svelte.ts';
+  import { presence } from '#lib/presence.svelte.ts';
   import { sidebar } from './sidebar.svelte';
   import Icon from './Icon.svelte';
-  import UserAvatar from '$lib/shared/UserAvatar.svelte';
-  import { openFeedback } from '$lib/shared/feedback-store.svelte';
+  import UserAvatar from '#lib/shared/UserAvatar.svelte';
+  import { openFeedback } from '#lib/shared/feedback-store.svelte.ts';
 
   // The header is the single always-present consumer of presence, so it owns the
   // poller lifecycle: start the 30s heartbeat + roster poll on mount, stop on teardown.

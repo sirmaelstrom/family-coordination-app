@@ -19,7 +19,7 @@
   import type { RoomUpsertRequest } from '../api';
   import { updateRoom, uploadRoomPhoto } from '../api';
   import { boardStore } from '../state.svelte';
-  import { showToast } from '$lib/shared/toast-store.svelte';
+  import { showToast } from '#lib/shared/toast-store.svelte.ts';
   import IconPicker from './IconPicker.svelte';
 
   interface Props {

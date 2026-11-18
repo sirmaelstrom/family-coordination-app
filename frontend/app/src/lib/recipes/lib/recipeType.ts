@@ -1,8 +1,8 @@
-// The shared vocabulary surface lives in $lib/api/recipeType (quest ca10904a); this module
+// The shared vocabulary surface lives in #lib/api/recipeType (quest ca10904a); this module
 // re-exports it and keeps ONLY the presentation this island renders (short chip labels + colors).
 import type { RecipeType } from './types';
 
-export { RECIPE_TYPE_LABELS, RECIPE_TYPES, recipeTypeLabel } from '$lib/api/recipeType';
+export { RECIPE_TYPE_LABELS, RECIPE_TYPES, recipeTypeLabel } from '#lib/api/recipeType.ts';
 
 /** Short chip labels for the card (mirrors RecipeCard.razor GetTypeLabel; `main` chip is hidden). */
 const RECIPE_TYPE_SHORT: Record<RecipeType, string> = {

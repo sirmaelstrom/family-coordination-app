@@ -9,11 +9,11 @@ import type {
   RecipeDraftData,
   SaveDraftRequest,
 } from './types';
-import { ApiError, apiGet, apiSend, apiUpload } from '$lib/api/client';
+import { ApiError, apiGet, apiSend, apiUpload } from '#lib/api/client.ts';
 
 const BASE = '/api/recipes';
 
-// Transport + error contract live in $lib/api/client (the one HTTP boundary,
+// Transport + error contract live in #lib/api/client (the one HTTP boundary,
 // quest 79aa83e7). Recipes semantics: any 4xx → reconcile (refetch the list)
 // + a calm toast. Exception: a 409 on the full-form PUT is a stale xmin
 // `version` token — the edit store shows a reload banner instead of

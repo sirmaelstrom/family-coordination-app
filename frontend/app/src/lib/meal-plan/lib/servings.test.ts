@@ -1,5 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { parseServingsInput, MAX_SERVINGS } from './servings';
+import { parseServingsInput, servingsChip, MAX_SERVINGS } from './servings';
+
+describe('servingsChip', () => {
+  it('shows a saved override even when the recipe has no yield (it must stay visible and clearable)', () => {
+    // Land review blocker: a member set a meal to 20, then cleared the recipe's yield; the card hid the 20.
+    expect(servingsChip(null, 20)?.text).toBe('for 20');
+    expect(servingsChip(0, 20)?.text).toBe('for 20');
+    expect(servingsChip(undefined, 20)?.label).toContain('no yield');
+  });
+
+  it('offers to start an override only when the recipe declares a yield', () => {
+    expect(servingsChip(null, null)).toBeNull();
+    expect(servingsChip(0, null)).toBeNull();
+    expect(servingsChip(6, null)).toEqual({ text: 'serves 6', label: 'Recipe serves 6. Cook for a different number' });
+  });
+
+  it('shows the override against the yield when both are set', () => {
+    expect(servingsChip(6, 20)).toEqual({ text: 'for 20', label: 'Cooking for 20; recipe serves 6. Change' });
+  });
+});
 
 describe('parseServingsInput', () => {
   it('treats blank as "cook it as written", NOT as an abandoned edit', () => {

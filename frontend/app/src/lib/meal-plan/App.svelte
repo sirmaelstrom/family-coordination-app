@@ -2,7 +2,7 @@
   import { untrack } from 'svelte';
   import type { MealPlanEntryDto, MealType, ShellContext } from './lib/types';
   import { mealPlanStore } from './lib/state.svelte';
-  import { startLiveness, type LivenessHandle } from '$lib/liveness';
+  import { startLiveness, type LivenessHandle } from '#lib/liveness.ts';
   import { weekdayShort, monthDay, todayMonday } from './lib/dates';
   import { parseServingsInput } from './lib/servings';
   import WeekNav from './lib/components/WeekNav.svelte';
@@ -10,9 +10,9 @@
   import DayList from './lib/components/DayList.svelte';
   import RecipePickerSheet, { type PickerResult } from './lib/components/RecipePickerSheet.svelte';
   import RecipeDetailSheet from './lib/components/RecipeDetailSheet.svelte';
-  import ConfirmDialog from '$lib/shared/ConfirmDialog.svelte';
-  import PromptDialog from '$lib/shared/PromptDialog.svelte';
-  import { showToast } from '$lib/shared/toast-store.svelte';
+  import ConfirmDialog from '#lib/shared/ConfirmDialog.svelte';
+  import PromptDialog from '#lib/shared/PromptDialog.svelte';
+  import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
   // ───────────────────────────────────────────────────────────────────────
   // Root of the meal-plan island. Reads the ShellContext from #meal-plan-root
@@ -69,9 +69,11 @@
   let servingsOpen = $state(false);
   let servingsEntry = $state<MealPlanEntryDto | null>(null);
   let servingsLabel = $derived(
-    servingsEntry?.recipe
+    servingsEntry?.recipe?.servings != null && servingsEntry.recipe.servings > 0
       ? `Cooking for how many? (the recipe serves ${servingsEntry.recipe.servings}) — blank to cook it as written`
-      : 'Cooking for how many?',
+      : servingsEntry?.recipe
+        ? 'Cooking for how many? (the recipe has no yield set, so this scales nothing) — blank to clear it'
+        : 'Cooking for how many?',
   );
 
   function mealLabel(m: MealType): string {

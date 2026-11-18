@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // list back (before, `detailSeq` was never bumped by a delete).
 
 vi.mock('./api', async () => {
-  const { ApiError } = await vi.importActual<typeof import('$lib/api/client')>('$lib/api/client');
+  const { ApiError } = await vi.importActual<typeof import('#lib/api/client.ts')>('#lib/api/client.ts');
   return {
     ApiError,
     addItem: vi.fn(),
@@ -16,11 +16,11 @@ vi.mock('./api', async () => {
     restoreList: vi.fn(),
   };
 });
-vi.mock('$lib/shared/toast-store.svelte', () => ({ showToast: vi.fn() }));
+vi.mock('#lib/shared/toast-store.svelte.ts', () => ({ showToast: vi.fn() }));
 
 import { PastListsState } from './pastListsState.svelte';
 import { addItem, deleteList, getArchivedList, listArchived, listLists } from './api';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 import type { ArchivedListSummaryDto, ShoppingListDto, ShoppingListItemDto, ShoppingListSummaryDto } from './types';
 
 function deferred<T>() {

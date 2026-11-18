@@ -28,6 +28,8 @@ jobs:
           dotnet-version: '10.0.x'
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+      - name: Self-test the accepted-advisory filter
+        run: node --test scripts/npm-audit-filter.test.mjs
       - name: Audit direct and transitive dependencies
         run: node scripts/audit-dependencies.mjs

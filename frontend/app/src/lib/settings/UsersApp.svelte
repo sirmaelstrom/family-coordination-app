@@ -6,7 +6,7 @@
   import { onMount } from 'svelte';
   import type { ShellContext, MemberDto } from './lib/types';
   import { membersStore } from './lib/membersStore.svelte';
-  import ConfirmDialog from '$lib/shared/ConfirmDialog.svelte';
+  import ConfirmDialog from '#lib/shared/ConfirmDialog.svelte';
 
   let { ctx }: { ctx: ShellContext } = $props();
 

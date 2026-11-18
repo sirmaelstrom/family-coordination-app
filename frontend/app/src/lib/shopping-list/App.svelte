@@ -1,18 +1,18 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { base } from '$app/paths';
+  import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
-  import type { ShellContext } from '$lib/session.svelte';
+  import type { ShellContext } from '#lib/session.svelte.ts';
   import type { ShoppingListItemDto } from './lib/types';
-  import { startLiveness } from '$lib/liveness';
+  import { startLiveness } from '#lib/liveness.ts';
   import { ShoppingListState } from './lib/shoppingListState.svelte';
   import CategorySection from './lib/components/CategorySection.svelte';
   import HeaderBar, { type MenuAction } from './lib/components/HeaderBar.svelte';
   import ItemDialog, { type ItemFormValue } from './lib/components/ItemDialog.svelte';
-  import PromptDialog from '$lib/shared/PromptDialog.svelte';
-  import ConfirmDialog from '$lib/shared/ConfirmDialog.svelte';
+  import PromptDialog from '#lib/shared/PromptDialog.svelte';
+  import ConfirmDialog from '#lib/shared/ConfirmDialog.svelte';
   import GenerateDialog from './lib/components/GenerateDialog.svelte';
-  import { showToast } from '$lib/shared/toast-store.svelte';
+  import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
   interface Props {
     ctx: ShellContext;
@@ -24,8 +24,8 @@
     try {
       // Base-aware shallow URL sync (D6). A history.replaceState — NOT goto() —
       // so the island keeps its state: goto would remount the route and re-run
-      // the session/ctx init. base is '/app', so the URL stays under /app.
-      const path = `${base}/shopping-list/${listId}`;
+      // the session/ctx init. resolve() adds any configured base path.
+      const path = resolve('/shopping-list/[listId]', { listId: String(listId) });
       if (location.pathname !== path) {
         history.replaceState(history.state, '', path);
       }
@@ -220,7 +220,7 @@
       case 'clear-checked': confirmClearOpen = true; break;
       case 'archive': confirmArchiveOpen = true; break;
       // A real navigation (goto), not shallow URL sync — /past is its own route with its own island.
-      case 'past-lists': void goto(`${base}/shopping-list/past`); break;
+      case 'past-lists': void goto(resolve('/shopping-list/past')); break;
     }
   }
 

@@ -6,11 +6,11 @@ import type {
   MealType,
   RecipeType,
 } from './types';
-import { ApiError, apiGet, apiSend } from '$lib/api/client';
+import { ApiError, apiGet, apiSend } from '#lib/api/client.ts';
 
 const BASE = '/api/meal-plan';
 
-// Transport + error contract live in $lib/api/client (the one HTTP boundary,
+// Transport + error contract live in #lib/api/client (the one HTTP boundary,
 // quest 79aa83e7). Meal-plan semantics: entry mutations carry the xmin token
 // and a stale one is a 409 (PR #95); every 4xx → refetch the week + calm
 // toast, no automatic retry — the 409 only changes what the toast says

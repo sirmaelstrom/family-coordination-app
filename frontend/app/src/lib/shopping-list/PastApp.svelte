@@ -1,14 +1,14 @@
 <script lang="ts">
   // Past shopping lists (quest f63bb90a): browse archived lists, reopen, delete, and pick items
   // off into an active list. Read-only by design — editing means reopening. Identity comes from
-  // the canonical $lib/session store via ctx (M8); this island never fetches /api/me.
+  // the canonical #lib/session store via ctx (M8); this island never fetches /api/me.
   // The state and its load/write ordering live in PastListsState (quest 41337b6f): two Resources,
   // and a delete that runs inside both their windows.
-  import { base } from '$app/paths';
+  import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
-  import type { ShellContext } from '$lib/session.svelte';
+  import type { ShellContext } from '#lib/session.svelte.ts';
   import { PastListsState } from './lib/pastListsState.svelte';
-  import ConfirmDialog from '$lib/shared/ConfirmDialog.svelte';
+  import ConfirmDialog from '#lib/shared/ConfirmDialog.svelte';
 
   interface Props {
     ctx: ShellContext;
@@ -22,7 +22,7 @@
   let confirmDeleteId = $state<number | null>(null);
 
   async function handleReopen(listId: number): Promise<void> {
-    if (await past.reopen(listId)) void goto(`${base}/shopping-list/${listId}`);
+    if (await past.reopen(listId)) void goto(resolve('/shopping-list/[listId]', { listId: String(listId) }));
   }
 
   async function handleConfirmDelete(): Promise<void> {
@@ -50,7 +50,7 @@
 <div class="pl-container">
   <header class="pl-header">
     <div class="pl-title-row">
-      <a class="pl-back" href="{base}/shopping-list" aria-label="Back to shopping list">←</a>
+      <a class="pl-back" href={resolve('/shopping-list')} aria-label="Back to shopping list">←</a>
       <h1 class="pl-title">Past Lists</h1>
     </div>
     <label class="pl-filter">

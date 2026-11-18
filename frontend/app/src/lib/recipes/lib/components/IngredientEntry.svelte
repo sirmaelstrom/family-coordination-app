@@ -6,7 +6,7 @@
   // Paste" button opens the bulk dialog (hosted by EditApp).
   import type { NewIngredientInput } from '../recipeEditStore.svelte';
   import { parseIngredient, ingredientSuggestions } from '../api';
-  import { showToast } from '$lib/shared/toast-store.svelte';
+  import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
   interface Props {
     categories: string[];

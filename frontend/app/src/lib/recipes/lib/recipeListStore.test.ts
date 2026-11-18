@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // The REAL ApiError (quest 41337b6f): the store's writes are classified by the Resource through the
 // client's ApiError getters, so a test double class would read as a network failure.
 vi.mock('./api', async () => {
-  const { ApiError } = await vi.importActual<typeof import('$lib/api/client')>('$lib/api/client');
+  const { ApiError } = await vi.importActual<typeof import('#lib/api/client.ts')>('#lib/api/client.ts');
   return {
     ApiError,
     listRecipes: vi.fn(),
@@ -19,11 +19,11 @@ vi.mock('./api', async () => {
   };
 });
 
-vi.mock('$lib/shared/toast-store.svelte', () => ({ showToast: vi.fn() }));
+vi.mock('#lib/shared/toast-store.svelte.ts', () => ({ showToast: vi.fn() }));
 
 import { recipeListStore } from './recipeListStore.svelte';
 import { ApiError, listRecipes, toggleFavorite, deleteRecipe } from './api';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 import type { RecipeListDto } from './types';
 
 function deferred<T>() {

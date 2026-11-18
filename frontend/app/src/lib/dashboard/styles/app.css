@@ -1,7 +1,7 @@
 /*
  * Dashboard surface styles. Ported from the original dashboard island's
  * app.css (git 2978eb3:frontend/dashboard/src/styles/app.css) during the
- * de-Blazor flip — the island copy at $lib/dashboard/** lost its styles, so
+ * de-Blazor flip — the island copy at #lib/dashboard/** lost its styles, so
  * /dashboard rendered unstyled.
  *
  * Imported (unscoped, global) from App.svelte. Kept as a plain .css file rather

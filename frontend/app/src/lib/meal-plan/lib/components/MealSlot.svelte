@@ -23,7 +23,8 @@
   // ───────────────────────────────────────────────────────────────────────
   import type { MealPlanEntryDto } from '../types';
   import type { DragEntry } from '../board-ops';
-  import { recipeTypeLabel } from '$lib/api/recipeType';
+  import { servingsChip } from '../servings';
+  import { recipeTypeLabel } from '#lib/api/recipeType.ts';
   import { dndzone, SHADOW_ITEM_MARKER_PROPERTY_NAME, type DndEvent } from 'svelte-dnd-action';
 
   interface Props {
@@ -107,6 +108,7 @@
   >
     {#each entries as entry (entry.id)}
         {#if entry.recipe}
+          {@const chip = servingsChip(entry.recipe.servings, entry.servings)}
           <div class="mp-entry">
             <span class="mp-entry-grip" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="12" height="16">
@@ -141,21 +143,20 @@
                 {/if}
               </span>
             </button>
-            {#if entry.recipe.servings && entry.recipe.servings > 0}
+            {#if chip}
               <!--
-                Only offered when the recipe declares its own yield: without a denominator an override
-                scales nothing, and a control that silently does nothing is worse than no control.
+                Offered to start an override only when the recipe declares its own yield (without a
+                denominator an override scales nothing), but a saved override always shows so it can be
+                seen and cleared even after the recipe's yield is removed. Rules: servingsChip().
               -->
               <button
                 type="button"
                 class="mp-entry-servings"
                 class:mp-entry-servings-set={entry.servings != null}
-                aria-label={entry.servings != null
-                  ? `Cooking for ${entry.servings}; recipe serves ${entry.recipe.servings}. Change`
-                  : `Recipe serves ${entry.recipe.servings}. Cook for a different number`}
+                aria-label={chip.label}
                 onclick={() => onSetServings(entry)}
               >
-                {entry.servings != null ? `for ${entry.servings}` : `serves ${entry.recipe.servings}`}
+                {chip.text}
               </button>
             {/if}
             <button

@@ -38,8 +38,8 @@ import {
   uploadImage,
   getCategories,
 } from './api';
-import { base } from '$app/paths';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { resolve } from '$app/paths';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 import { diffRecipe, type RecipeConflictDiff } from './conflictDiff';
 
 /** The bound form model (text fields are strings; trimmed/null-on-save). */
@@ -673,7 +673,7 @@ class RecipeEditStore {
   }
 
   private navigateToList(): void {
-    window.location.assign(`${base}/recipes`);
+    window.location.assign(resolve('/recipes'));
   }
 
   /** Clear timers on unmount (EditApp's effect cleanup). */

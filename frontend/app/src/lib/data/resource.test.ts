@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Quest 41337b6f — the Resource ordering contract (spec §4.2, S1). Each test names the mechanism it
 // guards; the PR's negative controls remove that mechanism and quote the red.
 
-vi.mock('$lib/shared/toast-store.svelte', () => ({ showToast: vi.fn() }));
+vi.mock('#lib/shared/toast-store.svelte.ts', () => ({ showToast: vi.fn() }));
 
 import { Resource } from './resource.svelte';
-import { ApiError } from '$lib/api/client';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { ApiError } from '#lib/api/client.ts';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
 interface Deferred<V> {
   promise: Promise<V>;

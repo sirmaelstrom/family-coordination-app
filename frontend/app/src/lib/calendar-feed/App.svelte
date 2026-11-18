@@ -22,7 +22,7 @@
     statusLine,
     type FeedKind,
   } from './lib/feed-ops';
-  import ConfirmDialog from '$lib/shared/ConfirmDialog.svelte';
+  import ConfirmDialog from '#lib/shared/ConfirmDialog.svelte';
 
   let { ctx }: { ctx: ShellContext } = $props();
 

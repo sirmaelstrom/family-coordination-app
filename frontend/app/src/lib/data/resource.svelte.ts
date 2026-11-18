@@ -24,8 +24,8 @@
 // never undone — the server has the write.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { ApiError } from '$lib/api/client';
-import { showToast } from '$lib/shared/toast-store.svelte';
+import { ApiError } from '#lib/api/client.ts';
+import { showToast } from '#lib/shared/toast-store.svelte.ts';
 
 export type LoadOutcome = 'committed' | 'superseded' | 'deferred' | 'failed';
 export type MutationOutcome = 'ok' | 'conflict' | 'rejected' | 'failed' | 'skipped';
