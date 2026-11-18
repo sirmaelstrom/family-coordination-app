@@ -11,6 +11,9 @@ public sealed class RecipeFetchException(string message) : Exception(message);
 /// <summary>An image's bytes and the format its own signature names (never the site's word for it).</summary>
 public sealed record FetchedImage(byte[] Bytes, string Extension, string ContentType);
 
+/// <summary>A page's HTML and the address it was finally served from, after any redirects (the base for its relative links).</summary>
+public sealed record FetchedPage(string Html, Uri FinalUrl);
+
 /// <summary>
 /// The outbound fetch behind the agents' recipe import and recipe images (quest 8bfa42cf, design §6 "outbound
 /// fetch"). The browser import's <c>RecipeScraper</c> client follows redirects and checks only the first host's DNS
@@ -76,9 +79,15 @@ public sealed class SafeRecipeFetcher : IDisposable
     }
 
     /// <summary>Fetch the page's HTML, or throw <see cref="RecipeFetchException"/> saying why not.</summary>
-    public async Task<string> FetchHtmlAsync(string url, CancellationToken ct)
+    public async Task<string> FetchHtmlAsync(string url, CancellationToken ct) => (await FetchPageAsync(url, ct)).Html;
+
+    /// <summary>
+    /// Fetch the page's HTML with the address it was finally served from. A redirected page's relative links (a
+    /// schema.org <c>image</c> such as <c>apple.png</c>) resolve against that final address, not the one asked for.
+    /// </summary>
+    public async Task<FetchedPage> FetchPageAsync(string url, CancellationToken ct)
     {
-        var (body, contentType) = await FetchAsync(url, "page", PageAccept, MaxBytes, ct);
+        var (body, contentType, finalUrl) = await FetchAsync(url, "page", PageAccept, MaxBytes, ct);
         var charset = contentType?.CharSet;
         var encoding = Encoding.UTF8;
         if (!string.IsNullOrWhiteSpace(charset))
@@ -86,7 +95,7 @@ public sealed class SafeRecipeFetcher : IDisposable
             try { encoding = Encoding.GetEncoding(charset.Trim('"')); }
             catch (ArgumentException) { /* unknown charset: UTF-8 */ }
         }
-        return encoding.GetString(body);
+        return new FetchedPage(encoding.GetString(body), finalUrl);
     }
 
     /// <summary>
@@ -96,7 +105,7 @@ public sealed class SafeRecipeFetcher : IDisposable
     /// </summary>
     public async Task<FetchedImage> FetchImageAsync(string url, CancellationToken ct)
     {
-        var (body, contentType) = await FetchAsync(url, "image", ImageAccept, MaxImageBytes, ct);
+        var (body, contentType, _) = await FetchAsync(url, "image", ImageAccept, MaxImageBytes, ct);
         var declared = contentType?.MediaType;
         if (declared is not null
             && !declared.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
@@ -112,7 +121,7 @@ public sealed class SafeRecipeFetcher : IDisposable
         return new FetchedImage(body, format.Extension, format.ContentType);
     }
 
-    private async Task<(byte[] Body, MediaTypeHeaderValue? ContentType)> FetchAsync(
+    private async Task<(byte[] Body, MediaTypeHeaderValue? ContentType, Uri FinalUrl)> FetchAsync(
         string url, string what, string accept, int maxBytes, CancellationToken ct)
     {
         var current = CheckUrl(url);
@@ -128,7 +137,7 @@ public sealed class SafeRecipeFetcher : IDisposable
         }
     }
 
-    private async Task<(byte[] Body, MediaTypeHeaderValue? ContentType)> FetchWithinAsync(
+    private async Task<(byte[] Body, MediaTypeHeaderValue? ContentType, Uri FinalUrl)> FetchWithinAsync(
         Uri current, string what, string accept, int maxBytes, CancellationToken ct)
     {
         for (var hop = 0; ; hop++)
@@ -172,7 +181,7 @@ public sealed class SafeRecipeFetcher : IDisposable
                 {
                     throw new RecipeFetchException($"The {what} is larger than {maxBytes / (1024 * 1024)} MB.");
                 }
-                return (await ReadCappedAsync(response.Content, what, maxBytes, ct), response.Content.Headers.ContentType);
+                return (await ReadCappedAsync(response.Content, what, maxBytes, ct), response.Content.Headers.ContentType, current);
             }
         }
     }

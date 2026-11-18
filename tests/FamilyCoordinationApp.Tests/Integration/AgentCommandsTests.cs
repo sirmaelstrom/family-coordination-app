@@ -685,6 +685,27 @@ public sealed class AgentCommandsTests : IAsyncLifetime
         preview.ImageUrl.Should().Be("http://recipes.test/images/apple.jpg");
     }
 
+    [Fact]
+    public async Task Preview_resolves_a_relative_image_against_the_redirected_page()
+    {
+        // Land review blocker: the base was the URL asked for, not the one the page was served from. A move from
+        // /recipes/apple-pie to /desserts/fall/apple-pie made "apple.png" point at /recipes/apple.png, a dead link.
+        const string page = """
+            <html><head><script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"Recipe","name":"Apple pie","image":"apple.png",
+             "recipeIngredient":["6 apples"],"recipeInstructions":"Bake it."}
+            </script></head><body></body></html>
+            """;
+        _web.Serve("/recipes/apple-pie", async (stream, ct) => await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(
+            "HTTP/1.1 301 Moved Permanently\r\nLocation: /desserts/fall/apple-pie\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"), ct));
+        _web.Serve("/desserts/fall/apple-pie", System.Text.Encoding.UTF8.GetBytes(page), "text/html; charset=utf-8");
+
+        var preview = await As(A, UserA, c => c.PreviewRecipeImportAsync("http://recipes.test/recipes/apple-pie"));
+
+        preview.ImageUrl.Should().Be("http://recipes.test/desserts/fall/apple.png");
+        preview.SourceUrl.Should().Be("http://recipes.test/recipes/apple-pie", "the source stays the address the agent gave");
+    }
+
     [Theory]
     [InlineData("https://images.test/a.jpg", "https://images.test/a.jpg")]
     [InlineData("/images/a.jpg", "https://site.test/images/a.jpg")]

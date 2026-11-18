@@ -302,17 +302,17 @@ public sealed class AgentCommands(
                 "YouTube imports are not available to agents. Read the video's recipe yourself and save it with create_recipe.");
         }
 
-        string html;
+        FetchedPage fetched;
         try
         {
-            html = await fetcher.FetchHtmlAsync(url, ct);
+            fetched = await fetcher.FetchPageAsync(url, ct);
         }
         catch (RecipeFetchException ex)
         {
             throw new DomainValidationException($"The page could not be fetched: {ex.Message} No recipe was saved.");
         }
 
-        var schema = await scraper.ExtractJsonLdAsync(html, ct);
+        var schema = await scraper.ExtractJsonLdAsync(fetched.Html, ct);
         var result = importer.FromSchema(schema, url, householdId, userId);
         if (!result.Success || result.Recipe is null)
         {
@@ -342,7 +342,8 @@ public sealed class AgentCommands(
             existing?.Name,
             "Nothing was saved. To keep this recipe, call create_recipe with these fields (imageUrl included, if one was found).",
             AgentContent.UntrustedNote,
-            PreviewImageUrl(url, recipe.ImagePath));
+            // Relative images resolve against the address the page was finally served from (after redirects).
+            PreviewImageUrl(fetched.FinalUrl.AbsoluteUri, recipe.ImagePath));
     }
 
     /// <summary>
