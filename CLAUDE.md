@@ -10,6 +10,8 @@ Family Coordination App — a household coordination app (meal planning, recipe 
 
 **Status**: Production, actively used. The separate `family-kitchen-svelte` project is dormant/superseded.
 
+**Language**: use the words in @UBIQUITOUS_LANGUAGE.md (each term's meaning, code name, UI label, and what it is not); add or fix a term there in the PR that changes it.
+
 ## Build & Test Commands
 
 ```bash

@@ -114,6 +114,17 @@ jobs:
       - name: Missing secret stops the deploy
         run: bash scripts/test-deploy-secrets.sh
 
+  glossary:
+    name: Glossary Tables
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: UBIQUITOUS_LANGUAGE.md table rows match their header
+        run: node --test scripts/ubiquitous-language.test.mjs
+
   secrets-scan:
     name: Secrets Scan
     runs-on: ubuntu-latest
