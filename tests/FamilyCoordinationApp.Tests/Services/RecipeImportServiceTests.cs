@@ -59,7 +59,7 @@ public class RecipeImportServiceTests
             Image = JsonSerializer.Deserialize<JsonElement>("\"https://example.com/pancakes.jpg\"")
         };
 
-        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(schema);
+        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(new ScrapedRecipe(schema, new Uri(url)));
 
         _ingredientParserMock.Setup(p => p.ParseIngredient(It.IsAny<string>()))
             .Returns<string>(s => new ParsedIngredient { Name = s });
@@ -96,7 +96,7 @@ public class RecipeImportServiceTests
             Image = imageUrl != null ? JsonSerializer.Deserialize<JsonElement>($"\"{imageUrl}\"") : null
         };
 
-        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(schema);
+        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(new ScrapedRecipe(schema, new Uri(url)));
         _ingredientParserMock.Setup(p => p.ParseIngredient(It.IsAny<string>()))
             .Returns<string>(s => new ParsedIngredient { Name = s });
 
@@ -122,7 +122,7 @@ public class RecipeImportServiceTests
             Image = JsonSerializer.Deserialize<JsonElement>("[\"https://example.com/first.jpg\", \"https://example.com/second.jpg\"]")
         };
 
-        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(schema);
+        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(new ScrapedRecipe(schema, new Uri(url)));
         _ingredientParserMock.Setup(p => p.ParseIngredient(It.IsAny<string>()))
             .Returns<string>(s => new ParsedIngredient { Name = s });
 
@@ -148,7 +148,7 @@ public class RecipeImportServiceTests
             Image = JsonSerializer.Deserialize<JsonElement>("{\"@type\": \"ImageObject\", \"url\": \"https://example.com/imageobj.jpg\"}")
         };
 
-        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(schema);
+        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(new ScrapedRecipe(schema, new Uri(url)));
         _ingredientParserMock.Setup(p => p.ParseIngredient(It.IsAny<string>()))
             .Returns<string>(s => new ParsedIngredient { Name = s });
 
@@ -158,6 +158,84 @@ public class RecipeImportServiceTests
         // Assert
         result.Success.Should().BeTrue();
         result.Recipe!.ImagePath.Should().Be("https://example.com/imageobj.jpg");
+    }
+
+    // PR #171 review (quest c001677c): an ImageObject that names its file only as contentUrl produced no image.
+    [Theory]
+    [InlineData("{\"@type\":\"ImageObject\",\"contentUrl\":\"https://example.com/content.jpg\"}", "https://example.com/content.jpg")]
+    [InlineData("[{\"@type\":\"ImageObject\",\"contentUrl\":\"https://example.com/first.jpg\"},\"https://example.com/second.jpg\"]", "https://example.com/first.jpg")]
+    [InlineData("{\"@type\":\"ImageObject\",\"url\":\"https://example.com/url.jpg\",\"contentUrl\":\"https://example.com/content.jpg\"}", "https://example.com/url.jpg")]
+    [InlineData("{\"@type\":\"ImageObject\",\"url\":{\"@id\":\"#primary\"},\"contentUrl\":\"https://example.com/content.jpg\"}", "https://example.com/content.jpg")]
+    [InlineData("[{\"@type\":\"ImageObject\",\"width\":800},{\"@type\":\"ImageObject\",\"contentUrl\":\"https://example.com/later.jpg\"}]", "https://example.com/later.jpg")]
+    [InlineData("{\"@type\":\"ImageObject\",\"width\":800}", null)]
+    public async Task ImportFromUrlAsync_ExtractsImageUrl_FromImageObjectContentUrl(string imageJson, string? expectedImagePath)
+    {
+        const string url = "https://example.com/recipe";
+        _urlValidatorMock.Setup(v => v.ValidateUrl(url)).Returns((true, null));
+        var schema = new RecipeSchema
+        {
+            Name = "Test Recipe",
+            RecipeIngredient = new[] { "1 cup flour" },
+            Image = JsonSerializer.Deserialize<JsonElement>(imageJson)
+        };
+        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(new ScrapedRecipe(schema, new Uri(url)));
+        _ingredientParserMock.Setup(p => p.ParseIngredient(It.IsAny<string>()))
+            .Returns<string>(s => new ParsedIngredient { Name = s });
+
+        var result = await _service.ImportFromUrlAsync(url, 1, 1);
+
+        result.Success.Should().BeTrue();
+        result.Recipe!.ImagePath.Should().Be(expectedImagePath);
+    }
+
+    // PR #171 review (quest c001677c): the browser import passed a relative image through, so its preview asked the
+    // app's own origin for a recipe site's picture. It resolves against the address the page was served from.
+    [Theory]
+    [InlineData("/images/apple.jpg", "https://www.example.com/images/apple.jpg")]
+    [InlineData("apple.jpg", "https://www.example.com/desserts/fall/apple.jpg")]
+    [InlineData("//cdn.example.net/apple.jpg", "https://cdn.example.net/apple.jpg")]
+    [InlineData("https://images.example.org/apple.jpg", "https://images.example.org/apple.jpg")]
+    [InlineData("data:image/png;base64,AAAA", null)]
+    public async Task ImportFromUrlAsync_ResolvesARelativeImage_AgainstThePageItWasServedFrom(string image, string? expectedImagePath)
+    {
+        const string url = "https://example.com/recipes/apple-pie";
+        _urlValidatorMock.Setup(v => v.ValidateUrl(url)).Returns((true, null));
+        var schema = new RecipeSchema
+        {
+            Name = "Apple pie",
+            RecipeIngredient = new[] { "6 apples" },
+            Image = JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(image))
+        };
+        // The site redirected the page to another host and path.
+        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ScrapedRecipe(schema, new Uri("https://www.example.com/desserts/fall/apple-pie")));
+        _ingredientParserMock.Setup(p => p.ParseIngredient(It.IsAny<string>()))
+            .Returns<string>(s => new ParsedIngredient { Name = s });
+
+        var result = await _service.ImportFromUrlAsync(url, 1, 1);
+
+        result.Success.Should().BeTrue();
+        result.Recipe!.ImagePath.Should().Be(expectedImagePath);
+        result.Recipe.SourceUrl.Should().Be(url, "the source stays the address the member gave");
+    }
+
+    [Fact]
+    public async Task ImportFromUrlAsync_PartialData_CarriesTheResolvedImage()
+    {
+        const string url = "https://example.com/recipes/soup";
+        _urlValidatorMock.Setup(v => v.ValidateUrl(url)).Returns((true, null));
+        var schema = new RecipeSchema
+        {
+            Name = "Soup",
+            RecipeIngredient = null,
+            Image = JsonSerializer.Deserialize<JsonElement>("\"/images/soup.jpg\"")
+        };
+        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(new ScrapedRecipe(schema, new Uri(url)));
+
+        var result = await _service.ImportFromUrlAsync(url, 1, 1);
+
+        result.Success.Should().BeFalse();
+        result.PartialData!.ImageUrl.Should().Be("https://example.com/images/soup.jpg");
     }
 
     [Fact]
@@ -182,7 +260,7 @@ public class RecipeImportServiceTests
         // Arrange
         const string url = "https://example.com/not-a-recipe";
         _urlValidatorMock.Setup(v => v.ValidateUrl(url)).Returns((true, null));
-        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync((RecipeSchema?)null);
+        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(new ScrapedRecipe(null, new Uri(url)));
 
         // Act
         var result = await _service.ImportFromUrlAsync(url, 1, 1);
@@ -205,7 +283,7 @@ public class RecipeImportServiceTests
             RecipeIngredient = new[] { "1 cup flour" }
         };
 
-        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(schema);
+        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(new ScrapedRecipe(schema, new Uri(url)));
 
         // Act
         var result = await _service.ImportFromUrlAsync(url, 1, 1);
@@ -237,7 +315,7 @@ public class RecipeImportServiceTests
             PrepTime = duration
         };
 
-        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(schema);
+        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(new ScrapedRecipe(schema, new Uri(url)));
         _ingredientParserMock.Setup(p => p.ParseIngredient(It.IsAny<string>()))
             .Returns<string>(s => new ParsedIngredient { Name = s });
 
@@ -268,7 +346,7 @@ public class RecipeImportServiceTests
             RecipeYield = yieldStr != null ? JsonSerializer.Deserialize<JsonElement>($"\"{yieldStr}\"") : null
         };
 
-        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(schema);
+        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(new ScrapedRecipe(schema, new Uri(url)));
         _ingredientParserMock.Setup(p => p.ParseIngredient(It.IsAny<string>()))
             .Returns<string>(s => new ParsedIngredient { Name = s });
 

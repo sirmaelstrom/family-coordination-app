@@ -25,12 +25,14 @@ public sealed class AgentCommandsTests : IAsyncLifetime
     private readonly FakeWebServer _web = new();
     private readonly SafeRecipeFetcher _fetcher;
     private readonly ChoresWebAppFactory _factory;
+    // Inert until a test arms it: then the next commit lands and its acknowledgement is lost.
+    private readonly LostCommitAck _lostCommitAck = new();
     private UploadFiles _uploads = null!;
 
     public AgentCommandsTests(PostgresContainerFixture postgres)
     {
         _fetcher = _web.CreateFetcher();
-        _factory = new(postgres) { Fetcher = _fetcher };
+        _factory = new(postgres) { Fetcher = _fetcher, DbInterceptor = _lostCommitAck };
     }
 
     // A Monday well clear of the fixture's seeded data.
@@ -634,6 +636,67 @@ public sealed class AgentCommandsTests : IAsyncLifetime
         _uploads.New().Should().Equal(first);
     }
 
+    // ── A commit that lands while its acknowledgement is lost (quest c001677c) ───────────────
+    // PR #171 review: both image commands deleted the stored file on ANY runner exception. When Postgres had
+    // committed the recipe and the operation record and only the answer was lost, the recipe (and the result a
+    // retry replays) named a file that was gone.
+
+    [Fact]
+    public async Task A_set_image_whose_commit_answer_is_lost_keeps_the_file_the_recipe_names()
+    {
+        _web.Serve("/pie.png", FakeWebServer.Png, "image/png");
+        var chili = await CreateChiliAsync(A, UserA, "img-lostack-rcp1");
+        var input = new SetRecipeImageInput(chili, ImageUrl, null);
+
+        _lostCommitAck.Arm();
+        var lost = () => As(A, UserA, c => c.SetRecipeImageAsync(input, "img-lostack-set1", false));
+        await lost.Should().ThrowAsync<Exception>("the caller is told the outcome is unknown, not handed a result");
+        _lostCommitAck.Fired.Should().Be(1, "the fault was injected at this write's commit");
+
+        // The write did commit: the recipe names the stored file, so the file must still be there.
+        var stored = await StoredImagePathAsync(A, chili);
+        stored.Should().MatchRegex($"^/uploads/{A}/[0-9a-f-]{{36}}\\.png$");
+        _uploads.New().Should().Equal(stored);
+        File.ReadAllBytes(_uploads.FullPath(stored!)).Should().Equal(FakeWebServer.Png);
+
+        // The retry the tool error asks for replays the committed result, whose image is a real file.
+        var retry = await As(A, UserA, c => c.SetRecipeImageAsync(input, "img-lostack-set1", false));
+        retry.Replayed.Should().BeTrue();
+        retry.Result.ImagePath.Should().Be(stored);
+        _uploads.New().Should().Equal(stored);
+        _web.Requests.Should().HaveCount(1, "the replay fetched nothing");
+    }
+
+    [Fact]
+    public async Task A_create_with_an_image_whose_commit_answer_is_lost_keeps_the_file_the_recipe_names()
+    {
+        _web.Serve("/pie.png", FakeWebServer.Png, "image/png");
+        var input = Chili("Lost-answer pie") with { ImageUrl = ImageUrl };
+
+        _lostCommitAck.Arm();
+        var lost = () => As(A, UserA, c => c.CreateRecipeAsync(input, "img-lostack-new1", false));
+        await lost.Should().ThrowAsync<Exception>();
+        _lostCommitAck.Fired.Should().Be(1);
+
+        string? stored;
+        await using (var db = Raw())
+        {
+            stored = await db.Recipes.Where(r => r.HouseholdId == A && r.Name == "Lost-answer pie").Select(r => r.ImagePath).SingleAsync();
+        }
+        stored.Should().NotBeNull("the recipe committed with its image");
+        _uploads.New().Should().Equal(stored);
+
+        var retry = await As(A, UserA, c => c.CreateRecipeAsync(input, "img-lostack-new1", false));
+        retry.Replayed.Should().BeTrue();
+        retry.Result.ImagePath.Should().Be(stored);
+        _uploads.New().Should().Equal(stored);
+        await using var check = Raw();
+        (await check.Recipes.CountAsync(r => r.HouseholdId == A && r.Name == "Lost-answer pie")).Should().Be(1);
+    }
+
+    // The other side of the same rule, a failure before COMMIT (a certain rollback) deleting the file, is the stale
+    // version step of Set_recipe_image_fills_an_empty_image_and_replaces_only_with_the_current_version.
+
     [Fact]
     public async Task Another_households_recipe_cannot_be_given_an_image()
     {
@@ -707,6 +770,27 @@ public sealed class AgentCommandsTests : IAsyncLifetime
     }
 
     [Theory]
+    [InlineData("""{"@type":"ImageObject","contentUrl":"https://images.test/berry.jpg"}""", "https://images.test/berry.jpg")]
+    [InlineData("""{"@type":"ImageObject","contentUrl":"/media/berry.jpg"}""", "http://recipes.test/media/berry.jpg")]
+    [InlineData("""[{"@type":"ImageObject","contentUrl":"berry.jpg","width":1200}]""", "http://recipes.test/desserts/berry.jpg")]
+    public async Task Preview_reads_an_image_objects_contentUrl(string imageJson, string expected)
+    {
+        // PR #171 review (quest c001677c): the extractor read only an ImageObject's url, so a page that names its
+        // picture as contentUrl gave the agent no imageUrl to pass to create_recipe.
+        var page = $$"""
+            <html><head><script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"Recipe","name":"Berry pie","image":{{imageJson}},
+             "recipeIngredient":["2 cups berries"],"recipeInstructions":"Bake it."}
+            </script></head><body></body></html>
+            """;
+        _web.Serve("/desserts/berry-pie", System.Text.Encoding.UTF8.GetBytes(page), "text/html; charset=utf-8");
+
+        var preview = await As(A, UserA, c => c.PreviewRecipeImportAsync("http://recipes.test/desserts/berry-pie"));
+
+        preview.ImageUrl.Should().Be(expected);
+    }
+
+    [Theory]
     [InlineData("https://images.test/a.jpg", "https://images.test/a.jpg")]
     [InlineData("/images/a.jpg", "https://site.test/images/a.jpg")]
     [InlineData("a.jpg", "https://site.test/recipes/a.jpg")]
@@ -720,7 +804,7 @@ public sealed class AgentCommandsTests : IAsyncLifetime
     [InlineData("", null)]
     [InlineData(null, null)]
     public void Preview_image_url_is_absolute_http_or_nothing(string? raw, string? expected) =>
-        AgentCommands.PreviewImageUrl("https://site.test/recipes/pie", raw).Should().Be(expected);
+        RecipeImportService.ResolveImageUrl("https://site.test/recipes/pie", raw).Should().Be(expected);
 
     // ── No model calls on the token path ─────────────────────────────────────────────────────
 

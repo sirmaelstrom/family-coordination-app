@@ -524,25 +524,122 @@ public sealed class McpEndpointTests : IAsyncLifetime
         _web.Requests.Should().HaveCount(1, "the dry run fetched once; the read token was refused before any fetch");
     }
 
+    /// <summary>Spend what is left of the token's fetch budget on real fetches (image dry runs: they fetch and store nothing).</summary>
+    private async Task SpendFetchesAsync(McpClient client, int recipeId, int count, string tag)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            var dry = await CallOk(client, "set_recipe_image", new()
+            {
+                ["recipeId"] = recipeId, ["imageUrl"] = "http://images.test/pie.png", ["requestId"] = $"{tag}-{i:00}", ["dryRun"] = true,
+            });
+            dry.GetProperty("dryRun").GetBoolean().Should().BeTrue();
+        }
+    }
+
     [Fact]
     public async Task Image_fetches_share_the_per_token_fetch_budget()
     {
+        _web.Serve("/pie.png", FakeWebServer.Png, "image/png");
         var token = await MintAsync(ChoresWebAppFactory.UserAEmail, "readWrite");
         await using var client = await ConnectAsync(token.token);
-        for (var i = 0; i < AgentToolGate.FetchesPerMinute; i++)
+        var recipeId = (await CallOk(client, "create_recipe", Chili("fetch-budget-rcp"))).GetProperty("result").GetProperty("recipeId").GetInt32();
+        await SpendFetchesAsync(client, recipeId, AgentToolGate.FetchesPerMinute, "fetch-budget");
+        _web.Requests.Should().HaveCount(AgentToolGate.FetchesPerMinute);
+        int recipesBefore;
+        await using (var before = Raw())
         {
-            // Refused by the command (no such recipe), but each call spends the fetch budget at the gate.
-            (await CallError(client, "set_recipe_image", new() { ["recipeId"] = 4242, ["imageUrl"] = "http://images.test/x.png", ["requestId"] = $"fetch-budget-{i:00}", ["dryRun"] = true }))
-                .Code.Should().Be("not_found");
+            recipesBefore = await before.Recipes.CountAsync();
         }
 
+        // The budget is one per token across the fetching tools: an image for a new recipe, an image for an
+        // existing one and a page preview are all refused, before any of them connects.
         var args = Chili("fetch-budget-over");
-        args["imageUrl"] = "http://images.test/x.png";
+        args["imageUrl"] = "http://images.test/pie.png";
         var (code, text) = await CallError(client, "create_recipe", args);
         code.Should().Be("rate_limited");
-        text.Should().Contain("web fetches");
+        text.Should().Contain("web fetches").And.Contain("nothing was fetched or saved").And.Contain("same requestId");
+        (await CallError(client, "set_recipe_image", new() { ["recipeId"] = recipeId, ["imageUrl"] = "http://images.test/pie.png", ["requestId"] = "fetch-budget-set1" }))
+            .Code.Should().Be("rate_limited");
+        (await CallError(client, "preview_recipe_import", new() { ["url"] = "http://recipes.test/pie" })).Code.Should().Be("rate_limited");
+        _web.Requests.Should().HaveCount(AgentToolGate.FetchesPerMinute, "a refused fetch never connects");
+
         (await CallOk(client, "create_recipe", Chili("fetch-budget-noimg"))).GetProperty("replayed").GetBoolean()
             .Should().BeFalse("a recipe without an image fetches nothing");
+        await using var db = Raw();
+        (await db.Recipes.CountAsync()).Should().Be(recipesBefore + 1, "only the recipe without an image was saved; the refused create saved nothing");
+        (await db.AgentOperations.CountAsync(o => o.RequestId == "fetch-budget-over" || o.RequestId == "fetch-budget-set1")).Should().Be(0);
+        _uploads.New().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_retried_image_write_replays_after_the_fetch_budget_is_spent()
+    {
+        // PR #171 review (quest c001677c): the gate charged the fetch bucket as the call arrived, so the retry of a
+        // committed image write was refused rate_limited although a replay fetches nothing.
+        _web.Serve("/pie.png", FakeWebServer.Png, "image/png");
+        var token = await MintAsync(ChoresWebAppFactory.UserAEmail, "readWrite");
+        await using var client = await ConnectAsync(token.token);
+        var withImage = Chili("replay-budget-new");
+        withImage["imageUrl"] = "http://images.test/pie.png";
+        var created = await CallOk(client, "create_recipe", withImage);
+        var bare = (await CallOk(client, "create_recipe", Chili("replay-budget-rcp"))).GetProperty("result").GetProperty("recipeId").GetInt32();
+        var set = await CallOk(client, "set_recipe_image", new() { ["recipeId"] = bare, ["imageUrl"] = "http://images.test/pie.png", ["requestId"] = "replay-budget-set" });
+
+        // Two real fetches so far; spend the rest (on a recipe that still has no image), so the next fetch would be refused.
+        var other = (await CallOk(client, "create_recipe", Chili("replay-budget-oth"))).GetProperty("result").GetProperty("recipeId").GetInt32();
+        await SpendFetchesAsync(client, other, AgentToolGate.FetchesPerMinute - 2, "replay-budget-dry");
+        (await CallError(client, "preview_recipe_import", new() { ["url"] = "http://recipes.test/pie" })).Code.Should().Be("rate_limited");
+        var requests = _web.Requests.Count;
+        requests.Should().Be(AgentToolGate.FetchesPerMinute);
+
+        // The lost-response retries: answered from their records, with no fetch and no budget.
+        var createdAgain = await CallOk(client, "create_recipe", withImage);
+        createdAgain.GetProperty("replayed").GetBoolean().Should().BeTrue();
+        createdAgain.GetProperty("result").GetProperty("imagePath").GetString()
+            .Should().Be(created.GetProperty("result").GetProperty("imagePath").GetString());
+        var setAgain = await CallOk(client, "set_recipe_image", new() { ["recipeId"] = bare, ["imageUrl"] = "http://images.test/pie.png", ["requestId"] = "replay-budget-set" });
+        setAgain.GetProperty("replayed").GetBoolean().Should().BeTrue();
+        setAgain.GetProperty("result").GetProperty("imagePath").GetString()
+            .Should().Be(set.GetProperty("result").GetProperty("imagePath").GetString());
+        _web.Requests.Should().HaveCount(requests, "a replay fetches nothing");
+    }
+
+    [Fact]
+    public async Task Refusals_before_the_fetch_leave_the_fetch_budget_unspent()
+    {
+        _web.Serve("/pie.png", FakeWebServer.Png, "image/png");
+        var token = await MintAsync(ChoresWebAppFactory.UserAEmail, "readWrite");
+        await using var client = await ConnectAsync(token.token);
+        var withImage = Chili("early-refusal-new");
+        withImage["imageUrl"] = "http://images.test/pie.png";
+        var recipeId = (await CallOk(client, "create_recipe", withImage)).GetProperty("result").GetProperty("recipeId").GetInt32();
+
+        // More refusals than the whole budget, none of which reaches the web: no such recipe, an image already
+        // there, a URL the fetcher will not connect to, a YouTube page, a bad request id.
+        for (var i = 0; i < AgentToolGate.FetchesPerMinute; i++)
+        {
+            (await CallError(client, "set_recipe_image", new() { ["recipeId"] = 4242, ["imageUrl"] = "http://images.test/pie.png", ["requestId"] = $"early-missing-{i:00}" }))
+                .Code.Should().Be("not_found");
+        }
+        (await CallError(client, "set_recipe_image", new() { ["recipeId"] = recipeId, ["imageUrl"] = "http://images.test/pie.png", ["requestId"] = "early-has-image" }))
+            .Code.Should().Be("conflict");
+        var privateImage = Chili("early-private-01");
+        privateImage["imageUrl"] = "http://10.0.0.5/pie.png";
+        (await CallError(client, "create_recipe", privateImage)).Text.Should().Contain("internal networks");
+        (await CallError(client, "preview_recipe_import", new() { ["url"] = "http://127.0.0.1/recipe" })).Text.Should().Contain("internal networks");
+        (await CallError(client, "preview_recipe_import", new() { ["url"] = "https://www.youtube.com/watch?v=dQw4w9WgXcQ" })).Code.Should().Be("invalid_argument");
+        var badId = Chili("short");
+        badId["imageUrl"] = "http://images.test/pie.png";
+        (await CallError(client, "create_recipe", badId)).Text.Should().Contain("requestId");
+        _web.Requests.Should().HaveCount(1, "only the first create fetched");
+
+        // So the budget still has nine fetches left, and the tenth after them is the first one refused.
+        var bare = (await CallOk(client, "create_recipe", Chili("early-refusal-rcp"))).GetProperty("result").GetProperty("recipeId").GetInt32();
+        await SpendFetchesAsync(client, bare, AgentToolGate.FetchesPerMinute - 1, "early-spend");
+        _web.Requests.Should().HaveCount(AgentToolGate.FetchesPerMinute);
+        (await CallError(client, "set_recipe_image", new() { ["recipeId"] = bare, ["imageUrl"] = "http://images.test/pie.png", ["requestId"] = "early-over-001" }))
+            .Code.Should().Be("rate_limited");
     }
 
     [Fact]

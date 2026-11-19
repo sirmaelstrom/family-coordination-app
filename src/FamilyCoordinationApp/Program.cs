@@ -122,6 +122,8 @@ builder.Services.AddScoped<AgentUnitOfWork>();
 builder.Services.AddScoped<AgentCommandRunner>();
 builder.Services.AddScoped<AgentCommands>();
 builder.Services.AddSingleton<SafeRecipeFetcher>();
+// An outbound fetch is counted per agent token where the command makes it, not as the call arrives.
+builder.Services.AddScoped<IAgentFetchBudget, FamilyCoordinationApp.Endpoints.Mcp.TokenFetchBudget>();
 // The MCP server (stateless Streamable HTTP) and its tools (listed in AgentToolGate.Tools). Mapped at /mcp only when
 // Mcp:Enabled is true.
 builder.Services.AddAgentMcp();

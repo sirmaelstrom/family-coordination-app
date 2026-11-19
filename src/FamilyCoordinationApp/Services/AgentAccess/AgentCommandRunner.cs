@@ -22,7 +22,9 @@ public sealed record AgentWriteOutcome<T>(T Result, bool DryRun, bool Replayed);
 /// an empty meal plan, and no operation record is kept.</item>
 /// <item><b>Commit</b>: the record is claimed FIRST, then the write runs, then the record stores the result, then one
 /// commit. A concurrent request with the same key blocks on the record's unique index until this one commits, and is
-/// then answered from the record. A failed write rolls back record and rows alike.</item>
+/// then answered from the record. A failed write rolls back record and rows alike. A commit that was sent and not
+/// confirmed is the one unknown outcome, thrown as <see cref="AgentCommitOutcomeUnknownException"/>; a retry with the
+/// same request id settles it (a replay if it was saved, one run if it was not).</item>
 /// <item><b>Retry</b>: the same member, request id and payload replays the stored result without running again; the
 /// same id with a different payload is a <see cref="ConflictException"/>; an id older than
 /// <see cref="RetentionWindow"/> is refused rather than run a second time.</item>
@@ -114,7 +116,19 @@ public sealed partial class AgentCommandRunner(
             var result = await write(ct);
             record.ResultJson = JsonSerializer.Serialize(result, Json);
             await owner.SaveChangesAsync(ct);
-            await transaction.CommitAsync(ct);
+            try
+            {
+                await transaction.CommitAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                // Everything above failed before COMMIT was sent, so it rolled back for certain. From here the
+                // database may have committed and only the answer was lost. Say so by type: a caller that made
+                // something outside the transaction must not undo it on this failure.
+                logger.LogError(ex, "Agent write {Tool} for user {UserId} (request {RequestId}): the commit was not confirmed, outcome unknown",
+                    tool, userId, requestId);
+                throw new AgentCommitOutcomeUnknownException(tool, ex);
+            }
 
             logger.LogInformation("Agent write {Tool} committed for user {UserId} (request {RequestId})", tool, userId, requestId);
             return new AgentWriteOutcome<T>(result, DryRun: false, Replayed: false);

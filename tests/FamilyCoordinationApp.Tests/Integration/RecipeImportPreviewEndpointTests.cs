@@ -153,6 +153,59 @@ public sealed class RecipeImportPreviewEndpointTests(PostgresContainerFixture po
     }
 
     [Fact]
+    public async Task Preview_resolves_a_relative_image_against_the_page_so_it_shows_and_saves()
+    {
+        // PR #171 review (quest c001677c): the browser import passed "/images/apple.jpg" through unchanged. The
+        // preview's <img> then asked THIS app for it, and saving the import answered 400 "Image path is not valid."
+        const string url = "https://preview.test/recipes/apple-pie";
+        var schema = FullSchema("Relative Image Pie");
+        schema.Image = JsonSerializer.Deserialize<JsonElement>("\"/images/apple.jpg\"");
+        _factory.Scraper.Next = schema;
+        // The site moved the page to its www host: the image belongs to the address that served it.
+        _factory.Scraper.ServedFrom = new Uri("https://www.preview.test/desserts/apple-pie");
+
+        var resp = await ClientA.PostAsJsonAsync("/api/recipes/import/preview", new { url, force = false }, Json);
+        var recipe = (await resp.Content.ReadFromJsonAsync<PreviewResult>(Json))!.recipe!;
+
+        recipe.imagePath.Should().Be("https://www.preview.test/images/apple.jpg");
+        recipe.sourceUrl.Should().Be(url, "the source stays the address the member gave");
+
+        // The SPA saves the preview as it came back; the image is one the write boundary accepts.
+        var saved = await ClientA.PostAsJsonAsync("/api/recipes", new
+        {
+            recipe.name,
+            recipe.description,
+            recipe.instructions,
+            recipe.sourceUrl,
+            recipe.servings,
+            recipe.prepTimeMinutes,
+            recipe.cookTimeMinutes,
+            recipe.recipeType,
+            recipe.imagePath,
+            ingredients = Array.Empty<object>(),
+        }, Json);
+        saved.StatusCode.Should().Be(HttpStatusCode.Created, await saved.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Preview_reads_an_image_objects_contentUrl_in_a_partial_parse_too()
+    {
+        const string url = "https://preview.test/soups/partial";
+        _factory.Scraper.Next = new RecipeSchema
+        {
+            Name = "Partial Soup",
+            RecipeIngredient = null, // → ValidationFailed with partial data
+            Image = JsonSerializer.Deserialize<JsonElement>("{\"@type\":\"ImageObject\",\"contentUrl\":\"img/soup.jpg\"}"),
+        };
+
+        var resp = await ClientA.PostAsJsonAsync("/api/recipes/import/preview", new { url, force = false }, Json);
+        var result = await resp.Content.ReadFromJsonAsync<PreviewResult>(Json);
+
+        result!.success.Should().BeFalse();
+        result.partialData!.imageUrl.Should().Be("https://preview.test/soups/img/soup.jpg");
+    }
+
+    [Fact]
     public async Task Preview_DuplicateUrl_ReturnsExisting_AndForceBypasses()
     {
         const string url = "https://preview.test/duplicate";
@@ -227,8 +280,11 @@ public sealed class PreviewWebAppFactory(PostgresContainerFixture postgres) : Ch
     {
         public RecipeSchema? Next { get; set; }
 
-        public Task<RecipeSchema?> ScrapeRecipeAsync(string url, CancellationToken cancellationToken = default)
-            => Task.FromResult(Next);
+        /// <summary>The address the page was "finally served from"; null means the URL asked for (no redirect).</summary>
+        public Uri? ServedFrom { get; set; }
+
+        public Task<ScrapedRecipe> ScrapeRecipeAsync(string url, CancellationToken cancellationToken = default)
+            => Task.FromResult(new ScrapedRecipe(Next, ServedFrom ?? new Uri(url)));
 
         public Task<string> FetchHtmlAsync(string url, CancellationToken cancellationToken = default)
             => throw new NotSupportedException("Not exercised by the import pipeline under test.");

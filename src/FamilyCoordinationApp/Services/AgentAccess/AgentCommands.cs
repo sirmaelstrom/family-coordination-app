@@ -18,7 +18,9 @@ namespace FamilyCoordinationApp.Services.AgentAccess;
 /// its own copy in the caller household's upload directory through <see cref="IImageService"/> (the UI upload's
 /// writer), and the recipe points at that copy, so nothing hot-links. The fetch happens before the write's
 /// transaction (a slow site never holds the household's write lock), after a retry has been answered from its record
-/// (a retry never fetches again); the file is written inside the write, and deleted if the write does not commit.</para>
+/// (a retry never fetches again) and after the cheap refusals, and it spends the token's fetch budget
+/// (<see cref="IAgentFetchBudget"/>) only then. The file is written inside the write and deleted if the write did not
+/// commit; when the commit was sent and not confirmed, the file is kept, because the recipe may already name it.</para>
 /// <para>Every method runs as the request's caller (tenant state Caller): household and user come from there, never
 /// from input. Failures are <see cref="DomainException"/>s whose messages say what failed and that nothing changed;
 /// the MCP adapter (step 3) turns them into tool errors.</para>
@@ -35,6 +37,7 @@ public sealed class AgentCommands(
     IRecipeScraperService scraper,
     IRecipeImportService importer,
     SafeRecipeFetcher fetcher,
+    IAgentFetchBudget fetchBudget,
     IImageService images,
     AgentCommandRunner runner)
 {
@@ -113,7 +116,7 @@ public sealed class AgentCommands(
                     : new CreatedRecipe(saved.RecipeId, saved.Name, version, saved.Ingredients.Count, "/recipes", stored, fetched);
             }, ct);
         }
-        catch
+        catch (Exception ex) when (CertainlyNotCommitted(ex))
         {
             await DiscardImageAsync(stored, householdId);
             throw;
@@ -165,7 +168,7 @@ public sealed class AgentCommands(
                     "/recipes");
             }, ct);
         }
-        catch
+        catch (Exception ex) when (CertainlyNotCommitted(ex))
         {
             await DiscardImageAsync(stored, householdId);
             throw;
@@ -207,6 +210,9 @@ public sealed class AgentCommands(
     {
         try
         {
+            // A URL the fetcher would refuse before connecting costs no fetch; one it will try does.
+            SafeRecipeFetcher.CheckUrl(url);
+            fetchBudget.Spend();
             return await fetcher.FetchImageAsync(url, ct);
         }
         catch (RecipeFetchException ex)
@@ -230,6 +236,14 @@ public sealed class AgentCommands(
     /// <summary>A write that did not commit leaves no file behind. The delete is confined to the household's directory.</summary>
     private Task DiscardImageAsync(string? stored, int householdId) =>
         stored is null ? Task.CompletedTask : images.DeleteImageAsync(stored, householdId, CancellationToken.None);
+
+    /// <summary>
+    /// Whether a failed image write is known to have rolled back, so its file can go. Every failure is, except a
+    /// commit that was sent and not confirmed (<see cref="AgentCommitOutcomeUnknownException"/>): the recipe and the
+    /// operation record a retry replays may already name the file, and deleting it would leave both pointing at
+    /// nothing. Keeping it costs, at worst, one unreferenced file in the household's own directory.
+    /// </summary>
+    private static bool CertainlyNotCommitted(Exception ex) => ex is not AgentCommitOutcomeUnknownException;
 
     private Recipe BuildRecipe(CreateRecipeInput input, int householdId, int userId)
     {
@@ -305,6 +319,9 @@ public sealed class AgentCommands(
         FetchedPage fetched;
         try
         {
+            // A URL the fetcher would refuse before connecting costs no fetch; one it will try does.
+            SafeRecipeFetcher.CheckUrl(url);
+            fetchBudget.Spend();
             fetched = await fetcher.FetchPageAsync(url, ct);
         }
         catch (RecipeFetchException ex)
@@ -313,7 +330,8 @@ public sealed class AgentCommands(
         }
 
         var schema = await scraper.ExtractJsonLdAsync(fetched.Html, ct);
-        var result = importer.FromSchema(schema, url, householdId, userId);
+        // The page's image resolves against the address it was finally served from (after redirects).
+        var result = importer.FromSchema(schema, url, householdId, userId, fetched.FinalUrl);
         if (!result.Success || result.Recipe is null)
         {
             throw new DomainValidationException(
@@ -342,34 +360,8 @@ public sealed class AgentCommands(
             existing?.Name,
             "Nothing was saved. To keep this recipe, call create_recipe with these fields (imageUrl included, if one was found).",
             AgentContent.UntrustedNote,
-            // Relative images resolve against the address the page was finally served from (after redirects).
-            PreviewImageUrl(fetched.FinalUrl.AbsoluteUri, recipe.ImagePath));
-    }
-
-    /// <summary>
-    /// The page's schema.org image as an absolute http(s) URL create_recipe can fetch, or null. A relative value
-    /// ("/images/pie.jpg", "pie.jpg", "//cdn.example/pie.jpg") is resolved against the page URL, as a browser would;
-    /// any other scheme or an over-long result is left out rather than passed on.
-    /// </summary>
-    internal static string? PreviewImageUrl(string pageUrl, string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return null;
-        var value = raw.Trim();
-        // Absolute first, and only http(s): on Unix "/images/pie.jpg" parses as an absolute file: URI, so a relative
-        // reference is parsed explicitly as Relative and combined with the page URL.
-        Uri? resolved = null;
-        if (Uri.TryCreate(value, UriKind.Absolute, out var absolute)
-            && (absolute.Scheme == Uri.UriSchemeHttps || absolute.Scheme == Uri.UriSchemeHttp))
-        {
-            resolved = absolute;
-        }
-        else if (Uri.TryCreate(value, UriKind.Relative, out var relative) && Uri.TryCreate(pageUrl, UriKind.Absolute, out var page))
-        {
-            resolved = new Uri(page, relative);
-        }
-        if (resolved is null || (resolved.Scheme != Uri.UriSchemeHttps && resolved.Scheme != Uri.UriSchemeHttp)) return null;
-        var text = resolved.AbsoluteUri;
-        return text.Length <= FieldLengths.Recipe.SourceUrl ? text : null;
+            // Already an absolute http(s) URL create_recipe can fetch, or null (RecipeImportService.ResolveImageUrl).
+            recipe.ImagePath);
     }
 
     // ── Meal plan ───────────────────────────────────────────────────────────────────────────

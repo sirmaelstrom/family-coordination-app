@@ -15,7 +15,10 @@ namespace FamilyCoordinationApp.Endpoints.Mcp;
 /// <item><b>Scope</b>: a write tool needs the token's <c>family.write</c> scope; a read token is refused whatever
 /// arguments it sends. <c>tools/list</c> hides the write tools from a read token.</item>
 /// <item><b>Rate</b>: per token, <see cref="CallsPerMinute"/> calls, <see cref="WritesPerMinute"/> writes and
-/// <see cref="FetchesPerMinute"/> outbound fetches (page previews and recipe images) a minute.</item>
+/// <see cref="FetchesPerMinute"/> outbound fetches (page previews and recipe images) a minute. Calls and writes are
+/// counted here, as the call arrives. A fetch is counted where it is made (<see cref="TokenFetchBudget"/>, spent by
+/// the command just before it fetches), so a retry answered from its record and a refusal before the fetch cost
+/// none.</item>
 /// <item><b>Audit</b>: one log line per call with the token id, member, household, tool, request id, outcome and
 /// duration. Never arguments' content, never the token.</item>
 /// </list>
@@ -91,7 +94,7 @@ public static class AgentToolGate
                     $"unknown argument(s) {string.Join(", ", extra.Select(e => $"\"{e}\""))}. Nothing was run; send only the tool's declared arguments.",
                     correlationId);
             }
-            else if (Limited(caller.TokenId, IsFetch(request), IsDryRun(request) ? Access.Read : access,
+            else if (Limited(caller.TokenId, IsDryRun(request) ? Access.Read : access,
                          (request.Services?.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow().UtcDateTime) is { } limit)
             {
                 result = ToolResults.Error(tool, "rate_limited",
@@ -138,29 +141,21 @@ public static class AgentToolGate
         && args.TryGetValue("dryRun", out var dryRun)
         && dryRun.ValueKind == System.Text.Json.JsonValueKind.True;
 
-    /// <summary>
-    /// Whether this call fetches from the web: a page preview, a recipe image, or a new recipe with an image URL.
-    /// Dry runs fetch too (they check the image), so they spend the fetch budget.
-    /// </summary>
-    private static bool IsFetch(RequestContext<CallToolRequestParams> request) =>
-        request.Params?.Name switch
-        {
-            "preview_recipe_import" or "set_recipe_image" => true,
-            "create_recipe" => request.Params.Arguments is { } args
-                               && args.TryGetValue("imageUrl", out var imageUrl)
-                               && imageUrl.ValueKind == System.Text.Json.JsonValueKind.String
-                               && !string.IsNullOrWhiteSpace(imageUrl.GetString()),
-            _ => false,
-        };
-
     /// <summary>The bucket that is over its limit, or null. Counts this call when it is allowed.</summary>
-    private static string? Limited(int tokenId, bool fetches, Access access, DateTime now)
+    private static string? Limited(int tokenId, Access access, DateTime now)
     {
         if (!Take(tokenId, "calls", CallsPerMinute, now)) return "calls";
         if (access == Access.Write && !Take(tokenId, "writes", WritesPerMinute, now)) return "writes";
-        if (fetches && !Take(tokenId, "fetches", FetchesPerMinute, now)) return "web fetches";
         return null;
     }
+
+    /// <summary>
+    /// Count one outbound fetch for the token, or return false when its minute is spent. Called by
+    /// <see cref="TokenFetchBudget"/> when a command is about to fetch, not by the gate: whether a call fetches is
+    /// known only once the command has answered a retry from its record and made its cheap refusals. Dry runs fetch
+    /// too (they check the image), so they spend it.
+    /// </summary>
+    internal static bool TakeFetch(int tokenId, DateTime now) => Take(tokenId, "fetches", FetchesPerMinute, now);
 
     private static bool Take(int tokenId, string bucket, int limit, DateTime now)
     {
