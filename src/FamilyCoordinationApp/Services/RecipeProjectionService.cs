@@ -23,6 +23,12 @@ public class RecipeProjectionService : IRecipeProjectionService
         recipe.Ingredients.OrderBy(i => i.SortOrder).Take(3).Select(i => i.Name).ToList(),
         recipe.Ingredients.Count);
 
+    public DeletedRecipeDto ToDeleted(Recipe recipe) => new(
+        recipe.RecipeId,
+        recipe.Name,
+        recipe.RecipeType,
+        recipe.UpdatedAt);
+
     public RecipeFullDto ToFull(Recipe recipe, bool includeAuthor = true) => new(
         recipe.RecipeId,
         recipe.Version,

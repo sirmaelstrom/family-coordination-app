@@ -5,10 +5,12 @@ import type {
   MemberListDto,
   MemberActionDto,
   MemberDto,
+  DeletedRecipeListDto,
 } from './types';
 
 const CATEGORIES = '/api/settings/categories';
 const MEMBERS = '/api/settings/members';
+const RECIPES = '/api/recipes';
 
 // Transport + error contract live in #lib/api/client (the one HTTP boundary,
 // quest 79aa83e7). Settings semantics: every endpoint writes a specific 4xx
@@ -56,9 +58,21 @@ export async function categoryInUse(categoryId: number): Promise<boolean> {
   return res.inUse;
 }
 
+// ─── Deleted recipes (the recipes API; this view lives in Settings) ───────────
+
+/** The household's deleted recipes, most recently deleted first. */
+export async function getDeletedRecipes(): Promise<DeletedRecipeListDto> {
+  return apiGet<DeletedRecipeListDto>(`${RECIPES}/deleted`);
+}
+
+/** Restore a deleted recipe → 204 (idempotent). 404 if the household has no such recipe. */
+export async function restoreRecipe(recipeId: number): Promise<void> {
+  await apiSend<void>(`${RECIPES}/${recipeId}/restore`, 'POST');
+}
+
 // ─── Members ──────────────────────────────────────────────────────────────────
 
-/** #8 Household members + the caller's id (for "You" + self-gating). */
+/** #8Household members + the caller's id (for "You" + self-gating). */
 export async function getMembers(): Promise<MemberListDto> {
   return apiGet<MemberListDto>(`${MEMBERS}/`);
 }

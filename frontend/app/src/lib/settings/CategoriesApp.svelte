@@ -3,6 +3,7 @@
   // add form, active list with drag-reorder (svelte-dnd-action), edit dialog,
   // soft-delete with an "in use" confirm, and a deleted-list with restore.
   import { onMount } from 'svelte';
+  import { resolve } from '$app/paths';
   import { dndzone, type DndEvent } from 'svelte-dnd-action';
   import type { ShellContext, CategoryDto, CategoryWriteRequest } from './lib/types';
   import { categoriesStore } from './lib/categoriesStore.svelte';
@@ -160,6 +161,11 @@
       </section>
     {/if}
   {/if}
+
+  <!-- The other deleted list. On a phone, Settings opens this page, so this is the way to it. -->
+  <p class="set-also">
+    Deleted a recipe? Restore it from <a href={resolve('/settings/deleted-recipes')}>Deleted Recipes</a>.
+  </p>
 </div>
 
 <CategoryEditDialog open={editing != null} category={editing} onCancel={() => (editing = null)} onSave={saveEdit} />
@@ -360,5 +366,13 @@
     background: rgba(229, 57, 53, 0.08);
     border-left: 4px solid var(--color-error);
     color: var(--color-text);
+  }
+  .set-also {
+    margin: 8px 0 0;
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+  }
+  .set-also a {
+    color: var(--color-primary);
   }
 </style>

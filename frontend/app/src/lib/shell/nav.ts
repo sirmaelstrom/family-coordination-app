@@ -47,6 +47,7 @@ export const primaryNav: NavItem[] = [
 /** The Settings section (expands under the side nav). Labels mirror NavMenu.razor. */
 export const settingsNav: SettingsItem[] = [
   { href: '/settings/categories', label: 'Categories', icon: 'settings' },
+  { href: '/settings/deleted-recipes', label: 'Deleted Recipes', icon: 'recipes' },
   { href: '/settings/users', label: 'Family Members', icon: 'people' },
   { href: '/settings/connections', label: 'Connections', icon: 'connections' },
   { href: '/settings/calendar', label: 'Calendar Feed', icon: 'meals' },

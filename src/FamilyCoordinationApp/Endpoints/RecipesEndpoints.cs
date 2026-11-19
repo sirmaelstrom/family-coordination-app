@@ -23,7 +23,9 @@ namespace FamilyCoordinationApp.Endpoints;
 /// PUT echoes it back, and a stale token → 409 with a non-empty body (<see cref="ConcurrencyConflictException"/>).
 /// A PUT with no token answers 409 too (fail-safe; quest 8cf3c806). Not-found responses carry a NON-EMPTY body so callers
 /// receive specific detail instead of the generic /api backfill. <c>Recipe</c> has an EF global query filter on <c>IsDeleted</c>
-/// (<c>RecipeConfiguration</c>), so soft-deleted recipes are auto-excluded — no explicit filter here.</para>
+/// (<c>RecipeConfiguration</c>), so soft-deleted recipes are auto-excluded — no explicit filter here. The two routes
+/// that do see them, <c>GET /deleted</c> and <c>POST /{id}/restore</c>, read past that filter in
+/// <see cref="IRecipeService"/> and stay under the <c>Tenant</c> filter.</para>
 /// </summary>
 public static class RecipesEndpoints
 {
@@ -71,11 +73,15 @@ public static class RecipesEndpoints
         group.MapPut("/draft", SaveDraft);
         group.MapDelete("/draft", DeleteDraft);
 
+        // Deleted recipes (literal): the household's soft-deleted recipes, for Settings → Deleted Recipes.
+        group.MapGet("/deleted", ListDeletedRecipes);
+
         // Single-recipe by id (parameterized — registered last)
         group.MapGet("/{recipeId:int}", GetRecipe);
         group.MapPut("/{recipeId:int}", UpdateRecipe);
         group.MapDelete("/{recipeId:int}", DeleteRecipe);
         group.MapPost("/{recipeId:int}/favorite", ToggleFavorite);
+        group.MapPost("/{recipeId:int}/restore", RestoreRecipe);
 
         return app;
     }
@@ -167,6 +173,30 @@ public static class RecipesEndpoints
         CancellationToken ct)
     {
         await recipeService.DeleteRecipeAsync(caller.HouseholdId, recipeId, ct);
+        return Results.NoContent();
+    }
+
+    /// <summary>The caller's household's deleted recipes, most recently deleted first.</summary>
+    private static async Task<IResult> ListDeletedRecipes(
+        IRecipeService recipeService,
+        IRecipeProjectionService projection,
+        CancellationToken ct)
+    {
+        // No CallerScope: the group's RequireTenant() set the tenant, and the Tenant filter scopes the read.
+        var deleted = await recipeService.GetDeletedRecipesAsync(ct);
+        return Results.Ok(new DeletedRecipeListDto(deleted.Select(projection.ToDeleted).ToList()));
+    }
+
+    /// <summary>
+    /// Bring a deleted recipe back → 204. Idempotent: an already-active recipe answers 204 too. A missing id, or
+    /// another household's, is a <see cref="NotFoundException"/> (404) answered by the /api exception branch.
+    /// </summary>
+    private static async Task<IResult> RestoreRecipe(
+        int recipeId,
+        IRecipeService recipeService,
+        CancellationToken ct)
+    {
+        await recipeService.RestoreRecipeAsync(recipeId, ct);
         return Results.NoContent();
     }
 
