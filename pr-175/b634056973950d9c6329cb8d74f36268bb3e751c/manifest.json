@@ -1,0 +1,338 @@
+{
+  "schema": 1,
+  "maxBytes": 4000000,
+  "runs": {
+    "base": {
+      "commit": "c24362f1b6398aa2a976aa7e2f03dceb8b16ec03",
+      "verdict": "base-verdict.json",
+      "sourceVerdict": "/tmp/claude-lanes/thread-6bc56b1c3906465f/fca-175-drive/base-run/verdict.json"
+    },
+    "head": {
+      "commit": "b634056973950d9c6329cb8d74f36268bb3e751c",
+      "verdict": "head-verdict.json",
+      "sourceVerdict": "/tmp/claude-lanes/thread-6bc56b1c3906465f/fca-175-drive/head-run/verdict.json"
+    }
+  },
+  "frames": [
+    {
+      "frame": "base-slow-cross-week-read.png",
+      "bytes": 12422,
+      "encoding": "palette",
+      "capturedBytes": 27934,
+      "psnr": 69.12,
+      "maxError": 4,
+      "colours": 801,
+      "cells": [
+        {
+          "capturedBytes": 27934,
+          "source": "slow-cross-week-read.png",
+          "script": "slow-cross-week-read",
+          "sha256": "ca95055de5a52f92ff0bf1236b8a6a1b1bc61f0f801a8160b4c7aa1b9b9d6025",
+          "slot": 0,
+          "original": "originals/base/slow-cross-week-read.png"
+        }
+      ],
+      "source": "slow-cross-week-read.png"
+    },
+    {
+      "frame": "head-slow-cross-week-read.png",
+      "bytes": 12422,
+      "encoding": "palette",
+      "capturedBytes": 27934,
+      "psnr": 69.12,
+      "maxError": 4,
+      "colours": 801,
+      "cells": [
+        {
+          "capturedBytes": 27934,
+          "source": "slow-cross-week-read.png",
+          "script": "slow-cross-week-read",
+          "sha256": "ca95055de5a52f92ff0bf1236b8a6a1b1bc61f0f801a8160b4c7aa1b9b9d6025",
+          "slot": 0,
+          "original": "originals/head/slow-cross-week-read.png"
+        }
+      ],
+      "source": "slow-cross-week-read.png"
+    },
+    {
+      "frame": "base-failed-cross-week-read.png",
+      "bytes": 12927,
+      "encoding": "palette",
+      "capturedBytes": 29671,
+      "psnr": 66.88,
+      "maxError": 6,
+      "colours": 1028,
+      "cells": [
+        {
+          "capturedBytes": 29671,
+          "source": "failed-cross-week-read.png",
+          "script": "failed-cross-week-read",
+          "sha256": "f34835c4d579abc6acf54257015056d418fede2090124c1b1a6f04db021a2d9d",
+          "slot": 0,
+          "original": "originals/base/failed-cross-week-read.png"
+        }
+      ],
+      "source": "failed-cross-week-read.png"
+    },
+    {
+      "frame": "head-failed-cross-week-read.png",
+      "bytes": 12927,
+      "encoding": "palette",
+      "capturedBytes": 29671,
+      "psnr": 66.88,
+      "maxError": 6,
+      "colours": 1028,
+      "cells": [
+        {
+          "capturedBytes": 29671,
+          "source": "failed-cross-week-read.png",
+          "script": "failed-cross-week-read",
+          "sha256": "f34835c4d579abc6acf54257015056d418fede2090124c1b1a6f04db021a2d9d",
+          "slot": 0,
+          "original": "originals/head/failed-cross-week-read.png"
+        }
+      ],
+      "source": "failed-cross-week-read.png"
+    },
+    {
+      "frame": "base-after-midnight-day-link.png",
+      "bytes": 14909,
+      "encoding": "palette",
+      "capturedBytes": 34135,
+      "psnr": 73.08,
+      "maxError": 3,
+      "colours": 493,
+      "cells": [
+        {
+          "capturedBytes": 34135,
+          "source": "after-midnight-day-link.png",
+          "script": "after-midnight-day-link",
+          "sha256": "c8d5034204defc985cfef5fb9cbc0476108c8590ebd159d913be1d0b047525e1",
+          "slot": 0,
+          "original": "originals/base/after-midnight-day-link.png"
+        }
+      ],
+      "source": "after-midnight-day-link.png"
+    },
+    {
+      "frame": "head-after-midnight-day-link.png",
+      "bytes": 14534,
+      "encoding": "palette",
+      "capturedBytes": 33640,
+      "psnr": 72.2,
+      "maxError": 2,
+      "colours": 579,
+      "cells": [
+        {
+          "capturedBytes": 33640,
+          "source": "after-midnight-day-link.png",
+          "script": "after-midnight-day-link",
+          "sha256": "a0da10c832a85492085f7ff234745f5fbf135fe51d40e4b44e242afbf2005ad8",
+          "slot": 0,
+          "original": "originals/head/after-midnight-day-link.png"
+        }
+      ],
+      "source": "after-midnight-day-link.png"
+    },
+    {
+      "frame": "base-after-midnight-bare-link.png",
+      "bytes": 14909,
+      "encoding": "palette",
+      "capturedBytes": 34135,
+      "psnr": 73.08,
+      "maxError": 3,
+      "colours": 493,
+      "cells": [
+        {
+          "capturedBytes": 34135,
+          "source": "after-midnight-bare-link.png",
+          "script": "after-midnight-bare-link",
+          "sha256": "c8d5034204defc985cfef5fb9cbc0476108c8590ebd159d913be1d0b047525e1",
+          "slot": 0,
+          "original": "originals/base/after-midnight-bare-link.png"
+        }
+      ],
+      "source": "after-midnight-bare-link.png"
+    },
+    {
+      "frame": "head-after-midnight-bare-link.png",
+      "bytes": 14654,
+      "encoding": "palette",
+      "capturedBytes": 33689,
+      "psnr": 72.92,
+      "maxError": 4,
+      "colours": 493,
+      "cells": [
+        {
+          "capturedBytes": 33689,
+          "source": "after-midnight-bare-link.png",
+          "script": "after-midnight-bare-link",
+          "sha256": "979766478964da1b2fc1ae04d5a77f30a49bd69fbdc5069e3e01b4692615ceeb",
+          "slot": 0,
+          "original": "originals/head/after-midnight-bare-link.png"
+        }
+      ],
+      "source": "after-midnight-bare-link.png"
+    },
+    {
+      "frame": "base-woke-after-midnight.png",
+      "bytes": 14909,
+      "encoding": "palette",
+      "capturedBytes": 34135,
+      "psnr": 73.08,
+      "maxError": 3,
+      "colours": 493,
+      "cells": [
+        {
+          "capturedBytes": 34135,
+          "source": "woke-after-midnight.png",
+          "script": "woke-after-midnight",
+          "sha256": "c8d5034204defc985cfef5fb9cbc0476108c8590ebd159d913be1d0b047525e1",
+          "slot": 0,
+          "original": "originals/base/woke-after-midnight.png"
+        }
+      ],
+      "source": "woke-after-midnight.png"
+    },
+    {
+      "frame": "head-woke-after-midnight.png",
+      "bytes": 14534,
+      "encoding": "palette",
+      "capturedBytes": 33640,
+      "psnr": 72.2,
+      "maxError": 2,
+      "colours": 579,
+      "cells": [
+        {
+          "capturedBytes": 33640,
+          "source": "woke-after-midnight.png",
+          "script": "woke-after-midnight",
+          "sha256": "a0da10c832a85492085f7ff234745f5fbf135fe51d40e4b44e242afbf2005ad8",
+          "slot": 0,
+          "original": "originals/head/woke-after-midnight.png"
+        }
+      ],
+      "source": "woke-after-midnight.png"
+    },
+    {
+      "frame": "base-sunday-midnight-bare-link.png",
+      "bytes": 14845,
+      "encoding": "palette",
+      "capturedBytes": 33993,
+      "psnr": 72.88,
+      "maxError": 4,
+      "colours": 493,
+      "cells": [
+        {
+          "capturedBytes": 33993,
+          "source": "sunday-midnight-bare-link.png",
+          "script": "sunday-midnight-bare-link",
+          "sha256": "98cee850aeb16eeee627fbc71e0318c14adc365d1877d4a10327d77fcdcfa946",
+          "slot": 0,
+          "original": "originals/base/sunday-midnight-bare-link.png"
+        }
+      ],
+      "source": "sunday-midnight-bare-link.png"
+    },
+    {
+      "frame": "head-sunday-midnight-bare-link.png",
+      "bytes": 14948,
+      "encoding": "palette",
+      "capturedBytes": 34126,
+      "psnr": 73.12,
+      "maxError": 3,
+      "colours": 493,
+      "cells": [
+        {
+          "capturedBytes": 34126,
+          "source": "sunday-midnight-bare-link.png",
+          "script": "sunday-midnight-bare-link",
+          "sha256": "3b06f3fd798d93fa16fa698d27e01650c9dd2e2414dd1d8209aa97f8e72d3957",
+          "slot": 0,
+          "original": "originals/head/sunday-midnight-bare-link.png"
+        }
+      ],
+      "source": "sunday-midnight-bare-link.png"
+    },
+    {
+      "frame": "base-after-midnight-week-grid.png",
+      "bytes": 30121,
+      "encoding": "palette",
+      "capturedBytes": 69017,
+      "psnr": 70.28,
+      "maxError": 6,
+      "colours": 908,
+      "cells": [
+        {
+          "capturedBytes": 69017,
+          "source": "after-midnight-week-grid.png",
+          "script": "after-midnight-week-grid",
+          "sha256": "ad7ca1617ec4ee61d35c65669b95c306530b0aa24ce4564caa0c645cd7572f8e",
+          "slot": 0,
+          "original": "originals/base/after-midnight-week-grid.png"
+        }
+      ],
+      "source": "after-midnight-week-grid.png"
+    },
+    {
+      "frame": "head-after-midnight-week-grid.png",
+      "bytes": 30022,
+      "encoding": "palette",
+      "capturedBytes": 68934,
+      "psnr": 70.38,
+      "maxError": 6,
+      "colours": 908,
+      "cells": [
+        {
+          "capturedBytes": 68934,
+          "source": "after-midnight-week-grid.png",
+          "script": "after-midnight-week-grid",
+          "sha256": "9baa44e90ea1a2db34e9a02e1c7b5d4bcd8163822846bc4296c213cd83cfbfd4",
+          "slot": 0,
+          "original": "originals/head/after-midnight-week-grid.png"
+        }
+      ],
+      "source": "after-midnight-week-grid.png"
+    },
+    {
+      "frame": "base-after-midnight-week-list.png",
+      "bytes": 15951,
+      "encoding": "palette",
+      "capturedBytes": 38664,
+      "psnr": 71.64,
+      "maxError": 3,
+      "colours": 527,
+      "cells": [
+        {
+          "capturedBytes": 38664,
+          "source": "after-midnight-week-list.png",
+          "script": "after-midnight-week-list",
+          "sha256": "3ac0c04a2058e0cb021be061817e4ba75ccbadc8bb928ba05659e5e2ca1a4a79",
+          "slot": 0,
+          "original": "originals/base/after-midnight-week-list.png"
+        }
+      ],
+      "source": "after-midnight-week-list.png"
+    },
+    {
+      "frame": "head-after-midnight-week-list.png",
+      "bytes": 15104,
+      "encoding": "palette",
+      "capturedBytes": 37519,
+      "psnr": 71.9,
+      "maxError": 3,
+      "colours": 524,
+      "cells": [
+        {
+          "capturedBytes": 37519,
+          "source": "after-midnight-week-list.png",
+          "script": "after-midnight-week-list",
+          "sha256": "7c6fa40c9cf69a6d68d38f55b8bbd160027547175deb32ceb6b0164dd6942448",
+          "slot": 0,
+          "original": "originals/head/after-midnight-week-list.png"
+        }
+      ],
+      "source": "after-midnight-week-list.png"
+    }
+  ]
+}

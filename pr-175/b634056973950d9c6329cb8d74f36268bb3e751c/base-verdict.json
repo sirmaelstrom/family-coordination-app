@@ -1,0 +1,338 @@
+{
+  "surface": "fca-meal-plan-drive",
+  "status": "red",
+  "branch": {
+    "commit": "c24362f1b6398aa2a976aa7e2f03dceb8b16ec03"
+  },
+  "at": "2026-11-19T20:57:44.419Z",
+  "timezone": "America/Chicago",
+  "passed": 10,
+  "failed": 7,
+  "views": [
+    {
+      "view": "slow-cross-week-read",
+      "screenshot": "slow-cross-week-read.png"
+    },
+    {
+      "view": "failed-cross-week-read",
+      "screenshot": "failed-cross-week-read.png"
+    },
+    {
+      "view": "after-midnight-day-link",
+      "screenshot": "after-midnight-day-link.png"
+    },
+    {
+      "view": "after-midnight-bare-link",
+      "screenshot": "after-midnight-bare-link.png"
+    },
+    {
+      "view": "woke-after-midnight",
+      "screenshot": "woke-after-midnight.png"
+    },
+    {
+      "view": "sunday-midnight-bare-link",
+      "screenshot": "sunday-midnight-bare-link.png"
+    },
+    {
+      "view": "after-midnight-week-grid",
+      "screenshot": "after-midnight-week-grid.png"
+    },
+    {
+      "view": "after-midnight-week-list",
+      "screenshot": "after-midnight-week-list.png"
+    }
+  ],
+  "checks": [
+    {
+      "name": "S1 slow cross-week read: Monday shows the loading text, no slots",
+      "pass": true,
+      "detail": {
+        "title": "Monday, November 30, 2026",
+        "chip": null,
+        "jumpDisabled": false,
+        "emptySlots": 0,
+        "loading": true,
+        "error": null,
+        "retry": false,
+        "dinners": [],
+        "gridToday": [],
+        "listToday": [],
+        "listOpen": [],
+        "listChips": [],
+        "search": "?view=day&date=2026-11-30"
+      }
+    },
+    {
+      "name": "S1 Monday is never drawn as four empty slots (painted frames, DOM states)",
+      "pass": true,
+      "detail": {
+        "paintedFrames": 0,
+        "domStates": 0,
+        "framesSeen": 112
+      }
+    },
+    {
+      "name": "S1 Monday then shows its own meal",
+      "pass": true,
+      "detail": {
+        "title": "Monday, November 30, 2026",
+        "chip": null,
+        "jumpDisabled": false,
+        "emptySlots": 3,
+        "loading": false,
+        "error": null,
+        "retry": false,
+        "dinners": [
+          "Dinner 2026-11-30"
+        ],
+        "gridToday": [],
+        "listToday": [],
+        "listOpen": [],
+        "listChips": [],
+        "search": "?view=day&date=2026-11-30"
+      }
+    },
+    {
+      "name": "S1 no page errors, no unmocked /api call",
+      "pass": true,
+      "detail": {
+        "pageErrors": [],
+        "unexpected": []
+      }
+    },
+    {
+      "name": "S2 failed cross-week read: error with Retry, no slots, no loading text",
+      "pass": true,
+      "detail": {
+        "title": "Monday, November 30, 2026",
+        "chip": null,
+        "jumpDisabled": false,
+        "emptySlots": 0,
+        "loading": false,
+        "error": "Failed to load the meal plan (HTTP 500).",
+        "retry": true,
+        "dinners": [],
+        "gridToday": [],
+        "listToday": [],
+        "listOpen": [],
+        "listChips": [],
+        "search": "?view=day&date=2026-11-30"
+      }
+    },
+    {
+      "name": "S2 Monday is never drawn as four empty slots (painted frames, DOM states)",
+      "pass": true,
+      "detail": {
+        "paintedFrames": 0,
+        "domStates": 0,
+        "framesSeen": 53
+      }
+    },
+    {
+      "name": "S2 Retry loads Monday",
+      "pass": true,
+      "detail": {
+        "title": "Monday, November 30, 2026",
+        "chip": null,
+        "jumpDisabled": false,
+        "emptySlots": 3,
+        "loading": false,
+        "error": null,
+        "retry": false,
+        "dinners": [
+          "Dinner 2026-11-30"
+        ],
+        "gridToday": [],
+        "listToday": [],
+        "listOpen": [],
+        "listChips": [],
+        "search": "?view=day&date=2026-11-30"
+      }
+    },
+    {
+      "name": "S3 back to Sunday mid-read: Sunday shows its meal and neither day is ever drawn empty",
+      "pass": true,
+      "detail": {
+        "end": [
+          "Dinner 2026-11-29"
+        ],
+        "sunday": {
+          "paintedFrames": 0,
+          "domStates": 0,
+          "framesSeen": 126
+        },
+        "monday": {
+          "paintedFrames": 0,
+          "domStates": 0,
+          "framesSeen": 126
+        }
+      }
+    },
+    {
+      "name": "S4 23:59:30 Thursday: Today chip on, Jump to Today off",
+      "pass": true,
+      "detail": {
+        "title": "Thursday, November 19, 2026",
+        "chip": "Today",
+        "jumpDisabled": true,
+        "emptySlots": 3,
+        "loading": false,
+        "error": null,
+        "retry": false,
+        "dinners": [
+          "Dinner 2026-11-19"
+        ],
+        "gridToday": [],
+        "listToday": [],
+        "listOpen": [],
+        "listChips": [],
+        "search": "?view=day&date=2026-11-19"
+      }
+    },
+    {
+      "name": "S4 00:00:15 Friday, still on Thursday: no Today chip, Jump to Today enabled",
+      "pass": false,
+      "detail": {
+        "title": "Thursday, November 19, 2026",
+        "chip": "Today",
+        "jumpDisabled": true,
+        "emptySlots": 3,
+        "loading": false,
+        "error": null,
+        "retry": false,
+        "dinners": [
+          "Dinner 2026-11-19"
+        ],
+        "gridToday": [],
+        "listToday": [],
+        "listOpen": [],
+        "listChips": [],
+        "search": "?view=day&date=2026-11-19"
+      }
+    },
+    {
+      "name": "S4 Jump to Today lands on Friday with its chip",
+      "pass": false,
+      "detail": {
+        "title": "Thursday, November 19, 2026",
+        "chip": "Today",
+        "jumpDisabled": true,
+        "emptySlots": 3,
+        "loading": false,
+        "error": null,
+        "retry": false,
+        "dinners": [
+          "Dinner 2026-11-19"
+        ],
+        "gridToday": [],
+        "listToday": [],
+        "listOpen": [],
+        "listChips": [],
+        "search": "?view=day&date=2026-11-19"
+      }
+    },
+    {
+      "name": "S5 bare /meal-plan after midnight: shows Friday, with the Today chip",
+      "pass": false,
+      "detail": {
+        "title": "Thursday, November 19, 2026",
+        "chip": "Today",
+        "jumpDisabled": true,
+        "emptySlots": 3,
+        "loading": false,
+        "error": null,
+        "retry": false,
+        "dinners": [
+          "Dinner 2026-11-19"
+        ],
+        "gridToday": [],
+        "listToday": [],
+        "listOpen": [],
+        "listChips": [],
+        "search": ""
+      }
+    },
+    {
+      "name": "S6 woken at 07:00 Friday on Thursday's link: no Today chip, Jump to Today enabled",
+      "pass": false,
+      "detail": {
+        "title": "Thursday, November 19, 2026",
+        "chip": "Today",
+        "jumpDisabled": true,
+        "emptySlots": 3,
+        "loading": false,
+        "error": null,
+        "retry": false,
+        "dinners": [
+          "Dinner 2026-11-19"
+        ],
+        "gridToday": [],
+        "listToday": [],
+        "listOpen": [],
+        "listChips": [],
+        "search": "?view=day&date=2026-11-19"
+      }
+    },
+    {
+      "name": "S7 bare link across Sunday midnight: Monday of the next week, populated, Today chip",
+      "pass": false,
+      "detail": {
+        "title": "Sunday, November 22, 2026",
+        "chip": "Today",
+        "jumpDisabled": true,
+        "emptySlots": 3,
+        "loading": false,
+        "error": null,
+        "retry": false,
+        "dinners": [
+          "Dinner 2026-11-22"
+        ],
+        "gridToday": [],
+        "listToday": [],
+        "listOpen": [],
+        "listChips": [],
+        "search": ""
+      }
+    },
+    {
+      "name": "S7 Monday is never drawn as four empty slots on the way",
+      "pass": true,
+      "detail": {
+        "paintedFrames": 0,
+        "domStates": 0,
+        "framesSeen": 3126
+      }
+    },
+    {
+      "name": "S8 week grid: today column is Nov 19 before midnight and Nov 20 after; chip stays This week",
+      "pass": false,
+      "detail": {
+        "before": [
+          "Nov 19"
+        ],
+        "after": [
+          "Nov 19"
+        ],
+        "chip": "This week"
+      }
+    },
+    {
+      "name": "S9 week list: Today chip, accent and open panel are Nov 19 before midnight and Nov 20 after",
+      "pass": false,
+      "detail": {
+        "before": [
+          "Nov 19"
+        ],
+        "after": [
+          "Nov 19"
+        ],
+        "todayAfter": [
+          "Nov 19"
+        ],
+        "openAfter": [
+          "Nov 19"
+        ]
+      }
+    }
+  ]
+}
