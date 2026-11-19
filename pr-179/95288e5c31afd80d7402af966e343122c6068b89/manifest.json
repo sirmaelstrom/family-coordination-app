@@ -1,0 +1,178 @@
+{
+  "schema": 1,
+  "maxBytes": 4000000,
+  "runs": {
+    "base": {
+      "commit": "9c5e3099b1bc927cb5bc25531875a6aeea961887",
+      "verdict": "base-verdict.json",
+      "sourceVerdict": "/home/sirm/dev/data/outputs/verifications/fca-regenerate-copy-7a784201/base-drive/verdict.json"
+    },
+    "head": {
+      "commit": "95288e5c31afd80d7402af966e343122c6068b89",
+      "verdict": "head-verdict.json",
+      "sourceVerdict": "/home/sirm/dev/data/outputs/verifications/fca-regenerate-copy-7a784201/head-drive/verdict.json"
+    }
+  },
+  "frames": [
+    {
+      "frame": "base-generated-list.png",
+      "bytes": 29156,
+      "encoding": "palette",
+      "capturedBytes": 68337,
+      "psnr": 69.58,
+      "maxError": 7,
+      "colours": 1070,
+      "cells": [
+        {
+          "capturedBytes": 68337,
+          "source": "01-generated-list.png",
+          "script": "generated-list",
+          "sha256": "6182f2d939d97620d3427efd8e4e4752a5a7f121b4f9478c865347c33b46ed82",
+          "slot": 0,
+          "original": "originals/base/01-generated-list.png"
+        }
+      ],
+      "source": "01-generated-list.png"
+    },
+    {
+      "frame": "head-generated-list.png",
+      "bytes": 29156,
+      "encoding": "palette",
+      "capturedBytes": 68337,
+      "psnr": 69.58,
+      "maxError": 7,
+      "colours": 1070,
+      "cells": [
+        {
+          "capturedBytes": 68337,
+          "source": "01-generated-list.png",
+          "script": "generated-list",
+          "sha256": "6182f2d939d97620d3427efd8e4e4752a5a7f121b4f9478c865347c33b46ed82",
+          "slot": 0,
+          "original": "originals/head/01-generated-list.png"
+        }
+      ],
+      "source": "01-generated-list.png"
+    },
+    {
+      "frame": "base-regenerate-confirm-desktop.png",
+      "bytes": 33023,
+      "encoding": "palette",
+      "capturedBytes": 73645,
+      "psnr": 70.68,
+      "maxError": 7,
+      "colours": 883,
+      "cells": [
+        {
+          "capturedBytes": 73645,
+          "source": "02-regenerate-confirm-desktop.png",
+          "script": "regenerate-confirm-desktop",
+          "sha256": "2199163f05d2eaee5bee71ca2431c98427cb7321aa8da45a2140b1457c09b1bd",
+          "slot": 0,
+          "original": "originals/base/02-regenerate-confirm-desktop.png"
+        }
+      ],
+      "source": "02-regenerate-confirm-desktop.png"
+    },
+    {
+      "frame": "head-regenerate-confirm-desktop.png",
+      "bytes": 33995,
+      "encoding": "palette",
+      "capturedBytes": 75859,
+      "psnr": 70.5,
+      "maxError": 7,
+      "colours": 883,
+      "cells": [
+        {
+          "capturedBytes": 75859,
+          "source": "02-regenerate-confirm-desktop.png",
+          "script": "regenerate-confirm-desktop",
+          "sha256": "05de1333bb6fc5c87dd4f621aa15148f770adfe91d3eecf1030b2c15750bb63a",
+          "slot": 0,
+          "original": "originals/head/02-regenerate-confirm-desktop.png"
+        }
+      ],
+      "source": "02-regenerate-confirm-desktop.png"
+    },
+    {
+      "frame": "base-regenerate-confirm-phone.png",
+      "bytes": 18754,
+      "encoding": "palette",
+      "capturedBytes": 39310,
+      "psnr": 67.53,
+      "maxError": 5,
+      "colours": 756,
+      "cells": [
+        {
+          "capturedBytes": 39310,
+          "source": "03-regenerate-confirm-phone.png",
+          "script": "regenerate-confirm-phone",
+          "sha256": "2408e570c4e56f99bb195cd1f21b351f44f21a8e7253be488975869690b6181d",
+          "slot": 0,
+          "original": "originals/base/03-regenerate-confirm-phone.png"
+        }
+      ],
+      "source": "03-regenerate-confirm-phone.png"
+    },
+    {
+      "frame": "head-regenerate-confirm-phone.png",
+      "bytes": 19299,
+      "encoding": "palette",
+      "capturedBytes": 40015,
+      "psnr": 67.51,
+      "maxError": 6,
+      "colours": 734,
+      "cells": [
+        {
+          "capturedBytes": 40015,
+          "source": "03-regenerate-confirm-phone.png",
+          "script": "regenerate-confirm-phone",
+          "sha256": "fb3ffc08353c7a2ed27db5fb8b410a4cc1d7f91de9ae582a0683214bbb723c8d",
+          "slot": 0,
+          "original": "originals/head/03-regenerate-confirm-phone.png"
+        }
+      ],
+      "source": "03-regenerate-confirm-phone.png"
+    },
+    {
+      "frame": "base-after-regenerate.png",
+      "bytes": 29401,
+      "encoding": "palette",
+      "capturedBytes": 68403,
+      "psnr": 70.12,
+      "maxError": 8,
+      "colours": 999,
+      "cells": [
+        {
+          "capturedBytes": 68403,
+          "source": "04-after-regenerate.png",
+          "script": "after-regenerate",
+          "sha256": "35df9199d8092a7e3665f520037cc178785cc08a310a2171ee2102cc3f836f8c",
+          "slot": 0,
+          "original": "originals/base/04-after-regenerate.png"
+        }
+      ],
+      "source": "04-after-regenerate.png"
+    },
+    {
+      "frame": "head-after-regenerate.png",
+      "bytes": 29401,
+      "encoding": "palette",
+      "capturedBytes": 68403,
+      "psnr": 70.12,
+      "maxError": 8,
+      "colours": 999,
+      "cells": [
+        {
+          "capturedBytes": 68403,
+          "source": "04-after-regenerate.png",
+          "script": "after-regenerate",
+          "sha256": "35df9199d8092a7e3665f520037cc178785cc08a310a2171ee2102cc3f836f8c",
+          "slot": 0,
+          "original": "originals/head/04-after-regenerate.png"
+        }
+      ],
+      "source": "04-after-regenerate.png"
+    }
+  ]
+}
