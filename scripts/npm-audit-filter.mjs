@@ -12,15 +12,11 @@
 
 /**
  * Accepted Moderate+ advisories. Exact GHSA IDs only; each needs a reachability row
- * with a `Revisit if:` line in docs/dependency-security.md.
+ * with a `Revisit if:` line in docs/dependency-security.md. Entry shape:
+ * `{ id: 'GHSA-xxxx-xxxx-xxxx', package: 'name', why: 'one line, points at the docs row' }`.
+ * Empty since GitHub withdrew picomatch GHSA-fc5q-39xc-vjpf on 2026-11-18.
  */
-export const ACCEPTED_ADVISORIES = [
-  {
-    id: 'GHSA-fc5q-39xc-vjpf',
-    package: 'picomatch',
-    why: 'no patched release; build tooling only, on checked-in globs (docs/dependency-security.md)',
-  },
-];
+export const ACCEPTED_ADVISORIES = [];
 
 const BLOCKING = new Set(['moderate', 'high', 'critical']);
 const KNOWN = new Set(['info', 'low', ...BLOCKING]);

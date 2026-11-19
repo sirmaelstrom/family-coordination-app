@@ -1,6 +1,8 @@
 // Self-test for the npm audit filter: `node --test scripts/`.
 // kit2-master.json and kit3-picomatch-only.json are real `npm audit --json` output, captured
 // 2026-11-17 from master's lockfile (SvelteKit 2.70) and from the SvelteKit 3 lockfile.
+// The accept/stale rules are held with LISTED: the picomatch entry the live list carried until
+// GitHub withdrew GHSA-fc5q-39xc-vjpf on 2026-11-18. The live list itself is empty.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -8,6 +10,7 @@ import { ACCEPTED_ADVISORIES, evaluateNpmAudit } from './npm-audit-filter.mjs';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/npm-audit/${name}`, import.meta.url), 'utf8');
 const PICOMATCH = 'GHSA-fc5q-39xc-vjpf';
+const LISTED = [{ id: PICOMATCH, package: 'picomatch', why: 'test-only accepted entry' }];
 
 /** A minimal report: `advisories` are [package, ghsa, severity] triples, `inherits` are [package, via-package]. */
 function report(advisories, inherits = []) {
@@ -23,12 +26,24 @@ function report(advisories, inherits = []) {
   return JSON.stringify({ auditReportVersion: 2, vulnerabilities, metadata: {} });
 }
 
-test('the accepted list is exactly picomatch GHSA-fc5q-39xc-vjpf', () => {
-  assert.deepEqual(ACCEPTED_ADVISORIES.map((a) => `${a.package} ${a.id}`), [`picomatch ${PICOMATCH}`]);
+test('the accepted list is empty', () => {
+  assert.deepEqual(ACCEPTED_ADVISORIES, []);
+});
+
+test('a clean audit passes on the live (empty) list', () => {
+  const v = evaluateNpmAudit(report([]));
+  assert.equal(v.ok, true, v.problems.join('\n'));
+  assert.deepEqual(v.stale, []);
+});
+
+test('the real Kit 3 audit (picomatch only) fails on the live list: nothing is accepted any more', () => {
+  const v = evaluateNpmAudit(fixture('kit3-picomatch-only.json'));
+  assert.equal(v.ok, false);
+  assert.match(v.problems.join('\n'), new RegExp(PICOMATCH));
 });
 
 test('listed-only (real Kit 3 audit): passes, and names every package carrying the accepted advisory', () => {
-  const v = evaluateNpmAudit(fixture('kit3-picomatch-only.json'));
+  const v = evaluateNpmAudit(fixture('kit3-picomatch-only.json'), LISTED);
   assert.equal(v.ok, true, v.problems.join('\n'));
   assert.deepEqual(v.advisories.map((a) => [a.id, a.accepted]), [[PICOMATCH, true]]);
   assert.deepEqual(v.carriers[PICOMATCH].sort(), [
@@ -38,7 +53,7 @@ test('listed-only (real Kit 3 audit): passes, and names every package carrying t
 });
 
 test('listed + unlisted High (real master audit): fails on the Kit advisories, not on picomatch', () => {
-  const v = evaluateNpmAudit(fixture('kit2-master.json'));
+  const v = evaluateNpmAudit(fixture('kit2-master.json'), LISTED);
   assert.equal(v.ok, false);
   const failing = v.advisories.filter((a) => a.blocking && !a.accepted).map((a) => a.id).sort();
   assert.ok(failing.includes('GHSA-3r8g-jcqq-3p5j'), 'Kit High must fail');
@@ -53,24 +68,24 @@ test('listed + unlisted High (real master audit): fails on the Kit advisories, n
 });
 
 test('an unlisted Moderate alone fails', () => {
-  const v = evaluateNpmAudit(report([['picomatch', PICOMATCH, 'high'], ['left-pad', 'GHSA-aaaa-bbbb-cccc', 'moderate']]));
+  const v = evaluateNpmAudit(report([['picomatch', PICOMATCH, 'high'], ['left-pad', 'GHSA-aaaa-bbbb-cccc', 'moderate']]), LISTED);
   assert.equal(v.ok, false);
   assert.match(v.problems.join('\n'), /GHSA-aaaa-bbbb-cccc \(moderate, left-pad/);
 });
 
 test('an unlisted Critical fails', () => {
-  const v = evaluateNpmAudit(report([['picomatch', PICOMATCH, 'high'], ['x', 'GHSA-aaaa-bbbb-dddd', 'critical']]));
+  const v = evaluateNpmAudit(report([['picomatch', PICOMATCH, 'high'], ['x', 'GHSA-aaaa-bbbb-dddd', 'critical']]), LISTED);
   assert.equal(v.ok, false);
 });
 
 test('an accepted ID on a different package does not pass', () => {
-  const v = evaluateNpmAudit(report([['picomatch', PICOMATCH, 'high'], ['not-picomatch', PICOMATCH, 'high']]));
+  const v = evaluateNpmAudit(report([['picomatch', PICOMATCH, 'high'], ['not-picomatch', PICOMATCH, 'high']]), LISTED);
   assert.equal(v.ok, false);
   assert.match(v.problems.join('\n'), /not-picomatch/);
 });
 
 test('unlisted Lows pass and stay visible', () => {
-  const v = evaluateNpmAudit(report([['picomatch', PICOMATCH, 'high'], ['y', 'GHSA-aaaa-bbbb-eeee', 'low']]));
+  const v = evaluateNpmAudit(report([['picomatch', PICOMATCH, 'high'], ['y', 'GHSA-aaaa-bbbb-eeee', 'low']]), LISTED);
   assert.equal(v.ok, true, v.problems.join('\n'));
   assert.deepEqual(v.advisories.find((a) => a.package === 'y'), {
     id: 'GHSA-aaaa-bbbb-eeee', package: 'y', severity: 'low', title: 'y advisory', range: '<1.0.0',
@@ -79,7 +94,7 @@ test('unlisted Lows pass and stay visible', () => {
 });
 
 test('a listed ID the audit no longer reports fails as stale', () => {
-  const v = evaluateNpmAudit(report([]));
+  const v = evaluateNpmAudit(report([]), LISTED);
   assert.equal(v.ok, false);
   assert.deepEqual(v.stale, [PICOMATCH]);
   assert.match(v.problems.join('\n'), /no longer reports it/);

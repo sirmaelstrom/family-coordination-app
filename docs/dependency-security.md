@@ -82,9 +82,15 @@ audit, not a pin, catches a regression.
 These pass the audit only because their exact GHSA ID is in
 `ACCEPTED_ADVISORIES` (`scripts/npm-audit-filter.mjs`).
 
-| Advisory | Reachability and decision | Revisit if: |
+None as of 2026-11-19. GitHub withdrew the one entry this table held, picomatch
+[GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf), on
+2026-11-18 (`withdrawn_at` 15:38:56Z). The audit then failed on the stale ID, as
+designed, so the entry was deleted. The withdrawn row is kept below for the record.
+A new acceptance adds a live row to a table like it, with the same columns.
+
+| Advisory (withdrawn) | Reachability and decision | Revisit if: |
 | --- | --- | --- |
-| [GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) `picomatch` <=4.0.7, High (accepted 2026-11-17) | ReDoS from single-branch repeated extglobs such as `+(*)`: the attacker must supply the **glob pattern**. No patched release exists. picomatch is build tooling only: Vite (config globs, `import.meta.glob`), tinyglobby/fdir (file discovery for Vite and svelte-check) and Vitest (`include` globs). Every pattern they compile is checked in (`vite.config.ts`, `vitest.config.ts`, two `import.meta.glob` calls in test files); none comes from a request, a user or the network. The production image holds the ASP.NET publish output and the static SPA files, not the Node stage's `node_modules`, and the shipped client bundle does not include picomatch. The audit prints the 9 entries that carry it (picomatch, plus fdir, tinyglobby, vite, vitest, svelte-check, Kit, adapter-static and vite-plugin-svelte by dependency). | An upstream picomatch fix ships (take it, then the audit fails on the stale ID until the entry is deleted), or a build or dev step starts compiling globs from untrusted input. |
+| [GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) `picomatch` <=4.0.7, High (accepted 2026-11-17; withdrawn by GitHub 2026-11-18, entry deleted 2026-11-19) | ReDoS from single-branch repeated extglobs such as `+(*)`: the attacker must supply the **glob pattern**. No patched release exists. picomatch is build tooling only: Vite (config globs, `import.meta.glob`), tinyglobby/fdir (file discovery for Vite and svelte-check) and Vitest (`include` globs). Every pattern they compile is checked in (`vite.config.ts`, `vitest.config.ts`, two `import.meta.glob` calls in test files); none comes from a request, a user or the network. The production image holds the ASP.NET publish output and the static SPA files, not the Node stage's `node_modules`, and the shipped client bundle does not include picomatch. The audit prints the 9 entries that carry it (picomatch, plus fdir, tinyglobby, vite, vitest, svelte-check, Kit, adapter-static and vite-plugin-svelte by dependency). | An upstream picomatch fix ships (take it, then the audit fails on the stale ID until the entry is deleted), or a build or dev step starts compiling globs from untrusted input. |
 
 ## Accepted Low risks
 
