@@ -16,18 +16,18 @@
   "frames": [
     {
       "frame": "base-recipes-page-links-to-deleted-recipes.png",
-      "bytes": 19047,
+      "bytes": 32681,
       "encoding": "palette",
-      "capturedBytes": 46133,
-      "psnr": 66.39,
-      "maxError": 14,
-      "colours": 1409,
+      "capturedBytes": 71204,
+      "psnr": 69.61,
+      "maxError": 6,
+      "colours": 955,
       "cells": [
         {
-          "capturedBytes": 46133,
+          "capturedBytes": 71204,
           "source": "04-recipes-page-links-to-deleted-recipes.png",
           "script": "recipes-page-links-to-deleted-recipes",
-          "sha256": "8eca2788270ee4283abce8f6967a0dcce1f3c8bc291d898ed329a3a205988a47",
+          "sha256": "e3b2e30b578892938686e1212991e897f8fe66b1f1aa6ef76bd6f95494067d8f",
           "slot": 0,
           "original": "originals/base/04-recipes-page-links-to-deleted-recipes.png"
         }
@@ -36,18 +36,18 @@
     },
     {
       "frame": "head-recipes-page-links-to-deleted-recipes.png",
-      "bytes": 19717,
+      "bytes": 35246,
       "encoding": "palette",
-      "capturedBytes": 47629,
-      "psnr": 66.26,
-      "maxError": 13,
-      "colours": 1409,
+      "capturedBytes": 76026,
+      "psnr": 68.49,
+      "maxError": 7,
+      "colours": 1145,
       "cells": [
         {
-          "capturedBytes": 47629,
+          "capturedBytes": 76026,
           "source": "04-recipes-page-links-to-deleted-recipes.png",
           "script": "recipes-page-links-to-deleted-recipes",
-          "sha256": "33192e379716ded76c92e90a0fb290dcd41b2f72d609fe4b4292e1beec28e1a6",
+          "sha256": "b5a3f1d2d61c19fac81056d30c77aa58778f9e9385954323b5b12ceb08dbef4f",
           "slot": 0,
           "original": "originals/head/04-recipes-page-links-to-deleted-recipes.png"
         }
@@ -56,18 +56,18 @@
     },
     {
       "frame": "base-settings-nav-has-deleted-recipes.png",
-      "bytes": 22414,
+      "bytes": 35340,
       "encoding": "palette",
-      "capturedBytes": 52979,
-      "psnr": 71.27,
-      "maxError": 4,
-      "colours": 883,
+      "capturedBytes": 78288,
+      "psnr": 69.01,
+      "maxError": 7,
+      "colours": 949,
       "cells": [
         {
-          "capturedBytes": 52979,
+          "capturedBytes": 78288,
           "source": "05-settings-nav-has-deleted-recipes.png",
           "script": "settings-nav-has-deleted-recipes",
-          "sha256": "cb1b9adcdaa2e15612a2443a16b826a76920b0179de446d0cf517fb298329a42",
+          "sha256": "f8b65f3082944fda1af8ccc371fd178877809aa66ca6d92a526e3746d3b4a622",
           "slot": 0,
           "original": "originals/base/05-settings-nav-has-deleted-recipes.png"
         }
@@ -76,18 +76,18 @@
     },
     {
       "frame": "head-settings-nav-has-deleted-recipes.png",
-      "bytes": 24329,
+      "bytes": 38738,
       "encoding": "palette",
-      "capturedBytes": 58590,
-      "psnr": 66.74,
-      "maxError": 14,
-      "colours": 1314,
+      "capturedBytes": 85503,
+      "psnr": 68.96,
+      "maxError": 7,
+      "colours": 1008,
       "cells": [
         {
-          "capturedBytes": 58590,
+          "capturedBytes": 85503,
           "source": "05-settings-nav-has-deleted-recipes.png",
           "script": "settings-nav-has-deleted-recipes",
-          "sha256": "f2ae83a65ae5d86c3203c18ac6943719d482c4830d6537f0819db67143dc0156",
+          "sha256": "73db6790ab07fe6ddf2296acacd846dbf44c7abdf82cbced7e0360c0e2db2eaa",
           "slot": 0,
           "original": "originals/head/05-settings-nav-has-deleted-recipes.png"
         }
@@ -116,18 +116,18 @@
     },
     {
       "frame": "head-deleted-recipes-lists-it-with-a-restore-action.png",
-      "bytes": 24149,
+      "bytes": 23655,
       "encoding": "palette",
-      "capturedBytes": 57058,
-      "psnr": 66.59,
-      "maxError": 12,
-      "colours": 1373,
+      "capturedBytes": 54696,
+      "psnr": 70.64,
+      "maxError": 5,
+      "colours": 984,
       "cells": [
         {
-          "capturedBytes": 57058,
+          "capturedBytes": 54696,
           "source": "07-deleted-recipes-lists-it-with-a-restore-action.png",
           "script": "deleted-recipes-lists-it-with-a-restore-action",
-          "sha256": "b030490ba9766b6ee09b115bef4c1bcafb8b81e99482a419bf5280eb348fb4f0",
+          "sha256": "5c11a956f17a6e864fafe31445544a8f7178c3f5e7bc7d3a3809bdff13092bfc",
           "slot": 0,
           "original": "originals/head/07-deleted-recipes-lists-it-with-a-restore-action.png"
         }
@@ -156,18 +156,18 @@
     },
     {
       "frame": "head-restore-puts-it-back.png",
-      "bytes": 24275,
+      "bytes": 23358,
       "encoding": "palette",
-      "capturedBytes": 56570,
-      "psnr": 67.89,
-      "maxError": 9,
-      "colours": 1348,
+      "capturedBytes": 54814,
+      "psnr": 67.84,
+      "maxError": 12,
+      "colours": 1329,
       "cells": [
         {
-          "capturedBytes": 56570,
+          "capturedBytes": 54814,
           "source": "08-restore-puts-it-back.png",
           "script": "restore-puts-it-back",
-          "sha256": "9bdd58375d73f7766a3358f62967808d950238ddd67e776c1e63723864e5151b",
+          "sha256": "319b3054807288b722104d5b1d083bebd8cc518e268c1a54942351284494cf72",
           "slot": 0,
           "original": "originals/head/08-restore-puts-it-back.png"
         }
@@ -196,18 +196,18 @@
     },
     {
       "frame": "head-recipe-search-finds-it-again.png",
-      "bytes": 21910,
+      "bytes": 27211,
       "encoding": "palette",
-      "capturedBytes": 51716,
-      "psnr": 68.97,
-      "maxError": 10,
-      "colours": 1093,
+      "capturedBytes": 65855,
+      "psnr": 64.7,
+      "maxError": 15,
+      "colours": 1572,
       "cells": [
         {
-          "capturedBytes": 51716,
+          "capturedBytes": 65855,
           "source": "10-recipe-search-finds-it-again.png",
           "script": "recipe-search-finds-it-again",
-          "sha256": "32b5247db80ba68c5d85636b341b929d926f93c228516ebda0c8fcc240a2fb86",
+          "sha256": "726a055487d9cebb93c6d28eb59abaf3307336242303ad9479543fbdbad6a5b2",
           "slot": 0,
           "original": "originals/head/10-recipe-search-finds-it-again.png"
         }
@@ -236,18 +236,18 @@
     },
     {
       "frame": "head-meal-plan-picker-finds-it.png",
-      "bytes": 28951,
+      "bytes": 33141,
       "encoding": "palette",
-      "capturedBytes": 62971,
-      "psnr": 70.2,
+      "capturedBytes": 73178,
+      "psnr": 70.01,
       "maxError": 8,
       "colours": 977,
       "cells": [
         {
-          "capturedBytes": 62971,
+          "capturedBytes": 73178,
           "source": "11-meal-plan-picker-finds-it.png",
           "script": "meal-plan-picker-finds-it",
-          "sha256": "a0667680da5e76ada998abc2888ec020ffdc30a6903a97ac4d65aa9ef183abf1",
+          "sha256": "d5e83057332d2d94f6b87de9951a409b21b37b65dcd03eb9f5f4f022bf50d2f5",
           "slot": 0,
           "original": "originals/head/11-meal-plan-picker-finds-it.png"
         }
