@@ -23,6 +23,17 @@ public interface IRecipeService
     /// <exception cref="ConcurrencyConflictException"><paramref name="expectedVersion"/> is stale.</exception>
     Task SetImagePathAsync(int recipeId, string imagePath, uint expectedVersion, CancellationToken cancellationToken = default);
     Task DeleteRecipeAsync(int householdId, int recipeId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// The caller's household's soft-deleted recipes, most recently deleted first. Read past the
+    /// <c>SoftDelete</c> filter only, so the <c>Tenant</c> filter still scopes it. No ingredients or author loaded.
+    /// </summary>
+    Task<List<Recipe>> GetDeletedRecipesAsync(CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Bring a soft-deleted recipe back. Its ingredients, favorites and planned meals were kept, so they return
+    /// with it. An already-active recipe is left as it is (idempotent).
+    /// </summary>
+    /// <exception cref="NotFoundException">No such recipe, deleted or not, in the caller's household.</exception>
+    Task RestoreRecipeAsync(int recipeId, CancellationToken cancellationToken = default);
     Task<List<string>> GetIngredientSuggestionsAsync(int householdId, string prefix, CancellationToken cancellationToken = default);
 
     // Favorites

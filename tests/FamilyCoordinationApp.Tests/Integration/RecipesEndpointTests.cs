@@ -599,6 +599,181 @@ public sealed class RecipesEndpointTests(PostgresContainerFixture postgres) : IA
         await ClientA.DeleteAsync("/api/recipes/draft");
     }
 
+    // ── Deleted recipes + restore ──────────────────────────────────────────────────
+
+    private sealed record DeletedItem(int recipeId, string name, string recipeType, DateTime? deletedAt);
+    private sealed record DeletedList(List<DeletedItem> recipes);
+    private sealed record PickerItem(int recipeId, string name);
+
+    private const string DeletedUrl = "/api/recipes/deleted";
+
+    private static async Task<DeletedList> DeletedAsync(HttpClient client) =>
+        (await client.GetFromJsonAsync<DeletedList>(DeletedUrl, Json))!;
+
+    private static async Task DeleteAsync(HttpClient client, int recipeId) =>
+        (await client.DeleteAsync($"/api/recipes/{recipeId}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+    private static Task<HttpResponseMessage> RestoreAsync(HttpClient client, int recipeId) =>
+        client.PostAsync($"/api/recipes/{recipeId}/restore", content: null);
+
+    [Fact]
+    public async Task Deleted_ListsDeletedRecipesNewestFirst_AndNoActiveOne()
+    {
+        var first = await CreateAsync(ClientA, WriteBody("Bin Order First 5521", "dessert"));
+        var second = await CreateAsync(ClientA, WriteBody("Bin Order Second 5521"));
+        var kept = await CreateAsync(ClientA, WriteBody("Bin Order Kept 5521"));
+
+        // The test host's clock is frozen, so move it between the two deletes: "first" is deleted a minute earlier.
+        var firstDeletedAt = _factory.Clock.GetUtcNow().UtcDateTime.AddMinutes(10);
+        var secondDeletedAt = firstDeletedAt.AddMinutes(1);
+        _factory.Clock.SetUtcNow(firstDeletedAt);
+        await DeleteAsync(ClientA, first.recipeId);
+        _factory.Clock.SetUtcNow(secondDeletedAt);
+        await DeleteAsync(ClientA, second.recipeId);
+
+        var mine = (await DeletedAsync(ClientA)).recipes.Where(r => r.name.EndsWith("5521")).ToList();
+
+        mine.Select(r => r.recipeId).Should().Equal(
+            new[] { second.recipeId, first.recipeId }, "the most recently deleted recipe comes first");
+        mine.Should().NotContain(r => r.recipeId == kept.recipeId, "an active recipe is not in the deleted list");
+        mine.Single(r => r.recipeId == first.recipeId).recipeType.Should().Be("dessert");
+        mine.Select(r => r.deletedAt).Should().Equal(
+            new DateTime?[] { secondDeletedAt, firstDeletedAt }, "deletedAt is the moment of the delete");
+    }
+
+    [Fact]
+    public async Task Restore_BringsTheRecipeBack_ToTheList_Search_Detail_MealPlanPicker_WithIngredientsAndFavorite()
+    {
+        var created = await CreateAsync(ClientA, WriteBody(
+            "Phoenix Stew 8830", ingredients: new[] { Ing("Zanzibar pepper 8830", 2, "tsp", "Spices") }));
+        (await ClientA.PostAsync($"/api/recipes/{created.recipeId}/favorite", content: null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await DeleteAsync(ClientA, created.recipeId);
+
+        // Deleted: out of the list, the search, the detail and the meal-plan picker; in the deleted list.
+        (await ClientA.GetFromJsonAsync<RecipeList>("/api/recipes?q=Phoenix Stew 8830", Json))!.recipes.Should().BeEmpty();
+        (await ClientA.GetAsync($"/api/recipes/{created.recipeId}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await ClientA.GetFromJsonAsync<List<PickerItem>>("/api/meal-plan/recipes?q=Phoenix Stew 8830", Json))
+            .Should().BeEmpty();
+        (await DeletedAsync(ClientA)).recipes.Should().Contain(r => r.recipeId == created.recipeId);
+
+        var restore = await RestoreAsync(ClientA, created.recipeId);
+        restore.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Restored: back in the list (found by name AND by an ingredient), still a favorite, with its ingredients.
+        var byName = await ClientA.GetFromJsonAsync<RecipeList>("/api/recipes?q=Phoenix Stew 8830", Json);
+        byName!.recipes.Should().ContainSingle(r => r.recipeId == created.recipeId && r.ingredientCount == 1);
+        byName.favoriteRecipeIds.Should().Contain(created.recipeId, "the favorite was kept through the delete");
+        (await ClientA.GetFromJsonAsync<RecipeList>("/api/recipes?q=Zanzibar pepper 8830", Json))!
+            .recipes.Should().ContainSingle(r => r.recipeId == created.recipeId);
+
+        var detail = await ClientA.GetFromJsonAsync<RecipeFull>($"/api/recipes/{created.recipeId}", Json);
+        detail!.name.Should().Be("Phoenix Stew 8830");
+        detail.ingredients.Should().ContainSingle(i => i.name == "Zanzibar pepper 8830");
+
+        (await ClientA.GetFromJsonAsync<List<PickerItem>>("/api/meal-plan/recipes?q=Phoenix Stew 8830", Json))
+            .Should().ContainSingle(r => r.recipeId == created.recipeId, "the meal-plan picker offers it again");
+
+        (await DeletedAsync(ClientA)).recipes.Should().NotContain(r => r.recipeId == created.recipeId);
+
+        // And it is a normal recipe again: the edit form's token saves.
+        var edit = await ClientA.PutAsJsonAsync($"/api/recipes/{created.recipeId}",
+            WriteBody("Phoenix Stew 8830 v2", version: detail.version), Json);
+        edit.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Restore_OfAnActiveRecipe_Is204_AndChangesNothing()
+    {
+        var created = await CreateAsync(ClientA, WriteBody("Never Deleted Dish 7741"));
+
+        (await RestoreAsync(ClientA, created.recipeId)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var detail = await ClientA.GetFromJsonAsync<RecipeFull>($"/api/recipes/{created.recipeId}", Json);
+        detail!.version.Should().Be(created.version, "an idempotent restore writes nothing, so the row version stands");
+    }
+
+    [Fact]
+    public async Task Restore_Twice_IsIdempotent()
+    {
+        var created = await CreateAsync(ClientA, WriteBody("Twice Restored Dish 7742"));
+        await DeleteAsync(ClientA, created.recipeId);
+
+        (await RestoreAsync(ClientA, created.recipeId)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await RestoreAsync(ClientA, created.recipeId)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        (await ClientA.GetAsync($"/api/recipes/{created.recipeId}")).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Restore_Missing_Returns404_WithBody()
+    {
+        var resp = await RestoreAsync(ClientA, 999999);
+
+        resp.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await resp.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("message").GetString()
+            .Should().Be("Recipe not found.");
+    }
+
+    [Fact]
+    public async Task Deleted_And_Restore_Unauthenticated_Return401()
+    {
+        var client = _factory.CreateAnonymousClient();
+
+        (await client.GetAsync(DeletedUrl)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await RestoreAsync(client, 1)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    /// <summary>
+    /// The tenant boundary of both new routes. Recipe ids are per household, so the same number can name a recipe
+    /// in A and another in B: the test covers an id that exists ONLY in B (A must get 404) and an id that exists
+    /// in BOTH (A's restore must touch A's row and leave B's deleted).
+    /// </summary>
+    [Fact]
+    public async Task CrossHousehold_BsDeletedRecipe_IsNotInAsDeletedList_AndACannotRestoreIt()
+    {
+        // An id only B has: push B's ids up to A's highest with fillers, so B's next recipe is past it.
+        var aHighest = (await CreateAsync(ClientA, WriteBody("A Marker Dish 6093"))).recipeId;
+        while ((await CreateAsync(ClientB, WriteBody("B Filler Dish 6093"))).recipeId < aHighest)
+        {
+        }
+
+        var onlyInB = await CreateAsync(ClientB, WriteBody("B Secret Deleted Dish 6093"));
+        onlyInB.recipeId.Should().BeGreaterThan(aHighest, "the test needs an id that names no recipe in A");
+        await DeleteAsync(ClientB, onlyInB.recipeId);
+
+        // LIST: nothing of B's reaches A, by name or by id.
+        var aDeleted = (await DeletedAsync(ClientA)).recipes;
+        aDeleted.Should().NotContain(r => r.name.Contains("B Secret Deleted Dish 6093"));
+        (await DeletedAsync(ClientB)).recipes.Should().Contain(r => r.recipeId == onlyInB.recipeId);
+
+        // RESTORE, id only in B: A is told it does not exist, and B's recipe stays deleted.
+        var foreign = await RestoreAsync(ClientA, onlyInB.recipeId);
+        foreign.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await DeletedAsync(ClientB)).recipes.Should().Contain(r => r.recipeId == onlyInB.recipeId);
+        (await ClientB.GetAsync($"/api/recipes/{onlyInB.recipeId}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        // RESTORE, id in both: bring A's ids up to B's deleted one, so the number names a recipe in each household.
+        RecipeFull sameIdInA;
+        do
+        {
+            sameIdInA = await CreateAsync(ClientA, WriteBody("A Twin Dish 6093"));
+        }
+        while (sameIdInA.recipeId < onlyInB.recipeId);
+        sameIdInA.recipeId.Should().Be(onlyInB.recipeId, "the test needs one id that names a recipe in both households");
+        await DeleteAsync(ClientA, sameIdInA.recipeId);
+
+        (await RestoreAsync(ClientA, sameIdInA.recipeId)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        (await ClientA.GetFromJsonAsync<RecipeFull>($"/api/recipes/{sameIdInA.recipeId}", Json))!
+            .name.Should().Be("A Twin Dish 6093", "A restored its own recipe");
+        (await DeletedAsync(ClientB)).recipes.Should().Contain(
+            r => r.recipeId == onlyInB.recipeId, "A's restore of the same id did not restore B's recipe");
+        (await ClientB.GetFromJsonAsync<RecipeList>("/api/recipes?q=B Secret Deleted Dish 6093", Json))!
+            .recipes.Should().BeEmpty();
+    }
+
     // ── Auth + M1 ──────────────────────────────────────────────────────────────────
 
     [Fact]

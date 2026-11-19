@@ -42,6 +42,7 @@ import type {
 import type {
   CategoryListDto,
   CategoryWriteRequest,
+  DeletedRecipeListDto,
   MemberListDto,
 } from '../settings/lib/types';
 import type { ConnectionsDto } from '../connections/lib/types';
@@ -456,6 +457,14 @@ const categoryList = objectOf({ active: arrayOf(category), deleted: arrayOf(cate
 
 const categoryWriteRequest = objectOf({ name: str, iconEmoji: nullable(str), color: str });
 
+// ── Settings: deleted recipes (Fixtures/RecipeList/deleted.json) ────────────
+
+const deletedRecipeList = objectOf({
+  recipes: arrayOf(
+    objectOf({ recipeId: num, name: str, recipeType, deletedAt: nullable(str) })
+  ),
+});
+
 const memberList = objectOf({
   currentUserId: num,
   members: arrayOf(
@@ -574,6 +583,7 @@ interface PinnedTypes {
   RecipeDraftData: RecipeDraftData;
   CategoryListDto: CategoryListDto;
   CategoryWriteRequest: CategoryWriteRequest;
+  DeletedRecipeListDto: DeletedRecipeListDto;
   ConnectionsDto: ConnectionsDto;
   FeedbackListDto: FeedbackListDto;
   HouseholdRequestsDto: HouseholdRequestsDto;
@@ -599,6 +609,7 @@ const SHAPES: { readonly [K in keyof PinnedTypes]: Shape<PinnedTypes[K]> } = {
   RecipeDraftData: recipeDraft,
   CategoryListDto: categoryList,
   CategoryWriteRequest: categoryWriteRequest,
+  DeletedRecipeListDto: deletedRecipeList,
   ConnectionsDto: connections,
   FeedbackListDto: feedbackList,
   HouseholdRequestsDto: householdRequests,
@@ -624,6 +635,7 @@ const PIN_FIXTURES: { readonly [K in keyof PinnedTypes]: string } = {
   RecipeDraftData: 'RecipeDraft/draft.json',
   CategoryListDto: 'Settings/categories.json',
   CategoryWriteRequest: 'Settings/category-write.json',
+  DeletedRecipeListDto: 'RecipeList/deleted.json',
   ConnectionsDto: 'Settings/connections.json',
   FeedbackListDto: 'Settings/feedback.json',
   HouseholdRequestsDto: 'Settings/household-requests.json',

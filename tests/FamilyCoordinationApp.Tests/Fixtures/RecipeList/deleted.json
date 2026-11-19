@@ -1,0 +1,16 @@
+{
+  "recipes": [
+    {
+      "recipeId": 21,
+      "name": "Old Chili",
+      "recipeType": "main",
+      "deletedAt": "2026-06-20T14:30:00Z"
+    },
+    {
+      "recipeId": 7,
+      "name": "First Pancakes",
+      "recipeType": "breakfast",
+      "deletedAt": null
+    }
+  ]
+}

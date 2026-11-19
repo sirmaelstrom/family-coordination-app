@@ -14,6 +14,9 @@ public interface IRecipeProjectionService
     /// <summary>A grid card. Reads <c>Ingredients</c> (for the preview/count) and <c>CreatedBy</c> (author).</summary>
     RecipeListItemDto ToListItem(Recipe recipe);
 
+    /// <summary>A row of the Deleted Recipes list. Reads scalars only (no navigations).</summary>
+    DeletedRecipeDto ToDeleted(Recipe recipe);
+
     /// <summary>
     /// The read-drawer + edit-form superset. Reads <c>Ingredients</c> + <c>CreatedBy</c>.
     /// <paramref name="includeAuthor"/> = false strips the author fields (connected-household reads — privacy).

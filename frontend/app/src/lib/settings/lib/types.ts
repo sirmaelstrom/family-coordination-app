@@ -4,6 +4,8 @@
 //     avoid colliding with the recipes/chores DTOs; here they are island-local)
 //   - tests/.../Fixtures/Settings/{categories,members}.json (byte-locked tripwires)
 //   - Endpoints/SettingsEndpoints.cs (request DTOs)
+// The Deleted Recipes view mirrors two /api/recipes routes instead (Services/Dtos/RecipeDtos.cs,
+// Fixtures/RecipeList/deleted.json).
 //
 // ⚠ CASING: all keys camelCase. No enums.
 // ⚠ DATES (review X5): `deletedAt` is a FULL ISO-8601 instant (UTC) or null —
@@ -15,7 +17,24 @@ import type { ShellContext as AppShellContext } from '#lib/session.svelte.ts';
 
 // Canonical identity + this island's view discriminator (quest 76e6f169).
 export interface ShellContext extends AppShellContext {
-  view: 'categories' | 'users';
+  view: 'categories' | 'users' | 'deleted-recipes';
+}
+
+// ── Deleted recipes (Fixtures/RecipeList/deleted.json; GET /api/recipes/deleted) ──
+
+import type { RecipeType } from '#lib/api/recipeType.ts';
+
+export interface DeletedRecipeDto {
+  recipeId: number;
+  name: string;
+  recipeType: RecipeType;
+  /** full ISO-8601 instant (UTC) of the delete, or null when the delete was never stamped. */
+  deletedAt: string | null;
+}
+
+export interface DeletedRecipeListDto {
+  /** Most recently deleted first. */
+  recipes: DeletedRecipeDto[];
 }
 
 // ── Categories (Fixtures/Settings/categories.json) ──────────────────────────

@@ -44,6 +44,25 @@ public sealed record RecipeListItemDto(
     IReadOnlyList<string> IngredientPreview,   // first 3 ingredient names (ordered by sort order)
     int IngredientCount);             // for the "+N more" suffix
 
+// ── Deleted (Settings → Deleted Recipes) ───────────────────────────────────
+
+/// <summary>
+/// The household's soft-deleted recipes, most recently deleted first. Contract fixture:
+/// <c>Fixtures/RecipeList/deleted.json</c> (<c>DeletedRecipeListDtoContractTests</c>).
+/// </summary>
+public sealed record DeletedRecipeListDto(IReadOnlyList<DeletedRecipeDto> Recipes);
+
+/// <summary>
+/// One deleted recipe. <see cref="DeletedAt"/> is a FULL UTC instant, like a category's: the recipe row's
+/// <c>UpdatedAt</c>, which is its delete time because nothing writes a deleted recipe until it is restored.
+/// Null on a row whose delete was never stamped.
+/// </summary>
+public sealed record DeletedRecipeDto(
+    int RecipeId,
+    string Name,
+    RecipeType RecipeType,
+    DateTime? DeletedAt);
+
 // ── Full (read drawer + edit form — superset, D3) ──────────────────────────
 
 /// <summary>

@@ -235,6 +235,12 @@
       {/each}
     </div>
   {/if}
+
+  {#if !store.isViewingConnected}
+    <p class="rc-deleted-link">
+      <a href={resolve('/settings/deleted-recipes')}>Deleted recipes</a>
+    </p>
+  {/if}
 </div>
 
 <RecipeDetailDrawer
@@ -379,6 +385,14 @@
   }
   .rc-empty-hint {
     margin: 0 0 12px;
+    color: var(--color-text-muted);
+  }
+  .rc-deleted-link {
+    margin: 24px 0 0;
+    text-align: center;
+    font-size: 0.875rem;
+  }
+  .rc-deleted-link a {
     color: var(--color-text-muted);
   }
   .rc-inline-error {
