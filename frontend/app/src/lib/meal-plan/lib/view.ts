@@ -60,12 +60,21 @@ export function stepPlan(loc: PlanLocation, dir: -1 | 1): PlanLocation {
 }
 
 /**
- * True only when the board in hand is the week being shown. Moving to another
- * week updates `weekStart` at once and keeps the old board until the new one
- * arrives (or fails), and the old board must not stand in for the new week.
+ * True only when the board in hand is the week on screen. Three things name a
+ * week, and slots may be drawn only when all three agree:
+ *   • `shownWeek`: the week the URL shows (`planWeek(loc)`);
+ *   • `storeWeek`: the store's `weekStart`, which follows the URL one effect
+ *     later and is the week its slot zones are built for;
+ *   • the board, which stays the old week's until the new one arrives (or fails).
+ * Any other combination is a read in flight or a failed one, and the old board
+ * must not stand in: it would draw a populated day as empty, clickable slots.
  */
-export function boardIsForWeek(board: { weekStartDate: string } | null, weekStart: string): boolean {
-  return board != null && board.weekStartDate === weekStart;
+export function boardIsForWeek(
+  board: { weekStartDate: string } | null,
+  storeWeek: string,
+  shownWeek: string,
+): boolean {
+  return board != null && board.weekStartDate === storeWeek && storeWeek === shownWeek;
 }
 
 /** The Monday of the week the store must hold to render this location. */

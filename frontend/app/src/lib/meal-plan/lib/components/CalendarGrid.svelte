@@ -11,11 +11,13 @@
   // ───────────────────────────────────────────────────────────────────────
   import type { MealPlanEntryDto, MealType } from '../types';
   import { mealPlanStore } from '../state.svelte';
-  import { weekDays, weekdayShort, monthDay, dayLong, isToday } from '../dates';
+  import { weekDays, weekdayShort, monthDay, dayLong } from '../dates';
   import MealSlot from './MealSlot.svelte';
 
   interface Props {
     weekStart: string;
+    /** "YYYY-MM-DD" — the current local day, from the owner's TodayClock (the highlighted column). */
+    today: string;
     onSlotAdd: (date: string, mealType: MealType) => void;
     onRemove: (entry: MealPlanEntryDto) => void;
     /** Change how many this meal is cooked for (prompts in the parent). */
@@ -26,7 +28,7 @@
     onOpenDay: (date: string) => void;
   }
 
-  let { weekStart, onSlotAdd, onRemove, onSetServings, onViewRecipe, onViewCustom, onOpenDay }: Props =
+  let { weekStart, today, onSlotAdd, onRemove, onSetServings, onViewRecipe, onViewCustom, onOpenDay }: Props =
     $props();
 
   const store = mealPlanStore;
@@ -48,7 +50,7 @@
     <button
       type="button"
       class="mp-day-header"
-      class:today={isToday(day)}
+      class:today={day === today}
       aria-label={`Open ${dayLong(day)} in day view`}
       title="Open in day view"
       onclick={() => onOpenDay(day)}

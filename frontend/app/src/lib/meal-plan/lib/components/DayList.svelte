@@ -4,15 +4,19 @@
   // section per day (native <details>), with the weekday + date, a "Today"
   // chip, and a "N meals" count in the summary; expanding shows B/L/D rows
   // (+ Snack when the week has one) and an "Open in day view" link.
-  // Today's section is expanded by default and left-accented.
+  // Today's section is expanded by default and left-accented. `today` is the
+  // owner's TodayClock value, so at midnight the chip, the accent and the open
+  // section move to the new day, as a fresh load would draw them.
   // ───────────────────────────────────────────────────────────────────────
   import type { MealPlanEntryDto, MealType } from '../types';
   import { mealPlanStore } from '../state.svelte';
-  import { weekDays, weekdayLong, monthDay, isToday } from '../dates';
+  import { weekDays, weekdayLong, monthDay } from '../dates';
   import MealSlot from './MealSlot.svelte';
 
   interface Props {
     weekStart: string;
+    /** "YYYY-MM-DD" — the current local day, from the owner's TodayClock. */
+    today: string;
     onSlotAdd: (date: string, mealType: MealType) => void;
     onRemove: (entry: MealPlanEntryDto) => void;
     /** Change how many this meal is cooked for (prompts in the parent). */
@@ -23,7 +27,7 @@
     onOpenDay: (date: string) => void;
   }
 
-  let { weekStart, onSlotAdd, onRemove, onSetServings, onViewRecipe, onViewCustom, onOpenDay }: Props =
+  let { weekStart, today, onSlotAdd, onRemove, onSetServings, onViewRecipe, onViewCustom, onOpenDay }: Props =
     $props();
 
   const store = mealPlanStore;
@@ -40,14 +44,14 @@
 
 <div class="mp-daylist">
   {#each days as day (day)}
-    {@const today = isToday(day)}
-    <details class="mp-day-panel" class:today open={today}>
+    {@const isToday = day === today}
+    <details class="mp-day-panel" class:today={isToday} open={isToday}>
       <summary class="mp-day-summary">
         <span class="mp-day-summary-main">
           <span class="mp-day-summary-name">{weekdayLong(day)}</span>
           <span class="mp-day-summary-date">{monthDay(day)}</span>
         </span>
-        {#if today}
+        {#if isToday}
           <span class="mp-day-summary-chip">Today</span>
         {/if}
         <span class="mp-day-summary-count">{store.dayCount(day)} meals</span>

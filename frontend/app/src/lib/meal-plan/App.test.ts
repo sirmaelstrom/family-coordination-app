@@ -37,6 +37,8 @@ const CTX: ShellContext = {
   initials: 'TM',
   pictureUrl: null,
   isSiteAdmin: false,
+  listId: null,
+  recipeId: null,
 };
 
 function dinner(entryId: number, date: string, name: string): MealPlanEntryDto {
