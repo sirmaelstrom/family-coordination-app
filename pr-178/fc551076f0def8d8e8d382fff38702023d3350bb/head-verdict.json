@@ -1,0 +1,70 @@
+{
+  "surface": "fca-restore-drive",
+  "status": "green",
+  "branch": {
+    "commit": "fc551076f0def8d8e8d382fff38702023d3350bb"
+  },
+  "startedAt": "2026-11-19T23:25:32.181Z",
+  "views": [
+    {
+      "view": "recipe-list-shows-the-recipe",
+      "ok": true,
+      "screenshot": "01-recipe-list-shows-the-recipe.png"
+    },
+    {
+      "view": "delete-it-from-the-drawer",
+      "ok": true,
+      "screenshot": "02-delete-it-from-the-drawer.png"
+    },
+    {
+      "view": "search-no-longer-finds-it",
+      "ok": true,
+      "screenshot": "03-search-no-longer-finds-it.png"
+    },
+    {
+      "view": "recipes-page-links-to-deleted-recipes",
+      "ok": true,
+      "screenshot": "04-recipes-page-links-to-deleted-recipes.png"
+    },
+    {
+      "view": "settings-nav-has-deleted-recipes",
+      "ok": true,
+      "screenshot": "05-settings-nav-has-deleted-recipes.png"
+    },
+    {
+      "view": "get-api-recipes-deleted-answers-200",
+      "ok": true,
+      "screenshot": "06-get-api-recipes-deleted-answers-200.png"
+    },
+    {
+      "view": "deleted-recipes-lists-it-with-a-restore-action",
+      "ok": true,
+      "screenshot": "07-deleted-recipes-lists-it-with-a-restore-action.png"
+    },
+    {
+      "view": "restore-puts-it-back",
+      "ok": true,
+      "screenshot": "08-restore-puts-it-back.png"
+    },
+    {
+      "view": "the-unfiltered-recipe-list-shows-it-again-still-a-favorite-with-its-ingredients",
+      "ok": true,
+      "screenshot": "09-the-unfiltered-recipe-list-shows-it-again-still-a-favorite-with-its-ingredients.png"
+    },
+    {
+      "view": "recipe-search-finds-it-again",
+      "ok": true,
+      "screenshot": "10-recipe-search-finds-it-again.png"
+    },
+    {
+      "view": "meal-plan-picker-finds-it",
+      "ok": true,
+      "screenshot": "11-meal-plan-picker-finds-it.png"
+    },
+    {
+      "view": "on-a-phone-categories-links-to-deleted-recipes",
+      "ok": true,
+      "screenshot": "12-on-a-phone-categories-links-to-deleted-recipes.png"
+    }
+  ]
+}
