@@ -439,7 +439,7 @@
 <ConfirmDialog
   open={confirmRegenerateOpen}
   title="Regenerate List"
-  message="Rebuild this list from its full linked meal-plan week? Your manual items, checked-off state and quantity edits are kept; generated quantities refresh from the whole week's plan."
+  message="Rebuild this list from the whole week of its meal plan? Items you added yourself are kept. Items from the meal plan keep their check marks and quantity changes as long as their name, unit and category are unchanged."
   confirmLabel="Regenerate"
   onCancel={() => (confirmRegenerateOpen = false)}
   onConfirm={handleConfirmRegenerate}
