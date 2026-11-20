@@ -32,10 +32,10 @@ public class DashboardService(
         var householdName = await GetHouseholdNameAsync(userId, householdId, cancellationToken);
 
         // Chores: the lean count read (GetHomeStatsAsync) instead of the FULL board build — the dashboard only
-        // needs the four counts, not rooms/rollups/roster folds/subtasks. Counting semantics are locked to the
-        // board + ChoreHomeStats reducer by ChoreBoardHomeStatsTests' equivalence test (incl. the snooze guard
-        // on up-for-grabs and once-per-chore multi-room counting).
-        var choreStats = await choreBoardService.GetHomeStatsAsync(householdId, cancellationToken: cancellationToken);
+        // needs the four counts, not rooms/rollups/subtasks. Counting semantics are locked to the board +
+        // ChoreHomeStats reducer by ChoreBoardHomeStatsTests' equivalence test (incl. the snooze guard on
+        // up-for-grabs, the multi-person roster rule for this member, and once-per-chore multi-room counting).
+        var choreStats = await choreBoardService.GetHomeStatsAsync(householdId, userId, cancellationToken: cancellationToken);
         var chores = new DashboardChoreSummaryDto(
             choreStats.ActiveTotal, choreStats.Overdue, choreStats.DueToday, choreStats.UpForGrabs);
 

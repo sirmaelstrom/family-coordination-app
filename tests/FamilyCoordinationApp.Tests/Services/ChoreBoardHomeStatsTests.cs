@@ -24,6 +24,7 @@ public class ChoreBoardHomeStatsTests
     private const int H2 = 2;   // other household (isolation)
     private const int Alice = 100;
     private const int Bob = 101;
+    private const int Carol = 200;   // H2's member
 
     // A fixed evaluation instant. Use UTC so local-day == UTC-day and dueness reasoning is direct.
     private static readonly DateTime Now = new(2026, 5, 30, 12, 0, 0, DateTimeKind.Utc);
@@ -46,7 +47,7 @@ public class ChoreBoardHomeStatsTests
         ctx.Users.AddRange(
             new User { Id = Alice, HouseholdId = H1, Email = "a@x.com", DisplayName = "Alice", Initials = "AL" },
             new User { Id = Bob, HouseholdId = H1, Email = "b@x.com", DisplayName = "Bob", Initials = "BO" },
-            new User { Id = 200, HouseholdId = H2, Email = "c@x.com", DisplayName = "Carol", Initials = "CA" });
+            new User { Id = Carol, HouseholdId = H2, Email = "c@x.com", DisplayName = "Carol", Initials = "CA" });
         ctx.SaveChanges();
     }
 
@@ -165,22 +166,33 @@ public class ChoreBoardHomeStatsTests
         SeedMemberships(
             new ChoreRoom { HouseholdId = H1, ChoreId = 7, RoomId = 10 },
             new ChoreRoom { HouseholdId = H1, ChoreId = 7, RoomId = 11 });
+
+        // 10: future two-person chore, Alice in, Bob not → up for grabs to Bob only (the lens's roster rule)
+        // 11: future two-person chore, nobody on it   → up for grabs to both
+        var aliceIn = OneOff(10, H1, new DateOnly(2026, 6, 25));
+        aliceIn.RequiredCount = 2;
+        var nobodyOn = OneOff(11, H1, new DateOnly(2026, 6, 25));
+        nobodyOn.RequiredCount = 2;
+        Seed(aliceIn, nobodyOn);
+        SeedParticipation(10, Alice);
     }
 
     // ------------------------------------------------------------------ the equivalence lock
 
-    [Fact]
-    public async Task HomeStats_EqualBoardDerivedCounts_OnRepresentativeScenario()
+    [Theory]
+    [InlineData(Alice, 5)]
+    [InlineData(Bob, 6)]
+    public async Task HomeStats_EqualBoardDerivedCounts_OnRepresentativeScenario(int member, int expectedUpForGrabs)
     {
         SeedRepresentativeScenario();
         var service = CreateService();
 
-        // The OLD dashboard composition: full board build → ChoreHomeStats reducer over the flat list.
-        var board = await service.GetBoardAsync(H1, Alice, Now);
-        var derived = ChoreHomeStats.Compute(board.Chores);
+        // The board as this member sees it → ChoreHomeStats reducer (the lens's rule) over the flat list.
+        var board = await service.GetBoardAsync(H1, member, Now);
+        var derived = ChoreHomeStats.Compute(board.Chores, member);
 
-        // The NEW lean read.
-        var stats = await service.GetHomeStatsAsync(H1, Now);
+        // The lean read.
+        var stats = await service.GetHomeStatsAsync(H1, member, Now);
 
         // Field-for-field equivalence — the point of the exercise.
         stats.ActiveTotal.Should().Be(derived.Total);
@@ -189,11 +201,13 @@ public class ChoreBoardHomeStatsTests
         stats.UpForGrabs.Should().Be(derived.UpForGrabs);
 
         // Concrete literals too, so the two paths can't drift together unnoticed:
-        // active = {1,2,3,4,5,6,7} (Done 8 / Archived 9 / H2's 20 excluded); multi-room 7 counts ONCE.
-        stats.ActiveTotal.Should().Be(7, "snoozed chores stay in the active total; Done/Archived/H2 are out");
+        // active = {1,2,3,4,5,6,7,10,11} (Done 8 / Archived 9 / H2's 20 excluded); multi-room 7 counts ONCE.
+        stats.ActiveTotal.Should().Be(9, "snoozed chores stay in the active total; Done/Archived/H2 are out");
         stats.Overdue.Should().Be(3, "chores 1, 5, 7 — the snoozed 4 reads Scheduled, not Overdue");
         stats.DueToday.Should().Be(1, "chore 2 is due on the frozen today");
-        stats.UpForGrabs.Should().Be(4, "unassigned 1, 3, 7 + stale-claimed 5; snoozed 4 and fresh-claimed 6 are out");
+        stats.UpForGrabs.Should().Be(expectedUpForGrabs,
+            "unassigned 1, 3, 7 + stale-claimed 5 + two-person 11 for everyone, and two-person 10 only for Bob, "
+            + "who is not on its roster; snoozed 4 and fresh-claimed 6 are out");
     }
 
     // ------------------------------------------------------------------ per-concern guards
@@ -209,7 +223,7 @@ public class ChoreBoardHomeStatsTests
             new ChoreRoom { HouseholdId = H1, ChoreId = 1, RoomId = 10 },
             new ChoreRoom { HouseholdId = H1, ChoreId = 1, RoomId = 11 });
 
-        var stats = await CreateService().GetHomeStatsAsync(H1, Now);
+        var stats = await CreateService().GetHomeStatsAsync(H1, Alice, Now);
 
         stats.Should().Be(new ChoreHomeStatsDto(
             ActiveTotal: 1, Overdue: 1, DueToday: 0, UpForGrabs: 1),
@@ -222,7 +236,7 @@ public class ChoreBoardHomeStatsTests
         // Would be Overdue + UpForGrabs if not snoozed.
         Seed(OneOff(1, H1, new DateOnly(2026, 5, 1), snoozedUntil: new DateOnly(2026, 6, 5)));
 
-        var stats = await CreateService().GetHomeStatsAsync(H1, Now);
+        var stats = await CreateService().GetHomeStatsAsync(H1, Alice, Now);
 
         stats.Should().Be(new ChoreHomeStatsDto(ActiveTotal: 1, Overdue: 0, DueToday: 0, UpForGrabs: 0));
     }
@@ -232,7 +246,7 @@ public class ChoreBoardHomeStatsTests
     {
         SeedRepresentativeScenario();
 
-        var stats = await _tenant.As(H2, () => CreateService().GetHomeStatsAsync(H2, Now));
+        var stats = await _tenant.As(H2, () => CreateService().GetHomeStatsAsync(H2, Carol, Now));
 
         stats.Should().Be(new ChoreHomeStatsDto(ActiveTotal: 1, Overdue: 1, DueToday: 0, UpForGrabs: 1),
             "H2 sees only its own chore 20 — never H1's board (M1)");
@@ -241,8 +255,81 @@ public class ChoreBoardHomeStatsTests
     [Fact]
     public async Task HomeStats_EmptyHousehold_ReturnsZeros()
     {
-        var stats = await CreateService().GetHomeStatsAsync(H1, Now);
+        var stats = await CreateService().GetHomeStatsAsync(H1, Alice, Now);
 
         stats.Should().Be(new ChoreHomeStatsDto(0, 0, 0, 0));
+    }
+
+    // ------------------------------------------------------------------ multi-person roster rule (quest edfc7d63)
+    //
+    // The board's "Up for grabs" lens (frontend/app/src/lib/chores/lib/state.svelte.ts upForGrabsChores) shows an
+    // unfinished multi-person chore only to members NOT on its roster. Home's count is read through the dashboard,
+    // which already knows the member, so these go through DashboardService.GetDashboardAsync.
+
+    private DashboardService CreateDashboard()
+    {
+        var dbFactory = new Mock<IDbContextFactory<ApplicationDbContext>>();
+        dbFactory.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
+        var shopping = new Mock<FamilyCoordinationApp.Services.Interfaces.IShoppingListService>();
+        shopping.Setup(s => s.GetActiveShoppingListsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        var mealPlans = new Mock<FamilyCoordinationApp.Services.Interfaces.IMealPlanService>();
+        mealPlans.Setup(m => m.GetWeekStartDate(It.IsAny<DateOnly>())).Returns(Today);
+        var clock = new Mock<IHouseholdClock>();
+        clock.Setup(c => c.Today(It.IsAny<int>())).Returns(Today);
+
+        return new DashboardService(dbFactory.Object, CreateService(), shopping.Object, mealPlans.Object, clock.Object);
+    }
+
+    private void SeedParticipation(int choreId, int userId, ChoreParticipationType type = ChoreParticipationType.Committed)
+    {
+        using var ctx = new ApplicationDbContext(_options);
+        ctx.ChoreParticipationEvents.Add(new ChoreParticipationEvent
+        {
+            HouseholdId = H1,
+            ChoreId = choreId,
+            Type = type,
+            SubjectUserId = userId,
+            ActorUserId = userId,
+            At = DateTime.UtcNow.AddHours(-1),
+        });
+        ctx.SaveChanges();
+    }
+
+    // A future-dated, unassigned two-person chore: dueness never matters to up-for-grabs, only snooze and roster.
+    private static Chore TwoPerson(int id)
+    {
+        var chore = OneOff(id, H1, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30));
+        chore.RequiredCount = 2;
+        return chore;
+    }
+
+    [Fact]
+    public async Task HomeUpForGrabs_MultiPersonChore_CountsOnlyForMembersNotOnItsRoster()
+    {
+        Seed(TwoPerson(1));
+        SeedParticipation(1, Alice);   // Alice is in; Bob is not
+
+        var dashboard = CreateDashboard();
+        var forAlice = await dashboard.GetDashboardAsync(H1, Alice, "Alice");
+        var forBob = await dashboard.GetDashboardAsync(H1, Bob, "Bob");
+
+        forAlice.Chores.UpForGrabs.Should().Be(0, "Alice is on the roster, so the board shows it under Mine, not Up for grabs");
+        forBob.Chores.UpForGrabs.Should().Be(1, "Bob is not on the roster of an unfinished two-person chore, so he can join");
+    }
+
+    [Fact]
+    public async Task HomeUpForGrabs_MultiPersonChore_AssignedMemberIsOnTheRoster()
+    {
+        Seed(TwoPerson(1));
+        SeedParticipation(1, Alice, ChoreParticipationType.Assigned);
+        SeedParticipation(1, Bob, ChoreParticipationType.Assigned);
+
+        var dashboard = CreateDashboard();
+
+        (await dashboard.GetDashboardAsync(H1, Alice, "Alice")).Chores.UpForGrabs.Should().Be(0);
+        (await dashboard.GetDashboardAsync(H1, Bob, "Bob")).Chores.UpForGrabs.Should().Be(0,
+            "both members are on the roster (assigned counts), so neither board shows it as up for grabs");
     }
 }

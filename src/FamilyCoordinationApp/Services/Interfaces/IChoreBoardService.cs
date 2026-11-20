@@ -34,11 +34,14 @@ public interface IChoreBoardService
     /// <see cref="GetBoardAsync"/>'s <c>Chores</c> via the <c>ChoreHomeStats</c> reducer: same active set
     /// (strict <paramref name="householdId"/> filter, M1; stored Done/Archived excluded), same computed
     /// dueness/snooze gate (<see cref="ChoreStatusCalculator"/>), one row per chore (multi-room membership
-    /// never multiplies a chore). <paramref name="now"/> may be supplied for deterministic tests; when null
-    /// the service uses <c>TimeProvider.GetUtcNow()</c>.
+    /// never multiplies a chore). Up-for-grabs is counted as <paramref name="userId"/> sees the board's lens:
+    /// an unfinished multi-person chore counts only when that member is not on its roster, so the multi-person
+    /// rosters are folded (and only when the household has one). <paramref name="now"/> may be supplied for
+    /// deterministic tests; when null the service uses <c>TimeProvider.GetUtcNow()</c>.
     /// </summary>
     Task<ChoreHomeStatsDto> GetHomeStatsAsync(
         int householdId,
+        int userId,
         DateTime? now = null,
         CancellationToken cancellationToken = default);
 
