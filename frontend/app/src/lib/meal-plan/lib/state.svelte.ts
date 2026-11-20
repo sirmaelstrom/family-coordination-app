@@ -243,6 +243,9 @@ class MealPlanStore {
       call: () => addEntry(body),
       commit: (created) => {
         if (!this.board || this.weekStart !== targetWeek) return;
+        // Only into the board of the entry's own week: a picker opened before the week changed (the bare
+        // link's midnight rollover) still submits its old date, and that entry belongs to the old week.
+        if (mondayOf(created.date) !== this.board.weekStartDate) return;
         // The POST may have GetOrCreated the week's plan, so the board's
         // mealPlanId could have been null — adopt the entry's plan id.
         if (this.board.mealPlanId == null) {

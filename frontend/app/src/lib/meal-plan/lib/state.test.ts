@@ -19,7 +19,7 @@ vi.mock('./api', async () => {
 vi.mock('#lib/shared/toast-store.svelte.ts', () => ({ showToast: vi.fn() }));
 
 import { mealPlanStore as store } from './state.svelte';
-import { ApiError, getBoard, moveEntry, removeEntry } from './api';
+import { ApiError, addEntry, getBoard, moveEntry, removeEntry } from './api';
 import { showToast } from '#lib/shared/toast-store.svelte.ts';
 import type { MealPlanBoardDto, MealPlanEntryDto } from './types';
 
@@ -207,5 +207,26 @@ describe('meal-plan writes vs loads (41337b6f)', () => {
 
     patch.resolve({ ...entry(1), mealType: 'lunch', version: 99 });
     await moving;
+  });
+
+  // fca#175 review 5984614204: a Sunday picker left open overnight confirms after the bare link has
+  // rolled into Monday and loaded Monday's week. The add still says Sunday; it must not land on Monday's board.
+  it("an add for another week's date (a picker left open across the rollover) is saved but not merged", async () => {
+    const sunday = '2026-10-18'; // the last day of W1
+    vi.mocked(getBoard).mockResolvedValueOnce(board(W2, [entry(9, W2)]));
+    await store.changeWeek(W2); // what App's week effect does when the bare link rolls into Monday
+    vi.mocked(addEntry).mockResolvedValueOnce(entry(20, sunday, 'snack'));
+
+    await store.addEntry({ date: sunday, mealType: 'snack', customMealName: 'Popcorn' });
+
+    expect(addEntry).toHaveBeenCalledWith(expect.objectContaining({ date: sunday })); // the server still saves Sunday's
+    expect(ids()).toEqual([9]);
+    expect(store.weekMealRows()).not.toContain('snack'); // no phantom Snack row on Monday's week
+  });
+
+  it("an add for the board's own week is still merged", async () => {
+    vi.mocked(addEntry).mockResolvedValueOnce(entry(20, '2026-10-18', 'snack'));
+    await store.addEntry({ date: '2026-10-18', mealType: 'snack', customMealName: 'Popcorn' });
+    expect(ids()).toEqual([1, 2, 20]);
   });
 });
