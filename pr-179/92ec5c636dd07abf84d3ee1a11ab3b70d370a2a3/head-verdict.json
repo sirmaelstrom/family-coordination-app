@@ -1,0 +1,30 @@
+{
+  "surface": "fca-regenerate-drive",
+  "status": "green",
+  "branch": {
+    "commit": "92ec5c636dd07abf84d3ee1a11ab3b70d370a2a3"
+  },
+  "startedAt": "2026-11-20T00:11:50.046Z",
+  "views": [
+    {
+      "view": "generated-list",
+      "ok": true,
+      "screenshot": "01-generated-list.png"
+    },
+    {
+      "view": "regenerate-confirm-desktop",
+      "ok": true,
+      "screenshot": "02-regenerate-confirm-desktop.png"
+    },
+    {
+      "view": "regenerate-confirm-phone",
+      "ok": true,
+      "screenshot": "03-regenerate-confirm-phone.png"
+    },
+    {
+      "view": "after-regenerate",
+      "ok": true,
+      "screenshot": "04-after-regenerate.png"
+    }
+  ]
+}
