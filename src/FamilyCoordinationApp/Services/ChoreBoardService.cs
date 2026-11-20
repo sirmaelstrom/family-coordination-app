@@ -68,32 +68,8 @@ public class ChoreBoardService(
             .Select(c => c.ChoreId)
             .ToList();
 
-        Dictionary<int, List<ChoreCompletion>> completionsByChore = [];
-        if (multiPersonIds.Count > 0)
-        {
-            // M7: single household-scoped query covering only the multi-person chore ids.
-            var allCompletions = await context.ChoreCompletions
-                .Where(c => multiPersonIds.Contains(c.ChoreId))
-                .ToListAsync(cancellationToken);
-
-            completionsByChore = allCompletions
-                .GroupBy(c => c.ChoreId)
-                .ToDictionary(g => g.Key, g => g.ToList());
-        }
-
-        // P5 (rework): lazily load participation events for the same multi-person chore set — the fold
-        // (ChoreRosterCalculator) derives the named roster on read. Single-person chores never query this.
-        Dictionary<int, List<ChoreParticipationEvent>> participationByChore = [];
-        if (multiPersonIds.Count > 0)
-        {
-            var allEvents = await context.ChoreParticipationEvents
-                .Where(e => multiPersonIds.Contains(e.ChoreId))
-                .ToListAsync(cancellationToken);
-
-            participationByChore = allEvents
-                .GroupBy(e => e.ChoreId)
-                .ToDictionary(g => g.Key, g => g.ToList());
-        }
+        var (completionsByChore, participationByChore) =
+            await LoadRosterInputsAsync(context, multiPersonIds, cancellationToken);
 
         // Phase 14: load every chore's subtasks in ONE household-scoped query, ordered + grouped by ChoreId
         // (mirrors the completions/participation batch pattern). A chore with no checklist gets an empty list.
@@ -176,6 +152,7 @@ public class ChoreBoardService(
     /// <inheritdoc />
     public async Task<ChoreHomeStatsDto> GetHomeStatsAsync(
         int householdId,
+        int userId,
         DateTime? now = null,
         CancellationToken cancellationToken = default)
     {
@@ -184,13 +161,15 @@ public class ChoreBoardService(
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         // EXACTLY GetBoardAsync's active set (M1 via the Tenant filter + Status == Active), but projected down to
-        // the recurrence + assignment fields the two calculator calls read — no rooms, members, completions,
-        // participation, subtasks, or ChoreRoom memberships are touched. One row per chore: room fan-out is a
-        // rollup concern only, so a multi-room chore counts ONCE here, exactly like board.Chores (MN1).
+        // the recurrence + assignment fields the calculator calls read — no rooms, members, subtasks, or
+        // ChoreRoom memberships are touched. One row per chore: room fan-out is a rollup concern only, so a
+        // multi-room chore counts ONCE here, exactly like board.Chores (MN1).
         var chores = await context.Chores
             .Where(c => c.Status == ChoreStatus.Active)
             .Select(c => new
             {
+                c.ChoreId,
+                c.RequiredCount,
                 c.RecurrenceMode,
                 c.IntervalDays,
                 c.AnchorDate,
@@ -203,9 +182,15 @@ public class ChoreBoardService(
             })
             .ToListAsync(cancellationToken);
 
+        // Up-for-grabs is per member for a multi-person chore (the board lens's roster rule), so fold the same
+        // roster GetBoardAsync folds — loaded only when the household has a multi-person chore, as there.
+        var multiPersonIds = chores.Where(c => c.RequiredCount > 1).Select(c => c.ChoreId).ToList();
+        var (completionsByChore, participationByChore) =
+            await LoadRosterInputsAsync(context, multiPersonIds, cancellationToken);
+
         // Same reduction as ChoreHomeStats.Compute over the board's ChoreDtos, applied to the same computed
-        // dueness inputs: a snoozed chore already reads Scheduled (auto-excluded from Overdue/DueToday); only
-        // UpForGrabs needs the explicit !IsSnoozed guard, or a snoozed unclaimed chore would still surface.
+        // dueness and roster inputs: a snoozed chore already reads Scheduled (auto-excluded from
+        // Overdue/DueToday); UpForGrabs is ChoreHomeStats.IsUpForGrabs, the board lens's rule.
         int overdue = 0, dueToday = 0, upForGrabs = 0;
         foreach (var c in chores)
         {
@@ -223,9 +208,24 @@ public class ChoreBoardService(
                 dueToday++;
             }
 
-            if (!dueness.IsSnoozed &&
-                (c.AssignmentKind == AssignmentKind.None ||
-                 calculator.IsClaimStale(c.AssignmentKind, c.ClaimedAt, asOf)))
+            // X=1: the trio roster never decides (the multi-person arm is the only roster reader), so skip the fold.
+            var roster = c.RequiredCount > 1
+                ? ChoreRosterCalculator.Fold(
+                    participationByChore.GetValueOrDefault(c.ChoreId) ?? [],
+                    completionsByChore.GetValueOrDefault(c.ChoreId) ?? [],
+                    c.LastCompletedAt,
+                    c.RequiredCount,
+                    recurring: c.RecurrenceMode != RecurrenceMode.OneOff)
+                : null;
+
+            if (ChoreHomeStats.IsUpForGrabs(
+                    dueness.IsSnoozed,
+                    c.RequiredCount,
+                    roster?.CompletedCount ?? 0,
+                    roster?.Members.Select(m => m.UserId) ?? [],
+                    c.AssignmentKind,
+                    calculator.IsClaimStale(c.AssignmentKind, c.ClaimedAt, asOf),
+                    userId))
             {
                 upForGrabs++;
             }
@@ -250,6 +250,39 @@ public class ChoreBoardService(
             .OrderBy(s => s.SortOrder).ThenBy(s => s.SubtaskId)
             .Select(s => new ChoreSubtaskDto(s.SubtaskId, s.Title, s.IsDone, s.SortOrder, s.CompletedByUserId, s.CompletedAt)).ToList();
         return ToDto(chore, dueness, isClaimStale, roomIds, roster, completedCount: 0, subtasks);
+    }
+
+    // ------------------------------------------------------------------ roster inputs
+
+    /// <summary>
+    /// The completion ledger and participation events of the given multi-person chores, each grouped by
+    /// <c>ChoreId</c> — the inputs <see cref="ChoreRosterCalculator.Fold"/> derives a roster from. P5: no query
+    /// at all when there are no multi-person chores; otherwise one household-scoped query each (M7).
+    /// </summary>
+    private static async Task<(Dictionary<int, List<ChoreCompletion>> Completions,
+        Dictionary<int, List<ChoreParticipationEvent>> Participation)> LoadRosterInputsAsync(
+        ApplicationDbContext context,
+        IReadOnlyList<int> multiPersonIds,
+        CancellationToken cancellationToken)
+    {
+        if (multiPersonIds.Count == 0)
+        {
+            return ([], []);
+        }
+
+        var completions = (await context.ChoreCompletions
+                .Where(c => multiPersonIds.Contains(c.ChoreId))
+                .ToListAsync(cancellationToken))
+            .GroupBy(c => c.ChoreId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var participation = (await context.ChoreParticipationEvents
+                .Where(e => multiPersonIds.Contains(e.ChoreId))
+                .ToListAsync(cancellationToken))
+            .GroupBy(e => e.ChoreId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        return (completions, participation);
     }
 
     // ------------------------------------------------------------------ projection

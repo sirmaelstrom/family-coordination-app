@@ -13,7 +13,18 @@ namespace FamilyCoordinationApp.Tests.Services;
 /// </summary>
 public class ChoreHomeStatsTests
 {
-    private static ChoreDto Dto(int id, DueState dueState, AssignmentKind kind, bool isSnoozed = false, bool isClaimStale = false) => new(
+    private const int Me = 7;
+    private const int Other = 8;
+
+    private static ChoreDto Dto(
+        int id,
+        DueState dueState,
+        AssignmentKind kind,
+        bool isSnoozed = false,
+        bool isClaimStale = false,
+        int requiredCount = 1,
+        int completedCount = 0,
+        params int[] roster) => new(
         Id: id,
         Name: $"Chore {id}",
         Icon: "",
@@ -38,19 +49,19 @@ public class ChoreHomeStatsTests
         LastCompletedAt: null,
         PhotoPath: null,
         Version: 1,
-        RequiredCount: 1,
-        CompletedCount: 0,
-        Roster: [],
+        RequiredCount: requiredCount,
+        CompletedCount: completedCount,
+        Roster: roster.Select(u => new RosterMemberDto(u, RosterState.In)).ToList(),
         Subtasks: []);
 
     [Fact]
     public void Compute_ExcludesSnoozedFromUpForGrabs_WithClearedControl()
     {
         // The same unclaimed chore: snoozed → NOT up-for-grabs; un-snoozed → up-for-grabs.
-        ChoreHomeStats.Compute(new[] { Dto(1, DueState.Scheduled, AssignmentKind.None, isSnoozed: true) })
+        ChoreHomeStats.Compute(new[] { Dto(1, DueState.Scheduled, AssignmentKind.None, isSnoozed: true) }, Me)
             .UpForGrabs.Should().Be(0);
 
-        ChoreHomeStats.Compute(new[] { Dto(1, DueState.Scheduled, AssignmentKind.None, isSnoozed: false) })
+        ChoreHomeStats.Compute(new[] { Dto(1, DueState.Scheduled, AssignmentKind.None, isSnoozed: false) }, Me)
             .UpForGrabs.Should().Be(1);
     }
 
@@ -66,11 +77,29 @@ public class ChoreHomeStatsTests
             Dto(5, DueState.Scheduled, AssignmentKind.None, isSnoozed: true),   // snoozed => excluded everywhere
         };
 
-        var r = ChoreHomeStats.Compute(chores);
+        var r = ChoreHomeStats.Compute(chores, Me);
 
         r.Total.Should().Be(5);
         r.Overdue.Should().Be(1, "snoozed #5 reads Scheduled — it never inflates Overdue");
         r.DueToday.Should().Be(1, "snoozed #5 reads Scheduled — it never inflates DueToday");
         r.UpForGrabs.Should().Be(3, "#2, #3, #4 — NOT the snoozed #5 nor the assigned #1");
+    }
+
+    [Fact]
+    public void Compute_MultiPersonChore_UsesTheBoardLensRosterRule()
+    {
+        // The board's Up for grabs lens (upForGrabsChores, frontend/app/src/lib/chores/lib/state.svelte.ts): an
+        // unfinished multi-person chore is up for grabs only to a member not on its roster, whatever the
+        // assignment trio says; a finished one falls back to the single-person rule; snoozed never counts.
+        ChoreHomeStats.Compute(new[] { Dto(1, DueState.NotDue, AssignmentKind.None, requiredCount: 2, roster: [Me]) }, Me)
+            .UpForGrabs.Should().Be(0, "I am on the roster, so the board shows it under Mine");
+        ChoreHomeStats.Compute(new[] { Dto(1, DueState.NotDue, AssignmentKind.None, requiredCount: 2, roster: [Other]) }, Me)
+            .UpForGrabs.Should().Be(1, "I am not on the roster of an unfinished two-person chore");
+        ChoreHomeStats.Compute(new[] { Dto(1, DueState.NotDue, AssignmentKind.Assigned, requiredCount: 2, roster: [Other]) }, Me)
+            .UpForGrabs.Should().Be(1, "the roster decides for a multi-person chore, not the assignment trio");
+        ChoreHomeStats.Compute(new[] { Dto(1, DueState.NotDue, AssignmentKind.None, isSnoozed: true, requiredCount: 2) }, Me)
+            .UpForGrabs.Should().Be(0, "a snoozed chore is never up for grabs");
+        ChoreHomeStats.Compute(new[] { Dto(1, DueState.NotDue, AssignmentKind.None, requiredCount: 2, completedCount: 2, roster: [Me, Other]) }, Me)
+            .UpForGrabs.Should().Be(1, "a finished multi-person chore falls back to the nobody-has-it rule");
     }
 }

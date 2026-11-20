@@ -481,7 +481,7 @@ public class ChoreBoardServiceTests
         board.Rooms.Single(r => r.RoomId == 11).ChoreCount.Should().Be(1);
 
         // Household totals read the flat list → each bucket counts the chore ONCE, never twice.
-        var stats = ChoreHomeStats.Compute(board.Chores);
+        var stats = ChoreHomeStats.Compute(board.Chores, Alice);
         stats.Total.Should().Be(1, "the flat board list is one DTO per chore, even for a 2-room chore");
         stats.Overdue.Should().Be(1, "a multi-room chore is not double-counted in household totals (MN1)");
         stats.UpForGrabs.Should().Be(1);

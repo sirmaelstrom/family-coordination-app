@@ -172,9 +172,10 @@ public enum RoomRollupStatus
 /// <c>GetBoardAsync</c> projects (HouseholdId + <c>Status == Active</c>, one row per chore — multi-room
 /// membership never fans this out). Field-for-field mirror of <see cref="ChoreHomeStats.Result"/> /
 /// <c>DashboardChoreSummaryDto</c>: <see cref="Overdue"/>/<see cref="DueToday"/> read computed dueness
-/// (a snoozed chore reads <c>Scheduled</c>, so it is auto-excluded); <see cref="UpForGrabs"/> is
-/// <c>!IsSnoozed &amp;&amp; (AssignmentKind == None || claim-stale)</c>. Produced by the lean
-/// <c>ChoreBoardService.GetHomeStatsAsync</c> read (no rooms/rollups/roster/subtasks/equity work).
+/// (a snoozed chore reads <c>Scheduled</c>, so it is auto-excluded); <see cref="UpForGrabs"/> is the board
+/// lens's rule for one member (<c>ChoreHomeStats.IsUpForGrabs</c>): never snoozed; an unfinished multi-person
+/// chore when the member is not on its roster; otherwise <c>AssignmentKind == None || claim-stale</c>. Produced
+/// by the lean <c>ChoreBoardService.GetHomeStatsAsync</c> read (no rooms/rollups/subtasks/equity work).
 /// </summary>
 public sealed record ChoreHomeStatsDto(
     int ActiveTotal,
