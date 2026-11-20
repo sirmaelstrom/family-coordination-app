@@ -67,10 +67,13 @@ describe('TodayClock', () => {
   });
 });
 
-// The bare /meal-plan link's day (fca#175, design note fca-175-rollover-design-2026-11-20): it follows the
-// clock, but holds still while something on screen belongs to the week shown (a sheet, a dialog, the
-// picker, a drag), and catches up once that closes. `value` (the Today chip, the today marks) never holds.
+// The bare /meal-plan link's day (fca#175, design note fca-175-no-switch-2026-11-20): read from the wall
+// clock once per navigation (each one hands the page a new URL object) and then kept. No clock tick, wake
+// or re-read moves it, so the week on screen changes only when the member navigates or reloads. `value`
+// (the Today chip, the today marks, Jump to Today) still follows the clock.
 describe('TodayClock.linkDay', () => {
+  const bare = () => new URL('http://fca.test/meal-plan');
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 10, 22, 23, 59, 30)); // Sunday Nov 22
@@ -79,41 +82,35 @@ describe('TodayClock.linkDay', () => {
     vi.useRealTimers();
   });
 
-  it('follows the clock when nothing holds it', () => {
+  it('a clock tick past Sunday midnight leaves the bare link on Sunday; Today moves', () => {
     const clock = new TodayClock();
     const stop = clock.start();
-    expect(clock.linkDay).toBe('2026-11-22');
-    vi.advanceTimersByTime(45_000);
-    expect(clock.linkDay).toBe('2026-11-23');
+    const arrived = bare();
+    expect(clock.linkDay(arrived)).toBe('2026-11-22');
+
+    vi.advanceTimersByTime(45_000); // 00:00:15 Monday Nov 23: the midnight timer fires
+
+    expect(clock.value).toBe('2026-11-23'); // the Today mark and Jump to Today follow the clock
+    expect(clock.linkDay(arrived)).toBe('2026-11-22'); // the week on screen does not
     stop();
   });
 
-  it('holds across midnight while held, and catches up on release', () => {
-    let open = false;
-    const clock = new TodayClock();
-    clock.hold(() => open);
-    const stop = clock.start();
-    expect(clock.linkDay).toBe('2026-11-22');
-
-    open = true; // a Sunday dialog is opened
-    vi.advanceTimersByTime(45_000); // 00:00:15 Monday
-    expect(clock.value).toBe('2026-11-23'); // the chip and today marks still follow the clock
-    expect(clock.linkDay).toBe('2026-11-22'); // the bare link stays on Sunday's week
-
-    open = false; // the dialog closes
-    expect(clock.linkDay).toBe('2026-11-23');
-    stop();
+  it('a wake (sync) after midnight does not move it either', () => {
+    const clock = new TodayClock(); // never started: a phone asleep runs no timer
+    const arrived = bare();
+    expect(clock.linkDay(arrived)).toBe('2026-11-22');
+    vi.setSystemTime(new Date(2026, 10, 23, 7, 0)); // Monday 07:00, the tab is shown again
+    clock.sync(); // what App's liveness tick does on wake
+    expect(clock.value).toBe('2026-11-23');
+    expect(clock.linkDay(arrived)).toBe('2026-11-22');
   });
 
-  it('a hold that starts after the day changed does not pull the link back', () => {
-    let open = false;
+  it('a navigation (a new page URL, even to the same address) reads the clock again', () => {
     const clock = new TodayClock();
-    clock.hold(() => open);
     const stop = clock.start();
+    expect(clock.linkDay(bare())).toBe('2026-11-22');
     vi.advanceTimersByTime(45_000);
-    expect(clock.linkDay).toBe('2026-11-23');
-    open = true;
-    expect(clock.linkDay).toBe('2026-11-23');
+    expect(clock.linkDay(bare())).toBe('2026-11-23'); // the member clicked Meal Plan, or reloaded
     stop();
   });
 });

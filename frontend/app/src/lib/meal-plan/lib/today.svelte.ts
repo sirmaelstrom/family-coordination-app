@@ -15,7 +15,8 @@
 //
 // App.svelte owns one per mount (so it is read fresh on every visit) and hands
 // `value` to every component that marks today. Nothing else in the meal plan
-// reads the clock for display.
+// reads the clock for display. The week a bare link shows is NOT `value`: it is
+// `linkDay(url)`, read once per navigation, so the week never moves by itself.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { todayStr } from './dates';
@@ -33,27 +34,26 @@ export class TodayClock {
   value = $state(todayStr());
 
   #timer: ReturnType<typeof setTimeout> | null = null;
-  #holding: () => boolean = () => false;
-  #linkDay = this.value;
+  #linkUrl: object | null = null;
+  #linkDay = '';
 
   /**
-   * The day a bare `/meal-plan` shows. It is `value`, except that it holds still while the `hold`
-   * predicate is true, and catches up on the first read after the predicate turns false. The owner
-   * holds it while anything open belongs to the week on screen: a sheet, a dialog, the picker or a
-   * drag. Otherwise midnight could move the week out from under it. fca#175, design note
-   * fca-175-rollover-design-2026-11-20.
+   * The day a bare `/meal-plan` at `url` (the page's URL object) shows: the wall-clock day when the
+   * member arrived at that URL, read once and then kept. Every arrival (a load, a link, Back/Forward,
+   * a goto) hands the page a new URL object, so a new object means a fresh read, and nothing else
+   * causes one: no clock tick, no wake, no resize. Only the member changes the week on screen (fca#175,
+   * design note fca-175-no-switch-2026-11-20). `value` still follows the clock, for the Today mark and
+   * Jump to Today. Only the object's identity is used, so it takes Kit's read-only page URL as it is.
    *
-   * A getter, not a `$derived`: it reads `value` and the predicate's state, so a `$derived` that calls
-   * it tracks both. The plain field only remembers the last day shown while nothing held it.
+   * Plain fields, not `$state`: it is called inside the owner's `$derived`, which may not write state,
+   * and it must not make that derived depend on the clock.
    */
-  get linkDay(): string {
-    if (!this.#holding()) this.#linkDay = this.value;
+  linkDay(url: object): string {
+    if (url !== this.#linkUrl) {
+      this.#linkUrl = url;
+      this.#linkDay = todayStr();
+    }
     return this.#linkDay;
-  }
-
-  /** Hold `linkDay` while `holding()` is true. Set once, before the first read. */
-  hold(holding: () => boolean): void {
-    this.#holding = holding;
   }
 
   /** Re-read the clock now. A no-op while the day is unchanged. */

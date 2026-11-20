@@ -105,7 +105,7 @@ describe('meal-plan writes vs loads (41337b6f)', () => {
     expect(store.board!.entries.find((e) => e.entryId === 1)!.mealType).toBe('lunch');
   });
 
-  it('S4: a failed remove after a week change splices nothing into the new week', async () => {
+  it('S4: a failed remove after a week change splices nothing into the new week, and still says it failed', async () => {
     const del = deferred<void>();
     vi.mocked(removeEntry).mockReturnValueOnce(del.promise);
     const nextWeek = deferred<MealPlanBoardDto>();
@@ -122,7 +122,47 @@ describe('meal-plan writes vs loads (41337b6f)', () => {
     await removing;
     await stepping;
     expect(ids()).toEqual([9]);
-    expect(showToast).not.toHaveBeenCalled(); // a failure on a week the user has left is moot
+    // The member confirmed that remove and the meal is still there: only the toast tells them, on any week
+    // (fca#175 review 5987598100).
+    expect(showToast).toHaveBeenCalledWith({ message: 'Something went wrong. Please try again.', kind: 'error' });
+  });
+
+  it('a failed add, move or servings change after a week change still says it failed', async () => {
+    const down = new TypeError('Failed to fetch');
+    const steps: Array<{ write: () => Promise<void>; message: string }> = [
+      {
+        write: () => {
+          vi.mocked(addEntry).mockRejectedValueOnce(down);
+          return store.addEntry({ date: '2026-10-18', mealType: 'snack', customMealName: 'Popcorn' });
+        },
+        message: "Couldn't add that meal right now.",
+      },
+      {
+        write: () => {
+          vi.mocked(moveEntry).mockRejectedValueOnce(down);
+          return store.moveEntry(1, 1, W1, 'lunch', 11);
+        },
+        message: 'Something went wrong. Please try again.',
+      },
+      {
+        write: () => {
+          vi.mocked(setEntryServings).mockRejectedValueOnce(down);
+          return store.setEntryServings(1, 1, 6, 11);
+        },
+        message: 'Something went wrong. Please try again.',
+      },
+    ];
+    vi.mocked(getBoard).mockResolvedValue(board(W2, [entry(9, W2)]));
+    for (const { write, message } of steps) {
+      vi.mocked(showToast).mockClear();
+      const writing = write();
+      await store.changeWeek(W2); // the member steps to next week while the write is in flight
+      await writing;
+      expect(ids()).toEqual([9]); // nothing of W1 lands on W2's board
+      expect(showToast).toHaveBeenCalledWith({ message, kind: 'error' });
+      store.weekStart = W1;
+      store.board = board(W1, [entry(1), entry(2)]);
+    }
   });
 
   it('a week change during a pending write loads the NEW week once, after the write settles', async () => {
@@ -209,12 +249,13 @@ describe('meal-plan writes vs loads (41337b6f)', () => {
     await moving;
   });
 
-  // fca#175 review 5984614204: a Sunday picker left open overnight confirms after the bare link has
-  // rolled into Monday and loaded Monday's week. The add still says Sunday; it must not land on Monday's board.
-  it("an add for another week's date (a picker left open across the rollover) is saved but not merged", async () => {
+  // fca#175 review 5984614204: a Sunday picker confirms after the displayed week has moved to Monday's
+  // (found with the midnight switch, which is gone; Back/Forward under the open picker still does it).
+  // The add still says Sunday; it must not land on Monday's board.
+  it("an add for another week's date (a picker left open across a week change) is saved but not merged", async () => {
     const sunday = '2026-10-18'; // the last day of W1
     vi.mocked(getBoard).mockResolvedValueOnce(board(W2, [entry(9, W2)]));
-    await store.changeWeek(W2); // what App's week effect does when the bare link rolls into Monday
+    await store.changeWeek(W2); // what App's week effect does when the URL moves to Monday's week
     vi.mocked(addEntry).mockResolvedValueOnce(entry(20, sunday, 'snack'));
 
     await store.addEntry({ date: sunday, mealType: 'snack', customMealName: 'Popcorn' });
@@ -231,8 +272,8 @@ describe('meal-plan writes vs loads (41337b6f)', () => {
   });
 
   // fca#175 review 5987398079 and the class it belongs to (design note fca-175-rollover-design-2026-11-20):
-  // a dialog or a drag opened on one week can finish after the displayed week has changed (the bare link's
-  // rollover, Back/Forward). A write acts on the entry it was opened with, never on a lookup in the week on
+  // a dialog or a drag opened on one week can finish after the displayed week has changed (Back/Forward
+  // under it). A write acts on the entry it was opened with, never on a lookup in the week on
   // screen. Entry 1 is W1's; the store is showing W2.
   describe('a write for an entry that is not on the displayed week', () => {
     beforeEach(async () => {

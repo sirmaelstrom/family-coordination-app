@@ -139,23 +139,26 @@ describe('meal plan: slots come only from the board for the week on screen', () 
   });
 });
 
-// fca#175 (design note fca-175-rollover-design-2026-11-20): the bare link's day holds while anything that
-// belongs to the week on screen is open. A source check, so a new sheet or dialog cannot be added without
-// joining the hold: every `open={…}` App passes must be in the hold, and so must a drag.
-describe('meal plan: the bare link holds its week while a sheet, dialog, picker or drag is open', () => {
+// fca#175 (design note fca-175-no-switch-2026-11-20): the week on screen never changes by itself. A
+// bare link's day is read once per navigation (TodayClock.linkDay, tested in lib/today.test.ts); the
+// ticking `clock.value` drives only the Today marks and Jump to Today. Effects do not run in these server
+// renders, so this pins the wiring in the source: the location must not read the ticking clock.
+describe('meal plan: no clock tick changes the week on screen', () => {
   const source = Object.values(
     import.meta.glob('./App.svelte', { query: '?raw', import: 'default', eager: true }) as Record<string, string>,
   )[0];
-  const hold = /clock\.hold\(\(\) => ([^)]*)\);/.exec(source)?.[1] ?? '';
-  const held = new Set(hold.split('||').map((s) => s.trim()));
+  const loc = /^ {2}let loc = \$derived\((.*)\);$/m.exec(source)?.[1] ?? '';
 
-  it('the location reads the held day, not the clock', () => {
-    expect(source).toMatch(/^ {2}let loc = \$derived\(parsePlanLocation\(page\.url\.searchParams, clock\.linkDay, defaultView\)\);$/m);
+  it('the location reads the bare link day of this navigation, never the ticking clock', () => {
+    expect(loc).toBe('parsePlanLocation(page.url.searchParams, clock.linkDay(page.url), defaultView)');
+    expect(loc).not.toMatch(/clock\.value|todayStr\(\)/);
   });
 
-  it('every open sheet or dialog, and a drag, holds the day', () => {
-    const opens = [...source.matchAll(/\sopen=\{([^}]+)\}/g)].map((m) => m[1].trim());
-    expect(opens.length).toBeGreaterThanOrEqual(4); // picker, detail, remove confirm, servings prompt
-    for (const open of [...opens, 'store.dragActive']) expect(held, open).toContain(open);
+  it('the ticking clock reaches the Today marks and Jump to Today only', () => {
+    const code = source.replace(/^\s*\/\/.*$/gm, '');
+    // PlanNav's `today`, CalendarGrid's and DayList's `today`, and jumpToToday's target.
+    expect([...code.matchAll(/today=\{clock\.value\}/g)].length).toBe(3);
+    expect([...code.matchAll(/clock\.value/g)].length).toBe(4);
+    expect(source).toMatch(/function jumpToToday\(\): void \{\s+clock\.sync\(\);[^\n]*\n\s+void go\(\{ view: loc\.view, date: clock\.value \}/);
   });
 });

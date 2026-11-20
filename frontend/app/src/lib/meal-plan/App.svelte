@@ -67,15 +67,15 @@
   // Read straight from the URL; every navigation below is a goto() to the same
   // route with a new query, so back/forward and reload all land where the URL says.
   let defaultView = $derived<PlanView>(isDesktop ? 'week' : 'day');
-  // Today is reactive (lib/today.svelte.ts): it moves at midnight and when the page wakes. So a bare
-  // `/meal-plan` left open keeps meaning today, and the Today chip, Jump to Today and the week views'
-  // today marks (all handed `clock.value`) leave yesterday when the day ends. A URL that names its
-  // date stays on that date.
-  // A bare link reads `clock.linkDay`, which holds while anything below that belongs to the week on screen
-  // is open (the hold is set under the dialog state). So midnight never moves the week out from under an
-  // open sheet, dialog, picker or drag. It rolls once they close (design note fca-175-rollover-design-2026-11-20).
+  // Today is reactive (lib/today.svelte.ts): it moves at midnight and when the page wakes, so the Today
+  // chip, Jump to Today and the week views' today marks (all handed `clock.value`) leave yesterday when
+  // the day ends. The WEEK on screen never moves by itself: a bare `/meal-plan` reads its day once per
+  // navigation (`clock.linkDay(page.url)`), and a URL that names its date stays on that date. So after
+  // midnight the page stays where the member left it, with Jump to Today enabled, and only the member
+  // (a click, a link, Back/Forward, a reload) changes the week. Nothing open (a sheet, a dialog, the
+  // picker, a drag) can have its week change under it (design note fca-175-no-switch-2026-11-20).
   const clock = new TodayClock();
-  let loc = $derived(parsePlanLocation(page.url.searchParams, clock.linkDay, defaultView));
+  let loc = $derived(parsePlanLocation(page.url.searchParams, clock.linkDay(page.url), defaultView));
   /** True only when the URL's week, the store's week and the board in hand agree (the render gate). */
   let boardForWeek = $derived(boardIsForWeek(store.board, store.weekStart, planWeek(loc)));
 
@@ -146,10 +146,6 @@
         ? 'Cooking for how many? (the recipe has no yield set, so this scales nothing) — blank to clear it'
         : 'Cooking for how many?',
   );
-
-  // Everything open that holds a date or an entry of the week on screen. App.test.ts checks that every
-  // `open={…}` below is listed here, so a new sheet can't skip the hold.
-  clock.hold(() => pickerOpen || detailOpen || confirmOpen || servingsOpen || store.dragActive);
 
   function mealLabel(m: MealType): string {
     return m.charAt(0).toUpperCase() + m.slice(1);
@@ -289,9 +285,9 @@
     };
   });
 
-  // The URL moved to a date in another week (prev/next, a header click near a week edge,
-  // back/forward), or a bare `/meal-plan` rolled into Monday at midnight: load that week. Declared after the mount effect, so on mount it finds
-  // the week already set and does nothing. Reads the store untracked: it reacts to the URL only.
+  // The URL moved to a date in another week (prev/next, Jump to Today, a header click near a week
+  // edge, back/forward): load that week. Declared after the mount effect, so on mount it finds the
+  // week already set and does nothing. Reads the store untracked: it reacts to the URL only.
   $effect(() => {
     const monday = planWeek(loc);
     untrack(() => {
