@@ -245,4 +245,77 @@ public class ChoreBoardHomeStatsTests
 
         stats.Should().Be(new ChoreHomeStatsDto(0, 0, 0, 0));
     }
+
+    // ------------------------------------------------------------------ multi-person roster rule (quest edfc7d63)
+    //
+    // The board's "Up for grabs" lens (frontend/app/src/lib/chores/lib/state.svelte.ts upForGrabsChores) shows an
+    // unfinished multi-person chore only to members NOT on its roster. Home's count is read through the dashboard,
+    // which already knows the member, so these go through DashboardService.GetDashboardAsync.
+
+    private DashboardService CreateDashboard()
+    {
+        var dbFactory = new Mock<IDbContextFactory<ApplicationDbContext>>();
+        dbFactory.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
+        var shopping = new Mock<FamilyCoordinationApp.Services.Interfaces.IShoppingListService>();
+        shopping.Setup(s => s.GetActiveShoppingListsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        var mealPlans = new Mock<FamilyCoordinationApp.Services.Interfaces.IMealPlanService>();
+        mealPlans.Setup(m => m.GetWeekStartDate(It.IsAny<DateOnly>())).Returns(Today);
+        var clock = new Mock<IHouseholdClock>();
+        clock.Setup(c => c.Today(It.IsAny<int>())).Returns(Today);
+
+        return new DashboardService(dbFactory.Object, CreateService(), shopping.Object, mealPlans.Object, clock.Object);
+    }
+
+    private void SeedParticipation(int choreId, int userId, ChoreParticipationType type = ChoreParticipationType.Committed)
+    {
+        using var ctx = new ApplicationDbContext(_options);
+        ctx.ChoreParticipationEvents.Add(new ChoreParticipationEvent
+        {
+            HouseholdId = H1,
+            ChoreId = choreId,
+            Type = type,
+            SubjectUserId = userId,
+            ActorUserId = userId,
+            At = DateTime.UtcNow.AddHours(-1),
+        });
+        ctx.SaveChanges();
+    }
+
+    // A future-dated, unassigned two-person chore: dueness never matters to up-for-grabs, only snooze and roster.
+    private static Chore TwoPerson(int id)
+    {
+        var chore = OneOff(id, H1, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30));
+        chore.RequiredCount = 2;
+        return chore;
+    }
+
+    [Fact]
+    public async Task HomeUpForGrabs_MultiPersonChore_CountsOnlyForMembersNotOnItsRoster()
+    {
+        Seed(TwoPerson(1));
+        SeedParticipation(1, Alice);   // Alice is in; Bob is not
+
+        var dashboard = CreateDashboard();
+        var forAlice = await dashboard.GetDashboardAsync(H1, Alice, "Alice");
+        var forBob = await dashboard.GetDashboardAsync(H1, Bob, "Bob");
+
+        forAlice.Chores.UpForGrabs.Should().Be(0, "Alice is on the roster, so the board shows it under Mine, not Up for grabs");
+        forBob.Chores.UpForGrabs.Should().Be(1, "Bob is not on the roster of an unfinished two-person chore, so he can join");
+    }
+
+    [Fact]
+    public async Task HomeUpForGrabs_MultiPersonChore_AssignedMemberIsOnTheRoster()
+    {
+        Seed(TwoPerson(1));
+        SeedParticipation(1, Alice, ChoreParticipationType.Assigned);
+        SeedParticipation(1, Bob, ChoreParticipationType.Assigned);
+
+        var dashboard = CreateDashboard();
+
+        (await dashboard.GetDashboardAsync(H1, Alice, "Alice")).Chores.UpForGrabs.Should().Be(0);
+        (await dashboard.GetDashboardAsync(H1, Bob, "Bob")).Chores.UpForGrabs.Should().Be(0,
+            "both members are on the roster (assigned counts), so neither board shows it as up for grabs");
+    }
 }
