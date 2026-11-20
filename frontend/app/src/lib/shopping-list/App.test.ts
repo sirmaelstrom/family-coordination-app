@@ -70,21 +70,23 @@ describe('shopping list: the Regenerate confirm', () => {
   it('says exactly what Regenerate keeps', () => {
     expect(message).toBe(
       'Rebuild this list from the whole week of its meal plan? Items you added yourself are kept. ' +
-        'Items from the meal plan keep their check marks and quantity changes as long as their name, ' +
-        'unit and category are unchanged.',
+        'Items from the meal plan are rebuilt: their check marks and quantity changes usually carry over, ' +
+        'but can be lost if you renamed an item, changed its unit or moved it to another category.',
     );
   });
 
-  it('does not promise check marks or quantity changes without the condition', () => {
-    // Whatever the wording becomes, the sentence that makes the promise must carry its condition:
-    // name and category are the carry-over match key, and a unit edit clears the quantity adjustment
-    // (src/FamilyCoordinationApp/Endpoints/ShoppingListEndpoints.cs, PatchItem).
+  it('never guarantees check marks or quantity changes', () => {
+    // Whatever the wording becomes: carry-over is the usual case, not a guarantee, and the sentence that
+    // mentions it names the three edits that lose it. Even "kept as long as name, unit and category are
+    // unchanged" is false (review of PR #179): two rows with one name and category in different units
+    // share one old row, and an adjustment made after a quantity floored at zero is measured wrong.
     const promise = (message ?? '').split(/(?<=[.?;])\s+/).filter((s) => /check|quantit/i.test(s));
     expect(promise.length).toBeGreaterThan(0);
     for (const sentence of promise) {
-      expect(sentence).toMatch(/\bname\b/i);
-      expect(sentence).toMatch(/\bunit\b/i);
-      expect(sentence).toMatch(/\bcategory\b/i);
+      expect(sentence).toMatch(/\busually\b/i);
+      expect(sentence).toMatch(/\bcan be lost\b/i);
+      expect(sentence).toMatch(/\brenamed\b.*\bunit\b.*\bcategory\b/i);
+      expect(sentence).not.toMatch(/\b(are|is) kept\b|\bas long as\b|\balways\b/i);
     }
   });
 
