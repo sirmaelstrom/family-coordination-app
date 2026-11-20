@@ -19,7 +19,7 @@ vi.mock('./api', async () => {
 vi.mock('#lib/shared/toast-store.svelte.ts', () => ({ showToast: vi.fn() }));
 
 import { mealPlanStore as store } from './state.svelte';
-import { ApiError, getBoard, moveEntry, removeEntry } from './api';
+import { ApiError, addEntry, getBoard, moveEntry, removeEntry, setEntryServings } from './api';
 import { showToast } from '#lib/shared/toast-store.svelte.ts';
 import type { MealPlanBoardDto, MealPlanEntryDto } from './types';
 
@@ -105,7 +105,7 @@ describe('meal-plan writes vs loads (41337b6f)', () => {
     expect(store.board!.entries.find((e) => e.entryId === 1)!.mealType).toBe('lunch');
   });
 
-  it('S4: a failed remove after a week change splices nothing into the new week', async () => {
+  it('S4: a failed remove after a week change splices nothing into the new week, and still says it failed', async () => {
     const del = deferred<void>();
     vi.mocked(removeEntry).mockReturnValueOnce(del.promise);
     const nextWeek = deferred<MealPlanBoardDto>();
@@ -122,7 +122,47 @@ describe('meal-plan writes vs loads (41337b6f)', () => {
     await removing;
     await stepping;
     expect(ids()).toEqual([9]);
-    expect(showToast).not.toHaveBeenCalled(); // a failure on a week the user has left is moot
+    // The member confirmed that remove and the meal is still there: only the toast tells them, on any week
+    // (fca#175 review 5987598100).
+    expect(showToast).toHaveBeenCalledWith({ message: 'Something went wrong. Please try again.', kind: 'error' });
+  });
+
+  it('a failed add, move or servings change after a week change still says it failed', async () => {
+    const down = new TypeError('Failed to fetch');
+    const steps: Array<{ write: () => Promise<void>; message: string }> = [
+      {
+        write: () => {
+          vi.mocked(addEntry).mockRejectedValueOnce(down);
+          return store.addEntry({ date: '2026-10-18', mealType: 'snack', customMealName: 'Popcorn' });
+        },
+        message: "Couldn't add that meal right now.",
+      },
+      {
+        write: () => {
+          vi.mocked(moveEntry).mockRejectedValueOnce(down);
+          return store.moveEntry(1, 1, W1, 'lunch', 11);
+        },
+        message: 'Something went wrong. Please try again.',
+      },
+      {
+        write: () => {
+          vi.mocked(setEntryServings).mockRejectedValueOnce(down);
+          return store.setEntryServings(1, 1, 6, 11);
+        },
+        message: 'Something went wrong. Please try again.',
+      },
+    ];
+    vi.mocked(getBoard).mockResolvedValue(board(W2, [entry(9, W2)]));
+    for (const { write, message } of steps) {
+      vi.mocked(showToast).mockClear();
+      const writing = write();
+      await store.changeWeek(W2); // the member steps to next week while the write is in flight
+      await writing;
+      expect(ids()).toEqual([9]); // nothing of W1 lands on W2's board
+      expect(showToast).toHaveBeenCalledWith({ message, kind: 'error' });
+      store.weekStart = W1;
+      store.board = board(W1, [entry(1), entry(2)]);
+    }
   });
 
   it('a week change during a pending write loads the NEW week once, after the write settles', async () => {
@@ -207,5 +247,87 @@ describe('meal-plan writes vs loads (41337b6f)', () => {
 
     patch.resolve({ ...entry(1), mealType: 'lunch', version: 99 });
     await moving;
+  });
+
+  // fca#175 review 5984614204: a Sunday picker confirms after the displayed week has moved to Monday's
+  // (found with the midnight switch, which is gone; Back/Forward under the open picker still does it).
+  // The add still says Sunday; it must not land on Monday's board.
+  it("an add for another week's date (a picker left open across a week change) is saved but not merged", async () => {
+    const sunday = '2026-10-18'; // the last day of W1
+    vi.mocked(getBoard).mockResolvedValueOnce(board(W2, [entry(9, W2)]));
+    await store.changeWeek(W2); // what App's week effect does when the URL moves to Monday's week
+    vi.mocked(addEntry).mockResolvedValueOnce(entry(20, sunday, 'snack'));
+
+    await store.addEntry({ date: sunday, mealType: 'snack', customMealName: 'Popcorn' });
+
+    expect(addEntry).toHaveBeenCalledWith(expect.objectContaining({ date: sunday })); // the server still saves Sunday's
+    expect(ids()).toEqual([9]);
+    expect(store.weekMealRows()).not.toContain('snack'); // no phantom Snack row on Monday's week
+  });
+
+  it("an add for the board's own week is still merged", async () => {
+    vi.mocked(addEntry).mockResolvedValueOnce(entry(20, '2026-10-18', 'snack'));
+    await store.addEntry({ date: '2026-10-18', mealType: 'snack', customMealName: 'Popcorn' });
+    expect(ids()).toEqual([1, 2, 20]);
+  });
+
+  // fca#175 review 5987398079 and the class it belongs to (design note fca-175-rollover-design-2026-11-20):
+  // a dialog or a drag opened on one week can finish after the displayed week has changed (Back/Forward
+  // under it). A write acts on the entry it was opened with, never on a lookup in the week on
+  // screen. Entry 1 is W1's; the store is showing W2.
+  describe('a write for an entry that is not on the displayed week', () => {
+    beforeEach(async () => {
+      vi.mocked(getBoard).mockResolvedValueOnce(board(W2, [entry(9, W2)]));
+      await store.changeWeek(W2);
+      vi.mocked(getBoard).mockClear();
+    });
+
+    it('remove (a Remove Meal dialog left open): still sends its DELETE with its token; the board shown is untouched', async () => {
+      vi.mocked(removeEntry).mockResolvedValueOnce(undefined);
+      await store.removeEntry(1, 1, 11);
+      expect(removeEntry).toHaveBeenCalledWith(1, 1, 11);
+      expect(ids()).toEqual([9]);
+      expect(showToast).not.toHaveBeenCalled();
+    });
+
+    it('remove: a 409 still says the meal changed and reconciles the week on screen', async () => {
+      vi.mocked(removeEntry).mockRejectedValueOnce(new ApiError(409, 'stale'));
+      vi.mocked(getBoard).mockResolvedValueOnce(board(W2, [entry(9, W2)]));
+      await store.removeEntry(1, 1, 11);
+      expect(getBoard).toHaveBeenCalledWith(W2);
+      expect(ids()).toEqual([9]);
+      expect(showToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'info' }));
+    });
+
+    it('move (a drop into a slot of the week it was dragged on): still sends its PATCH; the board shown is untouched', async () => {
+      vi.mocked(moveEntry).mockResolvedValueOnce({ ...entry(1), mealType: 'lunch', version: 99 });
+      await store.moveEntry(1, 1, W1, 'lunch', 11);
+      expect(moveEntry).toHaveBeenCalledWith(1, 1, { date: W1, mealType: 'lunch', version: 11 });
+      expect(ids()).toEqual([9]);
+    });
+
+    it('servings (a Servings prompt left open; control, already addressed by id): sends its PATCH; the board shown is untouched', async () => {
+      vi.mocked(setEntryServings).mockResolvedValueOnce({ ...entry(1), servings: 6, version: 99 });
+      await store.setEntryServings(1, 1, 6, 11);
+      expect(setEntryServings).toHaveBeenCalledWith(1, 1, 6, 11);
+      expect(ids()).toEqual([9]);
+    });
+  });
+
+  // A drag's zones belong to the week shown; a week change unmounts them mid-drag (the render gate), so no
+  // finalize ever runs. Left set, the gate would keep the new week's zones from ever being built: every slot
+  // drawn empty until a reload (drive S14 on 016fed8).
+  it('a week change ends a drag, so the new week gets its zones', async () => {
+    store.rebuildZones();
+    store.zoneConsider(W1, 'dinner', []); // a drag of W1's dinner has begun
+    expect(store.dragActive).toBe(true);
+    vi.mocked(getBoard).mockResolvedValueOnce(board(W2, [entry(9, W2)]));
+
+    await store.changeWeek(W2);
+
+    expect(store.dragActive).toBe(false);
+    store.rebuildZones(); // App's effect, now ungated
+    expect(store.zoneFor(W2, 'dinner').map((e) => e.entryId)).toEqual([9]);
+    store.dragActive = false; // never leak a set gate into another test (the store is a singleton)
   });
 });

@@ -7,23 +7,27 @@
   //
   // Presentational only: App turns each callback into a URL change, and the
   // URL drives the store. No `new Date('YYYY-MM-DD')` — labels come from dates.ts.
+  // No clock read either: `today` is the owner's TodayClock value, so the chip
+  // and "Jump to Today" move when the day does (a `todayStr()` here went stale
+  // at midnight).
   // ───────────────────────────────────────────────────────────────────────
-  import { weekRangeLabel, dayTitle, mondayOf, todayStr } from '../dates';
+  import { weekRangeLabel, dayTitle, mondayOf } from '../dates';
   import type { PlanView } from '../view';
 
   interface Props {
     view: PlanView;
     /** "YYYY-MM-DD" — the day shown, or a day in the week shown. */
     date: string;
+    /** "YYYY-MM-DD" — the current local day, from the owner's TodayClock. */
+    today: string;
     onPrev: () => void;
     onNext: () => void;
     onToday: () => void;
     onViewChange: (view: PlanView) => void;
   }
 
-  let { view, date, onPrev, onNext, onToday, onViewChange }: Props = $props();
+  let { view, date, today, onPrev, onNext, onToday, onViewChange }: Props = $props();
 
-  let today = $derived(todayStr());
   let isCurrent = $derived(view === 'day' ? date === today : mondayOf(date) === mondayOf(today));
   let label = $derived(view === 'day' ? dayTitle(date) : weekRangeLabel(mondayOf(date)));
   let unit = $derived(view === 'day' ? 'day' : 'week');

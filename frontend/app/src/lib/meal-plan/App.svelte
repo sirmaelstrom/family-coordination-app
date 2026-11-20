@@ -6,7 +6,8 @@
   import type { MealPlanEntryDto, MealType, ShellContext } from './lib/types';
   import { mealPlanStore } from './lib/state.svelte';
   import { startLiveness, type LivenessHandle } from '#lib/liveness.ts';
-  import { weekdayShort, monthDay, todayStr } from './lib/dates';
+  import { weekdayShort, monthDay } from './lib/dates';
+  import { TodayClock } from './lib/today.svelte';
   import {
     parsePlanLocation,
     planSearch,
@@ -66,9 +67,17 @@
   // Read straight from the URL; every navigation below is a goto() to the same
   // route with a new query, so back/forward and reload all land where the URL says.
   let defaultView = $derived<PlanView>(isDesktop ? 'week' : 'day');
-  let loc = $derived(parsePlanLocation(page.url.searchParams, todayStr(), defaultView));
-  /** The board in hand, only when it is the week being shown (see the template's render gate). */
-  let boardForWeek = $derived(boardIsForWeek(store.board, store.weekStart));
+  // Today is reactive (lib/today.svelte.ts): it moves at midnight and when the page wakes, so the Today
+  // chip, Jump to Today and the week views' today marks (all handed `clock.value`) leave yesterday when
+  // the day ends. The WEEK on screen never moves by itself: a bare `/meal-plan` reads its day once per
+  // navigation (`clock.linkDay(page.url)`), and a URL that names its date stays on that date. So after
+  // midnight the page stays where the member left it, with Jump to Today enabled, and only the member
+  // (a click, a link, Back/Forward, a reload) changes the week. Nothing open (a sheet, a dialog, the
+  // picker, a drag) can have its week change under it (design note fca-175-no-switch-2026-11-20).
+  const clock = new TodayClock();
+  let loc = $derived(parsePlanLocation(page.url.searchParams, clock.linkDay(page.url), defaultView));
+  /** True only when the URL's week, the store's week and the board in hand agree (the render gate). */
+  let boardForWeek = $derived(boardIsForWeek(store.board, store.weekStart, planWeek(loc)));
 
   /**
    * Go to a location. Switching view pushes history (Back returns to the week);
@@ -96,7 +105,13 @@
     void go({ view: 'day', date }, { replace: false });
   }
 
+  function jumpToToday(): void {
+    clock.sync(); // the click is its own clock read, so the target can't lag the wall clock
+    void go({ view: loc.view, date: clock.value }, { replace: true });
+  }
+
   let liveness: LivenessHandle | null = null;
+  let stopClock: (() => void) | null = null;
 
   // ── Picker (add) state ────────────────────────────────────────────────────
   let pickerOpen = $state(false);
@@ -251,10 +266,18 @@
       loadBoard();
       // Liveness: ~20s poll while visible + immediate refetch on refocus; pauses
       // while hidden. NOT Blazor DataNotifier/PollingService (MN2).
-      liveness = startLiveness(() => store.reconcile());
+      // Each tick also re-reads the day: a phone that slept through midnight ran no
+      // timer, and the tick on re-show is the first code to run when it wakes.
+      stopClock = clock.start();
+      liveness = startLiveness(() => {
+        clock.sync();
+        void store.reconcile();
+      });
     });
 
     return () => {
+      stopClock?.();
+      stopClock = null;
       liveness?.stop();
       liveness = null;
       mediaQuery?.removeEventListener('change', syncMedia);
@@ -262,9 +285,9 @@
     };
   });
 
-  // The URL moved to a date in another week (prev/next, a header click near a week edge,
-  // back/forward): load that week. Declared after the mount effect, so on mount it finds
-  // the week already set and does nothing. Reads the store untracked: it reacts to the URL only.
+  // The URL moved to a date in another week (prev/next, Jump to Today, a header click near a week
+  // edge, back/forward): load that week. Declared after the mount effect, so on mount it finds the
+  // week already set and does nothing. Reads the store untracked: it reacts to the URL only.
   $effect(() => {
     const monday = planWeek(loc);
     untrack(() => {
@@ -282,9 +305,10 @@
   <PlanNav
     view={loc.view}
     date={loc.date}
+    today={clock.value}
     onPrev={() => go(stepPlan(loc, -1), { replace: true })}
     onNext={() => go(stepPlan(loc, 1), { replace: true })}
-    onToday={() => go({ view: loc.view, date: todayStr() }, { replace: true })}
+    onToday={jumpToToday}
     onViewChange={(view) => go({ view, date: loc.date }, { replace: false })}
   />
 
@@ -296,10 +320,13 @@
   {/if}
 
   <!--
-    Slots render only from a board FOR the week shown. changeWeek moves weekStart at once and keeps the
-    old board until the new one arrives, so rendering "any board" showed the new week's days as empty,
-    clickable slots backed by the old week, and kept showing them if the fetch failed. A board for
-    another week means a fetch is in flight (loading text) or failed (the error banner's Retry above).
+    Slots render only from a board FOR the week on screen: the URL's week, the store's week and the
+    board must agree (boardIsForWeek). changeWeek moves weekStart at once and keeps the old board until
+    the new one arrives, so rendering "any board" showed the new week's days as empty, clickable slots
+    backed by the old week, and kept showing them if the fetch failed. The store follows the URL one
+    effect late, so the URL's week is part of the gate too: the template is right on its own, before
+    that effect runs. Anything else means a fetch is in flight (loading text) or failed (the error
+    banner's Retry above).
   -->
   {#if boardForWeek}
     {#if loc.view === 'day'}
@@ -314,6 +341,7 @@
     {:else if isDesktop}
       <CalendarGrid
         weekStart={store.weekStart}
+        today={clock.value}
         onSlotAdd={handleSlotAdd}
         onRemove={handleRemove}
         onSetServings={handleSetServings}
@@ -324,6 +352,7 @@
     {:else}
       <DayList
         weekStart={store.weekStart}
+        today={clock.value}
         onSlotAdd={handleSlotAdd}
         onRemove={handleRemove}
         onSetServings={handleSetServings}

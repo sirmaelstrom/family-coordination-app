@@ -69,6 +69,9 @@ export function addDays(dateStr: string, n: number): string {
 /**
  * Today as "YYYY-MM-DD", built from LOCAL parts (the household's calendar day).
  * The one place we read the clock. No `new Date('YYYY-MM-DD')`.
+ *
+ * A plain read: it is not reactive. Anything DRAWN from today takes it from a
+ * TodayClock (lib/today.svelte.ts), which re-reads at midnight and on wake.
  */
 export function todayStr(): string {
   const now = new Date();
@@ -145,9 +148,4 @@ export function weekRangeLabel(mondayStr: string): string {
   endDate.setUTCDate(endDate.getUTCDate() + 6);
   const endStr = formatUtc(endDate);
   return `${monthDay(mondayStr)} – ${monthDay(endStr)}, ${endDate.getUTCFullYear()}`;
-}
-
-/** Is `dateStr` the local current day? (drives the "today" highlight). */
-export function isToday(dateStr: string): boolean {
-  return dateStr === todayStr();
 }
