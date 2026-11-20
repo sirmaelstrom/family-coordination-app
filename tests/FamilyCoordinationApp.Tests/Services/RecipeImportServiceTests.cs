@@ -219,6 +219,45 @@ public class RecipeImportServiceTests
         result.Recipe.SourceUrl.Should().Be(url, "the source stays the address the member gave");
     }
 
+    // PR #177 review 5984747882 (quest c001677c): an already absolute image URL was re-serialised as Uri.AbsoluteUri,
+    // which percent-encodes a non-ASCII filename. A 431-character CDN URL became 551 characters, over the 500 the
+    // recipe save accepts (ImagePathPolicy), so the browser's confirm of its own preview answered 400. An absolute
+    // http(s) URL comes back as the page wrote it; only a relative one is rebuilt.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ImportFromUrlAsync_KeepsAnAbsoluteImageUrl_AsWritten_SoTheImportCanBeSaved(bool complete)
+    {
+        const string url = "https://example.com/recipes/matcha-cheesecake";
+        var image = AbsoluteCdnImageWithJapaneseFilename();
+        image.Length.Should().Be(431);
+        new Uri(image).AbsoluteUri.Length.Should().Be(551, "percent-encoding the filename would push it past the save cap");
+        _urlValidatorMock.Setup(v => v.ValidateUrl(url)).Returns((true, null));
+        var schema = new RecipeSchema
+        {
+            Name = "Matcha cheesecake",
+            RecipeIngredient = complete ? new[] { "200 g cream cheese" } : null,
+            Image = JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(image))
+        };
+        _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>())).ReturnsAsync(new ScrapedRecipe(schema, new Uri(url)));
+        _ingredientParserMock.Setup(p => p.ParseIngredient(It.IsAny<string>()))
+            .Returns<string>(s => new ParsedIngredient { Name = s });
+
+        var result = await _service.ImportFromUrlAsync(url, 1, 1);
+
+        var previewed = complete ? result.Recipe!.ImagePath : result.PartialData!.ImageUrl;
+        previewed.Should().Be(image);
+        // What the SPA sends back on confirm: POST /api/recipes refuses it with a 400 unless this accepts it.
+        ImagePathPolicy.TryNormalize(previewed, 1, out var saved).Should().BeTrue();
+        saved.Should().Be(image);
+    }
+
+    private static string AbsoluteCdnImageWithJapaneseFilename()
+    {
+        var prefix = "https://cdn.example.jp/images/2026/11/抹茶のチーズケーキと黒蜜きなこ.jpg?w=1200&h=800&fit=crop&auto=format&sig=";
+        return prefix + new string('a', 431 - prefix.Length);
+    }
+
     [Fact]
     public async Task ImportFromUrlAsync_PartialData_CarriesTheResolvedImage()
     {

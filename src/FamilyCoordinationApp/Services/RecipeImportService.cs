@@ -470,6 +470,10 @@ public class RecipeImportService(
     /// over-long result is left out rather than passed on. Both imports need the absolute form: an agent's
     /// create_recipe fetches it, and the browser's preview shows it and saves it as the recipe's image, where a
     /// relative value would be requested from this app's own origin and refused on save.
+    /// <para>An already absolute http(s) URL comes back as the page wrote it (trimmed), never re-serialised: the
+    /// browser saves the preview's value through <see cref="ImagePathPolicy"/>'s 500-character cap, and
+    /// <see cref="Uri.AbsoluteUri"/> percent-encodes a non-ASCII filename, which turned a saveable 431-character
+    /// URL into a refused 551-character one (PR #177 review).</para>
     /// </summary>
     internal static string? ResolveImageUrl(string pageUrl, string? raw)
     {
@@ -477,18 +481,17 @@ public class RecipeImportService(
         var value = raw.Trim();
         // Absolute first, and only http(s): on Unix "/images/pie.jpg" parses as an absolute file: URI, so a relative
         // reference is parsed explicitly as Relative and combined with the page URL.
-        Uri? resolved = null;
+        string? text = null;
         if (Uri.TryCreate(value, UriKind.Absolute, out var absolute)
             && (absolute.Scheme == Uri.UriSchemeHttps || absolute.Scheme == Uri.UriSchemeHttp))
         {
-            resolved = absolute;
+            text = value;
         }
         else if (Uri.TryCreate(value, UriKind.Relative, out var relative) && Uri.TryCreate(pageUrl, UriKind.Absolute, out var page))
         {
-            resolved = new Uri(page, relative);
+            var resolved = new Uri(page, relative);
+            if (resolved.Scheme == Uri.UriSchemeHttps || resolved.Scheme == Uri.UriSchemeHttp) text = resolved.AbsoluteUri;
         }
-        if (resolved is null || (resolved.Scheme != Uri.UriSchemeHttps && resolved.Scheme != Uri.UriSchemeHttp)) return null;
-        var text = resolved.AbsoluteUri;
-        return text.Length <= Data.FieldLengths.Recipe.SourceUrl ? text : null;
+        return text is not null && text.Length <= Data.FieldLengths.Recipe.SourceUrl ? text : null;
     }
 }
