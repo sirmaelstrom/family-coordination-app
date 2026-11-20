@@ -188,6 +188,40 @@ public sealed class RecipeImportPreviewEndpointTests(PostgresContainerFixture po
     }
 
     [Fact]
+    public async Task Preview_of_a_relative_unicode_signed_image_saves_as_previewed()
+    {
+        // PR #177 review 5987541661 (quest c001677c): a relative image with a Japanese filename and a signed CDN query
+        // was resolved through Uri.AbsoluteUri, 431 characters as written became 551, and the browser's confirm of its
+        // own preview answered 400. The import returns only an image the save accepts; this one, as the page wrote it.
+        const string url = "https://cdn.example.jp/recipes/matcha-cheesecake";
+        var prefix = "/images/2026/11/抹茶のチーズケーキと黒蜜きなこ.jpg?w=1200&h=800&fit=crop&auto=format&sig=";
+        var relative = prefix + new string('a', 431 - "https://cdn.example.jp".Length - prefix.Length);
+        var schema = FullSchema("Matcha Cheesecake");
+        schema.Image = JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(relative));
+        _factory.Scraper.Next = schema;
+        _factory.Scraper.ServedFrom = null;
+
+        var resp = await ClientA.PostAsJsonAsync("/api/recipes/import/preview", new { url, force = false }, Json);
+        var recipe = (await resp.Content.ReadFromJsonAsync<PreviewResult>(Json))!.recipe!;
+
+        recipe.imagePath.Should().Be("https://cdn.example.jp" + relative);
+        var saved = await ClientA.PostAsJsonAsync("/api/recipes", new
+        {
+            recipe.name,
+            recipe.description,
+            recipe.instructions,
+            recipe.sourceUrl,
+            recipe.servings,
+            recipe.prepTimeMinutes,
+            recipe.cookTimeMinutes,
+            recipe.recipeType,
+            recipe.imagePath,
+            ingredients = Array.Empty<object>(),
+        }, Json);
+        saved.StatusCode.Should().Be(HttpStatusCode.Created, await saved.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task Preview_reads_an_image_objects_contentUrl_in_a_partial_parse_too()
     {
         const string url = "https://preview.test/soups/partial";

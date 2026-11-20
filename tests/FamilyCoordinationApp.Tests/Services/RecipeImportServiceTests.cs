@@ -258,6 +258,80 @@ public class RecipeImportServiceTests
         return prefix + new string('a', 431 - prefix.Length);
     }
 
+    // PR #177 class fix (quest c001677c, design.md in fca-177-classfix-2026-11-20): every image the import hands the
+    // browser is one the save accepts (ImagePathPolicy, POST /api/recipes), or none. The image is dropped, never the
+    // recipe. One row per producer class: relative (review 5987541661), over-long absolute, malformed reference,
+    // ImageObject url/contentUrl, and arrays whose first entry is unusable.
+    private const string ImportPage = "https://cdn.example.jp/recipes/matcha-cheesecake";
+    private static readonly string OverLongAbsolute = "https://cdn.example.jp/images/" + new string('b', 600) + ".jpg";
+
+    public static TheoryData<string, string, string?> ImageProducers()
+    {
+        var unicode = AbsoluteCdnImageWithJapaneseFilename();
+        var unicodeRelative = unicode["https://cdn.example.jp".Length..]; // "/images/2026/11/抹茶….jpg?…&sig=aaa…"
+        string Json(object value) => JsonSerializer.Serialize(value);
+        return new()
+        {
+            { "relative, Unicode filename, signed query", Json(unicodeRelative), unicode },
+            { "absolute over the save's 500", Json(OverLongAbsolute), null },
+            { "malformed: //", Json("//"), null },
+            { "malformed: bad port", Json("//cdn.example.jp:99999/x.jpg"), null },
+            { "ImageObject relative Unicode contentUrl", Json(new Dictionary<string, string> { ["@type"] = "ImageObject", ["contentUrl"] = unicodeRelative }), unicode },
+            { "ImageObject unusable url, usable contentUrl", Json(new Dictionary<string, string> { ["@type"] = "ImageObject", ["url"] = "data:image/png;base64,AAAA", ["contentUrl"] = "/images/apple.jpg" }), "https://cdn.example.jp/images/apple.jpg" },
+            { "array: data: placeholder first", Json(new[] { "data:image/png;base64,AAAA", "/images/apple.jpg" }), "https://cdn.example.jp/images/apple.jpg" },
+            { "array: over-long first", Json(new[] { OverLongAbsolute, "https://cdn.example.jp/ok.jpg" }), "https://cdn.example.jp/ok.jpg" },
+        };
+    }
+
+    [Theory]
+    [MemberData(nameof(ImageProducers))]
+    public async Task ImportFromUrlAsync_ReturnsOnlyAnImageTheSaveAccepts_OrNone(string producer, string imageJson, string? expected)
+    {
+        foreach (var complete in new[] { true, false })
+        {
+            _urlValidatorMock.Setup(v => v.ValidateUrl(ImportPage)).Returns((true, null));
+            var schema = new RecipeSchema
+            {
+                Name = "Matcha cheesecake",
+                RecipeIngredient = complete ? new[] { "200 g cream cheese" } : null,
+                Image = JsonSerializer.Deserialize<JsonElement>(imageJson)
+            };
+            _scraperMock.Setup(s => s.ScrapeRecipeAsync(ImportPage, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ScrapedRecipe(schema, new Uri(ImportPage)));
+            _ingredientParserMock.Setup(p => p.ParseIngredient(It.IsAny<string>()))
+                .Returns<string>(s => new ParsedIngredient { Name = s });
+
+            var result = await _service.ImportFromUrlAsync(ImportPage, 1, 1);
+
+            var because = $"{producer}, {(complete ? "complete" : "partial")} preview";
+            result.Success.Should().Be(complete, because + ": the image never decides whether the recipe imports");
+            var previewed = complete ? result.Recipe!.ImagePath : result.PartialData!.ImageUrl;
+            previewed.Should().Be(expected, because);
+            // What the SPA posts back on confirm: POST /api/recipes answers 400 unless this accepts it.
+            ImagePathPolicy.TryNormalize(previewed, 1, out _).Should().BeTrue(because);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ImportFromUrlAsync_YouTubeThumbnail_IsKeptOnlyWhenTheSaveAcceptsIt(bool overLong)
+    {
+        // Producer P6: yt-dlp's thumbnail is stamped into the schema's image (YouTubeRecipeExtractor.StampVideoMetadata).
+        const string url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+        var thumbnail = overLong ? OverLongAbsolute : "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg";
+        _youtubeExtractorMock.Setup(y => y.ExtractRecipeAsync(url, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RecipeSchema { Name = "Video pie", RecipeIngredient = new[] { "6 apples" }, Image = thumbnail });
+        _ingredientParserMock.Setup(p => p.ParseIngredient(It.IsAny<string>()))
+            .Returns<string>(s => new ParsedIngredient { Name = s });
+
+        var result = await _service.ImportFromUrlAsync(url, 1, 1);
+
+        result.Success.Should().BeTrue();
+        result.Recipe!.ImagePath.Should().Be(overLong ? null : thumbnail);
+        ImagePathPolicy.TryNormalize(result.Recipe.ImagePath, 1, out _).Should().BeTrue();
+    }
+
     [Fact]
     public async Task ImportFromUrlAsync_PartialData_CarriesTheResolvedImage()
     {

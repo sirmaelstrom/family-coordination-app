@@ -803,8 +803,40 @@ public sealed class AgentCommandsTests : IAsyncLifetime
     [InlineData("javascript:alert(1)", null)]
     [InlineData("", null)]
     [InlineData(null, null)]
+    // PR #177 class fix: a relative reference resolves as the page wrote it (no re-escaping), and a malformed one is
+    // no image rather than an exception that aborts the preview.
+    [InlineData("/images/抹茶.jpg?sig=a%2Bb%2Fc%3D", "https://site.test/images/抹茶.jpg?sig=a%2Bb%2Fc%3D")]
+    [InlineData("pie%20top.jpg", "https://site.test/recipes/pie%20top.jpg")]
+    [InlineData("//", null)]
+    [InlineData("//cdn.test:99999/a.jpg", null)]
     public void Preview_image_url_is_absolute_http_or_nothing(string? raw, string? expected) =>
         RecipeImportService.ResolveImageUrl("https://site.test/recipes/pie", raw).Should().Be(expected);
+
+    [Fact]
+    public async Task Preview_hands_the_agent_an_image_create_recipe_accepts_as_the_page_wrote_it()
+    {
+        // PR #177 class fix, sink S3: the agent's preview runs the same check create_recipe's imageUrl does (absolute
+        // http(s), up to 2000), so it keeps a long image the browser's 500 would refuse, and a relative Unicode
+        // reference comes back as the page wrote it, not percent-encoded. An array's unusable first entry is skipped.
+        var longImage = "https://images.test/" + new string('c', 700) + ".jpg";
+        var page = $$"""
+            <html><head><script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"Recipe","name":"Matcha pie",
+             "image":["data:image/png;base64,AAAA","/images/抹茶.jpg?sig=a%2Bb","{{longImage}}"],
+             "recipeIngredient":["2 cups matcha"],"recipeInstructions":"Bake it."}
+            </script></head><body></body></html>
+            """;
+        _web.Serve("/desserts/matcha-pie", System.Text.Encoding.UTF8.GetBytes(page), "text/html; charset=utf-8");
+
+        var preview = await As(A, UserA, c => c.PreviewRecipeImportAsync("http://recipes.test/desserts/matcha-pie"));
+
+        preview.ImageUrl.Should().Be("http://recipes.test/images/抹茶.jpg?sig=a%2Bb");
+
+        var longOnly = page.Replace("\"data:image/png;base64,AAAA\",\"/images/抹茶.jpg?sig=a%2Bb\",", "");
+        _web.Serve("/desserts/long-pie", System.Text.Encoding.UTF8.GetBytes(longOnly), "text/html; charset=utf-8");
+        var longPreview = await As(A, UserA, c => c.PreviewRecipeImportAsync("http://recipes.test/desserts/long-pie"));
+        longPreview.ImageUrl.Should().Be(longImage, "create_recipe accepts up to 2000 characters and stores its own copy");
+    }
 
     // ── No model calls on the token path ─────────────────────────────────────────────────────
 

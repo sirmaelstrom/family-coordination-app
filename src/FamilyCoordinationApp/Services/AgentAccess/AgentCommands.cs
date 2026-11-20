@@ -199,12 +199,24 @@ public sealed class AgentCommands(
         var url = required
             ? Required(value, "imageUrl", FieldLengths.Recipe.SourceUrl)
             : Optional(value, "imageUrl", FieldLengths.Recipe.SourceUrl);
-        if (url is not null && (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)))
+        if (url is not null && !IsAbsoluteHttp(url))
         {
             throw new DomainValidationException("imageUrl must be an absolute http or https URL of the image itself.");
         }
         return url;
     }
+
+    private static bool IsAbsoluteHttp(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp);
+
+    /// <summary>
+    /// Whether create_recipe and set_recipe_image take <paramref name="url"/> as their imageUrl: the check
+    /// <see cref="ImageUrl"/> makes, as a predicate, so preview_recipe_import hands an agent only an image those
+    /// accept (PR #177 class fix). The limit is the input's 2000, not the browser's 500: the agent's image is
+    /// downloaded and stored as this app's own copy.
+    /// </summary>
+    internal static bool AcceptsImageUrl(string url) =>
+        url.Trim().Length is > 0 and <= FieldLengths.Recipe.SourceUrl && IsAbsoluteHttp(url.Trim());
 
     private async Task<FetchedImage> FetchImageAsync(string url, CancellationToken ct)
     {
@@ -346,6 +358,9 @@ public sealed class AgentCommands(
             .FirstOrDefaultAsync(ct);
 
         var recipe = result.Recipe;
+        // The first image create_recipe accepts, as the page wrote it, or null. Not recipe.ImagePath, which holds the
+        // browser save's tighter rule (500); the agent's own save check decides here.
+        var imageUrl = RecipeImportService.PickImageUrl(schema?.Image, fetched.FinalUrl.AbsoluteUri, AcceptsImageUrl);
         return new RecipeImportPreview(
             url,
             recipe.Name,
@@ -360,8 +375,7 @@ public sealed class AgentCommands(
             existing?.Name,
             "Nothing was saved. To keep this recipe, call create_recipe with these fields (imageUrl included, if one was found).",
             AgentContent.UntrustedNote,
-            // Already an absolute http(s) URL create_recipe can fetch, or null (RecipeImportService.ResolveImageUrl).
-            recipe.ImagePath);
+            imageUrl);
     }
 
     // ── Meal plan ───────────────────────────────────────────────────────────────────────────
