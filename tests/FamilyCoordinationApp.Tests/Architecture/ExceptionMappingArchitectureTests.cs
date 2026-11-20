@@ -36,6 +36,8 @@ public sealed class ExceptionMappingArchitectureTests
         ("Endpoints/Mcp/ToolResults.cs", "catch (ToolArgumentException ex)"),
         ("Endpoints/Mcp/ToolResults.cs", "catch (ConcurrencyConflictException)"),
         ("Endpoints/Mcp/ToolResults.cs", "catch (DomainException ex)"),
+        // The fetch budget, spent by the command just before an outbound fetch (quest c001677c): rate_limited, like the gate's own limits.
+        ("Endpoints/Mcp/ToolResults.cs", "catch (AgentFetchLimitException)"),
         ("Endpoints/Mcp/ToolResults.cs", "catch (OperationCanceledException) when (http.RequestAborted.IsCancellationRequested)"),
         // Anything else becomes a generic tool error that says the outcome is unknown (never a stack trace), and is logged.
         ("Endpoints/Mcp/ToolResults.cs", "catch (Exception ex)"),

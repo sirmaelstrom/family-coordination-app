@@ -71,7 +71,7 @@ Then open `http://127.0.0.1:8095/settings/agent-access`, create a token, and poi
 
 ## Limits and logs
 
-- **Per token, each minute:** 120 calls, 30 writes and 10 web fetches. A web fetch is a `preview_recipe_import`, a `set_recipe_image`, or a `create_recipe` with an `imageUrl`. Dry runs count as calls, not writes, but they still fetch, so they count as fetches. Over the limit, the tool error says to wait and retry with the same requestId.
+- **Per token, each minute:** 120 calls, 30 writes and 10 web fetches. A web fetch is counted when the server is about to fetch: the page of a `preview_recipe_import`, or the image of a `set_recipe_image` or a `create_recipe` with an `imageUrl`. A retry answered from its record (same requestId) and a call refused before the fetch (no such recipe, an image already there, a URL the server will not connect to) cost no fetch. Dry runs count as calls, not writes, but they still fetch, so they count as fetches. Over the limit, the tool error says to wait and retry with the same requestId.
 - **Logging:** each call logs one line, `Agent tool <tool> by token <id> (user, household) request <requestId>: <outcome> in <ms> [<correlationId>]`. A refused token logs `Agent token refused: <reason> (token id <id>)`. Neither logs argument content or the token.
 
 ## Production

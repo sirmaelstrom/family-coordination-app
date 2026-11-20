@@ -138,6 +138,12 @@ public class ChoresWebAppFactory(PostgresContainerFixture postgres) : WebApplica
     /// </summary>
     public FamilyCoordinationApp.Services.AgentAccess.SafeRecipeFetcher? Fetcher { get; init; }
 
+    /// <summary>
+    /// An EF interceptor added to every context the host creates, for fault injection at the database boundary
+    /// (<see cref="LostCommitAck"/>: a commit that lands while its acknowledgement is lost). Null adds none.
+    /// </summary>
+    public Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor? DbInterceptor { get; init; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -193,6 +199,11 @@ public class ChoresWebAppFactory(PostgresContainerFixture postgres) : WebApplica
             services.AddSingleton<TimeProvider>(Clock);
 
             if (Fetcher is not null) services.AddSingleton(Fetcher);
+
+            if (DbInterceptor is not null)
+            {
+                services.ConfigureDbContext<ApplicationDbContext>(options => options.AddInterceptors(DbInterceptor));
+            }
         });
     }
 

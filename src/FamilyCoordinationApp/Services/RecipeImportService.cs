@@ -86,10 +86,10 @@ public class RecipeImportService(
         }
 
         // Step 2: Fetch HTML and extract JSON-LD
-        RecipeSchema? schema;
+        ScrapedRecipe scraped;
         try
         {
-            schema = await scraperService.ScrapeRecipeAsync(url, cancellationToken);
+            scraped = await scraperService.ScrapeRecipeAsync(url, cancellationToken);
         }
         catch (HttpRequestException ex)
         {
@@ -99,15 +99,21 @@ public class RecipeImportService(
                 RecipeImportErrorType.FetchFailed);
         }
 
-        return FromSchema(schema, url, householdId, userId);
+        // The page's image resolves against the address it was finally served from, not the app's own origin.
+        return FromSchema(scraped.Schema, url, householdId, userId, scraped.PageUrl);
     }
 
     /// <summary>
     /// Steps 3–5 of the website import: validate the extracted schema and convert it to an unsaved recipe. Shared with
     /// the agents' import (quest 8bfa42cf), which fetches the page through its own hardened client.
+    /// <para>The recipe's image comes back as an absolute http(s) URL the recipe save accepts, or not at all
+    /// (<see cref="BrowserImageUrl"/>): a relative schema.org <c>image</c> is resolved against
+    /// <paramref name="pageUrl"/>, the address the page was finally served from, or against <paramref name="url"/>
+    /// when the caller has none.</para>
     /// </summary>
-    public RecipeImportResult FromSchema(RecipeSchema? schema, string url, int householdId, int userId)
+    public RecipeImportResult FromSchema(RecipeSchema? schema, string url, int householdId, int userId, Uri? pageUrl = null)
     {
+        var imageBase = pageUrl?.AbsoluteUri ?? url;
         // Step 3: Check if we got any data
         if (schema == null)
         {
@@ -118,7 +124,7 @@ public class RecipeImportService(
         }
 
         // Step 4: Validate required fields
-        var partialData = ExtractPartialData(schema);
+        var partialData = ExtractPartialData(schema, imageBase, householdId);
 
         if (string.IsNullOrWhiteSpace(schema.Name))
         {
@@ -137,7 +143,7 @@ public class RecipeImportService(
         }
 
         // Step 5: Convert to Recipe entity
-        var recipe = ConvertToRecipeEntity(schema, url, householdId, userId);
+        var recipe = ConvertToRecipeEntity(schema, url, householdId, userId, imageBase);
 
         logger.LogInformation("Successfully imported recipe '{Name}' from {Url}", recipe.Name, url);
 
@@ -166,7 +172,7 @@ public class RecipeImportService(
                 RecipeImportErrorType.ParsingFailed);
         }
 
-        var partialData = ExtractPartialData(schema);
+        var partialData = ExtractPartialData(schema, url, householdId);
 
         if (string.IsNullOrWhiteSpace(schema.Name))
         {
@@ -184,12 +190,12 @@ public class RecipeImportService(
                 partialData);
         }
 
-        var recipe = ConvertToRecipeEntity(schema, url, householdId, userId);
+        var recipe = ConvertToRecipeEntity(schema, url, householdId, userId, url);
         logger.LogInformation("Successfully imported recipe '{Name}' from YouTube {Url}", recipe.Name, url);
         return RecipeImportResult.Succeeded(recipe);
     }
 
-    private Recipe ConvertToRecipeEntity(RecipeSchema schema, string sourceUrl, int householdId, int userId)
+    private Recipe ConvertToRecipeEntity(RecipeSchema schema, string sourceUrl, int householdId, int userId, string imageBase)
     {
         var recipe = new Recipe
         {
@@ -198,7 +204,7 @@ public class RecipeImportService(
             Description = schema.Description?.Trim(),
             Instructions = ExtractInstructions(schema.RecipeInstructions),
             SourceUrl = sourceUrl,
-            ImagePath = ExtractImageUrl(schema.Image), // Store external image URL directly
+            ImagePath = BrowserImageUrl(schema.Image, imageBase, householdId), // an external image the save accepts, or none
             Servings = ExtractServings(schema.RecipeYield),
             PrepTimeMinutes = ParseIsoDuration(schema.PrepTime),
             CookTimeMinutes = ParseIsoDuration(schema.CookTime),
@@ -388,7 +394,7 @@ public class RecipeImportService(
         return totalMinutes > 0 ? totalMinutes : null;
     }
 
-    private static PartialRecipeData ExtractPartialData(RecipeSchema schema)
+    private static PartialRecipeData ExtractPartialData(RecipeSchema schema, string imageBase, int householdId)
     {
         return new PartialRecipeData
         {
@@ -396,43 +402,99 @@ public class RecipeImportService(
             Description = schema.Description,
             Instructions = ExtractInstructions(schema.RecipeInstructions),
             IngredientStrings = schema.RecipeIngredient?.ToList(),
-            ImageUrl = ExtractImageUrl(schema.Image),
+            ImageUrl = BrowserImageUrl(schema.Image, imageBase, householdId),
             PrepTimeMinutes = ParseIsoDuration(schema.PrepTime),
             CookTimeMinutes = ParseIsoDuration(schema.CookTime),
             Servings = ExtractServings(schema.RecipeYield)
         };
     }
 
-    private static string? ExtractImageUrl(object? image)
+    /// <summary>
+    /// The browser's image for an import: the first of the page's image candidates that resolves to a value the
+    /// recipe save accepts (<see cref="ImagePathPolicy"/>, the check POST /api/recipes makes), or null. The image is
+    /// dropped, never the recipe (PR #177 class fix: the import must not hand the browser an image its save refuses).
+    /// </summary>
+    private static string? BrowserImageUrl(object? image, string imageBase, int householdId) =>
+        PickImageUrl(image, imageBase, url => ImagePathPolicy.TryNormalize(url, householdId, out _));
+
+    /// <summary>
+    /// The first of the page's schema.org <c>image</c> candidates (<see cref="ImageCandidates"/>) whose resolved form
+    /// (<see cref="ResolveImageUrl"/>) the consumer's own save check <paramref name="accepts"/>, or null.
+    /// </summary>
+    internal static string? PickImageUrl(object? image, string pageUrl, Func<string, bool> accepts)
     {
-        if (image == null)
-            return null;
-
-        if (image is string str)
-            return str;
-
-        if (image is JsonElement element)
+        foreach (var candidate in ImageCandidates(image))
         {
-            if (element.ValueKind == JsonValueKind.String)
-                return element.GetString();
+            if (ResolveImageUrl(pageUrl, candidate) is { } url && accepts(url))
+                return url;
+        }
+        return null;
+    }
 
-            // Array of images - take first
-            if (element.ValueKind == JsonValueKind.Array)
+    /// <summary>
+    /// The page's schema.org <c>image</c> as the page wrote it, every candidate in order: a URL string; an
+    /// ImageObject's <c>url</c>, then its <c>contentUrl</c> (the media file itself; some sites give only that); each
+    /// item of an array. A value that is not a non-empty string is skipped. Nothing here judges a candidate: the
+    /// caller takes the first one its save accepts, so an unusable first entry never hides a usable later one.
+    /// </summary>
+    private static readonly string[] ImageObjectUrlProperties = ["url", "contentUrl"];
+
+    private static IEnumerable<string> ImageCandidates(object? image)
+    {
+        if (image is string str)
+        {
+            if (!string.IsNullOrWhiteSpace(str)) yield return str;
+            yield break;
+        }
+        if (image is not JsonElement element) yield break;
+
+        var items = element.ValueKind == JsonValueKind.Array ? element.EnumerateArray().ToList() : [element];
+        foreach (var item in items)
+        {
+            if (item.ValueKind == JsonValueKind.String)
             {
-                foreach (var item in element.EnumerateArray())
+                if (!string.IsNullOrWhiteSpace(item.GetString())) yield return item.GetString()!;
+                continue;
+            }
+            if (item.ValueKind != JsonValueKind.Object) continue;
+            foreach (var name in ImageObjectUrlProperties)
+            {
+                if (item.TryGetProperty(name, out var value)
+                    && value.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(value.GetString()))
                 {
-                    if (item.ValueKind == JsonValueKind.String)
-                        return item.GetString();
-                    if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("url", out var urlProp))
-                        return urlProp.GetString();
+                    yield return value.GetString()!;
                 }
             }
-
-            // ImageObject
-            if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty("url", out var url))
-                return url.GetString();
         }
+    }
 
-        return null;
+    /// <summary>
+    /// A page's image reference as an absolute http(s) URL in the form the page wrote it, or null. A relative value
+    /// ("/images/pie.jpg", "pie.jpg", "//cdn.example/pie.jpg") is resolved against the page URL, as a browser would;
+    /// any other scheme, or a reference that cannot be resolved ("//", a bad port), is no image, never an exception.
+    /// Length is not judged here: each consumer's save check does that (<see cref="PickImageUrl"/>).
+    /// <para>Neither form is re-serialised. <see cref="Uri.AbsoluteUri"/> percent-encodes a non-ASCII filename, which
+    /// turned a saveable 431-character URL into a refused 551-character one, first for an absolute URL (PR #177 review
+    /// 5984747882) and then for its relative twin (review 5987541661). An absolute URL comes back trimmed, as written;
+    /// a relative one as the combined URI's <see cref="Uri.OriginalString"/>: the page's own reference text after the
+    /// base, with dot-segments removed and every escape the page chose (a signed query's <c>%2B</c>) kept.</para>
+    /// </summary>
+    internal static string? ResolveImageUrl(string pageUrl, string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var value = raw.Trim();
+        // Absolute first, and only http(s): on Unix "/images/pie.jpg" parses as an absolute file: URI, so a relative
+        // reference is parsed explicitly as Relative and combined with the page URL.
+        if (Uri.TryCreate(value, UriKind.Absolute, out var absolute) && IsHttp(absolute))
+            return value;
+        return Uri.TryCreate(value, UriKind.Relative, out var relative)
+            && Uri.TryCreate(pageUrl, UriKind.Absolute, out var page)
+            && Uri.TryCreate(page, relative, out var resolved)
+            && IsHttp(resolved)
+            ? resolved.OriginalString
+            : null;
+
+        static bool IsHttp(Uri uri) => uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp;
     }
 }

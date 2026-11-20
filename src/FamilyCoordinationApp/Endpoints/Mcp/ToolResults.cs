@@ -112,6 +112,14 @@ public static class ToolResults
             }
             return Error(tool, code, message, correlationId);
         }
+        catch (AgentFetchLimitException)
+        {
+            // The gate's code and wording for its own limits; the command refused before it fetched or wrote.
+            return Error(tool, "rate_limited",
+                "Too many web fetches for this token in the last minute, so nothing was fetched or saved. Wait a minute and " +
+                (isWrite ? "retry with the same requestId." : "try again."),
+                correlationId);
+        }
         catch (OperationCanceledException) when (http.RequestAborted.IsCancellationRequested)
         {
             throw;

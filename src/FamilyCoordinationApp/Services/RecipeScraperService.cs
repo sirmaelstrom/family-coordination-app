@@ -19,10 +19,16 @@ public interface IRecipeScraperService
     Task<RecipeSchema?> ExtractJsonLdAsync(string html, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Fetches URL and extracts Recipe JSON-LD in one operation.
+    /// Fetches URL and extracts Recipe JSON-LD in one operation, with the address the page was finally served from.
     /// </summary>
-    Task<RecipeSchema?> ScrapeRecipeAsync(string url, CancellationToken cancellationToken = default);
+    Task<ScrapedRecipe> ScrapeRecipeAsync(string url, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// A page's Recipe JSON-LD (null when it has none) and the address the page was finally served from, after any
+/// redirects: the base its relative links (a schema.org <c>image</c> such as <c>/images/pie.jpg</c>) resolve against.
+/// </summary>
+public sealed record ScrapedRecipe(RecipeSchema? Schema, Uri PageUrl);
 
 public class RecipeScraperService(
     IHttpClientFactory httpClientFactory,
@@ -47,7 +53,11 @@ public class RecipeScraperService(
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
     ];
 
-    public async Task<string> FetchHtmlAsync(string url, CancellationToken cancellationToken = default)
+    public async Task<string> FetchHtmlAsync(string url, CancellationToken cancellationToken = default) =>
+        (await FetchPageAsync(url, cancellationToken)).Html;
+
+    /// <summary>The page's HTML and the address it was finally served from (the client follows redirects).</summary>
+    private async Task<(string Html, Uri PageUrl)> FetchPageAsync(string url, CancellationToken cancellationToken)
     {
         var client = httpClientFactory.CreateClient("RecipeScraper");
 
@@ -63,7 +73,9 @@ public class RecipeScraperService(
         var response = await client.GetAsync(url, cancellationToken);
         response.EnsureSuccessStatusCode();
 
-        return await response.Content.ReadAsStringAsync(cancellationToken);
+        // After a followed redirect the response's request is the last hop, not the URL asked for.
+        var pageUrl = response.RequestMessage?.RequestUri is { IsAbsoluteUri: true } served ? served : new Uri(url);
+        return (await response.Content.ReadAsStringAsync(cancellationToken), pageUrl);
     }
 
     public async Task<RecipeSchema?> ExtractJsonLdAsync(string html, CancellationToken cancellationToken = default)
@@ -99,10 +111,10 @@ public class RecipeScraperService(
         return null;
     }
 
-    public async Task<RecipeSchema?> ScrapeRecipeAsync(string url, CancellationToken cancellationToken = default)
+    public async Task<ScrapedRecipe> ScrapeRecipeAsync(string url, CancellationToken cancellationToken = default)
     {
-        var html = await FetchHtmlAsync(url, cancellationToken);
-        return await ExtractJsonLdAsync(html, cancellationToken);
+        var (html, pageUrl) = await FetchPageAsync(url, cancellationToken);
+        return new ScrapedRecipe(await ExtractJsonLdAsync(html, cancellationToken), pageUrl);
     }
 
     private static RecipeSchema? TryParseRecipeFromJson(string jsonContent)

@@ -122,12 +122,12 @@ public class YouTubePipelineIntegrationTests
 
         _urlValidatorMock.Setup(v => v.ValidateUrl(url)).Returns((true, null));
         _scraperMock.Setup(s => s.ScrapeRecipeAsync(url, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new RecipeSchema
+            .ReturnsAsync(new ScrapedRecipe(new RecipeSchema
             {
                 Name = "Test Recipe",
                 RecipeIngredient = new[] { "1 cup flour" },
                 RecipeInstructions = "Mix"
-            });
+            }, new Uri(url)));
 
         var result = await BuildSut().ImportFromUrlAsync(url, householdId: 1, userId: 1);
 
