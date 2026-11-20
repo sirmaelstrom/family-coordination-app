@@ -33,6 +33,28 @@ export class TodayClock {
   value = $state(todayStr());
 
   #timer: ReturnType<typeof setTimeout> | null = null;
+  #holding: () => boolean = () => false;
+  #linkDay = this.value;
+
+  /**
+   * The day a bare `/meal-plan` shows. It is `value`, except that it holds still while the `hold`
+   * predicate is true, and catches up on the first read after the predicate turns false. The owner
+   * holds it while anything open belongs to the week on screen: a sheet, a dialog, the picker or a
+   * drag. Otherwise midnight could move the week out from under it. fca#175, design note
+   * fca-175-rollover-design-2026-11-20.
+   *
+   * A getter, not a `$derived`: it reads `value` and the predicate's state, so a `$derived` that calls
+   * it tracks both. The plain field only remembers the last day shown while nothing held it.
+   */
+  get linkDay(): string {
+    if (!this.#holding()) this.#linkDay = this.value;
+    return this.#linkDay;
+  }
+
+  /** Hold `linkDay` while `holding()` is true. Set once, before the first read. */
+  hold(holding: () => boolean): void {
+    this.#holding = holding;
+  }
 
   /** Re-read the clock now. A no-op while the day is unchanged. */
   sync(): void {

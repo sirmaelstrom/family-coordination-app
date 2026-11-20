@@ -71,8 +71,11 @@
   // `/meal-plan` left open keeps meaning today, and the Today chip, Jump to Today and the week views'
   // today marks (all handed `clock.value`) leave yesterday when the day ends. A URL that names its
   // date stays on that date.
+  // A bare link reads `clock.linkDay`, which holds while anything below that belongs to the week on screen
+  // is open (the hold is set under the dialog state). So midnight never moves the week out from under an
+  // open sheet, dialog, picker or drag. It rolls once they close (design note fca-175-rollover-design-2026-11-20).
   const clock = new TodayClock();
-  let loc = $derived(parsePlanLocation(page.url.searchParams, clock.value, defaultView));
+  let loc = $derived(parsePlanLocation(page.url.searchParams, clock.linkDay, defaultView));
   /** True only when the URL's week, the store's week and the board in hand agree (the render gate). */
   let boardForWeek = $derived(boardIsForWeek(store.board, store.weekStart, planWeek(loc)));
 
@@ -143,6 +146,10 @@
         ? 'Cooking for how many? (the recipe has no yield set, so this scales nothing) — blank to clear it'
         : 'Cooking for how many?',
   );
+
+  // Everything open that holds a date or an entry of the week on screen. App.test.ts checks that every
+  // `open={…}` below is listed here, so a new sheet can't skip the hold.
+  clock.hold(() => pickerOpen || detailOpen || confirmOpen || servingsOpen || store.dragActive);
 
   function mealLabel(m: MealType): string {
     return m.charAt(0).toUpperCase() + m.slice(1);

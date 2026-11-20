@@ -19,7 +19,7 @@ vi.mock('./api', async () => {
 vi.mock('#lib/shared/toast-store.svelte.ts', () => ({ showToast: vi.fn() }));
 
 import { mealPlanStore as store } from './state.svelte';
-import { ApiError, addEntry, getBoard, moveEntry, removeEntry } from './api';
+import { ApiError, addEntry, getBoard, moveEntry, removeEntry, setEntryServings } from './api';
 import { showToast } from '#lib/shared/toast-store.svelte.ts';
 import type { MealPlanBoardDto, MealPlanEntryDto } from './types';
 
@@ -228,5 +228,65 @@ describe('meal-plan writes vs loads (41337b6f)', () => {
     vi.mocked(addEntry).mockResolvedValueOnce(entry(20, '2026-10-18', 'snack'));
     await store.addEntry({ date: '2026-10-18', mealType: 'snack', customMealName: 'Popcorn' });
     expect(ids()).toEqual([1, 2, 20]);
+  });
+
+  // fca#175 review 5987398079 and the class it belongs to (design note fca-175-rollover-design-2026-11-20):
+  // a dialog or a drag opened on one week can finish after the displayed week has changed (the bare link's
+  // rollover, Back/Forward). A write acts on the entry it was opened with, never on a lookup in the week on
+  // screen. Entry 1 is W1's; the store is showing W2.
+  describe('a write for an entry that is not on the displayed week', () => {
+    beforeEach(async () => {
+      vi.mocked(getBoard).mockResolvedValueOnce(board(W2, [entry(9, W2)]));
+      await store.changeWeek(W2);
+      vi.mocked(getBoard).mockClear();
+    });
+
+    it('remove (a Remove Meal dialog left open): still sends its DELETE with its token; the board shown is untouched', async () => {
+      vi.mocked(removeEntry).mockResolvedValueOnce(undefined);
+      await store.removeEntry(1, 1, 11);
+      expect(removeEntry).toHaveBeenCalledWith(1, 1, 11);
+      expect(ids()).toEqual([9]);
+      expect(showToast).not.toHaveBeenCalled();
+    });
+
+    it('remove: a 409 still says the meal changed and reconciles the week on screen', async () => {
+      vi.mocked(removeEntry).mockRejectedValueOnce(new ApiError(409, 'stale'));
+      vi.mocked(getBoard).mockResolvedValueOnce(board(W2, [entry(9, W2)]));
+      await store.removeEntry(1, 1, 11);
+      expect(getBoard).toHaveBeenCalledWith(W2);
+      expect(ids()).toEqual([9]);
+      expect(showToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'info' }));
+    });
+
+    it('move (a drop into a slot of the week it was dragged on): still sends its PATCH; the board shown is untouched', async () => {
+      vi.mocked(moveEntry).mockResolvedValueOnce({ ...entry(1), mealType: 'lunch', version: 99 });
+      await store.moveEntry(1, 1, W1, 'lunch', 11);
+      expect(moveEntry).toHaveBeenCalledWith(1, 1, { date: W1, mealType: 'lunch', version: 11 });
+      expect(ids()).toEqual([9]);
+    });
+
+    it('servings (a Servings prompt left open; control, already addressed by id): sends its PATCH; the board shown is untouched', async () => {
+      vi.mocked(setEntryServings).mockResolvedValueOnce({ ...entry(1), servings: 6, version: 99 });
+      await store.setEntryServings(1, 1, 6, 11);
+      expect(setEntryServings).toHaveBeenCalledWith(1, 1, 6, 11);
+      expect(ids()).toEqual([9]);
+    });
+  });
+
+  // A drag's zones belong to the week shown; a week change unmounts them mid-drag (the render gate), so no
+  // finalize ever runs. Left set, the gate would keep the new week's zones from ever being built: every slot
+  // drawn empty until a reload (drive S14 on 016fed8).
+  it('a week change ends a drag, so the new week gets its zones', async () => {
+    store.rebuildZones();
+    store.zoneConsider(W1, 'dinner', []); // a drag of W1's dinner has begun
+    expect(store.dragActive).toBe(true);
+    vi.mocked(getBoard).mockResolvedValueOnce(board(W2, [entry(9, W2)]));
+
+    await store.changeWeek(W2);
+
+    expect(store.dragActive).toBe(false);
+    store.rebuildZones(); // App's effect, now ungated
+    expect(store.zoneFor(W2, 'dinner').map((e) => e.entryId)).toEqual([9]);
+    store.dragActive = false; // never leak a set gate into another test (the store is a singleton)
   });
 });

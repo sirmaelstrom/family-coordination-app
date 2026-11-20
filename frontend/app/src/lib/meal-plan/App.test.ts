@@ -138,3 +138,24 @@ describe('meal plan: slots come only from the board for the week on screen', () 
     expect(html).toContain(LOADING);
   });
 });
+
+// fca#175 (design note fca-175-rollover-design-2026-11-20): the bare link's day holds while anything that
+// belongs to the week on screen is open. A source check, so a new sheet or dialog cannot be added without
+// joining the hold: every `open={…}` App passes must be in the hold, and so must a drag.
+describe('meal plan: the bare link holds its week while a sheet, dialog, picker or drag is open', () => {
+  const source = Object.values(
+    import.meta.glob('./App.svelte', { query: '?raw', import: 'default', eager: true }) as Record<string, string>,
+  )[0];
+  const hold = /clock\.hold\(\(\) => ([^)]*)\);/.exec(source)?.[1] ?? '';
+  const held = new Set(hold.split('||').map((s) => s.trim()));
+
+  it('the location reads the held day, not the clock', () => {
+    expect(source).toMatch(/^ {2}let loc = \$derived\(parsePlanLocation\(page\.url\.searchParams, clock\.linkDay, defaultView\)\);$/m);
+  });
+
+  it('every open sheet or dialog, and a drag, holds the day', () => {
+    const opens = [...source.matchAll(/\sopen=\{([^}]+)\}/g)].map((m) => m[1].trim());
+    expect(opens.length).toBeGreaterThanOrEqual(4); // picker, detail, remove confirm, servings prompt
+    for (const open of [...opens, 'store.dragActive']) expect(held, open).toContain(open);
+  });
+});

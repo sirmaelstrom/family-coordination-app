@@ -67,6 +67,57 @@ describe('TodayClock', () => {
   });
 });
 
+// The bare /meal-plan link's day (fca#175, design note fca-175-rollover-design-2026-11-20): it follows the
+// clock, but holds still while something on screen belongs to the week shown (a sheet, a dialog, the
+// picker, a drag), and catches up once that closes. `value` (the Today chip, the today marks) never holds.
+describe('TodayClock.linkDay', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 22, 23, 59, 30)); // Sunday Nov 22
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('follows the clock when nothing holds it', () => {
+    const clock = new TodayClock();
+    const stop = clock.start();
+    expect(clock.linkDay).toBe('2026-11-22');
+    vi.advanceTimersByTime(45_000);
+    expect(clock.linkDay).toBe('2026-11-23');
+    stop();
+  });
+
+  it('holds across midnight while held, and catches up on release', () => {
+    let open = false;
+    const clock = new TodayClock();
+    clock.hold(() => open);
+    const stop = clock.start();
+    expect(clock.linkDay).toBe('2026-11-22');
+
+    open = true; // a Sunday dialog is opened
+    vi.advanceTimersByTime(45_000); // 00:00:15 Monday
+    expect(clock.value).toBe('2026-11-23'); // the chip and today marks still follow the clock
+    expect(clock.linkDay).toBe('2026-11-22'); // the bare link stays on Sunday's week
+
+    open = false; // the dialog closes
+    expect(clock.linkDay).toBe('2026-11-23');
+    stop();
+  });
+
+  it('a hold that starts after the day changed does not pull the link back', () => {
+    let open = false;
+    const clock = new TodayClock();
+    clock.hold(() => open);
+    const stop = clock.start();
+    vi.advanceTimersByTime(45_000);
+    expect(clock.linkDay).toBe('2026-11-23');
+    open = true;
+    expect(clock.linkDay).toBe('2026-11-23');
+    stop();
+  });
+});
+
 describe('the Today chip across midnight, with the view left open', () => {
   beforeEach(() => {
     vi.useFakeTimers();

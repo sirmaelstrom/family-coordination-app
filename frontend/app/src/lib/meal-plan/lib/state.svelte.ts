@@ -225,6 +225,10 @@ class MealPlanStore {
       typeof deltaOrMonday === 'number'
         ? addWeeks(this.weekStart, deltaOrMonday)
         : mondayOf(deltaOrMonday);
+    // A week change ends any drag. Its zones belong to the old week, and the render gate unmounts them
+    // with no finalize. Left set, the gate would block the new week's zones, so every slot would be
+    // drawn empty until a reload. (The bare link holds its week during a drag; Back/Forward can't be held.)
+    this.dragActive = false;
     await this.loadBoard();
   }
 
@@ -234,7 +238,6 @@ class MealPlanStore {
    * 4xx reconciles (re-GET the week) + a calm toast; a 5xx/network failure toasts.
    */
   async addEntry(body: AddEntryBody): Promise<void> {
-    if (!this.board) return;
     // Capture the week the add targets. If the user navigates to another week while the POST is in flight,
     // we must NOT merge this (off-week) entry into the now-current board (council R1). It is persisted
     // server-side and will appear when its week is viewed. No key: two adds are legitimately concurrent.
@@ -290,14 +293,14 @@ class MealPlanStore {
     mealType: MealType,
     version: number,
   ): Promise<void> {
-    if (!this.board) return;
-    const original = this.board.entries.find(
+    // The move is addressed by the dragged card's id and token and the slot it was dropped on. It is never
+    // looked up in the week on screen, which can have changed since the drag began (Back/Forward). The
+    // optimistic re-slot and its undo apply only when the entry is on the board shown. Design note
+    // fca-175-rollover-design-2026-11-20.
+    const original = this.board?.entries.find(
       (e) => e.mealPlanId === mealPlanId && e.entryId === entryId,
     );
-    if (!original) return;
-    const fromDate = original.date;
-    const fromMeal = original.mealType;
-    if (fromDate === date && fromMeal === mealType) return;
+    if (original && original.date === date && original.mealType === mealType) return;
 
     const targetWeek = this.weekStart;
     const outcome = await this.#resource.mutate({
@@ -305,7 +308,9 @@ class MealPlanStore {
       // Optimistic re-slot. mutate() runs this synchronously, before its first await — zoneFinalize relies
       // on it landing before the drag gate is released.
       optimistic: () => {
-        if (!this.board) return;
+        if (!this.board || !original) return;
+        const fromDate = original.date;
+        const fromMeal = original.mealType;
         this.board.entries = applyEntryMove(this.board.entries, mealPlanId, entryId, date, mealType);
         // Undo: the same transform aimed back at the original slot — only on the week it was made on
         // (restoring into another week's board would move a foreign entry).
@@ -353,7 +358,6 @@ class MealPlanStore {
     servings: number | null,
     version: number,
   ): Promise<void> {
-    if (!this.board) return;
     const targetWeek = this.weekStart;
     const outcome = await this.#resource.mutate({
       key: entryKey(mealPlanId, entryId),
@@ -380,18 +384,18 @@ class MealPlanStore {
    * removed by someone else) → 404 → the refetch shows the true state.
    */
   async removeEntry(mealPlanId: number, entryId: number, version: number): Promise<void> {
-    if (!this.board) return;
-    const idx = this.board.entries.findIndex(
-      (e) => e.mealPlanId === mealPlanId && e.entryId === entryId,
-    );
-    if (idx < 0) return;
-    const removed = this.board.entries[idx];
+    // Addressed by the entry the dialog was opened with. It is never looked up in the week on screen,
+    // which can have changed while the dialog sat open (the bare link's rollover, Back/Forward: fca#175
+    // review 5987398079, where an open dialog's confirm sent nothing). The optimistic splice and its undo
+    // apply only when the entry is on the board shown. Design note fca-175-rollover-design-2026-11-20.
     const targetWeek = this.weekStart;
     const isThis = (x: MealPlanEntryDto) => x.mealPlanId === mealPlanId && x.entryId === entryId;
     const outcome = await this.#resource.mutate({
       key: entryKey(mealPlanId, entryId),
       optimistic: () => {
-        if (!this.board) return;
+        const idx = this.board?.entries.findIndex(isThis) ?? -1;
+        if (!this.board || idx < 0) return;
+        const removed = this.board.entries[idx];
         this.board.entries = this.board.entries.filter((e) => !isThis(e));
         // Undo: put it back AT ITS ORIGINAL INDEX (council R1 — appending would reorder the slot's entries),
         // only on the week it was removed from (restoring into another week would splice a foreign entry
