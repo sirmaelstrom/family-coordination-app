@@ -189,7 +189,7 @@ public class ShoppingListService(
         existing.IsChecked = item.IsChecked;
         existing.CheckedAt = item.CheckedAt;
         existing.Name = item.Name;
-        existing.Quantity = item.Quantity;
+        existing.UnflooredQuantity = item.UnflooredQuantity;
         existing.QuantityDelta = item.QuantityDelta;
         existing.Unit = item.Unit;
         existing.Category = item.Category;
@@ -205,7 +205,7 @@ public class ShoppingListService(
         item.IsChecked = existing.IsChecked;
         item.CheckedAt = existing.CheckedAt;
         item.Name = existing.Name;
-        item.Quantity = existing.Quantity;
+        item.UnflooredQuantity = existing.UnflooredQuantity;
         item.QuantityDelta = existing.QuantityDelta;
         item.Unit = existing.Unit;
         item.Category = existing.Category;

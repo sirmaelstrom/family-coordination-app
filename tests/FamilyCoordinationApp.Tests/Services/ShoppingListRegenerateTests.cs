@@ -18,8 +18,8 @@ using FamilyCoordinationApp.Tenancy;
 namespace FamilyCoordinationApp.Tests.Services;
 
 /// <summary>
-/// The regenerate rework (quest f63bb90a, spec-lite §Regenerate): carry-over by normalized-name match
-/// (IsChecked/CheckedAt/SortOrder), re-applied QuantityDelta, preserved manual items, and a SINGLE
+/// The regenerate rework (quest f63bb90a, spec-lite §Regenerate): carry-over of checked state and
+/// sort order, re-applied QuantityDelta, preserved manual items, and a SINGLE
 /// SaveChanges — the pre-rework implementation deleted and re-added through per-item service calls,
 /// wiping checked state and saving once per item.
 /// </summary>
@@ -29,6 +29,7 @@ public class ShoppingListRegenerateTests : IDisposable
     private sealed class SaveCountingInterceptor : SaveChangesInterceptor
     {
         public int Saves;
+        public bool FailSave;
 
         public override InterceptionResult<int> SavingChanges(
             DbContextEventData eventData, InterceptionResult<int> result)
@@ -41,6 +42,7 @@ public class ShoppingListRegenerateTests : IDisposable
             DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref Saves);
+            if (FailSave) throw new InvalidOperationException("Test save failure.");
             return base.SavingChangesAsync(eventData, result, cancellationToken);
         }
     }
@@ -234,6 +236,18 @@ public class ShoppingListRegenerateTests : IDisposable
     }
 
     [Fact]
+    public async Task Regenerate_SaveFailureLeavesTheOriginalItems()
+    {
+        var before = await ItemsAsync();
+        _saveCounter.FailSave = true;
+
+        var regenerate = () => _generator.RegenerateShoppingListAsync(1, 50);
+        await regenerate.Should().ThrowAsync<InvalidOperationException>().WithMessage("Test save failure.");
+
+        (await ItemsAsync()).Should().BeEquivalentTo(before, options => options.Excluding(i => i.ShoppingList));
+    }
+
+    [Fact]
     public async Task Regenerate_UnlinkedList_Throws()
     {
         var act = () => _generator.RegenerateShoppingListAsync(1, 51);
@@ -413,6 +427,31 @@ public class ShoppingListRegenerateTests : IDisposable
         grams.IsChecked.Should().BeFalse();
         grams.Quantity.Should().Be(125m);
         grams.QuantityDelta.Should().Be(25m);
+    }
+
+    [Fact]
+    public async Task Regenerate_KeepsStateWithTheIngredient_WhenRecipeEditReusesIds()
+    {
+        await TagFlourAsync();
+        await using var ctx = await _dbFactory.CreateDbContextAsync();
+        var original = await ctx.Recipes.Include(r => r.Ingredients).SingleAsync(r => r.RecipeId == 10);
+        var service = new RecipeService(_dbFactory, Mock.Of<IImageService>(), Mock.Of<ILogger<RecipeService>>(),
+            TestClocks.System, TestKeys.Allocator);
+        var reordered = new Recipe
+        {
+            RecipeId = original.RecipeId, Name = original.Name,
+            Ingredients = original.Ingredients.OrderByDescending(i => i.IngredientId).ToList()
+        };
+        await service.UpdateRecipeAsync(reordered, original.Version);
+        (await ctx.RecipeIngredients.AsNoTracking().SingleAsync(i => i.IngredientId == 1)).Name.Should().Be("eggs");
+
+        await _generator.RegenerateShoppingListAsync(1, 50);
+
+        var items = await ItemsAsync();
+        var flour = items.Single(i => i.Name == "flour");
+        flour.IsChecked.Should().BeTrue();
+        flour.Quantity.Should().Be(3m);
+        items.Single(i => i.Name == "eggs").IsChecked.Should().BeFalse();
     }
 
     [Fact]
