@@ -12,10 +12,8 @@ using FamilyCoordinationApp.Services.Interfaces;
 namespace FamilyCoordinationApp.Tests.Services;
 
 /// <summary>
-/// The regenerate rework (quest f63bb90a, spec-lite §Regenerate): carry-over by normalized-name match
-/// (IsChecked/CheckedAt/SortOrder), re-applied QuantityDelta, preserved manual items, and a SINGLE
-/// SaveChanges — the pre-rework implementation deleted and re-added through per-item service calls,
-/// wiping checked state and saving once per item.
+/// Covers state carried by recipe ingredient identity, legacy rows without ingredient IDs,
+/// preserved manual items, and the single SaveChanges that replaces generated rows.
 /// </summary>
 public class ShoppingListRegenerateTests : IDisposable
 {

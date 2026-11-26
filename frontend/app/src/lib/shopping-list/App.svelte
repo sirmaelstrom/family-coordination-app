@@ -439,7 +439,7 @@
 <ConfirmDialog
   open={confirmRegenerateOpen}
   title="Regenerate List"
-  message="Rebuild this list from the whole week of its meal plan? Items you added yourself are kept. Items from the meal plan are rebuilt: their check marks and quantity changes usually carry over, but can be lost if you renamed an item, changed its unit or moved it to another category."
+  message="Rebuild this list from the whole week of its meal plan? Items you added yourself stay as they are. Rebuilt items use names, categories and units from the meal plan. Items from the same recipe ingredients keep their check marks and any quantity changes made in the same unit."
   confirmLabel="Regenerate"
   onCancel={() => (confirmRegenerateOpen = false)}
   onConfirm={handleConfirmRegenerate}

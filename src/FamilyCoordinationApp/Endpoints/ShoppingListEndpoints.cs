@@ -339,12 +339,8 @@ public static class ShoppingListEndpoints
             }
             item.Quantity = req.Quantity;
         }
-        // A unit or category change on a generated row invalidates the delta — the unit changes what
-        // the number MEANS, and category is half the consolidator's carry identity, so the edited row
-        // no longer corresponds to the baseline the delta was measured against.
-        if (!item.IsManuallyAdded
-            && ((req.Unit is not null && req.Unit != item.Unit)
-                || (req.Category is not null && req.Category != item.Category)))
+        // A unit change invalidates the quantity adjustment measured in the old unit.
+        if (!item.IsManuallyAdded && req.Unit is not null && req.Unit != item.Unit)
         {
             item.QuantityDelta = null;
         }

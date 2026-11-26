@@ -32,8 +32,8 @@ public interface IShoppingListGenerator
     /// Rebuild the generated rows from the list's linked meal plan — the WHOLE plan week, regardless of
     /// the date range the list was originally generated with (the range is not persisted; see the
     /// past-lists spec-lite). Atomic (one SaveChanges); manual items untouched; checked state, sort
-    /// position and each edited item's QuantityDelta carry onto the fresh rows by the consolidator's
-    /// (normalized name, category) identity. Wired at POST /{listId}/actions/regenerate.
+    /// position and compatible quantity adjustments carry onto fresh rows with matching recipe ingredient IDs.
+    /// Wired at POST /{listId}/actions/regenerate.
     /// </summary>
     Task<ShoppingList> RegenerateShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default);
 
@@ -194,14 +194,18 @@ public class ShoppingListGenerator(
                 "This list is not linked to a meal plan.", $"ShoppingList {shoppingListId} is not linked to a meal plan");
         }
 
-        // Outgoing generated rows keyed by the CONSOLIDATOR'S identity — (normalized name, category),
-        // the same pair ConsolidateScaledIngredientsAsync groups by — so same-name rows in different
-        // categories each keep their own checked state / sort position / quantity edit. Genuine
-        // duplicates within one identity resolve to the lowest ItemId (deterministic, oldest row).
         var outgoing = existingList.Items
             .Where(i => !i.IsManuallyAdded)
-            .GroupBy(i => (Name: NormalizeIngredientName(i.Name), i.Category))
-            .ToDictionary(g => g.Key, g => g.OrderBy(i => i.ItemId).First());
+            .OrderBy(i => i.ItemId)
+            .ToList();
+        var outgoingByIngredients = outgoing
+            .Where(i => !string.IsNullOrEmpty(i.RecipeIngredientIds))
+            .GroupBy(i => IngredientIdentity(i.RecipeIngredientIds!))
+            .ToDictionary(g => g.Key, g => new Queue<ShoppingListItem>(g));
+        var outgoingWithoutIngredients = outgoing
+            .Where(i => string.IsNullOrEmpty(i.RecipeIngredientIds))
+            .GroupBy(i => (NormalizeIngredientName(i.Name), i.Category, NormalizeUnit(i.Unit)))
+            .ToDictionary(g => g.Key, g => new Queue<ShoppingListItem>(g));
 
         var mealPlan = await context.MealPlans
             .Where(mp => mp.MealPlanId == existingList.MealPlanId)
@@ -233,28 +237,41 @@ public class ShoppingListGenerator(
         // KeyAllocatorConcurrencyTests).
         var nextItemId = keys.NextKeyFromSnapshot(existingList.Items.Select(i => i.ItemId));
 
-        context.ShoppingListItems.RemoveRange(existingList.Items.Where(i => !i.IsManuallyAdded));
+        context.ShoppingListItems.RemoveRange(outgoing);
 
         foreach (var result in consolidationResults)
         {
-            outgoing.TryGetValue((NormalizeIngredientName(result.Name), result.Category), out var previous);
-            var quantityDelta = previous?.QuantityDelta;
+            var ingredientIds = JoinRecipeIngredientIds(result.RecipeIngredientIds);
+            ShoppingListItem? previous = null;
+            if (ingredientIds is not null && outgoingByIngredients.TryGetValue(IngredientIdentity(ingredientIds), out var matches))
+            {
+                matches.TryDequeue(out previous);
+            }
+            if (previous is null && outgoingWithoutIngredients.TryGetValue(
+                    (NormalizeIngredientName(result.Name), result.Category, NormalizeUnit(result.Unit)), out var legacyMatches))
+            {
+                legacyMatches.TryDequeue(out previous);
+            }
+
+            var quantityDelta = NormalizeUnit(previous?.Unit) == NormalizeUnit(result.Unit)
+                ? previous?.QuantityDelta
+                : null;
+            var quantity = Math.Max(0, result.Quantity + (quantityDelta ?? 0));
+            var appliedDelta = quantity - result.Quantity;
 
             context.ShoppingListItems.Add(new ShoppingListItem
             {
                 ShoppingListId = shoppingListId,
                 ItemId = nextItemId++,
                 Name = result.Name,
-                // Floor at zero: a carried negative edit larger than the fresh quantity must not
-                // produce a negative line.
-                Quantity = Math.Max(0, result.Quantity + (quantityDelta ?? 0)),
+                Quantity = quantity,
                 Unit = result.Unit,
                 Category = result.Category,
                 SourceRecipes = JoinSourceRecipes(result.SourceRecipes),
                 OriginalUnits = result.OriginalUnits,
-                RecipeIngredientIds = JoinRecipeIngredientIds(result.RecipeIngredientIds),
+                RecipeIngredientIds = ingredientIds,
                 IsManuallyAdded = false,
-                QuantityDelta = quantityDelta,
+                QuantityDelta = quantityDelta is not null && appliedDelta != 0 ? appliedDelta : null,
                 IsChecked = previous?.IsChecked ?? false,
                 CheckedAt = previous?.CheckedAt,
                 SortOrder = previous?.SortOrder ?? 0,
@@ -293,12 +310,17 @@ public class ShoppingListGenerator(
 
     /// <summary>
     /// Distinct ingredient identities, bounded to the column by dropping whole ids past it: a marker would not
-    /// parse as an id. Nothing in src reads this column back.
+    /// parse as an id.
     /// </summary>
     private static string? JoinRecipeIngredientIds(List<string> recipeIngredientIds) =>
         recipeIngredientIds.Count > 0
             ? BoundedJoin.Join(recipeIngredientIds, ",", FieldLengths.ShoppingListItem.RecipeIngredientIds, marker: false)
             : null;
+
+    private static string IngredientIdentity(string ingredientIds) =>
+        string.Join(',', ingredientIds.Split(',').Order(StringComparer.Ordinal));
+
+    private static string NormalizeUnit(string? unit) => unit?.Trim().ToLowerInvariant() ?? string.Empty;
 
     /// <summary>Quantities are persisted as <c>decimal(10,2)</c>; round here so the computed value is the stored one.</summary>
     private static decimal Round(decimal quantity) => Math.Round(quantity, 2, MidpointRounding.AwayFromZero);
