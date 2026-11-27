@@ -486,6 +486,29 @@ public class ShoppingListRegenerateTests : IDisposable
         regenerated.QuantityDelta.Should().Be(3m);
     }
 
+    [Fact]
+    public async Task QuantityEdit_RemainsApplied_WhenRecipeQuantityRisesAfterFlooring()
+    {
+        await TagFlourAsync();
+        await using var app = await StartShoppingListApiAsync();
+        using var client = app.GetTestClient();
+        var flour = (await ItemsAsync()).Single(i => i.Name == "flour");
+        await PatchAsync(client, flour, new { flour.Version, quantity = 0m });
+
+        await using var ctx = new ApplicationDbContext(_options);
+        var ingredient = await ctx.RecipeIngredients.SingleAsync(i => i.IngredientId == 1);
+        ingredient.Quantity = 1m;
+        await ctx.SaveChangesAsync();
+        await _generator.RegenerateShoppingListAsync(1, 50);
+        (await ItemsAsync()).Single(i => i.Name == "flour").Quantity.Should().Be(0m);
+
+        ingredient.Quantity = 3m;
+        await ctx.SaveChangesAsync();
+        await _generator.RegenerateShoppingListAsync(1, 50);
+
+        (await ItemsAsync()).Single(i => i.Name == "flour").Quantity.Should().Be(1m);
+    }
+
     private async Task TagFlourAsync()
     {
         await using var ctx = new ApplicationDbContext(_options);
