@@ -5,6 +5,8 @@ namespace FamilyCoordinationApp.Data.Entities;
 
 public class ShoppingListItem : Tenancy.ITenantEntity, Tenancy.ICreatedByAudited, Tenancy.IUpdateAudited, IVersioned
 {
+    private decimal? _quantity;
+
     // Generated items are stamped with the generating user too (quest e8bf9e1d, operator answer d). Planning credit
     // is unaffected: ChorePlanningCalculator counts only IsManuallyAdded rows.
     string Tenancy.ICreatedByAudited.CreatedByProperty => nameof(AddedByUserId);
@@ -14,7 +16,17 @@ public class ShoppingListItem : Tenancy.ITenantEntity, Tenancy.ICreatedByAudited
     public int ShoppingListId { get; set; }
     public int ItemId { get; set; }
     public string Name { get; set; } = string.Empty;
-    public decimal? Quantity { get; set; }
+    public decimal? Quantity
+    {
+        get => !IsManuallyAdded && _quantity is < 0 ? 0m : _quantity;
+        set => _quantity = value;
+    }
+
+    internal decimal? UnflooredQuantity
+    {
+        get => _quantity;
+        set => _quantity = value;
+    }
     public string? Unit { get; set; }
     public string Category { get; set; } = CategoryDefaults.DefaultCategory;
     public bool IsChecked { get; set; }

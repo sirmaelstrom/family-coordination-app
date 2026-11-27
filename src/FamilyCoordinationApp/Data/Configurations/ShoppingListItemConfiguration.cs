@@ -26,6 +26,8 @@ public class ShoppingListItemConfiguration : IEntityTypeConfiguration<ShoppingLi
             .HasMaxLength(FieldLengths.ShoppingListItem.Category);
 
         builder.Property(sli => sli.Quantity)
+            .HasField("_quantity")
+            .UsePropertyAccessMode(PropertyAccessMode.Field)
             .HasPrecision(10, 2);
 
         builder.Property(sli => sli.IsChecked)

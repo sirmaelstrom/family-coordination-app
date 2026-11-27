@@ -1,18 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'svelte/server';
 
-// Quest 7a784201: the Regenerate confirm says only what Regenerate does.
-//
-// What the server does (src/FamilyCoordinationApp/Services/ShoppingListGenerator.cs, RegenerateOnceAsync):
-//   • manually added items are never removed;
-//   • every generated item is deleted and rebuilt from the whole plan week;
-//   • a rebuilt item takes its checked state and quantity adjustment from the old generated item with the
-//     same normalized name AND the same category. Rename or recategorize a generated item and that match
-//     is lost: its row comes back unchecked and unadjusted;
-//   • name, unit and category always come from the rebuilt row, and editing a generated item's unit
-//     clears its quantity adjustment at once (Endpoints/ShoppingListEndpoints.cs, PatchItem).
-// The old copy promised "checked-off state and quantity edits are kept" with no condition.
-//
 // The component is rendered on the server (`svelte/server`), which needs no DOM package: ConfirmDialog
 // always renders its <dialog> markup and only toggles it open in an effect, so the copy is in the HTML.
 // No effect runs in a server render, so nothing here loads a list; fetch is stubbed to throw anyway.
@@ -69,25 +57,10 @@ describe('shopping list: the Regenerate confirm', () => {
 
   it('says exactly what Regenerate keeps', () => {
     expect(message).toBe(
-      'Rebuild this list from the whole week of its meal plan? Items you added yourself are kept. ' +
-        'Items from the meal plan are rebuilt: their check marks and quantity changes usually carry over, ' +
-        'but can be lost if you renamed an item, changed its unit or moved it to another category.',
+      'Rebuild this list from the whole week of its meal plan? Items you added yourself stay as they are. ' +
+        'Rebuilt items use names, categories and units from the meal plan. ' +
+        'Items from the same recipe ingredients keep their check marks and any quantity changes made in the same unit.',
     );
-  });
-
-  it('never guarantees check marks or quantity changes', () => {
-    // Whatever the wording becomes: carry-over is the usual case, not a guarantee, and the sentence that
-    // mentions it names the three edits that lose it. Even "kept as long as name, unit and category are
-    // unchanged" is false (review of PR #179): two rows with one name and category in different units
-    // share one old row, and an adjustment made after a quantity floored at zero is measured wrong.
-    const promise = (message ?? '').split(/(?<=[.?;])\s+/).filter((s) => /check|quantit/i.test(s));
-    expect(promise.length).toBeGreaterThan(0);
-    for (const sentence of promise) {
-      expect(sentence).toMatch(/\busually\b/i);
-      expect(sentence).toMatch(/\bcan be lost\b/i);
-      expect(sentence).toMatch(/\brenamed\b.*\bunit\b.*\bcategory\b/i);
-      expect(sentence).not.toMatch(/\b(are|is) kept\b|\bas long as\b|\balways\b/i);
-    }
   });
 
   it('renders without a network call', () => {

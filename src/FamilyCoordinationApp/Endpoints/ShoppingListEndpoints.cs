@@ -328,25 +328,22 @@ public static class ShoppingListEndpoints
             item.IsChecked = req.IsChecked.Value;
             item.CheckedAt = req.IsChecked.Value ? clock.UtcNow : null;
         }
-        if (req.Quantity is not null)
+        var unitChanged = req.Unit is not null && req.Unit != item.Unit;
+        if (!item.IsManuallyAdded && unitChanged)
+        {
+            item.QuantityDelta = null;
+            item.Quantity = req.Quantity ?? item.Quantity;
+        }
+        else if (req.Quantity is { } quantity && quantity != item.Quantity)
         {
             // Generated rows record the user's edit as a delta over the generator's own number, so a
             // regenerate can re-apply it to the fresh consolidated quantity. Manual rows have no
             // generator baseline — their quantity IS the truth, no delta.
             if (!item.IsManuallyAdded)
             {
-                item.QuantityDelta = ComputeQuantityDelta(req.Quantity.Value, item.Quantity, item.QuantityDelta);
+                item.QuantityDelta = ComputeQuantityDelta(quantity, item.UnflooredQuantity, item.QuantityDelta);
             }
-            item.Quantity = req.Quantity;
-        }
-        // A unit or category change on a generated row invalidates the delta — the unit changes what
-        // the number MEANS, and category is half the consolidator's carry identity, so the edited row
-        // no longer corresponds to the baseline the delta was measured against.
-        if (!item.IsManuallyAdded
-            && ((req.Unit is not null && req.Unit != item.Unit)
-                || (req.Category is not null && req.Category != item.Category)))
-        {
-            item.QuantityDelta = null;
+            item.Quantity = quantity;
         }
         if (req.Unit is not null) item.Unit = req.Unit;
         if (req.Name is not null) item.Name = req.Name;
@@ -449,7 +446,7 @@ public static class ShoppingListEndpoints
 
     /// <summary>
     /// The user's cumulative adjustment over the generator's baseline. The baseline is invariant under
-    /// repeated edits: baseline = currentQuantity − (currentDelta ?? 0), so edit → re-edit → revert all
+    /// repeated edits: baseline = unfloored quantity − (currentDelta ?? 0), so edit → re-edit → revert all
     /// compute against the generator's own number. A delta of zero stores null (no edit to carry).
     /// </summary>
     public static decimal? ComputeQuantityDelta(decimal newQuantity, decimal? currentQuantity, decimal? currentDelta)

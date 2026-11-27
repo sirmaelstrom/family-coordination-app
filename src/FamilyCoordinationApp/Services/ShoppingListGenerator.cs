@@ -32,8 +32,8 @@ public interface IShoppingListGenerator
     /// Rebuild the generated rows from the list's linked meal plan — the WHOLE plan week, regardless of
     /// the date range the list was originally generated with (the range is not persisted; see the
     /// past-lists spec-lite). Atomic (one SaveChanges); manual items untouched; checked state, sort
-    /// position and each edited item's QuantityDelta carry onto the fresh rows by the consolidator's
-    /// (normalized name, category) identity. Wired at POST /{listId}/actions/regenerate.
+    /// position and compatible quantity adjustments carry onto fresh rows with matching recipe ingredient IDs.
+    /// Wired at POST /{listId}/actions/regenerate.
     /// </summary>
     Task<ShoppingList> RegenerateShoppingListAsync(int householdId, int shoppingListId, CancellationToken cancellationToken = default);
 
@@ -79,6 +79,7 @@ public class ShoppingListGenerator(
         // overflow, say) left a list holding some of its items.
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
+        var now = clock.UtcNow;
         // Load meal plan with entries, recipes, and ingredients
         var mealPlan = await context.MealPlans
             .Where(mp => mp.MealPlanId == mealPlanId)
@@ -116,8 +117,6 @@ public class ShoppingListGenerator(
         var consolidationResults = await ConsolidateScaledIngredientsAsync(allIngredients, autoConsolidate: true);
 
         var shoppingListId = await keys.NextKeyAsync(context.ShoppingLists, sl => sl.ShoppingListId, cancellationToken);
-        var now = clock.UtcNow;
-
         var shoppingList = new ShoppingList
         {
             ShoppingListId = shoppingListId,
@@ -194,15 +193,11 @@ public class ShoppingListGenerator(
                 "This list is not linked to a meal plan.", $"ShoppingList {shoppingListId} is not linked to a meal plan");
         }
 
-        // Outgoing generated rows keyed by the CONSOLIDATOR'S identity — (normalized name, category),
-        // the same pair ConsolidateScaledIngredientsAsync groups by — so same-name rows in different
-        // categories each keep their own checked state / sort position / quantity edit. Genuine
-        // duplicates within one identity resolve to the lowest ItemId (deterministic, oldest row).
         var outgoing = existingList.Items
             .Where(i => !i.IsManuallyAdded)
-            .GroupBy(i => (Name: NormalizeIngredientName(i.Name), i.Category))
-            .ToDictionary(g => g.Key, g => g.OrderBy(i => i.ItemId).First());
-
+            .OrderBy(i => i.ItemId)
+            .ToList();
+        var now = clock.UtcNow;
         var mealPlan = await context.MealPlans
             .Where(mp => mp.MealPlanId == existingList.MealPlanId)
             .Include(mp => mp.Entries)
@@ -222,6 +217,24 @@ public class ShoppingListGenerator(
             .ToList();
 
         var consolidationResults = await ConsolidateScaledIngredientsAsync(allIngredients, autoConsolidate: true);
+        var recipeEdits = mealPlan.Entries.Select(e => e.Recipe).OfType<Recipe>()
+            .Where(r => r.UpdatedAt.HasValue)
+            .DistinctBy(r => r.RecipeId)
+            .ToDictionary(r => $"{r.HouseholdId}:{r.RecipeId}", r => r.UpdatedAt!.Value);
+        var editedSources = outgoing.ToDictionary(i => i, i =>
+            (i.RecipeIngredientIds?.Split(',') ?? [])
+                .Select(SourceRecipeKey)
+                .Where(key => recipeEdits.TryGetValue(key, out var editedAt) && editedAt > i.AddedAt)
+                .ToHashSet());
+
+        var outgoingByIngredients = outgoing
+            .Where(i => !string.IsNullOrEmpty(i.RecipeIngredientIds) && editedSources[i].Count == 0)
+            .GroupBy(i => IngredientIdentity(i.RecipeIngredientIds!))
+            .ToDictionary(g => g.Key, g => new Queue<ShoppingListItem>(g));
+        var outgoingByLabel = outgoing
+            .Where(i => string.IsNullOrEmpty(i.RecipeIngredientIds) || editedSources[i].Count > 0)
+            .GroupBy(i => (NormalizeIngredientName(i.Name), i.Category, NormalizeUnit(i.Unit)))
+            .ToDictionary(g => g.Key, g => g.ToList());
 
         // The fresh rows take ids above every row in the LOADED snapshot (removed generated rows included: they are
         // deleted in this same save, so their ids are not free yet). The snapshot's max, not the database's, on
@@ -233,33 +246,49 @@ public class ShoppingListGenerator(
         // KeyAllocatorConcurrencyTests).
         var nextItemId = keys.NextKeyFromSnapshot(existingList.Items.Select(i => i.ItemId));
 
-        context.ShoppingListItems.RemoveRange(existingList.Items.Where(i => !i.IsManuallyAdded));
+        context.ShoppingListItems.RemoveRange(outgoing);
 
         foreach (var result in consolidationResults)
         {
-            outgoing.TryGetValue((NormalizeIngredientName(result.Name), result.Category), out var previous);
-            var quantityDelta = previous?.QuantityDelta;
+            var ingredientIds = JoinRecipeIngredientIds(result.RecipeIngredientIds);
+            ShoppingListItem? previous = null;
+            if (ingredientIds is not null && outgoingByIngredients.TryGetValue(IngredientIdentity(ingredientIds), out var matches))
+            {
+                matches.TryDequeue(out previous);
+            }
+            if (previous is null && outgoingByLabel.TryGetValue(
+                    (NormalizeIngredientName(result.Name), result.Category, NormalizeUnit(result.Unit)), out var labelMatches))
+            {
+                var sourceKeys = result.RecipeIngredientIds.Select(SourceRecipeKey).ToHashSet();
+                previous = labelMatches.Find(item => editedSources[item].Overlaps(sourceKeys))
+                    ?? labelMatches.Find(item => string.IsNullOrEmpty(item.RecipeIngredientIds));
+                if (previous is not null)
+                {
+                    labelMatches.Remove(previous);
+                }
+            }
 
+            var quantityDelta = NormalizeUnit(previous?.Unit) == NormalizeUnit(result.Unit)
+                ? previous?.QuantityDelta
+                : null;
             context.ShoppingListItems.Add(new ShoppingListItem
             {
                 ShoppingListId = shoppingListId,
                 ItemId = nextItemId++,
                 Name = result.Name,
-                // Floor at zero: a carried negative edit larger than the fresh quantity must not
-                // produce a negative line.
-                Quantity = Math.Max(0, result.Quantity + (quantityDelta ?? 0)),
+                UnflooredQuantity = result.Quantity + (quantityDelta ?? 0),
                 Unit = result.Unit,
                 Category = result.Category,
                 SourceRecipes = JoinSourceRecipes(result.SourceRecipes),
                 OriginalUnits = result.OriginalUnits,
-                RecipeIngredientIds = JoinRecipeIngredientIds(result.RecipeIngredientIds),
+                RecipeIngredientIds = ingredientIds,
                 IsManuallyAdded = false,
                 QuantityDelta = quantityDelta,
                 IsChecked = previous?.IsChecked ?? false,
                 CheckedAt = previous?.CheckedAt,
                 SortOrder = previous?.SortOrder ?? 0,
-                AddedAt = clock.UtcNow,
-                UpdatedAt = clock.UtcNow
+                AddedAt = now,
+                UpdatedAt = now
             });
         }
 
@@ -293,12 +322,20 @@ public class ShoppingListGenerator(
 
     /// <summary>
     /// Distinct ingredient identities, bounded to the column by dropping whole ids past it: a marker would not
-    /// parse as an id. Nothing in src reads this column back.
+    /// parse as an id.
     /// </summary>
     private static string? JoinRecipeIngredientIds(List<string> recipeIngredientIds) =>
         recipeIngredientIds.Count > 0
             ? BoundedJoin.Join(recipeIngredientIds, ",", FieldLengths.ShoppingListItem.RecipeIngredientIds, marker: false)
             : null;
+
+    private static string IngredientIdentity(string ingredientIds) =>
+        string.Join(',', ingredientIds.Split(',').Order(StringComparer.Ordinal));
+
+    private static string SourceRecipeKey(string ingredientId) =>
+        ingredientId[..Math.Max(0, ingredientId.LastIndexOf(':'))];
+
+    private static string NormalizeUnit(string? unit) => unit?.Trim().ToLowerInvariant() ?? string.Empty;
 
     /// <summary>Quantities are persisted as <c>decimal(10,2)</c>; round here so the computed value is the stored one.</summary>
     private static decimal Round(decimal quantity) => Math.Round(quantity, 2, MidpointRounding.AwayFromZero);
