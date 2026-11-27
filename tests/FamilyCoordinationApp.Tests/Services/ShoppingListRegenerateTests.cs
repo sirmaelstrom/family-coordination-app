@@ -1,6 +1,11 @@
+using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
 using FamilyCoordinationApp.Data;
@@ -8,6 +13,7 @@ using FamilyCoordinationApp.Data.Entities;
 using FamilyCoordinationApp.Endpoints;
 using FamilyCoordinationApp.Services;
 using FamilyCoordinationApp.Services.Interfaces;
+using FamilyCoordinationApp.Tenancy;
 
 namespace FamilyCoordinationApp.Tests.Services;
 
@@ -43,6 +49,7 @@ public class ShoppingListRegenerateTests : IDisposable
     private readonly ApplicationDbContext _seedContext;
     private readonly FamilyCoordinationApp.Tenancy.TenantContext _tenant = TestTenancy.Caller(1);
     private readonly DbContextOptions<ApplicationDbContext> _options;
+    private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
     private readonly ShoppingListGenerator _generator;
 
     private static readonly DateTime CheckedInstant = new(2026, 6, 20, 14, 30, 0, DateTimeKind.Utc);
@@ -60,8 +67,9 @@ public class ShoppingListRegenerateTests : IDisposable
         dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
 
+        _dbFactory = dbFactoryMock.Object;
         _generator = new ShoppingListGenerator(
-            dbFactoryMock.Object,
+            _dbFactory,
             new Mock<IShoppingListService>().Object,
             new UnitConverter(),
             new Mock<ILogger<ShoppingListGenerator>>().Object,
@@ -152,13 +160,29 @@ public class ShoppingListRegenerateTests : IDisposable
             .ToListAsync();
     }
 
-    private ShoppingListService CreateService()
+    private ShoppingListService CreateService() =>
+        new(_dbFactory, new Mock<ILogger<ShoppingListService>>().Object, TestClocks.System, TestKeys.Allocator);
+
+    private async Task<WebApplication> StartShoppingListApiAsync()
     {
-        var dbFactoryMock = new Mock<IDbContextFactory<ApplicationDbContext>>();
-        dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => TestTenancy.Context(_options, _tenant));
-        return new ShoppingListService(
-            dbFactoryMock.Object, new Mock<ILogger<ShoppingListService>>().Object, TestClocks.System, TestKeys.Allocator);
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddSingleton<ITenantContext>(_tenant);
+        builder.Services.AddSingleton(_dbFactory);
+        builder.Services.AddSingleton<IShoppingListService>(CreateService());
+        builder.Services.AddSingleton<IShoppingListGenerator>(_generator);
+        builder.Services.AddSingleton(Mock.Of<IMealPlanService>());
+        builder.Services.AddSingleton<IHouseholdClock>(TestClocks.System);
+        var app = builder.Build();
+        app.MapShoppingListEndpoints();
+        await app.StartAsync();
+        return app;
+    }
+
+    private static async Task PatchAsync(HttpClient client, ShoppingListItem item, object body)
+    {
+        using var response = await client.PatchAsJsonAsync($"/api/shopping-lists/50/items/{item.ItemId}", body);
+        response.EnsureSuccessStatusCode();
     }
 
     [Fact]
@@ -269,18 +293,11 @@ public class ShoppingListRegenerateTests : IDisposable
     [InlineData("flour", "Pantry")]
     public async Task Regenerate_CarriesState_WhenGeneratedItemWasRenamedOrMoved(string name, string category)
     {
-        await using (var ctx = new ApplicationDbContext(_options))
-        {
-            var item = await ctx.ShoppingListItems.SingleAsync(i => i.ShoppingListId == 50 && i.ItemId == 1);
-            item.RecipeIngredientIds = "1:10:1";
-            await ctx.SaveChangesAsync();
-        }
-
+        await TagFlourAsync();
+        await using var app = await StartShoppingListApiAsync();
+        using var client = app.GetTestClient();
         var flour = (await ItemsAsync()).Single(i => i.ItemId == 1);
-        var service = CreateService();
-        flour.Name = name;
-        await service.UpdateItemAsync(flour, flour.Version);
-        await service.UpdateItemSortOrdersAsync(1, 50, [(flour.ItemId, flour.SortOrder, category)]);
+        await PatchAsync(client, flour, new { flour.Version, name, category, quantity = flour.Quantity });
 
         await _generator.RegenerateShoppingListAsync(1, 50);
 
@@ -426,15 +443,75 @@ public class ShoppingListRegenerateTests : IDisposable
         await _generator.RegenerateShoppingListAsync(1, 50);
         var flour = (await ItemsAsync()).Single(i => i.RecipeIngredientIds == "1:10:1");
         flour.Quantity.Should().Be(0m);
-        flour.QuantityDelta = ShoppingListEndpoints.ComputeQuantityDelta(1.5m, flour.Quantity, flour.QuantityDelta);
-        flour.Quantity = 1.5m;
-        await CreateService().UpdateItemAsync(flour, flour.Version);
+        flour.IsChecked.Should().BeTrue();
+        await using var app = await StartShoppingListApiAsync();
+        using var client = app.GetTestClient();
+        await PatchAsync(client, flour, new { flour.Version, isChecked = false, quantity = 0m });
+        flour = (await ItemsAsync()).Single(i => i.RecipeIngredientIds == "1:10:1");
+        flour.QuantityDelta.Should().Be(-1m);
+        await PatchAsync(client, flour, new { flour.Version, isChecked = true, quantity = 1.5m });
 
         await _generator.RegenerateShoppingListAsync(1, 50);
 
         var regenerated = (await ItemsAsync()).Single(i => i.RecipeIngredientIds == "1:10:1");
         regenerated.Quantity.Should().Be(1.5m);
         regenerated.IsChecked.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Regenerate_KeepsStateWithTheIngredient_WhenRecipeEditReusesIds()
+    {
+        await TagFlourAsync();
+        await using var ctx = await _dbFactory.CreateDbContextAsync();
+        var original = await ctx.Recipes.Include(r => r.Ingredients).SingleAsync(r => r.RecipeId == 10);
+        var service = new RecipeService(_dbFactory, Mock.Of<IImageService>(), Mock.Of<ILogger<RecipeService>>(),
+            TestClocks.System, TestKeys.Allocator);
+        var reordered = new Recipe
+        {
+            RecipeId = original.RecipeId, Name = original.Name,
+            Ingredients = original.Ingredients.OrderByDescending(i => i.IngredientId).ToList()
+        };
+        await service.UpdateRecipeAsync(reordered, original.Version);
+        (await ctx.RecipeIngredients.AsNoTracking().SingleAsync(i => i.IngredientId == 1)).Name.Should().Be("eggs");
+
+        await _generator.RegenerateShoppingListAsync(1, 50);
+
+        var items = await ItemsAsync();
+        var flour = items.Single(i => i.Name == "flour");
+        flour.IsChecked.Should().BeTrue();
+        flour.Quantity.Should().Be(3m);
+        items.Single(i => i.Name == "eggs").IsChecked.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task QuantityEdit_RemainsApplied_WhenRecipeQuantityRisesAfterFlooring()
+    {
+        await TagFlourAsync();
+        await using var app = await StartShoppingListApiAsync();
+        using var client = app.GetTestClient();
+        var flour = (await ItemsAsync()).Single(i => i.Name == "flour");
+        await PatchAsync(client, flour, new { flour.Version, quantity = 0m });
+
+        await using var ctx = new ApplicationDbContext(_options);
+        var ingredient = await ctx.RecipeIngredients.SingleAsync(i => i.IngredientId == 1);
+        ingredient.Quantity = 1m;
+        await ctx.SaveChangesAsync();
+        await _generator.RegenerateShoppingListAsync(1, 50);
+        (await ItemsAsync()).Single(i => i.Name == "flour").Quantity.Should().Be(0m);
+
+        ingredient.Quantity = 3m;
+        await ctx.SaveChangesAsync();
+        await _generator.RegenerateShoppingListAsync(1, 50);
+
+        (await ItemsAsync()).Single(i => i.Name == "flour").Quantity.Should().Be(1m);
+    }
+
+    private async Task TagFlourAsync()
+    {
+        await using var ctx = new ApplicationDbContext(_options);
+        var item = await ctx.ShoppingListItems.SingleAsync(i => i.ShoppingListId == 50 && i.ItemId == 1);
+        item.RecipeIngredientIds = "1:10:1";
+        await ctx.SaveChangesAsync();
     }
 
     public void Dispose() => _seedContext.Dispose();

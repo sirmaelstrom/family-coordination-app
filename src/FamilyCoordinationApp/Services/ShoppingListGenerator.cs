@@ -79,6 +79,7 @@ public class ShoppingListGenerator(
         // overflow, say) left a list holding some of its items.
         await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
 
+        var now = clock.UtcNow;
         // Load meal plan with entries, recipes, and ingredients
         var mealPlan = await context.MealPlans
             .Where(mp => mp.MealPlanId == mealPlanId)
@@ -116,8 +117,6 @@ public class ShoppingListGenerator(
         var consolidationResults = await ConsolidateScaledIngredientsAsync(allIngredients, autoConsolidate: true);
 
         var shoppingListId = await keys.NextKeyAsync(context.ShoppingLists, sl => sl.ShoppingListId, cancellationToken);
-        var now = clock.UtcNow;
-
         var shoppingList = new ShoppingList
         {
             ShoppingListId = shoppingListId,
@@ -198,15 +197,7 @@ public class ShoppingListGenerator(
             .Where(i => !i.IsManuallyAdded)
             .OrderBy(i => i.ItemId)
             .ToList();
-        var outgoingByIngredients = outgoing
-            .Where(i => !string.IsNullOrEmpty(i.RecipeIngredientIds))
-            .GroupBy(i => IngredientIdentity(i.RecipeIngredientIds!))
-            .ToDictionary(g => g.Key, g => new Queue<ShoppingListItem>(g));
-        var outgoingWithoutIngredients = outgoing
-            .Where(i => string.IsNullOrEmpty(i.RecipeIngredientIds))
-            .GroupBy(i => (NormalizeIngredientName(i.Name), i.Category, NormalizeUnit(i.Unit)))
-            .ToDictionary(g => g.Key, g => new Queue<ShoppingListItem>(g));
-
+        var now = clock.UtcNow;
         var mealPlan = await context.MealPlans
             .Where(mp => mp.MealPlanId == existingList.MealPlanId)
             .Include(mp => mp.Entries)
@@ -226,6 +217,24 @@ public class ShoppingListGenerator(
             .ToList();
 
         var consolidationResults = await ConsolidateScaledIngredientsAsync(allIngredients, autoConsolidate: true);
+        var recipeEdits = mealPlan.Entries.Select(e => e.Recipe).OfType<Recipe>()
+            .Where(r => r.UpdatedAt.HasValue)
+            .DistinctBy(r => r.RecipeId)
+            .ToDictionary(r => $"{r.HouseholdId}:{r.RecipeId}", r => r.UpdatedAt!.Value);
+        var editedSources = outgoing.ToDictionary(i => i, i =>
+            (i.RecipeIngredientIds?.Split(',') ?? [])
+                .Select(SourceRecipeKey)
+                .Where(key => recipeEdits.TryGetValue(key, out var editedAt) && editedAt > i.AddedAt)
+                .ToHashSet());
+
+        var outgoingByIngredients = outgoing
+            .Where(i => !string.IsNullOrEmpty(i.RecipeIngredientIds) && editedSources[i].Count == 0)
+            .GroupBy(i => IngredientIdentity(i.RecipeIngredientIds!))
+            .ToDictionary(g => g.Key, g => new Queue<ShoppingListItem>(g));
+        var outgoingByLabel = outgoing
+            .Where(i => string.IsNullOrEmpty(i.RecipeIngredientIds) || editedSources[i].Count > 0)
+            .GroupBy(i => (NormalizeIngredientName(i.Name), i.Category, NormalizeUnit(i.Unit)))
+            .ToDictionary(g => g.Key, g => g.ToList());
 
         // The fresh rows take ids above every row in the LOADED snapshot (removed generated rows included: they are
         // deleted in this same save, so their ids are not free yet). The snapshot's max, not the database's, on
@@ -247,36 +256,39 @@ public class ShoppingListGenerator(
             {
                 matches.TryDequeue(out previous);
             }
-            if (previous is null && outgoingWithoutIngredients.TryGetValue(
-                    (NormalizeIngredientName(result.Name), result.Category, NormalizeUnit(result.Unit)), out var legacyMatches))
+            if (previous is null && outgoingByLabel.TryGetValue(
+                    (NormalizeIngredientName(result.Name), result.Category, NormalizeUnit(result.Unit)), out var labelMatches))
             {
-                legacyMatches.TryDequeue(out previous);
+                var sourceKeys = result.RecipeIngredientIds.Select(SourceRecipeKey).ToHashSet();
+                previous = labelMatches.Find(item => editedSources[item].Overlaps(sourceKeys))
+                    ?? labelMatches.Find(item => string.IsNullOrEmpty(item.RecipeIngredientIds));
+                if (previous is not null)
+                {
+                    labelMatches.Remove(previous);
+                }
             }
 
             var quantityDelta = NormalizeUnit(previous?.Unit) == NormalizeUnit(result.Unit)
                 ? previous?.QuantityDelta
                 : null;
-            var quantity = Math.Max(0, result.Quantity + (quantityDelta ?? 0));
-            var appliedDelta = quantity - result.Quantity;
-
             context.ShoppingListItems.Add(new ShoppingListItem
             {
                 ShoppingListId = shoppingListId,
                 ItemId = nextItemId++,
                 Name = result.Name,
-                Quantity = quantity,
+                UnflooredQuantity = result.Quantity + (quantityDelta ?? 0),
                 Unit = result.Unit,
                 Category = result.Category,
                 SourceRecipes = JoinSourceRecipes(result.SourceRecipes),
                 OriginalUnits = result.OriginalUnits,
                 RecipeIngredientIds = ingredientIds,
                 IsManuallyAdded = false,
-                QuantityDelta = quantityDelta is not null && appliedDelta != 0 ? appliedDelta : null,
+                QuantityDelta = quantityDelta,
                 IsChecked = previous?.IsChecked ?? false,
                 CheckedAt = previous?.CheckedAt,
                 SortOrder = previous?.SortOrder ?? 0,
-                AddedAt = clock.UtcNow,
-                UpdatedAt = clock.UtcNow
+                AddedAt = now,
+                UpdatedAt = now
             });
         }
 
@@ -319,6 +331,9 @@ public class ShoppingListGenerator(
 
     private static string IngredientIdentity(string ingredientIds) =>
         string.Join(',', ingredientIds.Split(',').Order(StringComparer.Ordinal));
+
+    private static string SourceRecipeKey(string ingredientId) =>
+        ingredientId[..Math.Max(0, ingredientId.LastIndexOf(':'))];
 
     private static string NormalizeUnit(string? unit) => unit?.Trim().ToLowerInvariant() ?? string.Empty;
 
